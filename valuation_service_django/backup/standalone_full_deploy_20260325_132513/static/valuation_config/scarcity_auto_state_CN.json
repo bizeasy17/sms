@@ -1,0 +1,15 @@
+{
+  "market": "CN",
+  "profiles": {
+    "688818.SH": {
+      "last_profile": "aggressive",
+      "pending_profile": null,
+      "pending_count": 0,
+      "cooldown_until": null,
+      "force_conservative_until": null,
+      "last_risk_score": 0.418725,
+      "last_date": "2026-03-25"
+    }
+  },
+  "updated_at": "2026-03-25T03:39:24"
+}

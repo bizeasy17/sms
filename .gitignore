@@ -1,0 +1,28 @@
+# Runtime and generated artifacts
+logs/
+**/logs/
+output/
+**/output/
+outputs/
+**/outputs/
+outputs_risk/
+**/outputs_risk/
+*.parquet
+**/*.parquet
+tmp/
+**/tmp/
+tmp_*
+**/tmp_*
+*.log
+*.zip
+*.pyc
+__pycache__/
+
+# Node / frontend
+**/node_modules/
+**/dist/
+**/.vite/
+
+# Editor
+.vscode/
+*.swp

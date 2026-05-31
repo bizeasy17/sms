@@ -1,0 +1,287 @@
+{
+  "market": "CN",
+  "sw_level": "L2",
+  "total_citic_names": 384,
+  "explicit_mapping_count": 350,
+  "remaining_unmapped_count": 47,
+  "suggestions": [
+    {
+      "citic_name": "专用材料Ⅱ",
+      "suggestions": []
+    },
+    {
+      "citic_name": "休闲综合",
+      "suggestions": [
+        {
+          "citic_name": "休闲综合",
+          "target_level": "L2",
+          "target_code": "801231.SI",
+          "target_name": "综合Ⅱ",
+          "match_type": "fuzzy",
+          "similarity": 0.6667
+        }
+      ]
+    },
+    {
+      "citic_name": "体育及户外品牌",
+      "suggestions": []
+    },
+    {
+      "citic_name": "供热或其他",
+      "suggestions": []
+    },
+    {
+      "citic_name": "儿童品牌",
+      "suggestions": []
+    },
+    {
+      "citic_name": "其他专用材料",
+      "suggestions": []
+    },
+    {
+      "citic_name": "动漫",
+      "suggestions": []
+    },
+    {
+      "citic_name": "服务综合",
+      "suggestions": [
+        {
+          "citic_name": "服务综合",
+          "target_level": "L2",
+          "target_code": "801231.SI",
+          "target_name": "综合Ⅱ",
+          "match_type": "fuzzy",
+          "similarity": 0.6667
+        }
+      ]
+    },
+    {
+      "citic_name": "林木及加工",
+      "suggestions": []
+    },
+    {
+      "citic_name": "水产捕捞",
+      "suggestions": []
+    },
+    {
+      "citic_name": "油品销售及仓储",
+      "suggestions": []
+    },
+    {
+      "citic_name": "油气装备",
+      "suggestions": []
+    },
+    {
+      "citic_name": "激光加工设备",
+      "suggestions": [
+        {
+          "citic_name": "激光加工设备",
+          "target_level": "L2",
+          "target_code": "801735.SI",
+          "target_name": "光伏设备",
+          "match_type": "fuzzy",
+          "similarity": 0.6
+        }
+      ]
+    },
+    {
+      "citic_name": "照明电工",
+      "suggestions": []
+    },
+    {
+      "citic_name": "物业管理服务",
+      "suggestions": [
+        {
+          "citic_name": "物业管理服务",
+          "target_level": "L2",
+          "target_code": "801218.SI",
+          "target_name": "专业服务",
+          "match_type": "fuzzy",
+          "similarity": 0.6
+        }
+      ]
+    },
+    {
+      "citic_name": "物业经纪服务",
+      "suggestions": [
+        {
+          "citic_name": "物业经纪服务",
+          "target_level": "L2",
+          "target_code": "801218.SI",
+          "target_name": "专业服务",
+          "match_type": "fuzzy",
+          "similarity": 0.6
+        }
+      ]
+    },
+    {
+      "citic_name": "特材",
+      "suggestions": []
+    },
+    {
+      "citic_name": "珠宝首饰及钟表",
+      "suggestions": []
+    },
+    {
+      "citic_name": "生物医药Ⅲ",
+      "suggestions": []
+    },
+    {
+      "citic_name": "电梯",
+      "suggestions": []
+    },
+    {
+      "citic_name": "矿山冶金机械",
+      "suggestions": []
+    },
+    {
+      "citic_name": "系统设备",
+      "suggestions": []
+    },
+    {
+      "citic_name": "纺织服装机械",
+      "suggestions": []
+    },
+    {
+      "citic_name": "线缆",
+      "suggestions": []
+    },
+    {
+      "citic_name": "结构材料",
+      "suggestions": []
+    },
+    {
+      "citic_name": "绵纶",
+      "suggestions": []
+    },
+    {
+      "citic_name": "综合业态",
+      "suggestions": [
+        {
+          "citic_name": "综合业态",
+          "target_level": "L2",
+          "target_code": "801231.SI",
+          "target_name": "综合Ⅱ",
+          "match_type": "fuzzy",
+          "similarity": 0.6667
+        }
+      ]
+    },
+    {
+      "citic_name": "综合服务",
+      "suggestions": [
+        {
+          "citic_name": "综合服务",
+          "target_level": "L2",
+          "target_code": "801231.SI",
+          "target_name": "综合Ⅱ",
+          "match_type": "fuzzy",
+          "similarity": 0.6667
+        }
+      ]
+    },
+    {
+      "citic_name": "网络接配及塔设",
+      "suggestions": []
+    },
+    {
+      "citic_name": "网络覆盖优化与运维",
+      "suggestions": []
+    },
+    {
+      "citic_name": "航天军工",
+      "suggestions": []
+    },
+    {
+      "citic_name": "航空军工",
+      "suggestions": []
+    },
+    {
+      "citic_name": "航空航天",
+      "suggestions": []
+    },
+    {
+      "citic_name": "船舶制造",
+      "suggestions": []
+    },
+    {
+      "citic_name": "装饰材料",
+      "suggestions": []
+    },
+    {
+      "citic_name": "超市及便利店",
+      "suggestions": []
+    },
+    {
+      "citic_name": "通讯工程服务",
+      "suggestions": [
+        {
+          "citic_name": "通讯工程服务",
+          "target_level": "L2",
+          "target_code": "801726.SI",
+          "target_name": "工程咨询服务Ⅱ",
+          "match_type": "fuzzy",
+          "similarity": 0.6667
+        }
+      ]
+    },
+    {
+      "citic_name": "钢铁耗材",
+      "suggestions": []
+    },
+    {
+      "citic_name": "铁路交通设备",
+      "suggestions": [
+        {
+          "citic_name": "铁路交通设备",
+          "target_level": "L2",
+          "target_code": "801072.SI",
+          "target_name": "通用设备",
+          "match_type": "fuzzy",
+          "similarity": 0.6
+        }
+      ]
+    },
+    {
+      "citic_name": "锅炉设备",
+      "suggestions": []
+    },
+    {
+      "citic_name": "镍钴锡锑",
+      "suggestions": []
+    },
+    {
+      "citic_name": "陶瓷",
+      "suggestions": []
+    },
+    {
+      "citic_name": "非住宅物业开发和运营",
+      "suggestions": []
+    },
+    {
+      "citic_name": "非棉纺织品",
+      "suggestions": []
+    },
+    {
+      "citic_name": "食品",
+      "suggestions": [
+        {
+          "citic_name": "食品",
+          "target_level": "L2",
+          "target_code": "801124.SI",
+          "target_name": "食品加工",
+          "match_type": "fuzzy",
+          "similarity": 0.6667
+        }
+      ]
+    },
+    {
+      "citic_name": "高空作业车",
+      "suggestions": []
+    },
+    {
+      "citic_name": "高等及职业教育",
+      "suggestions": []
+    }
+  ]
+}

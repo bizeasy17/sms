@@ -1,0 +1,13 @@
+# Linux/macOS (crontab，每天凌晨1点)
+0 1 * * * /usr/bin/python3 /c:/Users/HANJ29/Development/code/sms/smartinvestor_etl/manage.py your_command_name
+
+# Windows (任务计划程序，命令行示例) dummy
+> py manage.py setup # 仅运行一次以设置环境, 
+> py manage.py download --freq=D --dtype=TRADING # 每天运行一次
+> py manage.py download --dtype=FUNDAMENTAL # 每天运行一次
+> py manage.py resample --dtype=TRADING --freq=W  # 每周运行一次
+> py manage.py resample --dtype=TRADING --freq=M  # 每月运行一次
+> py manage.py resample --dtype=FUNDAMENTAL --freq=W # 每周运行一次
+> py manage.py resample --dtype=FUNDAMENTAL --freq=M # 每月运行一次
+> py manage.py fetchcorp # 每月运行一次
+#> python C:\Users\HANJ29\Development\code\sms\smartinvestor_etl\manage.py download --tscode 000002.SZ --resume 20230101 --dtype trading

@@ -1,0 +1,91 @@
+{
+  "market": "CN",
+  "tasks": {
+    "daily_market_data_sync": {
+      "last_run_date": "2026-04-07",
+      "last_status": "ok",
+      "last_error": null,
+      "last_success_date": "2026-04-07"
+    },
+    "sw_params_refresh_reference": {
+      "last_run_date": "2026-03-24",
+      "last_status": "ok",
+      "last_error": null,
+      "last_success_date": "2026-03-24"
+    },
+    "sw_mapping_sync": {
+      "last_run_date": "2026-04-07",
+      "last_status": "ok",
+      "last_error": null,
+      "last_success_date": "2026-04-07"
+    },
+    "sw_params_refresh": {
+      "last_run_date": "2026-03-24",
+      "last_status": "ok",
+      "last_error": null,
+      "last_success_date": "2026-03-24"
+    },
+    "valuation_snapshot_prefill": {
+      "last_run_date": "2026-04-07",
+      "last_status": "error",
+      "last_error": "筛选后没有待处理股票"
+    },
+    "keyword_rules_refresh": {
+      "last_run_date": "2026-04-07",
+      "last_status": "ok",
+      "last_error": null,
+      "last_success_date": "2026-04-07"
+    }
+  },
+  "history": [
+    {
+      "task_name": "daily_market_data_sync",
+      "date": "2026-03-22",
+      "status": "ok",
+      "error": null
+    },
+    {
+      "task_name": "sw_params_refresh_reference",
+      "date": "2026-03-24",
+      "status": "ok",
+      "error": null
+    },
+    {
+      "task_name": "sw_mapping_sync",
+      "date": "2026-03-24",
+      "status": "ok",
+      "error": null
+    },
+    {
+      "task_name": "sw_params_refresh",
+      "date": "2026-03-24",
+      "status": "ok",
+      "error": null
+    },
+    {
+      "task_name": "daily_market_data_sync",
+      "date": "2026-04-07",
+      "status": "ok",
+      "error": null
+    },
+    {
+      "task_name": "sw_mapping_sync",
+      "date": "2026-04-07",
+      "status": "ok",
+      "error": null
+    },
+    {
+      "task_name": "valuation_snapshot_prefill",
+      "date": "2026-04-07",
+      "status": "error",
+      "error": "筛选后没有待处理股票"
+    },
+    {
+      "task_name": "keyword_rules_refresh",
+      "date": "2026-04-07",
+      "status": "ok",
+      "error": null
+    }
+  ],
+  "updated_at": "2026-04-07T13:59:57"
+}

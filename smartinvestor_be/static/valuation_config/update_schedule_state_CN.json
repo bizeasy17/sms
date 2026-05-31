@@ -1,0 +1,456 @@
+{
+  "market": "CN",
+  "tasks": {
+    "sw_mapping_sync": {
+      "last_attempt_at": "2026-05-22T14:37:18",
+      "last_status": "success",
+      "last_error": null,
+      "last_success": "2026-05-22"
+    },
+    "sw_params_refresh": {
+      "last_attempt_at": "2026-05-22T14:44:52",
+      "last_status": "success",
+      "last_error": null,
+      "last_success": "2026-05-22"
+    },
+    "sw_params_refresh_reference": {
+      "last_attempt_at": "2026-05-22T14:52:28",
+      "last_status": "success",
+      "last_error": null,
+      "last_success": "2026-05-22"
+    },
+    "valuation_snapshot_prefill": {
+      "last_attempt_at": "2026-05-22T05:05:48",
+      "last_status": "success",
+      "last_success": "2026-05-22",
+      "last_error": null
+    },
+    "daily_market_data_sync": {
+      "last_attempt_at": "2026-05-22T05:05:48",
+      "last_status": "failed",
+      "last_error": "Unknown command: 'syncdailymarketdata'"
+    },
+    "keyword_rules_refresh": {
+      "last_attempt_at": "2026-04-14T15:42:55",
+      "last_status": "success",
+      "last_success": "2026-04-14",
+      "last_error": null
+    }
+  },
+  "history": [
+    {
+      "task": "sw_mapping_sync",
+      "date": "2026-04-14",
+      "attempt_at": "2026-04-14T13:11:43",
+      "status": "failed",
+      "error": "'charmap' codec can't encode characters in position 0-9: character maps to <undefined>"
+    },
+    {
+      "task": "sw_params_refresh",
+      "date": "2026-04-14",
+      "attempt_at": "2026-04-14T13:11:43",
+      "status": "failed",
+      "error": "'charmap' codec can't encode characters in position 0-9: character maps to <undefined>"
+    },
+    {
+      "task": "sw_params_refresh_reference",
+      "date": "2026-04-14",
+      "attempt_at": "2026-04-14T13:11:43",
+      "status": "failed",
+      "error": "Unknown option(s) for syncswvaluation command: params_output_suffix. Valid options are: disable_history_anchors, dry_run, force_color, help, history_min_samples, history_quantile, history_years, mapping_only, max_industries, no_color, params_only, progress_every, pythonpath, request_interval, sample_size, settings, skip_checks, stderr, stdout, traceback, trade_date, verbosity, version."
+    },
+    {
+      "task": "valuation_snapshot_prefill",
+      "date": "2026-04-14",
+      "attempt_at": "2026-04-14T15:42:54",
+      "status": "success",
+      "error": null
+    },
+    {
+      "task": "daily_market_data_sync",
+      "date": "2026-04-14",
+      "attempt_at": "2026-04-14T15:42:54",
+      "status": "failed",
+      "error": "Unknown command: 'syncdailymarketdata'"
+    },
+    {
+      "task": "keyword_rules_refresh",
+      "date": "2026-04-14",
+      "attempt_at": "2026-04-14T15:42:55",
+      "status": "success",
+      "error": null
+    },
+    {
+      "task": "sw_mapping_sync",
+      "date": "2026-04-17",
+      "attempt_at": "2026-04-17T13:40:05",
+      "status": "failed",
+      "error": "'charmap' codec can't encode characters in position 0-9: character maps to <undefined>"
+    },
+    {
+      "task": "sw_params_refresh",
+      "date": "2026-04-17",
+      "attempt_at": "2026-04-17T13:40:05",
+      "status": "failed",
+      "error": "'charmap' codec can't encode characters in position 0-9: character maps to <undefined>"
+    },
+    {
+      "task": "sw_params_refresh_reference",
+      "date": "2026-04-17",
+      "attempt_at": "2026-04-17T13:40:05",
+      "status": "failed",
+      "error": "Unknown option(s) for syncswvaluation command: params_output_suffix. Valid options are: disable_history_anchors, dry_run, force_color, help, history_min_samples, history_quantile, history_years, mapping_only, max_industries, no_color, params_only, progress_every, pythonpath, request_interval, sample_size, settings, skip_checks, stderr, stdout, traceback, trade_date, verbosity, version."
+    },
+    {
+      "task": "daily_market_data_sync",
+      "date": "2026-04-17",
+      "attempt_at": "2026-04-17T13:40:05",
+      "status": "failed",
+      "error": "Unknown command: 'syncdailymarketdata'"
+    },
+    {
+      "task": "sw_mapping_sync",
+      "date": "2026-05-10",
+      "attempt_at": "2026-05-10T06:01:46",
+      "status": "failed",
+      "error": "'charmap' codec can't encode characters in position 0-9: character maps to <undefined>"
+    },
+    {
+      "task": "sw_params_refresh",
+      "date": "2026-05-10",
+      "attempt_at": "2026-05-10T06:01:46",
+      "status": "failed",
+      "error": "'charmap' codec can't encode characters in position 0-9: character maps to <undefined>"
+    },
+    {
+      "task": "sw_params_refresh_reference",
+      "date": "2026-05-10",
+      "attempt_at": "2026-05-10T06:01:46",
+      "status": "failed",
+      "error": "Unknown option(s) for syncswvaluation command: params_output_suffix. Valid options are: disable_history_anchors, dry_run, force_color, help, history_min_samples, history_quantile, history_years, mapping_only, max_industries, no_color, params_only, progress_every, pythonpath, request_interval, sample_size, settings, skip_checks, stderr, stdout, traceback, trade_date, verbosity, version."
+    },
+    {
+      "task": "daily_market_data_sync",
+      "date": "2026-05-10",
+      "attempt_at": "2026-05-10T06:01:46",
+      "status": "failed",
+      "error": "Unknown command: 'syncdailymarketdata'"
+    },
+    {
+      "task": "sw_mapping_sync",
+      "date": "2026-05-10",
+      "attempt_at": "2026-05-10T06:11:40",
+      "status": "failed",
+      "error": "'charmap' codec can't encode characters in position 0-9: character maps to <undefined>"
+    },
+    {
+      "task": "sw_params_refresh",
+      "date": "2026-05-10",
+      "attempt_at": "2026-05-10T06:11:40",
+      "status": "failed",
+      "error": "'charmap' codec can't encode characters in position 0-9: character maps to <undefined>"
+    },
+    {
+      "task": "sw_params_refresh_reference",
+      "date": "2026-05-10",
+      "attempt_at": "2026-05-10T06:11:40",
+      "status": "failed",
+      "error": "Unknown option(s) for syncswvaluation command: params_output_suffix. Valid options are: disable_history_anchors, dry_run, force_color, help, history_min_samples, history_quantile, history_years, mapping_only, max_industries, no_color, params_only, progress_every, pythonpath, request_interval, sample_size, settings, skip_checks, stderr, stdout, traceback, trade_date, verbosity, version."
+    },
+    {
+      "task": "daily_market_data_sync",
+      "date": "2026-05-10",
+      "attempt_at": "2026-05-10T06:11:40",
+      "status": "failed",
+      "error": "Unknown command: 'syncdailymarketdata'"
+    },
+    {
+      "task": "sw_mapping_sync",
+      "date": "2026-05-10",
+      "attempt_at": "2026-05-10T12:01:15",
+      "status": "failed",
+      "error": "'charmap' codec can't encode characters in position 0-9: character maps to <undefined>"
+    },
+    {
+      "task": "sw_params_refresh",
+      "date": "2026-05-10",
+      "attempt_at": "2026-05-10T12:01:15",
+      "status": "failed",
+      "error": "'charmap' codec can't encode characters in position 0-9: character maps to <undefined>"
+    },
+    {
+      "task": "sw_params_refresh_reference",
+      "date": "2026-05-10",
+      "attempt_at": "2026-05-10T12:01:15",
+      "status": "failed",
+      "error": "Unknown option(s) for syncswvaluation command: params_output_suffix. Valid options are: disable_history_anchors, dry_run, force_color, help, history_min_samples, history_quantile, history_years, mapping_only, max_industries, no_color, params_only, progress_every, pythonpath, request_interval, sample_size, settings, skip_checks, stderr, stdout, traceback, trade_date, verbosity, version."
+    },
+    {
+      "task": "daily_market_data_sync",
+      "date": "2026-05-10",
+      "attempt_at": "2026-05-10T12:01:15",
+      "status": "failed",
+      "error": "Unknown command: 'syncdailymarketdata'"
+    },
+    {
+      "task": "sw_mapping_sync",
+      "date": "2026-05-11",
+      "attempt_at": "2026-05-10T22:15:51",
+      "status": "failed",
+      "error": "'charmap' codec can't encode characters in position 0-9: character maps to <undefined>"
+    },
+    {
+      "task": "sw_params_refresh",
+      "date": "2026-05-11",
+      "attempt_at": "2026-05-10T22:15:51",
+      "status": "failed",
+      "error": "'charmap' codec can't encode characters in position 0-9: character maps to <undefined>"
+    },
+    {
+      "task": "sw_params_refresh_reference",
+      "date": "2026-05-11",
+      "attempt_at": "2026-05-10T22:15:51",
+      "status": "failed",
+      "error": "Unknown option(s) for syncswvaluation command: params_output_suffix. Valid options are: disable_history_anchors, dry_run, force_color, help, history_min_samples, history_quantile, history_years, mapping_only, max_industries, no_color, params_only, progress_every, pythonpath, request_interval, sample_size, settings, skip_checks, stderr, stdout, traceback, trade_date, verbosity, version."
+    },
+    {
+      "task": "daily_market_data_sync",
+      "date": "2026-05-11",
+      "attempt_at": "2026-05-10T22:15:51",
+      "status": "failed",
+      "error": "Unknown command: 'syncdailymarketdata'"
+    },
+    {
+      "task": "sw_mapping_sync",
+      "date": "2026-05-11",
+      "attempt_at": "2026-05-11T03:52:19",
+      "status": "failed",
+      "error": "'charmap' codec can't encode characters in position 0-9: character maps to <undefined>"
+    },
+    {
+      "task": "sw_params_refresh",
+      "date": "2026-05-11",
+      "attempt_at": "2026-05-11T03:52:19",
+      "status": "failed",
+      "error": "'charmap' codec can't encode characters in position 0-9: character maps to <undefined>"
+    },
+    {
+      "task": "sw_params_refresh_reference",
+      "date": "2026-05-11",
+      "attempt_at": "2026-05-11T03:52:19",
+      "status": "failed",
+      "error": "Unknown option(s) for syncswvaluation command: params_output_suffix. Valid options are: disable_history_anchors, dry_run, force_color, help, history_min_samples, history_quantile, history_years, mapping_only, max_industries, no_color, params_only, progress_every, pythonpath, request_interval, sample_size, settings, skip_checks, stderr, stdout, traceback, trade_date, verbosity, version."
+    },
+    {
+      "task": "daily_market_data_sync",
+      "date": "2026-05-11",
+      "attempt_at": "2026-05-11T03:52:19",
+      "status": "failed",
+      "error": "Unknown command: 'syncdailymarketdata'"
+    },
+    {
+      "task": "sw_mapping_sync",
+      "date": "2026-05-11",
+      "attempt_at": "2026-05-11T11:24:05",
+      "status": "failed",
+      "error": "'charmap' codec can't encode characters in position 0-9: character maps to <undefined>"
+    },
+    {
+      "task": "sw_params_refresh",
+      "date": "2026-05-11",
+      "attempt_at": "2026-05-11T11:24:05",
+      "status": "failed",
+      "error": "'charmap' codec can't encode characters in position 0-9: character maps to <undefined>"
+    },
+    {
+      "task": "sw_params_refresh_reference",
+      "date": "2026-05-11",
+      "attempt_at": "2026-05-11T11:24:05",
+      "status": "failed",
+      "error": "Unknown option(s) for syncswvaluation command: params_output_suffix. Valid options are: disable_history_anchors, dry_run, force_color, help, history_min_samples, history_quantile, history_years, mapping_only, max_industries, no_color, params_only, progress_every, pythonpath, request_interval, sample_size, settings, skip_checks, stderr, stdout, traceback, trade_date, verbosity, version."
+    },
+    {
+      "task": "daily_market_data_sync",
+      "date": "2026-05-11",
+      "attempt_at": "2026-05-11T11:24:05",
+      "status": "failed",
+      "error": "Unknown command: 'syncdailymarketdata'"
+    },
+    {
+      "task": "sw_mapping_sync",
+      "date": "2026-05-22",
+      "attempt_at": "2026-05-22T01:23:49",
+      "status": "failed",
+      "error": "'charmap' codec can't encode characters in position 0-9: character maps to <undefined>"
+    },
+    {
+      "task": "sw_params_refresh",
+      "date": "2026-05-22",
+      "attempt_at": "2026-05-22T01:23:49",
+      "status": "failed",
+      "error": "'charmap' codec can't encode characters in position 0-9: character maps to <undefined>"
+    },
+    {
+      "task": "sw_params_refresh_reference",
+      "date": "2026-05-22",
+      "attempt_at": "2026-05-22T01:23:49",
+      "status": "failed",
+      "error": "Unknown option(s) for syncswvaluation command: params_output_suffix. Valid options are: disable_history_anchors, dry_run, force_color, help, history_min_samples, history_quantile, history_years, mapping_only, max_industries, no_color, params_only, progress_every, pythonpath, request_interval, sample_size, settings, skip_checks, stderr, stdout, traceback, trade_date, verbosity, version."
+    },
+    {
+      "task": "valuation_snapshot_prefill",
+      "date": "2026-05-22",
+      "attempt_at": "2026-05-22T05:05:48",
+      "status": "success",
+      "error": null
+    },
+    {
+      "task": "daily_market_data_sync",
+      "date": "2026-05-22",
+      "attempt_at": "2026-05-22T05:05:48",
+      "status": "failed",
+      "error": "Unknown command: 'syncdailymarketdata'"
+    },
+    {
+      "task": "sw_params_refresh",
+      "date": "2026-05-22",
+      "attempt_at": "2026-05-22T05:05:58",
+      "status": "failed",
+      "error": "'charmap' codec can't encode characters in position 0-9: character maps to <undefined>"
+    },
+    {
+      "task": "sw_params_refresh_reference",
+      "date": "2026-05-22",
+      "attempt_at": "2026-05-22T05:06:05",
+      "status": "failed",
+      "error": "'charmap' codec can't encode characters in position 0-9: character maps to <undefined>"
+    },
+    {
+      "task": "sw_mapping_sync",
+      "date": "2026-05-22",
+      "attempt_at": "2026-05-22T06:57:39",
+      "status": "failed",
+      "error": "'charmap' codec can't encode characters in position 0-9: character maps to <undefined>"
+    },
+    {
+      "task": "sw_params_refresh",
+      "date": "2026-05-22",
+      "attempt_at": "2026-05-22T06:57:39",
+      "status": "failed",
+      "error": "'charmap' codec can't encode characters in position 0-9: character maps to <undefined>"
+    },
+    {
+      "task": "sw_params_refresh_reference",
+      "date": "2026-05-22",
+      "attempt_at": "2026-05-22T06:57:39",
+      "status": "failed",
+      "error": "'charmap' codec can't encode characters in position 0-9: character maps to <undefined>"
+    },
+    {
+      "task": "sw_mapping_sync",
+      "date": "2026-05-22",
+      "attempt_at": "2026-05-22T06:59:41",
+      "status": "failed",
+      "error": "'charmap' codec can't encode characters in position 0-9: character maps to <undefined>"
+    },
+    {
+      "task": "sw_params_refresh",
+      "date": "2026-05-22",
+      "attempt_at": "2026-05-22T06:59:41",
+      "status": "failed",
+      "error": "'charmap' codec can't encode characters in position 0-9: character maps to <undefined>"
+    },
+    {
+      "task": "sw_params_refresh_reference",
+      "date": "2026-05-22",
+      "attempt_at": "2026-05-22T06:59:41",
+      "status": "failed",
+      "error": "'charmap' codec can't encode characters in position 0-9: character maps to <undefined>"
+    },
+    {
+      "task": "sw_mapping_sync",
+      "date": "2026-05-22",
+      "attempt_at": "2026-05-22T12:46:51",
+      "status": "failed",
+      "error": "'charmap' codec can't encode characters in position 0-9: character maps to <undefined>"
+    },
+    {
+      "task": "sw_params_refresh",
+      "date": "2026-05-22",
+      "attempt_at": "2026-05-22T12:46:51",
+      "status": "failed",
+      "error": "'charmap' codec can't encode characters in position 0-9: character maps to <undefined>"
+    },
+    {
+      "task": "sw_params_refresh_reference",
+      "date": "2026-05-22",
+      "attempt_at": "2026-05-22T12:46:51",
+      "status": "failed",
+      "error": "'charmap' codec can't encode characters in position 0-9: character maps to <undefined>"
+    },
+    {
+      "task": "sw_mapping_sync",
+      "date": "2026-05-22",
+      "attempt_at": "2026-05-22T12:48:13",
+      "status": "failed",
+      "error": "'charmap' codec can't encode characters in position 0-9: character maps to <undefined>"
+    },
+    {
+      "task": "sw_params_refresh",
+      "date": "2026-05-22",
+      "attempt_at": "2026-05-22T12:48:13",
+      "status": "failed",
+      "error": "'charmap' codec can't encode characters in position 0-9: character maps to <undefined>"
+    },
+    {
+      "task": "sw_params_refresh_reference",
+      "date": "2026-05-22",
+      "attempt_at": "2026-05-22T12:48:13",
+      "status": "failed",
+      "error": "'charmap' codec can't encode characters in position 0-9: character maps to <undefined>"
+    },
+    {
+      "task": "sw_mapping_sync",
+      "date": "2026-05-22",
+      "attempt_at": "2026-05-22T14:25:33",
+      "status": "failed",
+      "error": "'charmap' codec can't encode characters in position 0-9: character maps to <undefined>"
+    },
+    {
+      "task": "sw_params_refresh",
+      "date": "2026-05-22",
+      "attempt_at": "2026-05-22T14:25:33",
+      "status": "failed",
+      "error": "'charmap' codec can't encode characters in position 0-9: character maps to <undefined>"
+    },
+    {
+      "task": "sw_params_refresh_reference",
+      "date": "2026-05-22",
+      "attempt_at": "2026-05-22T14:25:33",
+      "status": "failed",
+      "error": "'charmap' codec can't encode characters in position 0-9: character maps to <undefined>"
+    },
+    {
+      "task": "sw_mapping_sync",
+      "date": "2026-05-22",
+      "attempt_at": "2026-05-22T14:37:18",
+      "status": "success",
+      "error": null
+    },
+    {
+      "task": "sw_params_refresh",
+      "date": "2026-05-22",
+      "attempt_at": "2026-05-22T14:44:52",
+      "status": "success",
+      "error": null
+    },
+    {
+      "task": "sw_params_refresh_reference",
+      "date": "2026-05-22",
+      "attempt_at": "2026-05-22T14:52:28",
+      "status": "success",
+      "error": null
+    }
+  ],
+  "updated_at": "2026-05-22T14:52:28"
+}
