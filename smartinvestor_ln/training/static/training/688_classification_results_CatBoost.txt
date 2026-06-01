@@ -1,0 +1,100 @@
+=== Training Timestamp: 2025-12-18 21:42:49 ===
+=== Training Comments : No sample, default params used. ===
+=== Training Label Distribution ===
+{0.0: 434584, 2.0: 18009, 1.0: 17940}
+=== top_or_bottom_CatBoost ===
+{'params': {'iterations': 6000, 'learning_rate': 0.05, 'depth': 8, 'l2_leaf_reg': 3, 'border_count': 128, 'bagging_temperature': 1, 'random_strength': 1, 'class_weights': [1, 10, 10], 'loss_function': 'MultiClass', 'verbose': 100, 'random_seed': 42}, 'result': 'Accuracy: 0.5062\n              precision    recall  f1-score   support\n\n         0.0       0.99      0.47      0.64    108878\n         1.0       0.13      0.89      0.23      4458\n         2.0       0.12      0.97      0.22      4607\n\n    accuracy                           0.51    117943\n   macro avg       0.41      0.77      0.36    117943\nweighted avg       0.92      0.51      0.61    117943\n'}
+
+=== Training Timestamp: 2025-12-19 10:38:55 ===
+=== Training Comments : No sample, default params used. ===
+=== Training Label Distribution ===
+{0.0: 434584, 2.0: 18009, 1.0: 17940}
+=== top_or_bottom_CatBoost ===
+Model Parameters:
+  iterations: 100
+  learning_rate: 0.1
+  depth: 8
+  l2_leaf_reg: 3
+  border_count: 128
+  bagging_temperature: 1
+  random_strength: 1
+  class_weights: [1, 10, 10]
+  loss_function: MultiClass
+  verbose: 100
+  random_seed: 42
+  min_child_samples: 5
+
+Result:
+Accuracy: 0.2139
+              precision    recall  f1-score   support
+
+         0.0       1.00      0.15      0.26    108878
+         1.0       0.09      1.00      0.16      4458
+         2.0       0.09      1.00      0.16      4607
+
+    accuracy                           0.21    117943
+   macro avg       0.39      0.71      0.20    117943
+weighted avg       0.93      0.21      0.25    117943
+
+=== Training Timestamp: 2025-12-19 14:44:03 ===
+=== Training Comments : No sample, default params used. ===
+=== Training Label Distribution ===
+{0.0: 434584, 2.0: 18009, 1.0: 17940}
+=== top_or_bottom_CatBoost ===
+Model Parameters:
+  iterations: 100
+  learning_rate: 0.1
+  depth: 5
+  l2_leaf_reg: 3
+  border_count: 128
+  bagging_temperature: 1
+  random_strength: 1
+  class_weights: [1, 10, 10]
+  loss_function: MultiClass
+  verbose: 100
+  random_seed: 42
+  min_child_samples: 5
+
+Result:
+Accuracy: 0.1798
+              precision    recall  f1-score   support
+
+         0.0       1.00      0.11      0.20    108878
+         1.0       0.09      1.00      0.16      4458
+         2.0       0.09      1.00      0.16      4607
+
+    accuracy                           0.18    117943
+   macro avg       0.39      0.70      0.17    117943
+weighted avg       0.93      0.18      0.20    117943
+
+=== Training Timestamp: 2025-12-19 15:21:31 ===
+=== Training Comments : No sample, default params used. ===
+=== Training Label Distribution ===
+{0.0: 434584, 2.0: 18009, 1.0: 17940}
+=== top_or_bottom_CatBoost ===
+Model Parameters:
+  iterations: 100
+  learning_rate: 0.1
+  depth: 5
+  l2_leaf_reg: 3
+  border_count: 128
+  bagging_temperature: 1
+  random_strength: 1
+  class_weights: [1, 10, 10]
+  loss_function: MultiClass
+  verbose: 100
+  random_seed: 42
+  min_child_samples: 5
+
+Result:
+Accuracy: 0.1798
+              precision    recall  f1-score   support
+
+         0.0       1.00      0.11      0.20    108878
+         1.0       0.09      1.00      0.16      4458
+         2.0       0.09      1.00      0.16      4607
+
+    accuracy                           0.18    117943
+   macro avg       0.39      0.70      0.17    117943
+weighted avg       0.93      0.18      0.20    117943
+

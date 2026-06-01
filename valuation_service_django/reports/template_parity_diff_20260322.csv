@@ -1,0 +1,2 @@
+﻿sample_ts_code,trade_date,new_source,old_source,new_source_level,old_source_level,new_source_industry_code,old_source_industry_code,new_scenario_model,old_scenario_model,parity_status,notes
+688002.SH,2026-03-20,sw,sw_l3,L3,L3,857451.SI,857451.SI,template_default,template_default,PASS,"source alias differs (sw vs sw_l3) but resolves to the same SW L3 industry node and valuation outputs are aligned."

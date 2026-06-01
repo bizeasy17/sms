@@ -1,0 +1,8 @@
+﻿metric,value
+total_count,35
+pass_count,35
+fail_count,0
+pass_rate_pct,100.00
+tolerance,0.01
+top_n,3
+level,L2

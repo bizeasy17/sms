@@ -1,0 +1,625 @@
+Model,Freq,Version,Parameters,Test Metrics,Train Metrics,Label Values
+RF,D,0.1,"{'n_estimators': 100, 'max_depth': 10, 'min_samples_split': 10, 'min_samples_leaf': 5, 'max_features': 'sqrt', 'class_weight': {0: 1, 1: 3.5, 2: 3.5}, 'random_state': 42, 'n_jobs': -1}","              precision    recall  f1-score   support
+
+           0       0.79      0.51      0.62   2351820
+           1       0.37      0.58      0.45    589474
+           2       0.38      0.68      0.49    587278
+
+    accuracy                           0.55   3528572
+   macro avg       0.51      0.59      0.52   3528572
+weighted avg       0.65      0.55      0.57   3528572
+","              precision    recall  f1-score   support
+
+           0       0.78      0.48      0.60   5201632
+           1       0.37      0.64      0.47   1358594
+           2       0.38      0.66      0.48   1363835
+
+    accuracy                           0.54   7924061
+   macro avg       0.51      0.59      0.52   7924061
+weighted avg       0.64      0.54      0.55   7924061
+","top_or_bottom_optimized
+0    2351820
+1     589474
+2     587278
+Name: count, dtype: int64"
+RF,D,0.1,"{'n_estimators': 300, 'max_depth': 10, 'min_samples_split': 10, 'min_samples_leaf': 5, 'max_features': 'sqrt', 'class_weight': {0: 1, 1: 1.5, 2: 1.5}, 'random_state': 42, 'n_jobs': -1}","              precision    recall  f1-score   support
+
+           0       0.71      0.89      0.79   2351820
+           1       0.53      0.20      0.29    589474
+           2       0.52      0.32      0.40    587278
+
+    accuracy                           0.68   3528572
+   macro avg       0.59      0.47      0.49   3528572
+weighted avg       0.65      0.68      0.64   3528572
+","              precision    recall  f1-score   support
+
+           0       0.70      0.88      0.78   5201632
+           1       0.54      0.25      0.34   1358594
+           2       0.53      0.32      0.40   1363835
+
+    accuracy                           0.67   7924061
+   macro avg       0.59      0.48      0.51   7924061
+weighted avg       0.64      0.67      0.64   7924061
+","top_or_bottom_optimized
+0    2351820
+1     589474
+2     587278
+Name: count, dtype: int64"
+RF,D,0.1,"{'n_estimators': 500, 'max_depth': 30, 'min_samples_split': 10, 'min_samples_leaf': 5, 'max_features': 'sqrt', 'class_weight': {0: 1, 1: 2, 2: 2}, 'random_state': 42, 'n_jobs': -1}",
+"              precision    recall  f1-score   support
+
+           0       0.73      0.88      0.80    473264
+           1       0.58      0.27      0.37    118701
+           2       0.56      0.37      0.44    118275
+
+    accuracy                           0.69    710240
+   macro avg       0.62      0.51      0.54    710240
+weighted avg       0.67      0.69      0.67    710240
+","              precision    recall  f1-score   support
+
+           0       0.93      0.98      0.96   1893055
+           1       0.97      0.84      0.90    474804
+           2       0.94      0.86      0.90    473100
+
+    accuracy                           0.94   2840959
+   macro avg       0.95      0.90      0.92   2840959
+weighted avg       0.94      0.94      0.94   2840959
+","top_or_bottom_optimized
+0    473264
+1    118701
+2    118275
+Name: count, dtype: int64"
+RF,D,0.1,"{'n_estimators': 300, 'max_depth': 15, 'min_samples_split': 20, 'min_samples_leaf': 10, 'max_features': 'log2', 'class_weight': {0: 1, 1: 10, 2: 10}, 'random_state': 42, 'bootstrap': False, 'n_jobs': -1}","              precision    recall  f1-score   support
+
+           0       0.83      0.99      0.91    736000
+           1       0.62      0.01      0.03     76832
+           2       0.50      0.05      0.10     73600
+
+    accuracy                           0.83    886432
+   macro avg       0.65      0.35      0.34    886432
+weighted avg       0.79      0.83      0.76    886432
+","              precision    recall  f1-score   support
+
+           0       1.00      1.00      1.00   1788570
+           1       1.00      1.00      1.00    191042
+           2       1.00      1.00      1.00    178857
+
+    accuracy                           1.00   2158469
+   macro avg       1.00      1.00      1.00   2158469
+weighted avg       1.00      1.00      1.00   2158469
+","top_bottom_volatility_optimized
+0    1788570
+1     191042
+2     178857
+Name: count, dtype: int64"
+RF,D,0.1,"{'n_estimators': 300, 'max_depth': 5, 'min_samples_split': 50, 'min_samples_leaf': 30, 'max_features': 'log2', 'class_weight': {0: 1, 1: 20, 2: 20}, 'random_state': 42, 'bootstrap': True, 'n_jobs': -1}","              precision    recall  f1-score   support
+
+           0       0.83      0.99      0.91    736000
+           1       0.61      0.01      0.03     76832
+           2       0.50      0.05      0.10     73600
+
+    accuracy                           0.83    886432
+   macro avg       0.65      0.35      0.34    886432
+weighted avg       0.79      0.83      0.76    886432
+","              precision    recall  f1-score   support
+
+           0       1.00      1.00      1.00   1788570
+           1       1.00      1.00      1.00    191042
+           2       1.00      1.00      1.00    178857
+
+    accuracy                           1.00   2158469
+   macro avg       1.00      1.00      1.00   2158469
+weighted avg       1.00      1.00      1.00   2158469
+","top_bottom_volatility_optimized
+0    1788570
+1     191042
+2     178857
+Name: count, dtype: int64"
+RF,D,0.1,"{'n_estimators': 300, 'max_depth': 5, 'min_samples_split': 50, 'min_samples_leaf': 30, 'max_features': 'log2', 'class_weight': {0: 1, 1: 20, 2: 20}, 'random_state': 42, 'bootstrap': True, 'n_jobs': -1}","              precision    recall  f1-score   support
+
+           0       0.84      0.94      0.89    736000
+           1       0.34      0.08      0.13     76832
+           2       0.33      0.21      0.26     73600
+
+    accuracy                           0.81    886432
+   macro avg       0.50      0.41      0.42    886432
+weighted avg       0.76      0.81      0.77    886432
+","              precision    recall  f1-score   support
+
+           0       1.00      1.00      1.00   1788570
+           1       1.00      1.00      1.00   1609713
+           2       1.00      1.00      1.00   1609713
+
+    accuracy                           1.00   5007996
+   macro avg       1.00      1.00      1.00   5007996
+weighted avg       1.00      1.00      1.00   5007996
+","top_bottom_volatility_optimized
+0    1788570
+1    1609713
+2    1609713
+Name: count, dtype: int64"
+RF,D,0.1,"{'n_estimators': 150, 'max_depth': 10, 'min_samples_split': 100, 'min_samples_leaf': 50, 'max_features': 'sqrt', 'class_weight': 'balanced_subsample', 'random_state': 42, 'bootstrap': True, 'n_jobs': -1}","              precision    recall  f1-score   support
+
+           0       0.87      0.77      0.82    736000
+           1       0.26      0.31      0.28     76832
+           2       0.27      0.52      0.35     73600
+
+    accuracy                           0.71    886432
+   macro avg       0.47      0.54      0.48    886432
+weighted avg       0.77      0.71      0.73    886432
+","              precision    recall  f1-score   support
+
+           0       1.00      1.00      1.00    357714
+           1       1.00      1.00      1.00    191042
+           2       1.00      1.00      1.00    178857
+
+    accuracy                           1.00    727613
+   macro avg       1.00      1.00      1.00    727613
+weighted avg       1.00      1.00      1.00    727613
+","top_bottom_volatility_optimized
+0    357714
+1    191042
+2    178857
+Name: count, dtype: int64"
+RF,D,0.1,"{'n_estimators': 150, 'max_depth': 10, 'min_samples_split': 100, 'min_samples_leaf': 50, 'max_features': 'sqrt', 'class_weight': 'balanced_subsample', 'random_state': 42, 'bootstrap': True, 'n_jobs': -1}","              precision    recall  f1-score   support
+
+           0       0.87      0.77      0.82    736000
+           1       0.26      0.31      0.29     76832
+           2       0.26      0.52      0.35     73600
+
+    accuracy                           0.71    886432
+   macro avg       0.47      0.53      0.48    886432
+weighted avg       0.77      0.71      0.73    886432
+","              precision    recall  f1-score   support
+
+           0       1.00      1.00      1.00    357714
+           1       1.00      1.00      1.00    191042
+           2       1.00      1.00      1.00    178857
+
+    accuracy                           1.00    727613
+   macro avg       1.00      1.00      1.00    727613
+weighted avg       1.00      1.00      1.00    727613
+","top_bottom_volatility_optimized
+0    357714
+1    191042
+2    178857
+Name: count, dtype: int64"
+RF,D,0.1,"{'n_estimators': 500, 'max_depth': 15, 'min_samples_split': 20, 'min_samples_leaf': 10, 'max_features': 'sqrt', 'class_weight': 'balanced_subsample', 'random_state': 42, 'n_jobs': -1}","              precision    recall  f1-score   support
+
+           0       0.85      0.13      0.22   2351820
+           1       0.29      0.79      0.42    589474
+           2       0.31      0.84      0.46    587278
+
+    accuracy                           0.36   3528572
+   macro avg       0.48      0.58      0.37   3528572
+weighted avg       0.67      0.36      0.29   3528572
+","              precision    recall  f1-score   support
+
+           0       1.00      1.00      1.00     67929
+           1       1.00      1.00      1.00    135859
+           2       1.00      1.00      1.00    135859
+
+    accuracy                           1.00    339647
+   macro avg       1.00      1.00      1.00    339647
+weighted avg       1.00      1.00      1.00    339647
+","top_or_bottom_optimized
+1    135859
+2    135859
+0     67929
+Name: count, dtype: int64"
+RF,D,0.1,"{'n_estimators': 1000, 'max_depth': 5, 'min_samples_split': 30, 'min_samples_leaf': 20, 'max_features': 'log2', 'class_weight': 'balanced_subsample', 'random_state': 42, 'n_jobs': -1}","              precision    recall  f1-score   support
+
+           0       0.80      0.46      0.59   2351820
+           1       0.36      0.64      0.46    589474
+           2       0.38      0.73      0.50    587278
+
+    accuracy                           0.54   3528572
+   macro avg       0.51      0.61      0.52   3528572
+weighted avg       0.66      0.54      0.55   3528572
+","              precision    recall  f1-score   support
+
+           0       1.00      1.00      1.00   1358594
+           1       1.00      1.00      1.00   1358594
+           2       1.00      1.00      1.00   1363835
+
+    accuracy                           1.00   4081023
+   macro avg       1.00      1.00      1.00   4081023
+weighted avg       1.00      1.00      1.00   4081023
+","top_or_bottom_optimized
+2    1363835
+0    1358594
+1    1358594
+Name: count, dtype: int64"
+RF,D,0.1,"{'n_estimators': 1000, 'max_depth': 5, 'min_samples_split': 30, 'min_samples_leaf': 20, 'max_features': 'log2', 'class_weight': 'balanced_subsample', 'random_state': 42, 'n_jobs': -1}","              precision    recall  f1-score   support
+
+           0       0.80      0.46      0.59   2351820
+           1       0.36      0.64      0.46    589474
+           2       0.38      0.73      0.50    587278
+
+    accuracy                           0.54   3528572
+   macro avg       0.51      0.61      0.52   3528572
+weighted avg       0.66      0.54      0.55   3528572
+","              precision    recall  f1-score   support
+
+           0       1.00      0.59      0.74   5201632
+           1       0.55      1.00      0.71   1358594
+           2       0.57      1.00      0.72   1363835
+
+    accuracy                           0.73   7924061
+   macro avg       0.71      0.86      0.73   7924061
+weighted avg       0.85      0.73      0.73   7924061
+","top_or_bottom_optimized
+2    1363835
+0    1358594
+1    1358594
+Name: count, dtype: int64"
+XGB,D,0.1,"{'objective': 'multi:softmax', 'num_class': 3, 'learning_rate': 0.1, 'max_depth': 10, 'min_child_weight': 1, 'subsample': 0.8, 'colsample_bytree': 0.8, 'gamma': 0, 'n_estimators': 800, 'random_state': 42, 'n_jobs': -1}","              precision    recall  f1-score   support
+
+           0       0.72      0.90      0.80   2351820
+           1       0.59      0.25      0.35    589474
+           2       0.58      0.33      0.42    587278
+
+    accuracy                           0.70   3528572
+   macro avg       0.63      0.49      0.52   3528572
+weighted avg       0.67      0.70      0.66   3528572
+","              precision    recall  f1-score   support
+
+           0       0.74      0.93      0.83   5201632
+           1       0.74      0.37      0.49   1358594
+           2       0.73      0.38      0.50   1363835
+
+    accuracy                           0.74   7924061
+   macro avg       0.74      0.56      0.60   7924061
+weighted avg       0.74      0.74      0.71   7924061
+","top_or_bottom_optimized
+0    5201632
+2    1363835
+1    1358594
+Name: count, dtype: int64"
+RF,D,0.1,"{'n_estimators': 500, 'max_depth': 10, 'min_samples_split': 50, 'min_samples_leaf': 20, 'max_features': 'sqrt', 'class_weight': {0: 1, 1: 3, 2: 3}, 'random_state': 42, 'n_jobs': -1}","              precision    recall  f1-score   support
+
+           0       0.77      0.62      0.68   2351820
+           1       0.39      0.51      0.44    589474
+           2       0.41      0.61      0.49    587278
+
+    accuracy                           0.60   3528572
+   macro avg       0.52      0.58      0.54   3528572
+weighted avg       0.65      0.60      0.61   3528572
+","              precision    recall  f1-score   support
+
+           0       0.77      0.58      0.66   5201632
+           1       0.39      0.57      0.47   1358594
+           2       0.41      0.60      0.49   1363835
+
+    accuracy                           0.58   7924061
+   macro avg       0.52      0.58      0.54   7924061
+weighted avg       0.64      0.58      0.60   7924061
+","top_or_bottom_optimized
+0    5201632
+2    1363835
+1    1358594
+Name: count, dtype: int64"
+XGB,D,0.1,"{'objective': 'multi:softmax', 'num_class': 3, 'learning_rate': 0.1, 'max_depth': 5, 'min_child_weight': 1, 'subsample': 0.8, 'colsample_bytree': 0.8, 'gamma': 0, 'n_estimators': 5000, 'random_state': 42, 'n_jobs': -1}",
+"              precision    recall  f1-score   support
+
+           0       0.72      0.90      0.80   2351820
+           1       0.59      0.25      0.35    589474
+           2       0.58      0.33      0.42    587278
+
+    accuracy                           0.70   3528572
+   macro avg       0.63      0.49      0.52   3528572
+weighted avg       0.67      0.70      0.66   3528572
+",
+"              precision    recall  f1-score   support
+
+           0       0.72      0.91      0.80   5201632
+           1       0.64      0.30      0.41   1358594
+           2       0.64      0.32      0.42   1363835
+
+    accuracy                           0.71   7924061
+   macro avg       0.67      0.51      0.55   7924061
+weighted avg       0.69      0.71      0.67   7924061
+","top_or_bottom_optimized
+0    5201632
+2    1363835
+1    1358594
+Name: count, dtype: int64"
+XGB,D,0.1,"{'objective': 'multi:softmax', 'num_class': 3, 'learning_rate': 0.1, 'max_depth': 5, 'min_child_weight': 1, 'subsample': 0.8, 'colsample_bytree': 0.8, 'gamma': 0, 'n_estimators': 5000, 'random_state': 42, 'n_jobs': -1}","              precision    recall  f1-score   support
+
+           0       0.93      1.00      0.96   3281465
+           1       0.19      0.01      0.02    121079
+           2       0.20      0.01      0.02    126028
+
+    accuracy                           0.93   3528572
+   macro avg       0.44      0.34      0.34   3528572
+weighted avg       0.88      0.93      0.90   3528572
+","              precision    recall  f1-score   support
+
+           0       0.93      1.00      0.96   7345498
+           1       0.86      0.03      0.05    294031
+           2       0.94      0.01      0.02    284532
+
+    accuracy                           0.93   7924061
+   macro avg       0.91      0.35      0.35   7924061
+weighted avg       0.93      0.93      0.90   7924061
+","top_or_bottom_stat_optimized
+0    7345498
+1     294031
+2     284532
+Name: count, dtype: int64"
+XGB,D,0.1,"{'objective': 'multi:softmax', 'num_class': 3, 'learning_rate': 0.1, 'max_depth': 5, 'min_child_weight': 1, 'subsample': 0.8, 'colsample_bytree': 0.8, 'gamma': 0, 'n_estimators': 5000, 'random_state': 42, 'n_jobs': -1}","              precision    recall  f1-score   support
+
+           0       0.94      0.90      0.92   3281465
+           1       0.15      0.17      0.16    121079
+           2       0.15      0.29      0.20    126028
+
+    accuracy                           0.85   3528572
+   macro avg       0.41      0.46      0.43   3528572
+weighted avg       0.88      0.85      0.87   3528572
+","              precision    recall  f1-score   support
+
+           0       0.95      0.92      0.93   7345498
+           1       0.27      0.36      0.31    294031
+           2       0.25      0.34      0.29    284532
+
+    accuracy                           0.88   7924061
+   macro avg       0.49      0.54      0.51   7924061
+weighted avg       0.90      0.88      0.89   7924061
+","top_or_bottom_stat_optimized
+0    7345498
+1     294031
+2     284532
+Name: count, dtype: int64"
+XGB,D,0.1,"{'n_estimators': 5000, 'learning_rate': 0.01, 'max_depth': 10, 'min_child_weight': 7, 'gamma': 1, 'subsample': 0.8, 'colsample_bytree': 0.8, 'reg_alpha': 15, 'reg_lambda': 25, 'objective': 'multi:softmax', 'num_class': 3, 'eval_metric': 'mlogloss', 'random_state': 42, 'n_jobs': -1, 'verbosity': 1}","              precision    recall  f1-score   support
+
+           0       0.59      0.74      0.66    147200
+           1       0.64      0.38      0.47     76832
+           2       0.62      0.59      0.61     73600
+
+    accuracy                           0.61    297632
+   macro avg       0.62      0.57      0.58    297632
+weighted avg       0.61      0.61      0.60    297632
+","              precision    recall  f1-score   support
+
+           0       0.70      0.79      0.74    357714
+           1       0.75      0.65      0.70    191042
+           2       0.74      0.65      0.69    178857
+
+    accuracy                           0.72    727613
+   macro avg       0.73      0.70      0.71    727613
+weighted avg       0.72      0.72      0.72    727613
+","top_bottom_volatility_optimized
+0    7554162
+1     191042
+2     178857
+Name: count, dtype: int64"
+XGB,D,0.1,"{'n_estimators': 5000, 'learning_rate': 0.01, 'max_depth': 10, 'min_child_weight': 7, 'gamma': 1, 'subsample': 0.8, 'colsample_bytree': 0.8, 'reg_alpha': 15, 'reg_lambda': 25, 'objective': 'multi:softmax', 'num_class': 3, 'eval_metric': 'mlogloss', 'random_state': 42, 'n_jobs': -1, 'verbosity': 1}","              precision    recall  f1-score   support
+
+           0       0.60      0.74      0.66    147200
+           1       0.64      0.38      0.47     76832
+           2       0.62      0.59      0.61     73600
+
+    accuracy                           0.61    297632
+   macro avg       0.62      0.57      0.58    297632
+weighted avg       0.61      0.61      0.60    297632
+","              precision    recall  f1-score   support
+
+           0       0.69      0.78      0.74    357714
+           1       0.74      0.65      0.69    191042
+           2       0.73      0.64      0.68    178857
+
+    accuracy                           0.71    727613
+   macro avg       0.72      0.69      0.70    727613
+weighted avg       0.72      0.71      0.71    727613
+","top_bottom_volatility_optimized
+0    7554162
+1     191042
+2     178857
+Name: count, dtype: int64"
+XGB,D,0.1,"{'n_estimators': 5000, 'learning_rate': 0.01, 'max_depth': 15, 'min_child_weight': 5, 'gamma': 0.5, 'subsample': 0.8, 'colsample_bytree': 0.8, 'reg_alpha': 15, 'reg_lambda': 25, 'objective': 'multi:softmax', 'num_class': 3, 'eval_metric': 'mlogloss', 'random_state': 42, 'n_jobs': -1, 'verbosity': 1}","              precision    recall  f1-score   support
+
+           0       0.59      0.73      0.66    147200
+           1       0.63      0.38      0.47     76832
+           2       0.62      0.59      0.61     73600
+
+    accuracy                           0.61    297632
+   macro avg       0.61      0.57      0.58    297632
+weighted avg       0.61      0.61      0.60    297632
+","              precision    recall  f1-score   support
+
+           0       0.82      0.90      0.86    357714
+           1       0.88      0.79      0.83    191042
+           2       0.87      0.79      0.83    178857
+
+    accuracy                           0.85    727613
+   macro avg       0.86      0.83      0.84    727613
+weighted avg       0.85      0.85      0.84    727613
+","top_bottom_volatility_optimized
+0    7554162
+1     191042
+2     178857
+Name: count, dtype: int64"
+XGB,D,0.1,"{'n_estimators': 5000, 'learning_rate': 0.01, 'max_depth': 5, 'min_child_weight': 5, 'gamma': 0.7, 'subsample': 0.8, 'colsample_bytree': 0.8, 'reg_alpha': 15, 'reg_lambda': 25, 'objective': 'multi:softmax', 'num_class': 3, 'eval_metric': 'mlogloss', 'random_state': 42, 'n_jobs': -1, 'verbosity': 1}","              precision    recall  f1-score   support
+
+           0       0.59      0.72      0.65    147200
+           1       0.63      0.37      0.47     76832
+           2       0.61      0.58      0.60     73600
+
+    accuracy                           0.60    297632
+   macro avg       0.61      0.56      0.57    297632
+weighted avg       0.60      0.60      0.59    297632
+","              precision    recall  f1-score   support
+
+           0       0.60      0.73      0.66    569064
+           1       0.64      0.51      0.57    294031
+           2       0.63      0.51      0.56    284532
+
+    accuracy                           0.62   1147627
+   macro avg       0.63      0.58      0.60   1147627
+weighted avg       0.62      0.62      0.61   1147627
+","top_or_bottom_stat_optimized
+0    7345498
+1     294031
+2     284532
+Name: count, dtype: int64"
+XGB,D,0.1,"{'n_estimators': 1000, 'learning_rate': 0.01, 'max_depth': 7, 'min_child_weight': 5, 'gamma': 0.7, 'subsample': 0.8, 'colsample_bytree': 0.8, 'reg_alpha': 15, 'reg_lambda': 25, 'objective': 'multi:softmax', 'num_class': 3, 'eval_metric': 'mlogloss', 'random_state': 42, 'n_jobs': -1, 'verbosity': 1}","              precision    recall  f1-score   support
+
+           0       0.60      0.77      0.67   1174556
+           1       0.64      0.39      0.49    589474
+           2       0.63      0.53      0.58    587278
+
+    accuracy                           0.61   2351308
+   macro avg       0.62      0.56      0.58   2351308
+weighted avg       0.62      0.61      0.60   2351308
+","              precision    recall  f1-score   support
+
+           0       0.61      0.75      0.67   2717188
+           1       0.63      0.47      0.54   1358594
+           2       0.64      0.50      0.56   1363835
+
+    accuracy                           0.62   5439617
+   macro avg       0.62      0.57      0.59   5439617
+weighted avg       0.62      0.62      0.61   5439617
+","top_or_bottom_optimized
+0    5201632
+2    1363835
+1    1358594
+Name: count, dtype: int64"
+XGB,D,0.1,"{'n_estimators': 1000, 'learning_rate': 0.01, 'max_depth': 7, 'min_child_weight': 5, 'gamma': 0.7, 'subsample': 0.8, 'colsample_bytree': 0.8, 'reg_alpha': 15, 'reg_lambda': 25, 'objective': 'multi:softmax', 'num_class': 3, 'eval_metric': 'mlogloss', 'random_state': 42, 'n_jobs': -1, 'verbosity': 1}","              precision    recall  f1-score   support
+
+           0       0.86      0.25      0.39   2351820
+           1       0.33      0.76      0.46    589474
+           2       0.34      0.84      0.48    587278
+
+    accuracy                           0.44   3528572
+   macro avg       0.51      0.62      0.44   3528572
+weighted avg       0.68      0.44      0.42   3528572
+","              precision    recall  f1-score   support
+
+           0       0.86      0.24      0.37   5201632
+           1       0.33      0.81      0.47   1358594
+           2       0.35      0.81      0.48   1363835
+
+    accuracy                           0.43   7924061
+   macro avg       0.51      0.62      0.44   7924061
+weighted avg       0.68      0.43      0.41   7924061
+","top_or_bottom_optimized
+0    5201632
+2    1363835
+1    1358594
+Name: count, dtype: int64"
+XGB,D,0.1,"{'n_estimators': 2000, 'learning_rate': 0.005, 'max_depth': 5, 'min_child_weight': 10, 'gamma': 0.7, 'subsample': 0.8, 'colsample_bytree': 0.8, 'reg_alpha': 10, 'reg_lambda': 20, 'objective': 'multi:softmax', 'num_class': 3, 'eval_metric': 'mlogloss', 'random_state': 42, 'n_jobs': -1, 'verbosity': 1}","              precision    recall  f1-score   support
+
+           0       0.85      0.24      0.37   2351820
+           1       0.32      0.76      0.45    589474
+           2       0.33      0.83      0.47    587278
+
+    accuracy                           0.42   3528572
+   macro avg       0.50      0.61      0.43   3528572
+weighted avg       0.68      0.42      0.40   3528572
+","              precision    recall  f1-score   support
+
+           0       0.85      0.22      0.35   5201632
+           1       0.32      0.80      0.46   1358594
+           2       0.34      0.79      0.48   1363835
+
+    accuracy                           0.42   7924061
+   macro avg       0.50      0.61      0.43   7924061
+weighted avg       0.67      0.42      0.39   7924061
+","top_or_bottom_optimized
+0    5201632
+2    1363835
+1    1358594
+Name: count, dtype: int64"
+RF,D,0.1,"{'n_estimators': 200, 'max_depth': 20, 'min_samples_split': 10, 'min_samples_leaf': 5, 'max_features': 'sqrt', 'class_weight': {0: 1, 1: 2, 2: 2}, 'random_state': 42, 'n_jobs': -1}","              precision    recall  f1-score   support
+
+           0       0.76      0.73      0.74   2351820
+           1       0.46      0.43      0.45    589474
+           2       0.46      0.55      0.50    587278
+
+    accuracy                           0.65   3528572
+   macro avg       0.56      0.57      0.56   3528572
+weighted avg       0.66      0.65      0.65   3528572
+","              precision    recall  f1-score   support
+
+           0       0.82      0.79      0.80   3396485
+           1       0.68      0.69      0.68   1132161
+           2       0.65      0.71      0.68   1132161
+
+    accuracy                           0.75   5660807
+   macro avg       0.72      0.73      0.72   5660807
+weighted avg       0.76      0.75      0.75   5660807
+","top_or_bottom_optimized
+0    5201632
+2    1363835
+1    1358594
+Name: count, dtype: int64"
+RF,D,0.1,"{'n_estimators': 200, 'max_depth': 50, 'min_samples_split': 10, 'min_samples_leaf': 5, 'max_features': 'sqrt', 'class_weight': {0: 1, 1: 2, 2: 2}, 'random_state': 42, 'n_jobs': -1}","              precision    recall  f1-score   support
+
+           0       0.74      0.82      0.77   2351820
+           1       0.51      0.33      0.40    589474
+           2       0.50      0.46      0.48    587278
+
+    accuracy                           0.68   3528572
+   macro avg       0.58      0.54      0.55   3528572
+weighted avg       0.66      0.68      0.66   3528572
+","              precision    recall  f1-score   support
+
+           0       0.95      0.97      0.96   3396485
+           1       0.95      0.91      0.93   1132161
+           2       0.93      0.91      0.92   1132161
+
+    accuracy                           0.95   5660807
+   macro avg       0.94      0.93      0.94   5660807
+weighted avg       0.95      0.95      0.95   5660807
+","top_or_bottom_optimized
+0    5201632
+2    1363835
+1    1358594
+Name: count, dtype: int64"
+RF,D,0.1,"{'n_estimators': 500, 'max_depth': 25, 'min_samples_split': 50, 'min_samples_leaf': 20, 'max_features': 'sqrt', 'class_weight': {0: 1, 1: 2, 2: 2}, 'random_state': 42, 'n_jobs': -1, 'bootstrap': True, 'oob_score': True}","              precision    recall  f1-score   support
+
+           0       0.28      0.71      0.41    293639
+           1       0.83      0.45      0.58    589474
+           2       0.81      0.57      0.67    587278
+
+    accuracy                           0.55   1470391
+   macro avg       0.64      0.58      0.55   1470391
+weighted avg       0.71      0.55      0.58   1470391
+","              precision    recall  f1-score   support
+
+           0       0.82      0.74      0.78   5201632
+           1       0.55      0.63      0.59   1358594
+           2       0.54      0.65      0.59   1363835
+
+    accuracy                           0.71   7924061
+   macro avg       0.64      0.67      0.65   7924061
+weighted avg       0.72      0.71      0.71   7924061
+","top_or_bottom_optimized
+0    5201632
+2    1363835
+1    1358594
+Name: count, dtype: int64"
+RF,D,0.1,"{'n_estimators': 500, 'max_depth': 25, 'min_samples_split': 50, 'min_samples_leaf': 20, 'max_features': 'log2', 'class_weight': {0: 1, 1: 10, 2: 10}, 'random_state': 42, 'n_jobs': -1, 'bootstrap': True, 'oob_score': True}","              precision    recall  f1-score   support
+
+           0       0.92      0.00      0.00    293639
+           1       0.68      0.83      0.75    589474
+           2       0.68      0.87      0.76    587278
+
+    accuracy                           0.68   1470391
+   macro avg       0.76      0.57      0.50   1470391
+weighted avg       0.73      0.68      0.60   1470391
+","              precision    recall  f1-score   support
+
+           0       1.00      0.00      0.00   1132161
+           1       0.59      0.90      0.71   1132161
+           2       0.61      0.90      0.73   1132161
+
+    accuracy                           0.60   3396483
+   macro avg       0.73      0.60      0.48   3396483
+weighted avg       0.73      0.60      0.48   3396483
+","top_or_bottom_optimized
+0    5201632
+2    1363835
+1    1358594
+Name: count, dtype: int64"

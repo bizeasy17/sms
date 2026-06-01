@@ -1,0 +1,34 @@
+﻿ts_code: 688002.SH
+trade_date: 2026-03-20
+close_price: 101.0
+assumption_source: sw
+price_range: [0.1, 101.0]σàâ
+source: sw
+source_level: L3
+source_industry_code: 857451.SI
+source_industry_name: σå¢σ╖Ñτö╡σ¡ÉΓàó
+profit_data_source: express_vip
+financial_data_source: tushare_financial
+financial_data_reason: None
+strict_express_match: True
+express_max_age_days: 180
+express_apply_reason: eligible_period_upgrade
+express_block_reason: None
+ev_ebitda_applicable: True
+ev_ebitda_block_reason: None
+requested_scenario_model: fcff_dcf
+effective_scenario_model: fcff_dcf
+scenario_model_switch_reason: None
+report_date: 2025-09-30
+trade_date: 2026-03-20
+peg_growth_yoy_pct(base->effective): 46.2122 -> 107.07347367390953
+netprofit(base->effective): 706782777.93 -> 982269053.379
+revenue(base->effective): 4085976026.2 -> 5651207787.860001
+- market_cap: implied_price=101.0000, equity_value=46504605500.0
+- pe: implied_price=53.7597, equity_value=24753180145.15
+- ps: implied_price=44.1844, equity_value=20344348036.3
+- pb: implied_price=48.6361, equity_value=22394088811.66
+- peg: implied_price=93.8661, equity_value=43219838348.68
+- ev_ebitda: implied_price=12.9912, equity_value=5981668216.7
+- fcff_dcf: implied_price=26.8036, equity_value=12341478702.96
+- ddm: implied_price=0.0999, equity_value=45988076.98

@@ -1,0 +1,6 @@
+﻿ts_code,financial_data_source,financial_data_reason,profit_data_source,express_apply_reason,express_block_reason
+600519.SH,tushare_financial,,local_fundamental_snapshot,express_end_before_base_end,express_end_before_base_end
+688002.SH,tushare_financial,,express_vip,eligible_period_upgrade,
+000651.SZ,tushare_financial,,local_fundamental_snapshot,express_end_before_base_end,express_end_before_base_end
+600036.SH,tushare_financial,,express_vip,eligible_period_upgrade,
+002415.SZ,tushare_financial,,express_vip,eligible_period_upgrade,

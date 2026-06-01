@@ -1,0 +1,5 @@
+﻿check_item,status,notes
+new_trade_date_arg,PASS,new uses --trade-date
+legacy_trade_date_arg,PASS,legacy uses --trade_date
+show_source_output,PASS,both sides output source fields
+show_profit_source_output,PASS,both sides output profit diagnostics

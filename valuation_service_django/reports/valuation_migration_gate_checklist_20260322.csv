@@ -1,0 +1,18 @@
+﻿gate_id,gate_name,category,blocking_level,entry_condition,pass_criteria,verification_method,artifact,status,owner,notes
+G01,模板解析顺序一致性,template,P0,新旧项目均可按 ts_code 取模板,同一股票同一交易日下 source/industry_code/scenario_model 一致,并行运行 estmktv 对比 source 字段与输出参数,"命令输出截图 + 对比记录",DONE,,覆盖 SW->legacy->global 三段
+G02,行业匹配 TopN 分数一致,industry_match,P0,business_match 功能开启,样本池内 TopN 行业及 match_score 差异<=0.01,运行 estmktv --match-business-industries --business-topn 3 并对比 CSV,"topn 对比明细 CSV",DONE,,至少覆盖 30 只股票
+G03,CITIC 回退链路可用,industry_match,P0,测试 token 可访问 ci_index_member,当本地 citic_* 为空时仍能返回可用 citic_profile,抽查 matcher.match_by_tscode 的 citic_profile.source 和 available,"matcher 结构化输出",DONE,,重点看集成电路/半导体等样本
+G04,业务文本来源兜底策略确认,industry_match,P1,识别到 CompanyProfile 文本缺失样本,缺失样本在新项目不出现明显误匹配或已实现 stock_company 兜底,构造文本缺失样本并比较 old/new 前三行业,"缺失样本专项报告",DONE,,25支缺失文本样本 rank1 对齐通过（reports/text_missing_parity_report_20260322.csv）
+G05,估值方法覆盖一致,valuation_method,P0,估值执行链路可运行,方法集合均包含 market_cap/pe/ps/pb/peg/ev_ebitda/fcff_dcf/ddm,运行 estmktv 并检查 method 列,"方法覆盖检查表",DONE,,静态代码与样本已验证
+G06,银行 EV/EBITDA 行为可控,valuation_method,P0,scenario_model=ev_ebitda,银行股请求不崩溃且有明确降级/提示策略,运行 600036.SH ev_ebitda 场景并确认返回稳定,"600036.SH 运行日志",DONE,,新旧已验证不崩溃并有降级策略
+G07,PEG 边界处理一致,valuation_method,P1,负增长/极端增长样本可构造,PEG 结果遵循 clamp/skip 规则且不产生异常值,批量运行 PEG 样本并检查 peg_quality_flag,"PEG 边界样本报告",DONE,,8支样本全部 PASS 且质量标记符合预期（reports/peg_boundary_regression_20260322.csv）
+G08,本地快照数据时效达标,data_source,P0,ETL 每日可执行,交易日 T+1 前 snapshot 覆盖率>=99% 且无超时效数据,统计 trading/fundamental/express 最新日期和覆盖率,"时效性日报",IN_PROGRESS,,latest=2026-03-20；trading覆盖5480/5740=95.47%；fundamental覆盖5481/5740=95.49%；express覆盖2982/5740=51.95%，未达99%阈值；对比smartinvestor_etl源库后发现trading/fundamental最新日同为2026-03-20，暂无可增量同步
+G09,Tushare 金融兜底稳定,data_source,P1,ENABLE_TUSHARE_FINANCIAL_FALLBACK=true,在本地缺字段场景下可稳定补齐且错误可观测,抽样运行并检查 financial_data_source/reason,"fallback 健康检查日志",DONE,,5支样本 financial_data_source=tushare_financial 且 reason 可观测（reports/fallback_health_check_20260322.csv）
+G10,估值落库主键与维度完整,persistence,P0,migrate 完成,ValuationSnapshot/Latest 主键唯一且 industry/match/profit 维度均落库,抽查 DB unique key 与字段非空率,"数据库校验 SQL 输出",DONE,,对齐回测与报表依赖
+G11,金额精度策略确认,persistence,P1,明确审计精度要求,估值金额字段精度满足财务/报表要求（Float 或 Decimal 已定版）,对比同批数据聚合误差并评审,"精度评审结论",DONE,,精度评审结论已落地（reports/precision_review_20260322.md）
+G12,历史快照迁移完整,migration,P0,migratestockdata 已执行,history/latest 行数与老库偏差在容忍范围内且抽样一致,运行 row-count + 抽样比对脚本,"迁移核对报告",DONE,,迁移准入必须项（missing key=0；行数正偏差来自新库额外本地运行写入）
+G13,CLI 兼容与运行手册一致,cli,P2,命令参数已冻结,新旧 runbook 不因参数命名差异导致误用,验证 --trade-date/--trade_date 使用说明与脚本,"运行手册更新记录",DONE,,可通过别名或文档收敛
+G14,诊断信息可观测性,observability,P1,--show-profit-source 可用,关键诊断字段（express_apply_reason等）可用于排障,抽样检查命令输出字段完整性,"诊断字段核验单",DONE,,建议统一新旧字段名
+G15,API 合同稳定性,api,P1,/valuation/full 对外可用,GET/POST 输入兼容且 resolved_params 回显正确,API 回归测试包含 mixed input,"API 回归报告",DONE,,GET+POST(mixed input) 双通过（reports/api_full_regression_20260322.csv）
+G16,多样本端到端一致性,overall,P0,G01-G15 基本完成,30+ 样本在 baseline + business variants + 核心估值方法上通过阈值,运行批量对比脚本并生成汇总,"多样本一致性总报告",DONE,,最终迁移放行 gate
+G17,迁移放行评审,overall,P0,G16 通过,产品/数据/研发三方签字确认可切换,召开评审并记录风险与回滚方案,"Go-Live 评审纪要",IN_PROGRESS,,评审纪要已就绪（docs/go_live_review_minutes_20260322.md），待产品/数据/研发三方签字

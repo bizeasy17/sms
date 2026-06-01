@@ -1,0 +1,140 @@
+=== Training Timestamp: 2026-01-22 11:01:58 ===
+=== Training Comments : min_samples_majority=73386, factor=1.  time sequence split ===
+=== Training Label Distribution ===
+{0: 886188, 1: 75976, 2: 73386}
+=== top_or_bottom_XGB ===
+Model Parameters:
+  n_estimators: 1000
+  learning_rate: 0.02
+  max_depth: 7
+  reg_alpha: 2
+  reg_lambda: 4
+  subsample: 0.85
+  colsample_bytree: 0.85
+  min_child_weight: 1
+  objective: multi:softmax
+  num_class: 3
+  random_state: 42
+  tree_method: hist
+  eval_metric: mlogloss
+
+Result:
+Accuracy: 0.7000
+              precision    recall  f1-score   support
+
+           0       0.93      0.70      0.80    221762
+           1       0.31      0.69      0.43     19381
+           2       0.26      0.72      0.39     18341
+
+    accuracy                           0.70    259484
+   macro avg       0.50      0.70      0.54    259484
+weighted avg       0.84      0.70      0.74    259484
+
+
+Sample Weights:
+{0: 1, 1: 5, 2: 5}
+=== Training Timestamp: 2026-01-22 11:35:23 ===
+=== Training Comments : min_samples_majority=73386, factor=1.  time sequence split ===
+=== Training Label Distribution ===
+{0: 886188, 1: 75976, 2: 73386}
+=== top_or_bottom_XGB ===
+Model Parameters:
+  n_estimators: 2000
+  learning_rate: 0.02
+  max_depth: 7
+  reg_alpha: 2
+  reg_lambda: 4
+  subsample: 0.85
+  colsample_bytree: 0.85
+  min_child_weight: 1
+  objective: multi:softmax
+  num_class: 3
+  random_state: 42
+  tree_method: hist
+  eval_metric: mlogloss
+
+Result:
+Accuracy: 0.7114
+              precision    recall  f1-score   support
+
+           0       0.93      0.72      0.81    221762
+           1       0.32      0.66      0.43     19381
+           2       0.27      0.71      0.39     18341
+
+    accuracy                           0.71    259484
+   macro avg       0.51      0.70      0.54    259484
+weighted avg       0.84      0.71      0.75    259484
+
+
+Sample Weights:
+{0: 1, 1: 5, 2: 5}
+=== Training Timestamp: 2026-01-22 15:06:06 ===
+=== Training Comments : min_samples_majority=73386, factor=1.  time sequence split ===
+=== Training Label Distribution ===
+{0: 886188, 1: 75976, 2: 73386}
+=== top_or_bottom_XGB ===
+Model Parameters:
+  n_estimators: 3000
+  learning_rate: 0.02
+  max_depth: 7
+  reg_alpha: 2
+  reg_lambda: 4
+  subsample: 0.85
+  colsample_bytree: 0.7
+  min_child_weight: 1
+  objective: multi:softprob
+  num_class: 3
+  random_state: 42
+  tree_method: hist
+  eval_metric: mlogloss
+
+Result:
+Accuracy: 0.7226
+              precision    recall  f1-score   support
+
+           0       0.93      0.73      0.82    221762
+           1       0.32      0.64      0.43     19381
+           2       0.27      0.69      0.39     18341
+
+    accuracy                           0.72    259484
+   macro avg       0.51      0.69      0.55    259484
+weighted avg       0.84      0.72      0.76    259484
+
+
+Sample Weights:
+{0: 1, 1: 5, 2: 5}
+=== Training Timestamp: 2026-01-23 14:05:02 ===
+=== Training Comments : min_samples_majority=73386, factor=1.  time sequence split ===
+=== Training Label Distribution ===
+{0: 744089, 1: 148200, 2: 143261}
+=== top_or_bottom_XGB ===
+Model Parameters:
+  n_estimators: 1000
+  learning_rate: 0.02
+  max_depth: 7
+  reg_alpha: 2
+  reg_lambda: 4
+  subsample: 0.85
+  colsample_bytree: 0.7
+  min_child_weight: 1
+  objective: multi:softprob
+  num_class: 3
+  random_state: 42
+  tree_method: hist
+  eval_metric: mlogloss
+
+Result:
+Accuracy: 0.5852
+              precision    recall  f1-score   support
+
+           0       0.79      0.61      0.69    185734
+           1       0.35      0.50      0.42     37878
+           2       0.31      0.52      0.39     35872
+
+    accuracy                           0.59    259484
+   macro avg       0.48      0.55      0.50    259484
+weighted avg       0.66      0.59      0.61    259484
+
+
+Sample Weights:
+{0: 1, 1: 5, 2: 5}

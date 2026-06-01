@@ -1,0 +1,61 @@
+from django.urls import path
+
+from backtest import views
+
+urlpatterns = [
+    path(
+        "traditional/templates/",
+        views.list_traditional_backtest_templates,
+        name="traditional-backtest-templates",
+    ),
+    path(
+        "traditional/run/",
+        views.run_traditional_backtest,
+        name="traditional-backtest-run",
+    ),
+    path(
+        "traditional/scan/submit/",
+        views.submit_traditional_backtest_scan,
+        name="traditional-backtest-scan-submit",
+    ),
+    path(
+        "traditional/scan/tasks/",
+        views.list_traditional_backtest_scan_tasks,
+        name="traditional-backtest-scan-tasks",
+    ),
+    path(
+        "traditional/scan/tasks/<int:task_id>/",
+        views.get_traditional_backtest_scan_task_detail,
+        name="traditional-backtest-scan-task-detail",
+    ),
+    path(
+        "traditional/scan/tasks/<int:task_id>/cancel/",
+        views.cancel_traditional_backtest_scan_task,
+        name="traditional-backtest-scan-task-cancel",
+    ),
+    path(
+        "traditional/runs/",
+        views.list_traditional_backtest_runs,
+        name="traditional-backtest-runs",
+    ),
+    path(
+        "traditional/runs/<int:run_id>/",
+        views.get_traditional_backtest_run_detail,
+        name="traditional-backtest-run-detail",
+    ),
+    path(
+        "traditional/runs/<int:run_id>/stocks/",
+        views.list_traditional_backtest_run_stocks,
+        name="traditional-backtest-run-stocks",
+    ),
+    path(
+        "traditional/runs/<int:run_id>/buy-candidates/",
+        views.list_traditional_backtest_run_buy_candidates,
+        name="traditional-backtest-run-buy-candidates",
+    ),
+    path(
+        "traditional/runs/<int:run_id>/stocks/<str:ts_code>/",
+        views.get_traditional_backtest_run_stock_detail,
+        name="traditional-backtest-run-stock-detail",
+    ),
+]

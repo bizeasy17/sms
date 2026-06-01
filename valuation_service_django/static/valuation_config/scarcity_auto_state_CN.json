@@ -1,0 +1,51 @@
+{
+  "market": "CN",
+  "profiles": {
+    "688818.SH": {
+      "last_profile": "aggressive",
+      "pending_profile": null,
+      "pending_count": 0,
+      "cooldown_until": null,
+      "force_conservative_until": null,
+      "last_risk_score": 0.358725,
+      "last_date": "2026-03-20"
+    },
+    "000001.SZ": {
+      "last_profile": "aggressive",
+      "pending_profile": null,
+      "pending_count": 0,
+      "cooldown_until": null,
+      "force_conservative_until": null,
+      "last_risk_score": 0.358588,
+      "last_date": "2026-03-20"
+    },
+    "600036.SH": {
+      "last_profile": "aggressive",
+      "pending_profile": null,
+      "pending_count": 0,
+      "cooldown_until": null,
+      "force_conservative_until": null,
+      "last_risk_score": 0.271058,
+      "last_date": "2026-03-20"
+    },
+    "300750.SZ": {
+      "last_profile": "aggressive",
+      "pending_profile": null,
+      "pending_count": 0,
+      "cooldown_until": null,
+      "force_conservative_until": null,
+      "last_risk_score": 0.366159,
+      "last_date": "2026-03-20"
+    },
+    "601398.SH": {
+      "last_profile": "aggressive",
+      "pending_profile": null,
+      "pending_count": 0,
+      "cooldown_until": null,
+      "force_conservative_until": null,
+      "last_risk_score": 0.385534,
+      "last_date": "2026-03-20"
+    }
+  },
+  "updated_at": "2026-03-26T02:37:15"
+}

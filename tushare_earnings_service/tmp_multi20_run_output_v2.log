@@ -1,0 +1,135 @@
+﻿python.exe : C:\Users\HANJ29\Development\code\DEV\tushare_earnings_service\earn
+ings_forecast\services\pipeline.py:1486: FutureWarning: Downcasting behavior 
+in `replace` is deprecated and will be removed in a future version. To retain 
+the old behavior, explicitly call `result.infer_objects(copy=False)`. To 
+opt-in to the future behavior, set 
+`pd.set_option('future.no_silent_downcasting', True)`
+At line:1 char:144
++ ... .exe'; $out=& $py manage.py refresh_signal_snapshot --tscodes-file tm ...
++                 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (C:\Users\HANJ29...asting', True)` 
+   :String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+  frame = frame.replace([np.inf, -np.inf], 
+np.nan).dropna(subset=["close"]).reset_index(drop=True)
+C:\Users\HANJ29\Development\code\DEV\tushare_earnings_service\earnings_forecast
+\services\pipeline.py:1486: FutureWarning: Downcasting behavior in `replace` 
+is deprecated and will be removed in a future version. To retain the old 
+behavior, explicitly call `result.infer_objects(copy=False)`. To opt-in to the 
+future behavior, set `pd.set_option('future.no_silent_downcasting', True)`
+  frame = frame.replace([np.inf, -np.inf], 
+np.nan).dropna(subset=["close"]).reset_index(drop=True)
+C:\Users\HANJ29\Development\code\DEV\tushare_earnings_service\earnings_forecast
+\services\pipeline.py:1486: FutureWarning: Downcasting behavior in `replace` 
+is deprecated and will be removed in a future version. To retain the old 
+behavior, explicitly call `result.infer_objects(copy=False)`. To opt-in to the 
+future behavior, set `pd.set_option('future.no_silent_downcasting', True)`
+  frame = frame.replace([np.inf, -np.inf], 
+np.nan).dropna(subset=["close"]).reset_index(drop=True)
+C:\Users\HANJ29\Development\code\DEV\tushare_earnings_service\earnings_forecast
+\services\pipeline.py:1486: FutureWarning: Downcasting behavior in `replace` 
+is deprecated and will be removed in a future version. To retain the old 
+behavior, explicitly call `result.infer_objects(copy=False)`. To opt-in to the 
+future behavior, set `pd.set_option('future.no_silent_downcasting', True)`
+  frame = frame.replace([np.inf, -np.inf], 
+np.nan).dropna(subset=["close"]).reset_index(drop=True)
+C:\Users\HANJ29\Development\code\DEV\tushare_earnings_service\earnings_forecast
+\services\pipeline.py:1486: FutureWarning: Downcasting behavior in `replace` 
+is deprecated and will be removed in a future version. To retain the old 
+behavior, explicitly call `result.infer_objects(copy=False)`. To opt-in to the 
+future behavior, set `pd.set_option('future.no_silent_downcasting', True)`
+  frame = frame.replace([np.inf, -np.inf], 
+np.nan).dropna(subset=["close"]).reset_index(drop=True)
+C:\Users\HANJ29\Development\code\DEV\tushare_earnings_service\earnings_forecast
+\services\pipeline.py:1486: FutureWarning: Downcasting behavior in `replace` 
+is deprecated and will be removed in a future version. To retain the old 
+behavior, explicitly call `result.infer_objects(copy=False)`. To opt-in to the 
+future behavior, set `pd.set_option('future.no_silent_downcasting', True)`
+  frame = frame.replace([np.inf, -np.inf], 
+np.nan).dropna(subset=["close"]).reset_index(drop=True)
+refresh signal snapshot start: symbols=20 batch=perf_multi20_warm_20260507_v2 store_mode=both model_version=<serving:production> report_types=['LATEST', 'FUSION'] asof_dates=1
+asof progress: 1/1 asof_date=2026-05-06
+processing: asof=2026-05-06 1/20 ts_code=000001.SZ
+[ok] asof=2026-05-06 000001.SZ req_rt=LATEST latest_rt=Q1 served_rt=Q1 model_version=dev_20260404_mix_q1h1_base_q3fy_v2 source=industry:\u94f6\u884c score=18.86 target=8.9695 action=SELL risk=HIGH rt_predict_sec=5.21 rt_elapsed_sec=5.21
+[ok] asof=2026-05-06 000001.SZ req_rt=FUSION latest_rt=FUSION served_rt=FUSION model_version=fusion source=fusion score=62.67 target=12.824470372347793 action=BUY risk=MEDIUM rt_predict_sec=8.77 rt_elapsed_sec=8.77
+[symbol] asof=2026-05-06 000001.SZ predict_sec=13.98 persist_sec=0.08 elapsed_sec=14.06
+processing: asof=2026-05-06 2/20 ts_code=000002.SZ
+[ok] asof=2026-05-06 000002.SZ req_rt=LATEST latest_rt=Q1 served_rt=Q1 model_version=dev_20260404_mix_q1h1_base_q3fy_v2 source=industry:\u5168\u56fd\u5730\u4ea7 score=1.96 target=2.8836 action=SELL risk=HIGH rt_predict_sec=1.04 rt_elapsed_sec=1.04
+[ok] asof=2026-05-06 000002.SZ req_rt=FUSION latest_rt=FUSION served_rt=FUSION model_version=fusion source=fusion score=34.57 target=5.27055196229736 action=SELL_PART risk=HIGH rt_predict_sec=0.33 rt_elapsed_sec=0.33
+[symbol] asof=2026-05-06 000002.SZ predict_sec=1.37 persist_sec=0.01 elapsed_sec=1.39
+processing: asof=2026-05-06 3/20 ts_code=000004.SZ
+[ok] asof=2026-05-06 000004.SZ req_rt=LATEST latest_rt=Q3 served_rt=Q3 model_version=dev_20260404_mix_q1h1_base_q3fy_v2 source=industry:\u8f6f\u4ef6\u670d\u52a1 score=12.3 target=7.3373 action=SELL risk=HIGH rt_predict_sec=0.83 rt_elapsed_sec=0.83
+[ok] asof=2026-05-06 000004.SZ req_rt=FUSION latest_rt=FUSION served_rt=FUSION model_version=fusion source=fusion score=14.6 target=6.592437471795034 action=SELL risk=HIGH rt_predict_sec=1.56 rt_elapsed_sec=1.56
+[symbol] asof=2026-05-06 000004.SZ predict_sec=2.39 persist_sec=0.01 elapsed_sec=2.41
+processing: asof=2026-05-06 4/20 ts_code=000006.SZ
+[ok] asof=2026-05-06 000006.SZ req_rt=LATEST latest_rt=Q1 served_rt=Q1 model_version=dev_20260404_mix_q1h1_base_q3fy_v2 source=industry:\u533a\u57df\u5730\u4ea7 score=0.7 target=7.1537 action=SELL risk=HIGH rt_predict_sec=0.86 rt_elapsed_sec=0.86
+[ok] asof=2026-05-06 000006.SZ req_rt=FUSION latest_rt=FUSION served_rt=FUSION model_version=fusion source=fusion score=8.44 target=6.668112003171926 action=SELL risk=HIGH rt_predict_sec=0.31 rt_elapsed_sec=0.31
+[symbol] asof=2026-05-06 000006.SZ predict_sec=1.17 persist_sec=0.01 elapsed_sec=1.18
+processing: asof=2026-05-06 5/20 ts_code=000007.SZ
+[ok] asof=2026-05-06 000007.SZ req_rt=LATEST latest_rt=Q1 served_rt=Q1 model_version=dev_20260404_mix_q1h1_base_q3fy_v2 source=industry:\u5176\u4ed6\u5546\u4e1a score=30.74 target=12.6294 action=SELL_PART risk=HIGH rt_predict_sec=0.81 rt_elapsed_sec=0.81
+[ok] asof=2026-05-06 000007.SZ req_rt=FUSION latest_rt=FUSION served_rt=FUSION model_version=fusion source=fusion score=85.47 target=14.517130048371886 action=BUY risk=LOW rt_predict_sec=0.97 rt_elapsed_sec=0.97
+[symbol] asof=2026-05-06 000007.SZ predict_sec=1.78 persist_sec=0.01 elapsed_sec=1.78
+processing: asof=2026-05-06 6/20 ts_code=000008.SZ
+[ok] asof=2026-05-06 000008.SZ req_rt=LATEST latest_rt=Q1 served_rt=Q1 model_version=dev_20260404_mix_q1h1_base_q3fy_v2 source=industry:\u8fd0\u8f93\u8bbe\u5907 score=0.01 target=1.9839 action=SELL risk=HIGH rt_predict_sec=0.78 rt_elapsed_sec=0.78
+[ok] asof=2026-05-06 000008.SZ req_rt=FUSION latest_rt=FUSION served_rt=FUSION model_version=fusion source=fusion score=37.99 target=2.2361333437633246 action=SELL_PART risk=HIGH rt_predict_sec=0.31 rt_elapsed_sec=0.31
+[symbol] asof=2026-05-06 000008.SZ predict_sec=1.09 persist_sec=0.02 elapsed_sec=1.11
+processing: asof=2026-05-06 7/20 ts_code=000009.SZ
+[ok] asof=2026-05-06 000009.SZ req_rt=LATEST latest_rt=Q1 served_rt=Q1 model_version=dev_20260404_mix_q1h1_base_q3fy_v2 source=industry:\u7535\u6c14\u8bbe\u5907 score=56.55 target=9.0949 action=HOLD risk=HIGH rt_predict_sec=0.72 rt_elapsed_sec=0.72
+[ok] asof=2026-05-06 000009.SZ req_rt=FUSION latest_rt=FUSION served_rt=FUSION model_version=fusion source=fusion score=64.77 target=11.527167573126238 action=BUY risk=MEDIUM rt_predict_sec=0.29 rt_elapsed_sec=0.29
+[symbol] asof=2026-05-06 000009.SZ predict_sec=1.01 persist_sec=0.01 elapsed_sec=1.03
+processing: asof=2026-05-06 8/20 ts_code=000010.SZ
+[ok] asof=2026-05-06 000010.SZ req_rt=LATEST latest_rt=Q1 served_rt=Q1 model_version=dev_20260404_mix_q1h1_base_q3fy_v2 source=industry:\u5efa\u7b51\u5de5\u7a0b score=41.61 target=2.9191 action=SELL_PART risk=HIGH rt_predict_sec=0.9 rt_elapsed_sec=0.9
+[ok] asof=2026-05-06 000010.SZ req_rt=FUSION latest_rt=FUSION served_rt=FUSION model_version=fusion source=fusion score=12.74 target=2.5672985047698096 action=SELL risk=HIGH rt_predict_sec=0.89 rt_elapsed_sec=0.89
+[symbol] asof=2026-05-06 000010.SZ predict_sec=1.79 persist_sec=0.01 elapsed_sec=1.8
+processing: asof=2026-05-06 9/20 ts_code=000011.SZ
+[ok] asof=2026-05-06 000011.SZ req_rt=LATEST latest_rt=Q1 served_rt=Q1 model_version=dev_20260404_mix_q1h1_base_q3fy_v2 source=industry:\u623f\u4ea7\u670d\u52a1 score=3.15 target=5.9516 action=SELL risk=HIGH rt_predict_sec=0.8 rt_elapsed_sec=0.8
+[ok] asof=2026-05-06 000011.SZ req_rt=FUSION latest_rt=FUSION served_rt=FUSION model_version=fusion source=fusion score=13.73 target=6.382143323389366 action=SELL risk=HIGH rt_predict_sec=0.31 rt_elapsed_sec=0.31
+[symbol] asof=2026-05-06 000011.SZ predict_sec=1.11 persist_sec=0.02 elapsed_sec=1.13
+processing: asof=2026-05-06 10/20 ts_code=000012.SZ
+[ok] asof=2026-05-06 000012.SZ req_rt=LATEST latest_rt=Q1 served_rt=Q1 model_version=dev_20260404_mix_q1h1_base_q3fy_v2 source=industry:\u73bb\u7483 score=0.0 target=2.9721 action=SELL risk=HIGH rt_predict_sec=0.85 rt_elapsed_sec=0.85
+[ok] asof=2026-05-06 000012.SZ req_rt=FUSION latest_rt=FUSION served_rt=FUSION model_version=fusion source=fusion score=0.01 target=3.142348807950878 action=SELL risk=HIGH rt_predict_sec=0.93 rt_elapsed_sec=0.93
+[symbol] asof=2026-05-06 000012.SZ predict_sec=1.78 persist_sec=0.01 elapsed_sec=1.79
+processing: asof=2026-05-06 11/20 ts_code=000014.SZ
+[ok] asof=2026-05-06 000014.SZ req_rt=LATEST latest_rt=Q1 served_rt=Q1 model_version=dev_20260404_mix_q1h1_base_q3fy_v2 source=industry:\u5168\u56fd\u5730\u4ea7 score=6.28 target=10.0145 action=SELL risk=HIGH rt_predict_sec=0.82 rt_elapsed_sec=0.82
+[ok] asof=2026-05-06 000014.SZ req_rt=FUSION latest_rt=FUSION served_rt=FUSION model_version=fusion source=fusion score=76.6 target=24.488910468854318 action=BUY risk=LOW rt_predict_sec=0.3 rt_elapsed_sec=0.3
+[symbol] asof=2026-05-06 000014.SZ predict_sec=1.12 persist_sec=0.01 elapsed_sec=1.13
+processing: asof=2026-05-06 12/20 ts_code=000016.SZ
+[ok] asof=2026-05-06 000016.SZ req_rt=LATEST latest_rt=Q1 served_rt=Q1 model_version=dev_20260404_mix_q1h1_base_q3fy_v2 source=industry:\u5bb6\u7528\u7535\u5668 score=8.39 target=2.5775 action=SELL risk=HIGH rt_predict_sec=0.79 rt_elapsed_sec=0.79
+[ok] asof=2026-05-06 000016.SZ req_rt=FUSION latest_rt=FUSION served_rt=FUSION model_version=fusion source=fusion score=19.46 target=3.498495853429334 action=SELL risk=HIGH rt_predict_sec=0.86 rt_elapsed_sec=0.86
+[symbol] asof=2026-05-06 000016.SZ predict_sec=1.65 persist_sec=0.01 elapsed_sec=1.66
+processing: asof=2026-05-06 13/20 ts_code=000017.SZ
+[ok] asof=2026-05-06 000017.SZ req_rt=LATEST latest_rt=Q1 served_rt=Q1 model_version=dev_20260404_mix_q1h1_base_q3fy_v2 source=industry:\u670d\u9970 score=5.51 target=4.7274 action=SELL risk=HIGH rt_predict_sec=0.8 rt_elapsed_sec=0.8
+[ok] asof=2026-05-06 000017.SZ req_rt=FUSION latest_rt=FUSION served_rt=FUSION model_version=fusion source=fusion score=32.09 target=4.739000153177926 action=SELL_PART risk=HIGH rt_predict_sec=0.29 rt_elapsed_sec=0.29
+[symbol] asof=2026-05-06 000017.SZ predict_sec=1.09 persist_sec=0.02 elapsed_sec=1.11
+processing: asof=2026-05-06 14/20 ts_code=000019.SZ
+[ok] asof=2026-05-06 000019.SZ req_rt=LATEST latest_rt=Q1 served_rt=Q1 model_version=dev_20260404_mix_q1h1_base_q3fy_v2 source=industry:\u519c\u4e1a\u7efc\u5408 score=9.32 target=5.6434 action=SELL risk=HIGH rt_predict_sec=0.8 rt_elapsed_sec=0.8
+[ok] asof=2026-05-06 000019.SZ req_rt=FUSION latest_rt=FUSION served_rt=FUSION model_version=fusion source=fusion score=51.18 target=7.771405668114067 action=HOLD risk=MEDIUM rt_predict_sec=0.95 rt_elapsed_sec=0.95
+[symbol] asof=2026-05-06 000019.SZ predict_sec=1.75 persist_sec=0.01 elapsed_sec=1.75
+processing: asof=2026-05-06 15/20 ts_code=000020.SZ
+[ok] asof=2026-05-06 000020.SZ req_rt=LATEST latest_rt=Q1 served_rt=Q1 model_version=dev_20260404_mix_q1h1_base_q3fy_v2 source=industry:\u5143\u5668\u4ef6 score=24.87 target=13.2102 action=SELL risk=HIGH rt_predict_sec=0.85 rt_elapsed_sec=0.85
+[ok] asof=2026-05-06 000020.SZ req_rt=FUSION latest_rt=FUSION served_rt=FUSION model_version=fusion source=fusion score=24.48 target=11.618354701830437 action=SELL risk=HIGH rt_predict_sec=0.93 rt_elapsed_sec=0.93
+[symbol] asof=2026-05-06 000020.SZ predict_sec=1.78 persist_sec=0.01 elapsed_sec=1.79
+processing: asof=2026-05-06 16/20 ts_code=000021.SZ
+[ok] asof=2026-05-06 000021.SZ req_rt=LATEST latest_rt=Q1 served_rt=Q1 model_version=dev_20260404_mix_q1h1_base_q3fy_v2 source=industry:\u5143\u5668\u4ef6 score=78.15 target=33.9915 action=BUY risk=HIGH rt_predict_sec=0.79 rt_elapsed_sec=0.79
+[ok] asof=2026-05-06 000021.SZ req_rt=FUSION latest_rt=FUSION served_rt=FUSION model_version=fusion source=fusion score=86.53 target=32.032323719004296 action=BUY risk=LOW rt_predict_sec=0.93 rt_elapsed_sec=0.93
+[symbol] asof=2026-05-06 000021.SZ predict_sec=1.72 persist_sec=0.02 elapsed_sec=1.73
+processing: asof=2026-05-06 17/20 ts_code=000025.SZ
+[ok] asof=2026-05-06 000025.SZ req_rt=LATEST latest_rt=Q1 served_rt=Q1 model_version=dev_20260404_mix_q1h1_base_q3fy_v2 source=industry:\u7efc\u5408\u7c7b score=24.44 target=13.6126 action=SELL risk=HIGH rt_predict_sec=0.82 rt_elapsed_sec=0.82
+[ok] asof=2026-05-06 000025.SZ req_rt=FUSION latest_rt=FUSION served_rt=FUSION model_version=fusion source=fusion score=42.87 target=15.744900264075612 action=SELL_PART risk=HIGH rt_predict_sec=0.31 rt_elapsed_sec=0.31
+[symbol] asof=2026-05-06 000025.SZ predict_sec=1.13 persist_sec=0.01 elapsed_sec=1.14
+processing: asof=2026-05-06 18/20 ts_code=000026.SZ
+[ok] asof=2026-05-06 000026.SZ req_rt=LATEST latest_rt=Q1 served_rt=Q1 model_version=dev_20260404_mix_q1h1_base_q3fy_v2 source=industry:\u670d\u9970 score=91.96 target=22.9775 action=BUY risk=MEDIUM rt_predict_sec=0.9 rt_elapsed_sec=0.9
+[ok] asof=2026-05-06 000026.SZ req_rt=FUSION latest_rt=FUSION served_rt=FUSION model_version=fusion source=fusion score=90.64 target=24.757691473239007 action=BUY risk=LOW rt_predict_sec=0.3 rt_elapsed_sec=0.3
+[symbol] asof=2026-05-06 000026.SZ predict_sec=1.2 persist_sec=0.01 elapsed_sec=1.2
+processing: asof=2026-05-06 19/20 ts_code=000027.SZ
+[ok] asof=2026-05-06 000027.SZ req_rt=LATEST latest_rt=Q1 served_rt=Q1 model_version=dev_20260404_mix_q1h1_base_q3fy_v2 source=industry:\u706b\u529b\u53d1\u7535 score=6.09 target=5.0445 action=SELL risk=HIGH rt_predict_sec=0.83 rt_elapsed_sec=0.83
+[ok] asof=2026-05-06 000027.SZ req_rt=FUSION latest_rt=FUSION served_rt=FUSION model_version=fusion source=fusion score=18.76 target=5.623466243492895 action=SELL risk=HIGH rt_predict_sec=0.29 rt_elapsed_sec=0.29
+[symbol] asof=2026-05-06 000027.SZ predict_sec=1.12 persist_sec=0.01 elapsed_sec=1.13
+processing: asof=2026-05-06 20/20 ts_code=000028.SZ
+[ok] asof=2026-05-06 000028.SZ req_rt=LATEST latest_rt=Q1 served_rt=Q1 model_version=dev_20260404_mix_q1h1_base_q3fy_v2 source=industry:\u533b\u836f\u5546\u4e1a score=64.97 target=26.4048 action=BUY risk=HIGH rt_predict_sec=0.66 rt_elapsed_sec=0.66
+[ok] asof=2026-05-06 000028.SZ req_rt=FUSION latest_rt=FUSION served_rt=FUSION model_version=fusion source=fusion score=57.7 target=25.040661578669482 action=HOLD risk=MEDIUM rt_predict_sec=0.31 rt_elapsed_sec=0.31
+[symbol] asof=2026-05-06 000028.SZ predict_sec=0.97 persist_sec=0.01 elapsed_sec=0.98
+progress: asof=2026-05-06 20/20 ok=40 fail=0
+refresh signal snapshot done: symbols=20 asof_dates=1 ok=40 fail=0 elapsed_sec=41.3 batch=perf_multi20_warm_20260507_v2
+

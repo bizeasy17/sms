@@ -1,0 +1,33 @@
+project:
+  name: tushare_earnings_ml
+
+data:
+  # PostgreSQL 示例: postgresql+psycopg2://postgres:postgres@localhost:5432/smartinvestor_dev
+  db_url: postgresql+psycopg2://postgres:postgres@localhost:5432/smartinvestor_dev
+  trading_table: stockdata_stocktradinghistory
+  fundamental_table: stockdata_stockfundamentalhistory
+  start_date: 2018-01-01
+  end_date: null
+  financial_cache_dir: c:/Users/HANJ29/Development/code/sms/smartinvestor_etl/analysis/financial_cache
+  freq: D
+  scope_prefixes: ["60", "00", "30", "68"]
+
+feature:
+  lookback_days: 20
+  min_history_rows: 120
+  use_financial_cache: true
+
+label:
+  horizon_days: 20
+  earnings_shift_quarters: 1
+
+train:
+  train_end_date: 2024-12-31
+  random_state: 42
+  test_size: 0.2
+
+output:
+  dir: c:/Users/HANJ29/Development/code/sms/training/tushare_earnings_ml/outputs
+  dataset_file: dataset.parquet
+  model_file: models.joblib
+  metrics_file: metrics.json

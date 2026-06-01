@@ -1,0 +1,11 @@
+﻿metric,value
+source_db,smartinvestor
+target_db,smartinvestor_dev
+source_history_rows,32044
+target_history_rows,32104
+history_row_delta_target_minus_source,60
+source_latest_rows,24360
+target_latest_rows,24393
+latest_row_delta_target_minus_source,33
+missing_in_target_history_by_key,0
+missing_in_target_latest_by_key,0

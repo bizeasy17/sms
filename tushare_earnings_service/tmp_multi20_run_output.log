@@ -1,0 +1,41 @@
+﻿refresh signal snapshot start: symbols=20 batch=perf_multi20_warm_20260507 store_mode=both model_version=<serving:production> report_types=['LATEST', 'FUSION'] asof_dates=1
+asof progress: 1/1 asof_date=2026-05-06
+python.exe : Traceback (most recent call last):
+At line:1 char:144
++ ... .exe'; $out=& $py manage.py refresh_signal_snapshot --tscodes-file tm ...
++                 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (Traceback (most recent call last) 
+   ::String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+  File 
+"C:\Users\HANJ29\Development\code\DEV\tushare_earnings_service\manage.py", 
+line 22, in <module>
+    main()
+  File 
+"C:\Users\HANJ29\Development\code\DEV\tushare_earnings_service\manage.py", 
+line 18, in main
+    execute_from_command_line(sys.argv)
+  File "C:\Users\HANJ29\Development\vdev1\lib\site-packages\django\core\managem
+ent\__init__.py", line 442, in execute_from_command_line
+    utility.execute()
+  File "C:\Users\HANJ29\Development\vdev1\lib\site-packages\django\core\managem
+ent\__init__.py", line 436, in execute
+    self.fetch_command(subcommand).run_from_argv(self.argv)
+  File "C:\Users\HANJ29\Development\vdev1\lib\site-packages\django\core\managem
+ent\base.py", line 416, in run_from_argv
+    self.execute(*args, **cmd_options)
+  File "C:\Users\HANJ29\Development\vdev1\lib\site-packages\django\core\managem
+ent\base.py", line 460, in execute
+    output = self.handle(*args, **options)
+  File "C:\Users\HANJ29\Development\code\DEV\tushare_earnings_service\earnings_
+forecast\management\commands\refresh_signal_snapshot.py", line 474, in handle
+    self.stdout.write(
+  File "C:\Users\HANJ29\Development\vdev1\lib\site-packages\django\core\managem
+ent\base.py", line 181, in write
+    self._out.write(style_func(msg))
+  File "C:\Program Files\Python310\lib\encodings\cp1252.py", line 19, in encode
+    return codecs.charmap_encode(input,self.errors,encoding_table)[0]
+UnicodeEncodeError: 'charmap' codec can't encode character '\ufeff' in 
+position 41: character maps to <undefined>
+

@@ -1,0 +1,17 @@
+﻿ts_code: 688002.SH
+trade_date: 2026-03-20
+close_price: 101.0
+assumption_source: sw
+price_range: [0.1, 101.0]σàâ
+source: sw
+source_level: L3
+source_industry_code: 857451.SI
+source_industry_name: σå¢σ╖Ñτö╡σ¡ÉΓàó
+- market_cap: implied_price=101.0000, equity_value=46504605500.0
+- pe: implied_price=53.7597, equity_value=24753180145.15
+- ps: implied_price=44.1844, equity_value=20344348036.3
+- pb: implied_price=48.6361, equity_value=22394088811.66
+- peg: implied_price=93.8661, equity_value=43219838348.68
+- ev_ebitda: implied_price=12.9912, equity_value=5981668216.7
+- fcff_dcf: implied_price=26.8036, equity_value=12341478702.96
+- ddm: implied_price=0.0999, equity_value=45988076.98

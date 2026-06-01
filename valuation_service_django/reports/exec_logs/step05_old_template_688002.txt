@@ -1,0 +1,10 @@
+﻿source: sw_l3
+    method  evaluated_market_value  according_price
+market_cap                465.0461         101.0000
+        pe                247.5318          53.7596
+        ps                203.4435          44.1844
+        pb                223.9409          48.6361
+       peg                432.1984          93.8661
+ ev_ebitda                 59.8167          12.9912
+  fcff_dcf                123.4148          26.8036
+       ddm                  0.4599           0.0999

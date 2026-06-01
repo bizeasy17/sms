@@ -1,0 +1,105 @@
+=== Training Timestamp: 2026-01-20 17:57:49 ===
+=== Training Comments : min_samples_majority=159824, factor=1.  time sequence split ===
+=== Training Label Distribution ===
+{0: 1900011, 1: 160260, 2: 159824}
+=== top_or_bottom_XGB ===
+Model Parameters:
+  n_estimators: 1000
+  learning_rate: 0.02
+  max_depth: 7
+  reg_alpha: 2
+  reg_lambda: 4
+  subsample: 0.85
+  colsample_bytree: 0.85
+  min_child_weight: 1
+  objective: multi:softmax
+  num_class: 3
+  random_state: 42
+  tree_method: hist
+  eval_metric: mlogloss
+
+Result:
+Accuracy: 0.8561
+              precision    recall  f1-score   support
+
+           0       0.86      1.00      0.92    474610
+           1       0.57      0.02      0.04     40261
+           2       0.69      0.03      0.06     40651
+
+    accuracy                           0.86    555522
+   macro avg       0.71      0.35      0.34    555522
+weighted avg       0.82      0.86      0.80    555522
+
+
+Sample Weights:
+{0: 1, 1: 1.3, 2: 1.2}
+=== Training Timestamp: 2026-01-20 18:48:15 ===
+=== Training Comments : min_samples_majority=159824, factor=1.  time sequence split ===
+=== Training Label Distribution ===
+{0: 1900011, 1: 160260, 2: 159824}
+=== top_or_bottom_XGB ===
+Model Parameters:
+  n_estimators: 1000
+  learning_rate: 0.02
+  max_depth: 7
+  reg_alpha: 2
+  reg_lambda: 4
+  subsample: 0.85
+  colsample_bytree: 0.85
+  min_child_weight: 1
+  objective: multi:softmax
+  num_class: 3
+  random_state: 42
+  tree_method: hist
+  eval_metric: mlogloss
+
+Result:
+Accuracy: 0.8561
+              precision    recall  f1-score   support
+
+           0       0.86      1.00      0.92    474610
+           1       0.57      0.02      0.04     40261
+           2       0.69      0.03      0.06     40651
+
+    accuracy                           0.86    555522
+   macro avg       0.71      0.35      0.34    555522
+weighted avg       0.82      0.86      0.80    555522
+
+
+Sample Weights:
+{0: 1, 1: 1.3, 2: 1.2}
+=== Training Timestamp: 2026-01-20 23:09:53 ===
+=== Training Comments : min_samples_majority=159824, factor=1.  time sequence split ===
+=== Training Label Distribution ===
+{0: 1900011, 1: 160260, 2: 159824}
+=== top_or_bottom_XGB ===
+Model Parameters:
+  n_estimators: 5000
+  learning_rate: 0.02
+  max_depth: 7
+  reg_alpha: 2
+  reg_lambda: 4
+  subsample: 0.85
+  colsample_bytree: 0.85
+  min_child_weight: 1
+  objective: multi:softmax
+  num_class: 3
+  random_state: 42
+  tree_method: hist
+  eval_metric: mlogloss
+
+Result:
+Accuracy: 0.8558
+              precision    recall  f1-score   support
+
+           0       0.86      0.99      0.92    474610
+           1       0.55      0.04      0.07     40261
+           2       0.58      0.05      0.09     40651
+
+    accuracy                           0.86    555522
+   macro avg       0.66      0.36      0.36    555522
+weighted avg       0.82      0.86      0.80    555522
+
+
+Sample Weights:
+{0: 1, 1: 1.3, 2: 1.2}

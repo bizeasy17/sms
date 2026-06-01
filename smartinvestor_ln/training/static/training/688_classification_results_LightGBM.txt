@@ -1,0 +1,131 @@
+=== Training Timestamp: 2025-12-18 17:12:14 ===
+=== Training Comments : No sample, default params used. ===
+=== Training Label Distribution ===
+{0.0: 434584, 2.0: 18009, 1.0: 17940}
+=== top_or_bottom_LGBM ===
+{'params': {'n_estimators': 6000, 'learning_rate': 0.05, 'max_depth': 8, 'num_leaves': 31, 'min_child_samples': 50, 'min_split_gain': 0.1, 'subsample': 0.8, 'colsample_bytree': 0.8, 'reg_alpha': 1, 'reg_lambda': 10, 'class_weight': {0: 1, 1: 10, 2: 10}, 'random_state': 42}, 'result': 'Accuracy: 0.7810\n              precision    recall  f1-score   support\n\n         0.0       0.97      0.79      0.87    108878\n         1.0       0.23      0.55      0.33      4458\n         2.0       0.20      0.78      0.31      4607\n\n    accuracy                           0.78    117943\n   macro avg       0.47      0.71      0.50    117943\nweighted avg       0.91      0.78      0.83    117943\n'}
+
+=== Training Timestamp: 2025-12-19 10:26:59 ===
+=== Training Comments : No sample, default params used. ===
+=== Training Label Distribution ===
+{0.0: 434584, 2.0: 18009, 1.0: 17940}
+=== top_or_bottom_LGBM ===
+Model Parameters:
+  n_estimators: 100
+  learning_rate: 0.05
+  max_depth: 5
+  num_leaves: 31
+  min_child_samples: 5
+  min_split_gain: 0.1
+  subsample: 0.8
+  colsample_bytree: 0.8
+  reg_alpha: 1
+  reg_lambda: 10
+  class_weight: {0: 1, 1: 10, 2: 10}
+  random_state: 42
+
+Result:
+Accuracy: 0.2164
+              precision    recall  f1-score   support
+
+         0.0       1.00      0.15      0.26    108878
+         1.0       0.09      0.99      0.16      4458
+         2.0       0.09      1.00      0.16      4607
+
+    accuracy                           0.22    117943
+   macro avg       0.39      0.71      0.20    117943
+weighted avg       0.93      0.22      0.26    117943
+
+=== Training Timestamp: 2025-12-19 14:43:07 ===
+=== Training Comments : No sample, default params used. ===
+=== Training Label Distribution ===
+{0.0: 434584, 2.0: 18009, 1.0: 17940}
+=== top_or_bottom_LGBM ===
+Model Parameters:
+  n_estimators: 100
+  learning_rate: 0.05
+  max_depth: 5
+  num_leaves: 31
+  min_child_samples: 5
+  min_split_gain: 0.1
+  subsample: 0.8
+  colsample_bytree: 0.8
+  reg_alpha: 1
+  reg_lambda: 10
+  class_weight: {0: 1, 1: 10, 2: 10}
+  random_state: 42
+
+Result:
+Accuracy: 0.2175
+              precision    recall  f1-score   support
+
+         0.0       1.00      0.15      0.26    108878
+         1.0       0.09      0.99      0.16      4458
+         2.0       0.09      1.00      0.16      4607
+
+    accuracy                           0.22    117943
+   macro avg       0.39      0.72      0.20    117943
+weighted avg       0.93      0.22      0.26    117943
+
+=== Training Timestamp: 2025-12-19 15:19:50 ===
+=== Training Comments : No sample, default params used. ===
+=== Training Label Distribution ===
+{0.0: 434584, 2.0: 18009, 1.0: 17940}
+=== top_or_bottom_LGBM ===
+Model Parameters:
+  n_estimators: 100
+  learning_rate: 0.05
+  max_depth: 5
+  num_leaves: 31
+  min_child_samples: 5
+  min_split_gain: 0.1
+  subsample: 0.8
+  colsample_bytree: 0.8
+  reg_alpha: 1
+  reg_lambda: 10
+  class_weight: {0: 1, 1: 10, 2: 10}
+  random_state: 42
+
+Result:
+Accuracy: 0.2175
+              precision    recall  f1-score   support
+
+         0.0       1.00      0.15      0.26    108878
+         1.0       0.09      0.99      0.16      4458
+         2.0       0.09      1.00      0.16      4607
+
+    accuracy                           0.22    117943
+   macro avg       0.39      0.72      0.20    117943
+weighted avg       0.93      0.22      0.26    117943
+
+=== Training Timestamp: 2026-01-12 15:56:14 ===
+=== Training Comments : min_samples_majority=49692, factor=1.1.  time sequence split RF filtered important features. ===
+=== Training Label Distribution ===
+{0: 277166, 1: 54661, 2: 54661}
+=== top_or_bottom_LGBM ===
+Model Parameters:
+  n_estimators: 6000
+  learning_rate: 0.05
+  max_depth: 8
+  num_leaves: 31
+  min_child_samples: 50
+  min_split_gain: 0.1
+  subsample: 0.8
+  colsample_bytree: 0.8
+  reg_alpha: 1
+  reg_lambda: 10
+  class_weight: {0: 1, 1: 10, 2: 10}
+  random_state: 42
+
+Result:
+Accuracy: 0.4219
+              precision    recall  f1-score   support
+
+           0       0.90      0.23      0.37     69030
+           1       0.32      0.90      0.48     12683
+           2       0.30      0.96      0.45     12815
+
+    accuracy                           0.42     94528
+   macro avg       0.51      0.70      0.43     94528
+weighted avg       0.74      0.42      0.40     94528
+

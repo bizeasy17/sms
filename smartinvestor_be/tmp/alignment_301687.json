@@ -1,0 +1,61 @@
+{
+  "total_checks": 3,
+  "mismatch_count": 1,
+  "strict_missing_count": 0,
+  "rows": [
+    {
+      "ts_code": "301687.SZ",
+      "report_type": "Q3",
+      "valuation_trade_date": "2026-04-15",
+      "valuation_profit_data_source": "fina_indicator_income",
+      "valuation_profit_report_type": "Q3",
+      "valuation_profit_report_end_date": "2025-09-30",
+      "default_signal_end_date": null,
+      "default_signal_report_type": "Q3",
+      "default_signal_fiscal_year": 2024,
+      "strict_signal_end_date": null,
+      "strict_signal_report_type": "Q3",
+      "strict_signal_fiscal_year": null,
+      "aligned_default": false,
+      "aligned_strict": false,
+      "default_error": null,
+      "strict_error": null
+    },
+    {
+      "ts_code": "301687.SZ",
+      "report_type": "FY",
+      "valuation_trade_date": "2026-04-17",
+      "valuation_profit_data_source": null,
+      "valuation_profit_report_type": null,
+      "valuation_profit_report_end_date": null,
+      "default_signal_end_date": null,
+      "default_signal_report_type": "FY",
+      "default_signal_fiscal_year": 2023,
+      "strict_signal_end_date": null,
+      "strict_signal_report_type": null,
+      "strict_signal_fiscal_year": null,
+      "aligned_default": false,
+      "aligned_strict": false,
+      "default_error": null,
+      "strict_error": null
+    },
+    {
+      "ts_code": "301687.SZ",
+      "report_type": "FUSION",
+      "valuation_trade_date": "2026-04-17",
+      "valuation_profit_data_source": null,
+      "valuation_profit_report_type": null,
+      "valuation_profit_report_end_date": null,
+      "default_signal_end_date": null,
+      "default_signal_report_type": "FUSION",
+      "default_signal_fiscal_year": null,
+      "strict_signal_end_date": null,
+      "strict_signal_report_type": null,
+      "strict_signal_fiscal_year": null,
+      "aligned_default": false,
+      "aligned_strict": false,
+      "default_error": null,
+      "strict_error": null
+    }
+  ]
+}

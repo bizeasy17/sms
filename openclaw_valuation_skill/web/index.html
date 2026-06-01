@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>OpenClaw Valuation Skill</title>
+    <style>
+      body { font-family: "Segoe UI", sans-serif; max-width: 860px; margin: 24px auto; padding: 0 12px; }
+      .panel { border: 1px solid #ddd; border-radius: 10px; padding: 14px; margin-bottom: 12px; }
+      .row { margin-bottom: 10px; }
+      textarea, input, select { width: 100%; box-sizing: border-box; padding: 8px; }
+      button { padding: 8px 14px; cursor: pointer; }
+      pre { white-space: pre-wrap; background: #f7f7f7; border-radius: 8px; padding: 10px; }
+      .muted { color: #666; font-size: 12px; }
+    </style>
+  </head>
+  <body>
+    <h2>OpenClaw 估值技能 Demo</h2>
+    <div class="panel">
+      <div class="row">
+        <label>自然语言问题</label>
+        <textarea id="message" rows="4" placeholder="例如：600519.SH 现在估值高不高，给我建议"></textarea>
+      </div>
+      <div class="row">
+        <label>可选 ts_code（未在问题里写代码时可填）</label>
+        <input id="ts_code" placeholder="600519.SH" />
+      </div>
+      <div class="row">
+        <label for="freq">频率</label>
+        <select id="freq" aria-label="频率">
+          <option value="D">D</option>
+          <option value="W">W</option>
+          <option value="M">M</option>
+        </select>
+      </div>
+      <div class="row">
+        <label><input type="checkbox" id="forward_to_feishu" /> 同步转发到 Feishu</label>
+      </div>
+      <button id="send">发送</button>
+      <div class="muted">请求地址: /api/openclaw/valuation/chat</div>
+    </div>
+
+    <div class="panel">
+      <h3>助手回复</h3>
+      <pre id="answer">(等待请求)</pre>
+    </div>
+
+    <script>
+      const sendBtn = document.getElementById("send");
+      const answerEl = document.getElementById("answer");
+
+      sendBtn.addEventListener("click", async () => {
+        const payload = {
+          message: document.getElementById("message").value,
+          ts_code: document.getElementById("ts_code").value || null,
+          freq: document.getElementById("freq").value,
+          forward_to_feishu: document.getElementById("forward_to_feishu").checked,
+        };
+
+        answerEl.textContent = "请求中...";
+
+        try {
+          const res = await fetch("/api/openclaw/valuation/chat", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload),
+          });
+          const data = await res.json();
+          if (!res.ok) {
+            answerEl.textContent = JSON.stringify(data, null, 2);
+            return;
+          }
+          answerEl.textContent = data.answer || JSON.stringify(data, null, 2);
+        } catch (err) {
+          answerEl.textContent = String(err);
+        }
+      });
+    </script>
+  </body>
+</html>

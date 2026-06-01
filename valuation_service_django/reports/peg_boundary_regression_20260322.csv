@@ -1,0 +1,9 @@
+﻿ts_code,has_peg_row,peg_quality_flag,raw_growth_rate_pct,derived_target_pe,status,notes
+688981.SH,true,growth_clamped+target_pe_clamped,275.59425037013744,45.0,PASS,peg_row_present
+688819.SH,true,growth_clamped+target_pe_clamped,1000.0,45.0,PASS,peg_row_present
+688818.SH,true,normal,7.8397,7.8397,PASS,peg_row_present
+688809.SH,true,growth_clamped+target_pe_clamped,141.37449804129207,45.0,PASS,peg_row_present
+688807.SH,true,growth_clamped+target_pe_clamped,758.9539655155609,45.0,PASS,peg_row_present
+688805.SH,true,growth_clamped+target_pe_clamped,288.5856772598176,45.0,PASS,peg_row_present
+688800.SH,true,growth_clamped+target_pe_clamped,132.97979690686608,45.0,PASS,peg_row_present
+688799.SH,true,growth_clamped+target_pe_clamped,212.98418664938433,45.0,PASS,peg_row_present

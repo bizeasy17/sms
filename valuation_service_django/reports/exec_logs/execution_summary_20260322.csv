@@ -1,0 +1,3 @@
+﻿"exec_step","gate_id","phase","step_name","result","evidence_output"
+"4","G01","template","模板顺序对齐样本A运行-新","DRY_RUN","c:\Users\HANJ29\Development\code\sms\valuation_service_django\reports\exec_logs\step04_new_template_688002.txt"
+"5","G01","template","模板顺序对齐样本A运行-老","DRY_RUN","c:\Users\HANJ29\Development\code\sms\valuation_service_django\reports\exec_logs\step05_old_template_688002.txt"

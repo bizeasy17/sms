@@ -1,0 +1,275 @@
+=== Training Timestamp: 2026-01-02 11:35:42 ===
+=== Training Comments : min_samples_majority=83440, factor=1.1.  time sequence split, using only 30% of the training data ===
+=== Training Label Distribution ===
+{0: 615890, 2: 91784, 1: 91784}
+=== top_or_bottom_RF ===
+Model Parameters:
+  n_estimators: 150
+  max_depth: None
+  max_features: sqrt
+  min_samples_leaf: 2
+  min_samples_split: 2
+  bootstrap: True
+  max_samples: None
+  class_weight: {0: 1, 1: 1.1, 2: 1.1}
+  random_state: 42
+  n_jobs: -1
+
+Result:
+Accuracy: 0.9243
+              precision    recall  f1-score   support
+
+           0       0.93      1.00      0.96    513574
+           1       0.50      0.01      0.03     20682
+           2       0.45      0.02      0.05     21266
+
+    accuracy                           0.92    555522
+   macro avg       0.62      0.35      0.34    555522
+weighted avg       0.89      0.92      0.89    555522
+
+=== Training Timestamp: 2026-01-02 12:18:37 ===
+=== Training Comments : min_samples_majority=83440, factor=1.1.  time sequence split, using only 30% of the training data ===
+=== Training Label Distribution ===
+{0: 615999, 2: 91784, 1: 91784}
+=== top_or_bottom_RF ===
+Model Parameters:
+  n_estimators: 150
+  max_depth: 200
+  max_features: sqrt
+  min_samples_leaf: 2
+  min_samples_split: 2
+  bootstrap: True
+  max_samples: None
+  class_weight: {0: 1, 1: 1.1, 2: 1.1}
+  random_state: 42
+  n_jobs: -1
+
+Result:
+Accuracy: 0.9234
+              precision    recall  f1-score   support
+
+           0       0.93      1.00      0.96    513574
+           1       0.33      0.01      0.03     20682
+           2       0.36      0.02      0.04     21266
+
+    accuracy                           0.92    555522
+   macro avg       0.54      0.34      0.34    555522
+weighted avg       0.88      0.92      0.89    555522
+
+=== Training Timestamp: 2026-01-20 17:16:59 ===
+=== Training Comments : min_samples_majority=159824, factor=1.  time sequence split ===
+=== Training Label Distribution ===
+{0: 1900011, 1: 160260, 2: 159824}
+=== top_or_bottom_RF ===
+Model Parameters:
+  n_estimators: 200
+  max_depth: None
+  max_features: sqrt
+  min_samples_leaf: 2
+  min_samples_split: 2
+  bootstrap: True
+  max_samples: None
+  class_weight: {0: 1, 1: 15, 2: 5}
+  random_state: 42
+  n_jobs: -1
+
+Result:
+Accuracy: 0.8552
+              precision    recall  f1-score   support
+
+           0       0.86      1.00      0.92    474610
+           1       0.54      0.02      0.03     40261
+           2       0.64      0.02      0.04     40651
+
+    accuracy                           0.86    555522
+   macro avg       0.68      0.35      0.33    555522
+weighted avg       0.82      0.86      0.79    555522
+
+{'params': {'n_estimators': 200, 'max_depth': None, 'max_features': 'sqrt', 'min_samples_leaf': 2, 'min_samples_split': 2, 'bootstrap': True, 'max_samples': None, 'class_weight': {0: 1, 1: 15, 2: 5}, 'random_state': 42, 'n_jobs': -1}, 'result': 'Accuracy: 0.8552\n              precision    recall  f1-score   support\n\n           0       0.86      1.00      0.92    474610\n           1       0.54      0.02      0.03     40261\n           2       0.64      0.02      0.04     40651\n\n    accuracy                           0.86    555522\n   macro avg       0.68      0.35      0.33    555522\nweighted avg       0.82      0.86      0.79    555522\n'}
+
+=== Training Timestamp: 2026-01-25 19:43:35 ===
+=== Training Comments : min_samples_majority=41743, factor=1.  time sequence split RF no filtered important features. replicate minority entry ===
+=== Training Label Distribution ===
+{0: 424769, 2: 85041, 1: 81515}
+=== top_or_bottom_RF ===
+Model Parameters:
+  n_estimators: 500
+  max_depth: 200
+  max_features: sqrt
+  min_samples_leaf: 2
+  min_samples_split: 2
+  bootstrap: True
+  max_samples: None
+  class_weight: {0: 1, 1: 5, 2: 5}
+  random_state: 42
+  n_jobs: -1
+
+Result:
+Accuracy: 0.7292
+              precision    recall  f1-score   support
+
+           0       0.74      0.98      0.84    106337
+           1       0.59      0.08      0.14     20346
+           2       0.60      0.13      0.21     21620
+
+    accuracy                           0.73    148303
+   macro avg       0.64      0.39      0.39    148303
+weighted avg       0.70      0.73      0.65    148303
+
+{'params': {'n_estimators': 500, 'max_depth': 200, 'max_features': 'sqrt', 'min_samples_leaf': 2, 'min_samples_split': 2, 'bootstrap': True, 'max_samples': None, 'class_weight': {0: 1, 1: 5, 2: 5}, 'random_state': 42, 'n_jobs': -1}, 'result': 'Accuracy: 0.7292\n              precision    recall  f1-score   support\n\n           0       0.74      0.98      0.84    106337\n           1       0.59      0.08      0.14     20346\n           2       0.60      0.13      0.21     21620\n\n    accuracy                           0.73    148303\n   macro avg       0.64      0.39      0.39    148303\nweighted avg       0.70      0.73      0.65    148303\n'}
+
+=== Training Timestamp: 2026-01-25 21:04:09 ===
+=== Training Comments : min_samples_majority=41743, factor=1.  time sequence split RF no filtered important features. replicate minority entry ===
+=== Training Label Distribution ===
+{0: 424769, 2: 85041, 1: 81515}
+=== top_or_bottom_RF ===
+Model Parameters:
+  n_estimators: 500
+  max_depth: 200
+  max_features: sqrt
+  min_samples_leaf: 2
+  min_samples_split: 2
+  bootstrap: True
+  max_samples: None
+  class_weight: {0: 1, 1: 5, 2: 5}
+  random_state: 42
+  n_jobs: -1
+
+Result:
+Accuracy: 0.7292
+              precision    recall  f1-score   support
+
+           0       0.74      0.98      0.84    106337
+           1       0.59      0.08      0.14     20346
+           2       0.60      0.13      0.21     21620
+
+    accuracy                           0.73    148303
+   macro avg       0.64      0.39      0.39    148303
+weighted avg       0.70      0.73      0.65    148303
+
+{'params': {'n_estimators': 500, 'max_depth': 200, 'max_features': 'sqrt', 'min_samples_leaf': 2, 'min_samples_split': 2, 'bootstrap': True, 'max_samples': None, 'class_weight': {0: 1, 1: 5, 2: 5}, 'random_state': 42, 'n_jobs': -1}, 'result': 'Accuracy: 0.7292\n              precision    recall  f1-score   support\n\n           0       0.74      0.98      0.84    106337\n           1       0.59      0.08      0.14     20346\n           2       0.60      0.13      0.21     21620\n\n    accuracy                           0.73    148303\n   macro avg       0.64      0.39      0.39    148303\nweighted avg       0.70      0.73      0.65    148303\n'}
+
+=== Training Timestamp: 2026-01-25 22:01:08 ===
+=== Training Comments : min_samples_majority=41743, factor=1.  time sequence split RF no filtered important features. replicate minority entry ===
+=== Training Label Distribution ===
+{0: 424769, 2: 85041, 1: 81515}
+=== top_or_bottom_RF ===
+Model Parameters:
+  n_estimators: 1000
+  max_depth: 200
+  max_features: sqrt
+  min_samples_leaf: 2
+  min_samples_split: 2
+  bootstrap: True
+  max_samples: None
+  class_weight: {0: 1, 1: 5, 2: 5}
+  random_state: 42
+  n_jobs: -1
+
+Result:
+Accuracy: 0.7296
+              precision    recall  f1-score   support
+
+           0       0.74      0.98      0.84    106337
+           1       0.59      0.08      0.14     20346
+           2       0.60      0.13      0.22     21620
+
+    accuracy                           0.73    148303
+   macro avg       0.64      0.40      0.40    148303
+weighted avg       0.70      0.73      0.65    148303
+
+{'params': {'n_estimators': 1000, 'max_depth': 200, 'max_features': 'sqrt', 'min_samples_leaf': 2, 'min_samples_split': 2, 'bootstrap': True, 'max_samples': None, 'class_weight': {0: 1, 1: 5, 2: 5}, 'random_state': 42, 'n_jobs': -1}, 'result': 'Accuracy: 0.7296\n              precision    recall  f1-score   support\n\n           0       0.74      0.98      0.84    106337\n           1       0.59      0.08      0.14     20346\n           2       0.60      0.13      0.22     21620\n\n    accuracy                           0.73    148303\n   macro avg       0.64      0.40      0.40    148303\nweighted avg       0.70      0.73      0.65    148303\n'}
+
+=== Training Timestamp: 2026-01-27 22:57:55 ===
+=== Training Comments : min_samples_majority=41743, factor=1.  time sequence split RF no filtered important features. replicate minority entry ===
+=== Training Label Distribution ===
+{0: 424769, 2: 85041, 1: 81515}
+=== top_or_bottom_RF ===
+Model Parameters:
+  n_estimators: 500
+  max_depth: 150
+  max_features: sqrt
+  min_samples_leaf: 2
+  min_samples_split: 2
+  bootstrap: True
+  max_samples: None
+  class_weight: {0: 1, 1: 2, 2: 2}
+  random_state: 42
+  n_jobs: -1
+
+Result:
+Accuracy: 0.7294
+              precision    recall  f1-score   support
+
+           0       0.73      0.98      0.84    106337
+           1       0.61      0.07      0.12     20346
+           2       0.63      0.11      0.19     21620
+
+    accuracy                           0.73    148303
+   macro avg       0.66      0.39      0.38    148303
+weighted avg       0.70      0.73      0.65    148303
+
+{'params': {'n_estimators': 500, 'max_depth': 150, 'max_features': 'sqrt', 'min_samples_leaf': 2, 'min_samples_split': 2, 'bootstrap': True, 'max_samples': None, 'class_weight': {0: 1, 1: 2, 2: 2}, 'random_state': 42, 'n_jobs': -1}, 'result': 'Accuracy: 0.7294\n              precision    recall  f1-score   support\n\n           0       0.73      0.98      0.84    106337\n           1       0.61      0.07      0.12     20346\n           2       0.63      0.11      0.19     21620\n\n    accuracy                           0.73    148303\n   macro avg       0.66      0.39      0.38    148303\nweighted avg       0.70      0.73      0.65    148303\n'}
+
+=== Training Timestamp: 2026-01-27 23:24:20 ===
+=== Training Comments : min_samples_majority=41743, factor=1.  time sequence split RF no filtered important features. replicate minority entry ===
+=== Training Label Distribution ===
+{0: 424769, 2: 85041, 1: 81515}
+=== top_or_bottom_RF ===
+Model Parameters:
+  n_estimators: 750
+  max_depth: 150
+  max_features: sqrt
+  min_samples_leaf: 2
+  min_samples_split: 2
+  bootstrap: True
+  max_samples: None
+  class_weight: {0: 1, 1: 5, 2: 5}
+  random_state: 42
+  n_jobs: -1
+
+Result:
+Accuracy: 0.7296
+              precision    recall  f1-score   support
+
+           0       0.74      0.98      0.84    106337
+           1       0.59      0.08      0.14     20346
+           2       0.60      0.13      0.22     21620
+
+    accuracy                           0.73    148303
+   macro avg       0.64      0.40      0.40    148303
+weighted avg       0.70      0.73      0.65    148303
+
+{'params': {'n_estimators': 750, 'max_depth': 150, 'max_features': 'sqrt', 'min_samples_leaf': 2, 'min_samples_split': 2, 'bootstrap': True, 'max_samples': None, 'class_weight': {0: 1, 1: 5, 2: 5}, 'random_state': 42, 'n_jobs': -1}, 'result': 'Accuracy: 0.7296\n              precision    recall  f1-score   support\n\n           0       0.74      0.98      0.84    106337\n           1       0.59      0.08      0.14     20346\n           2       0.60      0.13      0.22     21620\n\n    accuracy                           0.73    148303\n   macro avg       0.64      0.40      0.40    148303\nweighted avg       0.70      0.73      0.65    148303\n'}
+
+=== Training Timestamp: 2026-01-28 14:18:59 ===
+=== Training Comments : min_samples_majority=41743, factor=1.  time sequence split RF no filtered important features. replicate minority entry ===
+=== Training Label Distribution ===
+{0: 424769, 2: 85041, 1: 81515}
+=== top_or_bottom_RF ===
+Model Parameters:
+  n_estimators: 750
+  max_depth: 100
+  max_features: sqrt
+  min_samples_leaf: 2
+  min_samples_split: 2
+  bootstrap: True
+  max_samples: None
+  class_weight: {0: 1, 1: 5, 2: 5}
+  random_state: 42
+  n_jobs: -1
+
+Result:
+Accuracy: 0.7283
+              precision    recall  f1-score   support
+
+           0       0.74      0.98      0.84    106337
+           1       0.57      0.08      0.14     20346
+           2       0.59      0.12      0.21     21620
+
+    accuracy                           0.73    148303
+   macro avg       0.63      0.39      0.39    148303
+weighted avg       0.69      0.73      0.65    148303
+
+{'params': {'n_estimators': 750, 'max_depth': 100, 'max_features': 'sqrt', 'min_samples_leaf': 2, 'min_samples_split': 2, 'bootstrap': True, 'max_samples': None, 'class_weight': {0: 1, 1: 5, 2: 5}, 'random_state': 42, 'n_jobs': -1}, 'result': 'Accuracy: 0.7283\n              precision    recall  f1-score   support\n\n           0       0.74      0.98      0.84    106337\n           1       0.57      0.08      0.14     20346\n           2       0.59      0.12      0.21     21620\n\n    accuracy                           0.73    148303\n   macro avg       0.63      0.39      0.39    148303\nweighted avg       0.69      0.73      0.65    148303\n'}
+

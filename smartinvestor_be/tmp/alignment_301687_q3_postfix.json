@@ -1,0 +1,25 @@
+{
+  "total_checks": 1,
+  "mismatch_count": 0,
+  "strict_missing_count": 0,
+  "rows": [
+    {
+      "ts_code": "301687.SZ",
+      "report_type": "Q3",
+      "valuation_trade_date": "2026-04-15",
+      "valuation_profit_data_source": "fina_indicator_income",
+      "valuation_profit_report_type": "Q3",
+      "valuation_profit_report_end_date": "2025-09-30",
+      "default_signal_end_date": "2025-09-30",
+      "default_signal_report_type": "Q3",
+      "default_signal_fiscal_year": 2025,
+      "strict_signal_end_date": "2025-09-30",
+      "strict_signal_report_type": "Q3",
+      "strict_signal_fiscal_year": 2025,
+      "aligned_default": true,
+      "aligned_strict": true,
+      "default_error": null,
+      "strict_error": null
+    }
+  ]
+}

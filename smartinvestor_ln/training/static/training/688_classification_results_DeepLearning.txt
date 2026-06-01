@@ -1,0 +1,13 @@
+=== Training Timestamp: 2025-12-18 21:57:47 ===
+=== Training Comments : No sample, default params used. ===
+=== Training Label Distribution ===
+{0.0: 434584, 2.0: 18009, 1.0: 17940}
+=== top_or_bottom_DeepLearning ===
+{'params': '3-layer NN with dropout', 'result': 'Accuracy: 0.9231\n              precision    recall  f1-score   support\n\n         0.0       0.92      1.00      0.96    108878\n         1.0       0.00      0.00      0.00      4458\n         2.0       0.00      0.00      0.00      4607\n\n    accuracy                           0.92    117943\n   macro avg       0.31      0.33      0.32    117943\nweighted avg       0.85      0.92      0.89    117943\n'}
+
+=== Training Timestamp: 2025-12-19 11:03:13 ===
+=== Training Comments : No sample, default params used. ===
+=== Training Label Distribution ===
+{0.0: 434584, 2.0: 18009, 1.0: 17940}
+=== top_or_bottom_DeepLearning ===
+Model Parameters:

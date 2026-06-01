@@ -1,0 +1,6135 @@
+{
+  "version": "CN-1.1",
+  "market": "CN",
+  "note": "Keyword weighting rules for business-text industry matching. Targets align with Shenwan 2021 L1/L2 names, while keywords absorb common expressions from both Shenwan and CITIC industry taxonomies.",
+  "field_weights": {
+    "main_business": 3.0,
+    "business_scope": 2.0,
+    "introduction": 1.0
+  },
+  "industry_name_level_weights": {
+    "L1": 0.9,
+    "L2": 1.15,
+    "L3": 1.3
+  },
+  "citic_prior_weights": {
+    "L1": 1.5,
+    "L2": 3.2,
+    "L3": 4.2
+  },
+  "citic_name_match_cutoff": 0.55,
+  "generic_term_score_multipliers": {
+    "软件": 0.3,
+    "软件开发": 0.45,
+    "服务": 0.4,
+    "it服务": 0.65,
+    "设备": 0.55,
+    "专用设备": 0.7,
+    "通用设备": 0.7,
+    "材料": 0.55,
+    "制品": 0.55,
+    "开发": 0.6,
+    "综合": 0.55,
+    "贸易": 0.5,
+    "电子": 0.75,
+    "传媒": 0.75,
+    "通信": 0.75,
+    "计算机": 0.75
+  },
+  "citic_non_target_score_multiplier": 0.8,
+  "business_match_fallback": {
+    "top_score_min": 6.0,
+    "top_two_gap_min": 0.8,
+    "gap_check_score_cap": 12.0,
+    "citic_alignment_score_min": 12.0,
+    "citic_l1_overrides": {
+      "国防军工": {
+        "top_score_min": 5.2,
+        "top_two_gap_min": 0.6,
+        "gap_check_score_cap": 11.0,
+        "citic_alignment_score_min": 10.5
+      },
+      "电子": {
+        "top_score_min": 6.8,
+        "top_two_gap_min": 1.0,
+        "gap_check_score_cap": 13.0,
+        "citic_alignment_score_min": 12.8
+      },
+      "计算机": {
+        "top_score_min": 7.0,
+        "top_two_gap_min": 1.1,
+        "gap_check_score_cap": 13.5,
+        "citic_alignment_score_min": 13.0
+      },
+      "建筑": {
+        "top_score_min": 6.0,
+        "top_two_gap_min": 0.8,
+        "gap_check_score_cap": 12.0,
+        "citic_alignment_score_min": 60.0
+      },
+      "传媒": {
+        "top_score_min": 6.8,
+        "top_two_gap_min": 1.0,
+        "gap_check_score_cap": 13.0,
+        "citic_alignment_score_min": 12.8
+      },
+      "通信": {
+        "top_score_min": 6.8,
+        "top_two_gap_min": 1.0,
+        "gap_check_score_cap": 13.0,
+        "citic_alignment_score_min": 12.8
+      },
+      "银行": {
+        "top_score_min": 5.0,
+        "top_two_gap_min": 0.5,
+        "gap_check_score_cap": 10.0,
+        "citic_alignment_score_min": 10.0
+      },
+      "非银行金融": {
+        "top_score_min": 5.4,
+        "top_two_gap_min": 0.6,
+        "gap_check_score_cap": 10.5,
+        "citic_alignment_score_min": 10.5
+      },
+      "消费者服务": {
+        "top_score_min": 5.4,
+        "top_two_gap_min": 0.6,
+        "gap_check_score_cap": 10.5,
+        "citic_alignment_score_min": 10.5
+      }
+    },
+    "citic_l2_overrides": {
+      "光学光电": {
+        "top_score_min": 6.6,
+        "top_two_gap_min": 0.9,
+        "gap_check_score_cap": 12.5,
+        "citic_alignment_score_min": 11.0
+      },
+      "半导体": {
+        "top_score_min": 7.2,
+        "top_two_gap_min": 1.1,
+        "gap_check_score_cap": 13.5,
+        "citic_alignment_score_min": 13.5
+      },
+      "计算机软件": {
+        "top_score_min": 7.0,
+        "top_two_gap_min": 1.0,
+        "gap_check_score_cap": 13.0,
+        "citic_alignment_score_min": 12.8
+      },
+      "建筑施工": {
+        "top_score_min": 6.0,
+        "top_two_gap_min": 0.8,
+        "gap_check_score_cap": 12.0,
+        "citic_alignment_score_min": 60.0
+      },
+      "其他军工Ⅱ": {
+        "top_score_min": 5.0,
+        "top_two_gap_min": 0.6,
+        "gap_check_score_cap": 11.0,
+        "citic_alignment_score_min": 10.0
+      },
+      "其他军工Ⅲ": {
+        "top_score_min": 5.0,
+        "top_two_gap_min": 0.6,
+        "gap_check_score_cap": 11.0,
+        "citic_alignment_score_min": 10.0
+      },
+      "通信设备": {
+        "top_score_min": 6.8,
+        "top_two_gap_min": 1.0,
+        "gap_check_score_cap": 13.0,
+        "citic_alignment_score_min": 55.0
+      },
+      "物流": {
+        "top_score_min": 5.6,
+        "top_two_gap_min": 0.7,
+        "gap_check_score_cap": 11.0,
+        "citic_alignment_score_min": 10.5
+      },
+      "发电及电网": {
+        "top_score_min": 6.2,
+        "top_two_gap_min": 0.9,
+        "gap_check_score_cap": 12.0,
+        "citic_alignment_score_min": 11.5
+      },
+      "电气设备": {
+        "top_score_min": 6.3,
+        "top_two_gap_min": 0.9,
+        "gap_check_score_cap": 12.0,
+        "citic_alignment_score_min": 28.0
+      },
+      "白色家电Ⅱ": {
+        "top_score_min": 5.8,
+        "top_two_gap_min": 0.7,
+        "gap_check_score_cap": 11.0,
+        "citic_alignment_score_min": 10.8
+      },
+      "石油开采Ⅱ": {
+        "top_score_min": 5.8,
+        "top_two_gap_min": 0.8,
+        "gap_check_score_cap": 11.5,
+        "citic_alignment_score_min": 11.0
+      },
+      "黑色家电Ⅱ": {
+        "top_score_min": 5.8,
+        "top_two_gap_min": 0.7,
+        "gap_check_score_cap": 11.0,
+        "citic_alignment_score_min": 45.0
+      }
+    },
+    "citic_l3_overrides": {
+      "LED": {
+        "top_score_min": 6.4,
+        "top_two_gap_min": 0.8,
+        "gap_check_score_cap": 12.0,
+        "citic_alignment_score_min": 10.8
+      },
+      "快递": {
+        "top_score_min": 5.4,
+        "top_two_gap_min": 0.6,
+        "gap_check_score_cap": 10.5,
+        "citic_alignment_score_min": 10.0
+      },
+      "白色家电Ⅲ": {
+        "top_score_min": 5.6,
+        "top_two_gap_min": 0.6,
+        "gap_check_score_cap": 10.8,
+        "citic_alignment_score_min": 10.5
+      },
+      "专业工程及其他": {
+        "top_score_min": 5.8,
+        "top_two_gap_min": 0.7,
+        "gap_check_score_cap": 11.5,
+        "citic_alignment_score_min": 55.0
+      },
+      "集成电路": {
+        "top_score_min": 7.0,
+        "top_two_gap_min": 1.0,
+        "gap_check_score_cap": 13.0,
+        "citic_alignment_score_min": 13.2
+      },
+      "行业应用软件": {
+        "top_score_min": 7.2,
+        "top_two_gap_min": 1.1,
+        "gap_check_score_cap": 13.5,
+        "citic_alignment_score_min": 13.0
+      },
+      "纸包装": {
+        "top_score_min": 5.6,
+        "top_two_gap_min": 0.6,
+        "gap_check_score_cap": 10.8,
+        "citic_alignment_score_min": 10.4
+      },
+      "输变电设备": {
+        "top_score_min": 6.0,
+        "top_two_gap_min": 0.8,
+        "gap_check_score_cap": 11.5,
+        "citic_alignment_score_min": 28.0
+      },
+      "配电设备": {
+        "top_score_min": 6.0,
+        "top_two_gap_min": 0.8,
+        "gap_check_score_cap": 11.5,
+        "citic_alignment_score_min": 28.0
+      }
+    }
+  },
+  "citic_name_targets": {
+    "国防军工": [
+      {
+        "level": "L2",
+        "name": "军工电子Ⅱ"
+      },
+      {
+        "level": "L2",
+        "name": "航天装备Ⅱ",
+        "weight": 0.9
+      },
+      {
+        "level": "L2",
+        "name": "航空装备Ⅱ",
+        "weight": 0.9
+      },
+      {
+        "level": "L2",
+        "name": "航海装备Ⅱ",
+        "weight": 0.9
+      },
+      {
+        "level": "L2",
+        "name": "地面兵装Ⅱ",
+        "weight": 0.9
+      }
+    ],
+    "家电": [
+      {
+        "level": "L1",
+        "name": "家用电器"
+      }
+    ],
+    "医药": [
+      {
+        "level": "L1",
+        "name": "医药生物"
+      }
+    ],
+    "机械": [
+      {
+        "level": "L1",
+        "name": "机械设备"
+      }
+    ],
+    "消费者服务": [
+      {
+        "level": "L1",
+        "name": "社会服务"
+      }
+    ],
+    "电力及公用事业": [
+      {
+        "level": "L1",
+        "name": "公用事业"
+      },
+      {
+        "level": "L1",
+        "name": "环保",
+        "weight": 0.7
+      }
+    ],
+    "电力设备及新能源": [
+      {
+        "level": "L1",
+        "name": "电力设备"
+      }
+    ],
+    "综合金融": [
+      {
+        "level": "L1",
+        "name": "非银金融"
+      }
+    ],
+    "纺织服装": [
+      {
+        "level": "L1",
+        "name": "纺织服饰"
+      }
+    ],
+    "元器件": [
+      {
+        "level": "L2",
+        "name": "元件"
+      }
+    ],
+    "光学光电": [
+      {
+        "level": "L2",
+        "name": "光学光电子"
+      }
+    ],
+    "专用机械": [
+      {
+        "level": "L2",
+        "name": "专用设备"
+      }
+    ],
+    "专营连锁": [
+      {
+        "level": "L2",
+        "name": "专业连锁Ⅱ"
+      }
+    ],
+    "中药生产": [
+      {
+        "level": "L2",
+        "name": "中药Ⅱ"
+      }
+    ],
+    "乘用车Ⅱ": [
+      {
+        "level": "L2",
+        "name": "乘用车"
+      }
+    ],
+    "云服务": [
+      {
+        "level": "L2",
+        "name": "IT服务Ⅱ"
+      }
+    ],
+    "互联网媒体": [
+      {
+        "level": "L2",
+        "name": "数字媒体"
+      },
+      {
+        "level": "L2",
+        "name": "社交Ⅱ",
+        "weight": 0.8
+      }
+    ],
+    "产业互联网": [
+      {
+        "level": "L2",
+        "name": "IT服务Ⅱ"
+      },
+      {
+        "level": "L2",
+        "name": "软件开发",
+        "weight": 0.8
+      }
+    ],
+    "全国性股份制银行Ⅱ": [
+      {
+        "level": "L2",
+        "name": "股份制银行Ⅱ"
+      }
+    ],
+    "公路铁路": [
+      {
+        "level": "L2",
+        "name": "铁路公路"
+      }
+    ],
+    "兵器兵装Ⅱ": [
+      {
+        "level": "L2",
+        "name": "地面兵装Ⅱ"
+      }
+    ],
+    "其他军工Ⅱ": [
+      {
+        "level": "L2",
+        "name": "军工电子Ⅱ"
+      },
+      {
+        "level": "L2",
+        "name": "航天装备Ⅱ",
+        "weight": 0.9
+      },
+      {
+        "level": "L2",
+        "name": "航空装备Ⅱ",
+        "weight": 0.9
+      },
+      {
+        "level": "L2",
+        "name": "航海装备Ⅱ",
+        "weight": 0.9
+      },
+      {
+        "level": "L2",
+        "name": "地面兵装Ⅱ",
+        "weight": 0.9
+      }
+    ],
+    "其他军工Ⅲ": [
+      {
+        "level": "L2",
+        "name": "军工电子Ⅱ"
+      },
+      {
+        "level": "L2",
+        "name": "航天装备Ⅱ",
+        "weight": 0.9
+      },
+      {
+        "level": "L2",
+        "name": "航空装备Ⅱ",
+        "weight": 0.9
+      },
+      {
+        "level": "L2",
+        "name": "航海装备Ⅱ",
+        "weight": 0.9
+      },
+      {
+        "level": "L2",
+        "name": "地面兵装Ⅱ",
+        "weight": 0.9
+      }
+    ],
+    "其他化学制品Ⅱ": [
+      {
+        "level": "L2",
+        "name": "化学制品"
+      }
+    ],
+    "其他电子零组件Ⅱ": [
+      {
+        "level": "L2",
+        "name": "其他电子Ⅱ"
+      },
+      {
+        "level": "L2",
+        "name": "元件",
+        "weight": 0.8
+      }
+    ],
+    "农产品加工Ⅱ": [
+      {
+        "level": "L2",
+        "name": "农产品加工"
+      }
+    ],
+    "农用化工": [
+      {
+        "level": "L2",
+        "name": "农化制品"
+      }
+    ],
+    "区域性银行": [
+      {
+        "level": "L2",
+        "name": "城商行Ⅱ"
+      },
+      {
+        "level": "L2",
+        "name": "农商行Ⅱ",
+        "weight": 0.8
+      }
+    ],
+    "厨房电器Ⅱ": [
+      {
+        "level": "L2",
+        "name": "厨卫电器"
+      }
+    ],
+    "发电及电网": [
+      {
+        "level": "L2",
+        "name": "电力"
+      },
+      {
+        "level": "L2",
+        "name": "电网设备",
+        "weight": 0.9
+      }
+    ],
+    "品牌服饰": [
+      {
+        "level": "L2",
+        "name": "服装家纺"
+      }
+    ],
+    "塑料及制品": [
+      {
+        "level": "L2",
+        "name": "塑料"
+      }
+    ],
+    "增值服务Ⅱ": [
+      {
+        "level": "L2",
+        "name": "通信服务"
+      }
+    ],
+    "多领域控股Ⅱ": [
+      {
+        "level": "L2",
+        "name": "综合Ⅱ"
+      }
+    ],
+    "家居": [
+      {
+        "level": "L2",
+        "name": "家居用品"
+      }
+    ],
+    "小家电Ⅱ": [
+      {
+        "level": "L2",
+        "name": "小家电"
+      }
+    ],
+    "工程机械Ⅱ": [
+      {
+        "level": "L2",
+        "name": "工程机械"
+      }
+    ],
+    "工程机械Ⅲ": [
+      {
+        "level": "L2",
+        "name": "工程机械"
+      }
+    ],
+    "建筑施工": [
+      {
+        "level": "L2",
+        "name": "房屋建设Ⅱ"
+      },
+      {
+        "level": "L2",
+        "name": "基础建设",
+        "weight": 0.8
+      }
+    ],
+    "建筑装修Ⅱ": [
+      {
+        "level": "L2",
+        "name": "装修装饰Ⅱ"
+      }
+    ],
+    "建筑装修Ⅲ": [
+      {
+        "level": "L2",
+        "name": "装修装饰Ⅱ"
+      }
+    ],
+    "建筑设计及服务Ⅱ": [
+      {
+        "level": "L2",
+        "name": "工程咨询服务Ⅱ"
+      }
+    ],
+    "建筑设计及服务Ⅲ": [
+      {
+        "level": "L2",
+        "name": "工程咨询服务Ⅱ"
+      }
+    ],
+    "房地产开发和运营": [
+      {
+        "level": "L2",
+        "name": "房地产开发"
+      }
+    ],
+    "房建建设": [
+      {
+        "level": "L2",
+        "name": "房屋建设Ⅱ"
+      }
+    ],
+    "摩托车及其他Ⅱ": [
+      {
+        "level": "L2",
+        "name": "摩托车及其他"
+      }
+    ],
+    "摩托车及其他Ⅲ": [
+      {
+        "level": "L2",
+        "name": "摩托车及其他"
+      }
+    ],
+    "文娱轻工Ⅱ": [
+      {
+        "level": "L2",
+        "name": "文娱用品"
+      }
+    ],
+    "文娱轻工Ⅲ": [
+      {
+        "level": "L2",
+        "name": "文娱用品"
+      }
+    ],
+    "新兴金融服务Ⅱ": [
+      {
+        "level": "L2",
+        "name": "多元金融"
+      }
+    ],
+    "新能源动力系统": [
+      {
+        "level": "L2",
+        "name": "电池"
+      }
+    ],
+    "旅游及休闲": [
+      {
+        "level": "L2",
+        "name": "旅游及景区"
+      },
+      {
+        "level": "L2",
+        "name": "酒店餐饮",
+        "weight": 0.7
+      }
+    ],
+    "林业": [
+      {
+        "level": "L2",
+        "name": "林业Ⅱ"
+      }
+    ],
+    "橡胶及制品": [
+      {
+        "level": "L2",
+        "name": "橡胶"
+      }
+    ],
+    "橡胶制品": [
+      {
+        "level": "L2",
+        "name": "橡胶"
+      }
+    ],
+    "橡胶助剂": [
+      {
+        "level": "L2",
+        "name": "橡胶"
+      }
+    ],
+    "水产品加工": [
+      {
+        "level": "L2",
+        "name": "农产品加工"
+      }
+    ],
+    "种植": [
+      {
+        "level": "L2",
+        "name": "种植业"
+      }
+    ],
+    "汽车销售及服务Ⅲ": [
+      {
+        "level": "L2",
+        "name": "汽车服务"
+      }
+    ],
+    "消费电子组件": [
+      {
+        "level": "L2",
+        "name": "消费电子"
+      }
+    ],
+    "消费电子设备": [
+      {
+        "level": "L2",
+        "name": "消费电子"
+      }
+    ],
+    "新兴计算机软件": [
+      {
+        "level": "L2",
+        "name": "软件开发"
+      }
+    ],
+    "计算机软件": [
+      {
+        "level": "L2",
+        "name": "软件开发"
+      }
+    ],
+    "通用计算机设备": [
+      {
+        "level": "L2",
+        "name": "计算机设备"
+      }
+    ],
+    "早幼教": [
+      {
+        "level": "L2",
+        "name": "教育"
+      }
+    ],
+    "显示零组": [
+      {
+        "level": "L2",
+        "name": "光学光电子"
+      }
+    ],
+    "汽车销售及服务Ⅱ": [
+      {
+        "level": "L2",
+        "name": "汽车服务"
+      }
+    ],
+    "汽车零部件Ⅱ": [
+      {
+        "level": "L2",
+        "name": "汽车零部件"
+      }
+    ],
+    "煤炭化工": [
+      {
+        "level": "L2",
+        "name": "焦炭Ⅱ"
+      },
+      {
+        "level": "L2",
+        "name": "化学原料",
+        "weight": 0.6
+      }
+    ],
+    "煤炭开采洗选": [
+      {
+        "level": "L2",
+        "name": "煤炭开采"
+      }
+    ],
+    "照明电工及其他": [
+      {
+        "level": "L2",
+        "name": "照明设备Ⅱ"
+      },
+      {
+        "level": "L2",
+        "name": "其他家电Ⅱ",
+        "weight": 0.6
+      }
+    ],
+    "环保及公用事业": [
+      {
+        "level": "L2",
+        "name": "环境治理"
+      },
+      {
+        "level": "L2",
+        "name": "环保设备Ⅱ",
+        "weight": 0.9
+      },
+      {
+        "level": "L2",
+        "name": "燃气Ⅱ",
+        "weight": 0.7
+      }
+    ],
+    "生物医药Ⅱ": [
+      {
+        "level": "L2",
+        "name": "生物制品"
+      }
+    ],
+    "电信运营Ⅱ": [
+      {
+        "level": "L2",
+        "name": "通信服务"
+      }
+    ],
+    "电商及服务Ⅱ": [
+      {
+        "level": "L2",
+        "name": "互联网电商"
+      }
+    ],
+    "电气设备": [
+      {
+        "level": "L2",
+        "name": "电网设备"
+      },
+      {
+        "level": "L2",
+        "name": "其他电源设备Ⅱ",
+        "weight": 0.8
+      },
+      {
+        "level": "L2",
+        "name": "电机Ⅱ",
+        "weight": 0.7
+      }
+    ],
+    "电源设备": [
+      {
+        "level": "L2",
+        "name": "其他电源设备Ⅱ"
+      }
+    ],
+    "畜牧业": [
+      {
+        "level": "L2",
+        "name": "养殖业"
+      }
+    ],
+    "白色家电Ⅱ": [
+      {
+        "level": "L2",
+        "name": "白色家电"
+      }
+    ],
+    "石油化工": [
+      {
+        "level": "L2",
+        "name": "炼化及贸易"
+      }
+    ],
+    "半导体": [
+      {
+        "level": "L2",
+        "name": "半导体"
+      }
+    ],
+    "3C设备": [
+      {
+        "level": "L2",
+        "name": "消费电子"
+      },
+      {
+        "level": "L2",
+        "name": "计算机设备",
+        "weight": 0.7
+      }
+    ],
+    "K12培训": [
+      {
+        "level": "L2",
+        "name": "教育"
+      }
+    ],
+    "K12基础教育": [
+      {
+        "level": "L2",
+        "name": "教育"
+      }
+    ],
+    "一般零售": [
+      {
+        "level": "L2",
+        "name": "一般零售"
+      }
+    ],
+    "专业市场经营Ⅱ": [
+      {
+        "level": "L2",
+        "name": "专业连锁Ⅱ"
+      },
+      {
+        "level": "L2",
+        "name": "贸易Ⅱ",
+        "weight": 0.6
+      }
+    ],
+    "专业市场经营Ⅲ": [
+      {
+        "level": "L2",
+        "name": "专业连锁Ⅱ"
+      },
+      {
+        "level": "L2",
+        "name": "贸易Ⅱ",
+        "weight": 0.6
+      }
+    ],
+    "专用汽车": [
+      {
+        "level": "L2",
+        "name": "商用车"
+      }
+    ],
+    "专用计算机设备": [
+      {
+        "level": "L2",
+        "name": "计算机设备"
+      }
+    ],
+    "中成药": [
+      {
+        "level": "L2",
+        "name": "中药Ⅱ"
+      }
+    ],
+    "中药饮片": [
+      {
+        "level": "L2",
+        "name": "中药Ⅱ"
+      }
+    ],
+    "中高端成人品牌服饰": [
+      {
+        "level": "L2",
+        "name": "服装家纺"
+      }
+    ],
+    "乘用车Ⅲ": [
+      {
+        "level": "L2",
+        "name": "乘用车"
+      }
+    ],
+    "乳制品": [
+      {
+        "level": "L2",
+        "name": "饮料乳品"
+      }
+    ],
+    "云基础设施服务": [
+      {
+        "level": "L2",
+        "name": "IT服务Ⅱ"
+      }
+    ],
+    "云平台服务": [
+      {
+        "level": "L2",
+        "name": "IT服务Ⅱ"
+      }
+    ],
+    "云软件服务": [
+      {
+        "level": "L2",
+        "name": "软件开发"
+      },
+      {
+        "level": "L2",
+        "name": "IT服务Ⅱ",
+        "weight": 0.8
+      }
+    ],
+    "互联网广告营销": [
+      {
+        "level": "L2",
+        "name": "广告营销"
+      }
+    ],
+    "互联网影视音频": [
+      {
+        "level": "L2",
+        "name": "数字媒体"
+      },
+      {
+        "level": "L2",
+        "name": "影视院线",
+        "weight": 0.8
+      }
+    ],
+    "产业互联网信息服务": [
+      {
+        "level": "L2",
+        "name": "IT服务Ⅱ"
+      },
+      {
+        "level": "L2",
+        "name": "软件开发",
+        "weight": 0.8
+      }
+    ],
+    "产业互联网平台服务": [
+      {
+        "level": "L2",
+        "name": "IT服务Ⅱ"
+      },
+      {
+        "level": "L2",
+        "name": "软件开发",
+        "weight": 0.8
+      }
+    ],
+    "产业互联网综合服务": [
+      {
+        "level": "L2",
+        "name": "IT服务Ⅱ"
+      },
+      {
+        "level": "L2",
+        "name": "软件开发",
+        "weight": 0.8
+      }
+    ],
+    "人力资源服务": [
+      {
+        "level": "L2",
+        "name": "专业服务"
+      }
+    ],
+    "仪器仪表Ⅱ": [
+      {
+        "level": "L2",
+        "name": "通用设备"
+      },
+      {
+        "level": "L2",
+        "name": "自动化设备",
+        "weight": 0.7
+      }
+    ],
+    "仪器仪表Ⅲ": [
+      {
+        "level": "L2",
+        "name": "通用设备"
+      },
+      {
+        "level": "L2",
+        "name": "自动化设备",
+        "weight": 0.7
+      }
+    ],
+    "休闲食品": [
+      {
+        "level": "L2",
+        "name": "休闲食品"
+      }
+    ],
+    "住宅物业开发": [
+      {
+        "level": "L2",
+        "name": "房地产开发"
+      }
+    ],
+    "保险Ⅱ": [
+      {
+        "level": "L2",
+        "name": "保险Ⅱ"
+      }
+    ],
+    "保险Ⅲ": [
+      {
+        "level": "L2",
+        "name": "保险Ⅱ"
+      }
+    ],
+    "信息搜索与聚合": [
+      {
+        "level": "L2",
+        "name": "数字媒体"
+      },
+      {
+        "level": "L2",
+        "name": "社交Ⅱ",
+        "weight": 0.7
+      }
+    ],
+    "信托": [
+      {
+        "level": "L2",
+        "name": "多元金融"
+      }
+    ],
+    "全国性股份制银行Ⅲ": [
+      {
+        "level": "L2",
+        "name": "股份制银行Ⅱ"
+      }
+    ],
+    "公交": [
+      {
+        "level": "L2",
+        "name": "铁路公路"
+      }
+    ],
+    "公路": [
+      {
+        "level": "L2",
+        "name": "铁路公路"
+      }
+    ],
+    "兵器兵装Ⅲ": [
+      {
+        "level": "L2",
+        "name": "地面兵装Ⅱ"
+      }
+    ],
+    "其他专用机械": [
+      {
+        "level": "L2",
+        "name": "专用设备"
+      }
+    ],
+    "其他包装": [
+      {
+        "level": "L2",
+        "name": "包装印刷"
+      }
+    ],
+    "其他化学制品Ⅲ": [
+      {
+        "level": "L2",
+        "name": "化学制品"
+      }
+    ],
+    "其他化学原料": [
+      {
+        "level": "L2",
+        "name": "化学原料"
+      }
+    ],
+    "其他医药医疗": [
+      {
+        "level": "L2",
+        "name": "医疗服务"
+      },
+      {
+        "level": "L2",
+        "name": "医药商业",
+        "weight": 0.7
+      }
+    ],
+    "其他发电": [
+      {
+        "level": "L2",
+        "name": "电力"
+      }
+    ],
+    "其他塑料制品": [
+      {
+        "level": "L2",
+        "name": "塑料"
+      }
+    ],
+    "其他家居": [
+      {
+        "level": "L2",
+        "name": "家居用品"
+      }
+    ],
+    "其他家电": [
+      {
+        "level": "L2",
+        "name": "其他家电Ⅱ"
+      }
+    ],
+    "其他广告营销": [
+      {
+        "level": "L2",
+        "name": "广告营销"
+      }
+    ],
+    "其他时尚品": [
+      {
+        "level": "L2",
+        "name": "饰品"
+      }
+    ],
+    "其他煤化工": [
+      {
+        "level": "L2",
+        "name": "焦炭Ⅱ"
+      },
+      {
+        "level": "L2",
+        "name": "化学原料",
+        "weight": 0.6
+      }
+    ],
+    "其他电子零组件Ⅲ": [
+      {
+        "level": "L2",
+        "name": "其他电子Ⅱ"
+      },
+      {
+        "level": "L2",
+        "name": "元件",
+        "weight": 0.8
+      }
+    ],
+    "其他石化": [
+      {
+        "level": "L2",
+        "name": "炼化及贸易"
+      }
+    ],
+    "其他稀有金属": [
+      {
+        "level": "L2",
+        "name": "小金属"
+      }
+    ],
+    "其他纺织": [
+      {
+        "level": "L2",
+        "name": "纺织制造"
+      }
+    ],
+    "其他结构材料": [
+      {
+        "level": "L2",
+        "name": "非金属材料Ⅱ"
+      }
+    ],
+    "其他装饰材料": [
+      {
+        "level": "L2",
+        "name": "装修建材"
+      }
+    ],
+    "其他轻工Ⅱ": [
+      {
+        "level": "L2",
+        "name": "家居用品"
+      },
+      {
+        "level": "L2",
+        "name": "文娱用品",
+        "weight": 0.7
+      }
+    ],
+    "其他轻工Ⅲ": [
+      {
+        "level": "L2",
+        "name": "家居用品"
+      },
+      {
+        "level": "L2",
+        "name": "文娱用品",
+        "weight": 0.7
+      }
+    ],
+    "其他连锁": [
+      {
+        "level": "L2",
+        "name": "专业连锁Ⅱ"
+      }
+    ],
+    "其他通信设备": [
+      {
+        "level": "L2",
+        "name": "通信设备"
+      }
+    ],
+    "其他通用机械": [
+      {
+        "level": "L2",
+        "name": "通用设备"
+      }
+    ],
+    "其他酒": [
+      {
+        "level": "L2",
+        "name": "非白酒"
+      }
+    ],
+    "其他钢铁": [
+      {
+        "level": "L2",
+        "name": "普钢"
+      },
+      {
+        "level": "L2",
+        "name": "特钢Ⅱ",
+        "weight": 0.7
+      }
+    ],
+    "其他非银金融": [
+      {
+        "level": "L2",
+        "name": "多元金融"
+      }
+    ],
+    "其他食品": [
+      {
+        "level": "L2",
+        "name": "食品加工"
+      }
+    ],
+    "农产品加工Ⅲ": [
+      {
+        "level": "L2",
+        "name": "农产品加工"
+      }
+    ],
+    "农商行": [
+      {
+        "level": "L2",
+        "name": "农商行Ⅱ"
+      }
+    ],
+    "农药": [
+      {
+        "level": "L2",
+        "name": "农化制品"
+      }
+    ],
+    "出版": [
+      {
+        "level": "L2",
+        "name": "出版"
+      }
+    ],
+    "分立器件": [
+      {
+        "level": "L2",
+        "name": "半导体"
+      }
+    ],
+    "功能性服饰": [
+      {
+        "level": "L2",
+        "name": "服装家纺"
+      }
+    ],
+    "动力煤": [
+      {
+        "level": "L2",
+        "name": "煤炭开采"
+      }
+    ],
+    "动物疫苗及兽药": [
+      {
+        "level": "L2",
+        "name": "动物保健Ⅱ"
+      }
+    ],
+    "化学制剂": [
+      {
+        "level": "L2",
+        "name": "化学制药"
+      }
+    ],
+    "化学原料药": [
+      {
+        "level": "L2",
+        "name": "化学制药"
+      }
+    ],
+    "医疗服务": [
+      {
+        "level": "L2",
+        "name": "医疗服务"
+      }
+    ],
+    "医药流通": [
+      {
+        "level": "L2",
+        "name": "医药商业"
+      }
+    ],
+    "半导体材料": [
+      {
+        "level": "L2",
+        "name": "半导体"
+      },
+      {
+        "level": "L2",
+        "name": "电子化学品Ⅱ",
+        "weight": 0.8
+      }
+    ],
+    "卡车": [
+      {
+        "level": "L2",
+        "name": "商用车"
+      }
+    ],
+    "印染": [
+      {
+        "level": "L2",
+        "name": "纺织制造"
+      }
+    ],
+    "印染化学品": [
+      {
+        "level": "L2",
+        "name": "化学制品"
+      },
+      {
+        "level": "L2",
+        "name": "纺织制造",
+        "weight": 0.7
+      }
+    ],
+    "厨房电器Ⅲ": [
+      {
+        "level": "L2",
+        "name": "厨卫电器"
+      }
+    ],
+    "叉车": [
+      {
+        "level": "L2",
+        "name": "工程机械"
+      }
+    ],
+    "合成树脂": [
+      {
+        "level": "L2",
+        "name": "塑料"
+      },
+      {
+        "level": "L2",
+        "name": "化学制品",
+        "weight": 0.7
+      }
+    ],
+    "咨询实施及其他服务": [
+      {
+        "level": "L2",
+        "name": "IT服务Ⅱ"
+      },
+      {
+        "level": "L2",
+        "name": "软件开发",
+        "weight": 0.8
+      }
+    ],
+    "园区综合开发": [
+      {
+        "level": "L2",
+        "name": "房地产开发"
+      }
+    ],
+    "园林工程": [
+      {
+        "level": "L2",
+        "name": "专业工程"
+      },
+      {
+        "level": "L2",
+        "name": "基础建设",
+        "weight": 0.6
+      }
+    ],
+    "国有大型银行Ⅲ": [
+      {
+        "level": "L2",
+        "name": "国有大型银行Ⅱ"
+      }
+    ],
+    "城商行": [
+      {
+        "level": "L2",
+        "name": "城商行Ⅱ"
+      }
+    ],
+    "基建建设": [
+      {
+        "level": "L2",
+        "name": "基础建设"
+      }
+    ],
+    "基础件": [
+      {
+        "level": "L2",
+        "name": "通用设备"
+      }
+    ],
+    "基础软件及管理办公软件": [
+      {
+        "level": "L2",
+        "name": "软件开发"
+      }
+    ],
+    "塑料加工机械": [
+      {
+        "level": "L2",
+        "name": "专用设备"
+      }
+    ],
+    "增值服务Ⅲ": [
+      {
+        "level": "L2",
+        "name": "通信服务"
+      }
+    ],
+    "复合肥": [
+      {
+        "level": "L2",
+        "name": "农化制品"
+      }
+    ],
+    "多领域控股Ⅲ": [
+      {
+        "level": "L2",
+        "name": "综合Ⅱ"
+      }
+    ],
+    "大众成人品牌服饰": [
+      {
+        "level": "L2",
+        "name": "服装家纺"
+      }
+    ],
+    "安防": [
+      {
+        "level": "L2",
+        "name": "计算机设备"
+      },
+      {
+        "level": "L2",
+        "name": "软件开发",
+        "weight": 0.7
+      }
+    ],
+    "宠物食品": [
+      {
+        "level": "L2",
+        "name": "饲料"
+      },
+      {
+        "level": "L2",
+        "name": "食品加工",
+        "weight": 0.6
+      }
+    ],
+    "家具": [
+      {
+        "level": "L2",
+        "name": "家居用品"
+      }
+    ],
+    "家电3C": [
+      {
+        "level": "L2",
+        "name": "小家电"
+      },
+      {
+        "level": "L2",
+        "name": "消费电子",
+        "weight": 0.8
+      }
+    ],
+    "家纺": [
+      {
+        "level": "L2",
+        "name": "服装家纺"
+      }
+    ],
+    "工业机器人及工控系统": [
+      {
+        "level": "L2",
+        "name": "自动化设备"
+      }
+    ],
+    "工程服务": [
+      {
+        "level": "L2",
+        "name": "工程咨询服务Ⅱ"
+      }
+    ],
+    "教育信息化及在线教育": [
+      {
+        "level": "L2",
+        "name": "教育"
+      },
+      {
+        "level": "L2",
+        "name": "软件开发",
+        "weight": 0.7
+      }
+    ],
+    "数字金融服务": [
+      {
+        "level": "L2",
+        "name": "软件开发"
+      },
+      {
+        "level": "L2",
+        "name": "IT服务Ⅱ",
+        "weight": 0.8
+      },
+      {
+        "level": "L2",
+        "name": "多元金融",
+        "weight": 0.6
+      }
+    ],
+    "文化娱乐": [
+      {
+        "level": "L2",
+        "name": "影视院线"
+      },
+      {
+        "level": "L2",
+        "name": "数字媒体",
+        "weight": 0.8
+      }
+    ],
+    "旅游服务": [
+      {
+        "level": "L2",
+        "name": "旅游及景区"
+      },
+      {
+        "level": "L2",
+        "name": "酒店餐饮",
+        "weight": 0.7
+      }
+    ],
+    "无烟煤": [
+      {
+        "level": "L2",
+        "name": "煤炭开采"
+      }
+    ],
+    "日用化学品": [
+      {
+        "level": "L2",
+        "name": "化妆品"
+      },
+      {
+        "level": "L2",
+        "name": "个护用品",
+        "weight": 0.8
+      },
+      {
+        "level": "L2",
+        "name": "化学制品",
+        "weight": 0.6
+      }
+    ],
+    "汽车零部件Ⅲ": [
+      {
+        "level": "L2",
+        "name": "汽车零部件"
+      }
+    ],
+    "电力电子及自动化": [
+      {
+        "level": "L2",
+        "name": "自动化设备"
+      },
+      {
+        "level": "L2",
+        "name": "其他电源设备Ⅱ",
+        "weight": 0.8
+      },
+      {
+        "level": "L2",
+        "name": "电机Ⅱ",
+        "weight": 0.7
+      }
+    ],
+    "网络规划设计和工程施工": [
+      {
+        "level": "L2",
+        "name": "通信服务"
+      },
+      {
+        "level": "L2",
+        "name": "IT服务Ⅱ",
+        "weight": 0.7
+      }
+    ],
+    "行业应用软件": [
+      {
+        "level": "L2",
+        "name": "软件开发"
+      }
+    ],
+    "车用电机电控": [
+      {
+        "level": "L2",
+        "name": "汽车零部件"
+      },
+      {
+        "level": "L2",
+        "name": "电机Ⅱ",
+        "weight": 0.8
+      }
+    ],
+    "通信终端及配件": [
+      {
+        "level": "L2",
+        "name": "通信设备"
+      },
+      {
+        "level": "L2",
+        "name": "消费电子",
+        "weight": 0.7
+      }
+    ],
+    "锂电池": [
+      {
+        "level": "L2",
+        "name": "电池"
+      }
+    ],
+    "太阳能": [
+      {
+        "level": "L2",
+        "name": "光伏设备"
+      }
+    ],
+    "媒体": [
+      {
+        "level": "L2",
+        "name": "数字媒体"
+      },
+      {
+        "level": "L2",
+        "name": "出版",
+        "weight": 0.6
+      }
+    ],
+    "PCB": [
+      {
+        "level": "L2",
+        "name": "元件"
+      }
+    ],
+    "储能": [
+      {
+        "level": "L2",
+        "name": "电池"
+      },
+      {
+        "level": "L2",
+        "name": "其他电源设备Ⅱ"
+      }
+    ],
+    "光伏设备": [
+      {
+        "level": "L2",
+        "name": "专用设备"
+      },
+      {
+        "level": "L2",
+        "name": "光伏设备"
+      }
+    ],
+    "包装印刷": [
+      {
+        "level": "L2",
+        "name": "包装印刷"
+      }
+    ],
+    "化学制药": [
+      {
+        "level": "L2",
+        "name": "化学制药"
+      }
+    ],
+    "化学原料": [
+      {
+        "level": "L2",
+        "name": "化学原料"
+      }
+    ],
+    "化学纤维": [
+      {
+        "level": "L2",
+        "name": "化学纤维"
+      }
+    ],
+    "医疗器械": [
+      {
+        "level": "L2",
+        "name": "医疗器械"
+      }
+    ],
+    "半导体设备": [
+      {
+        "level": "L2",
+        "name": "专用设备"
+      },
+      {
+        "level": "L2",
+        "name": "半导体"
+      }
+    ],
+    "印刷": [
+      {
+        "level": "L2",
+        "name": "包装印刷"
+      }
+    ],
+    "商用车": [
+      {
+        "level": "L2",
+        "name": "商用车"
+      }
+    ],
+    "啤酒": [
+      {
+        "level": "L2",
+        "name": "非白酒"
+      }
+    ],
+    "国有大型银行Ⅱ": [
+      {
+        "level": "L2",
+        "name": "国有大型银行Ⅱ"
+      }
+    ],
+    "多元金融": [
+      {
+        "level": "L2",
+        "name": "多元金融"
+      }
+    ],
+    "客车": [
+      {
+        "level": "L2",
+        "name": "商用车"
+      }
+    ],
+    "工业金属": [
+      {
+        "level": "L2",
+        "name": "工业金属"
+      }
+    ],
+    "广告营销": [
+      {
+        "level": "L2",
+        "name": "广告营销"
+      }
+    ],
+    "广播电视": [
+      {
+        "level": "L2",
+        "name": "电视广播Ⅱ"
+      }
+    ],
+    "影视": [
+      {
+        "level": "L2",
+        "name": "影视院线"
+      }
+    ],
+    "快递": [
+      {
+        "level": "L2",
+        "name": "物流"
+      }
+    ],
+    "房地产服务": [
+      {
+        "level": "L2",
+        "name": "房地产服务"
+      }
+    ],
+    "改性塑料": [
+      {
+        "level": "L2",
+        "name": "塑料"
+      }
+    ],
+    "教育": [
+      {
+        "level": "L2",
+        "name": "教育"
+      }
+    ],
+    "旅游零售": [
+      {
+        "level": "L2",
+        "name": "旅游零售Ⅱ"
+      }
+    ],
+    "普钢": [
+      {
+        "level": "L2",
+        "name": "普钢"
+      }
+    ],
+    "景区": [
+      {
+        "level": "L2",
+        "name": "旅游及景区"
+      }
+    ],
+    "有机硅": [
+      {
+        "level": "L2",
+        "name": "化学制品"
+      }
+    ],
+    "机场": [
+      {
+        "level": "L2",
+        "name": "航空机场"
+      }
+    ],
+    "核电": [
+      {
+        "level": "L2",
+        "name": "电力"
+      }
+    ],
+    "氯碱": [
+      {
+        "level": "L2",
+        "name": "化学原料"
+      }
+    ],
+    "水产养殖": [
+      {
+        "level": "L2",
+        "name": "渔业"
+      }
+    ],
+    "水泥": [
+      {
+        "level": "L2",
+        "name": "水泥"
+      }
+    ],
+    "水电": [
+      {
+        "level": "L2",
+        "name": "电力"
+      }
+    ],
+    "油服工程": [
+      {
+        "level": "L2",
+        "name": "油服工程"
+      }
+    ],
+    "消费电子": [
+      {
+        "level": "L2",
+        "name": "消费电子"
+      }
+    ],
+    "渔业": [
+      {
+        "level": "L2",
+        "name": "渔业"
+      }
+    ],
+    "港口": [
+      {
+        "level": "L2",
+        "name": "航运港口"
+      }
+    ],
+    "游戏": [
+      {
+        "level": "L2",
+        "name": "游戏Ⅱ"
+      }
+    ],
+    "火电": [
+      {
+        "level": "L2",
+        "name": "电力"
+      }
+    ],
+    "炼油": [
+      {
+        "level": "L2",
+        "name": "炼化及贸易"
+      }
+    ],
+    "焦炭": [
+      {
+        "level": "L2",
+        "name": "焦炭Ⅱ"
+      }
+    ],
+    "燃气": [
+      {
+        "level": "L2",
+        "name": "燃气Ⅱ"
+      }
+    ],
+    "物流": [
+      {
+        "level": "L2",
+        "name": "物流"
+      }
+    ],
+    "特钢": [
+      {
+        "level": "L2",
+        "name": "特钢Ⅱ"
+      }
+    ],
+    "电子化学品": [
+      {
+        "level": "L2",
+        "name": "电子化学品Ⅱ"
+      }
+    ],
+    "电机": [
+      {
+        "level": "L2",
+        "name": "电机Ⅱ"
+      }
+    ],
+    "白酒": [
+      {
+        "level": "L2",
+        "name": "白酒Ⅱ"
+      }
+    ],
+    "百货": [
+      {
+        "level": "L2",
+        "name": "一般零售"
+      }
+    ],
+    "碳纤维": [
+      {
+        "level": "L2",
+        "name": "化学纤维"
+      },
+      {
+        "level": "L2",
+        "name": "非金属材料Ⅱ"
+      }
+    ],
+    "种业": [
+      {
+        "level": "L2",
+        "name": "种植业"
+      }
+    ],
+    "种植业": [
+      {
+        "level": "L2",
+        "name": "种植业"
+      }
+    ],
+    "粘胶": [
+      {
+        "level": "L2",
+        "name": "化学纤维"
+      }
+    ],
+    "纯碱": [
+      {
+        "level": "L2",
+        "name": "化学原料"
+      }
+    ],
+    "纺织制造": [
+      {
+        "level": "L2",
+        "name": "纺织制造"
+      }
+    ],
+    "综合Ⅱ": [
+      {
+        "level": "L2",
+        "name": "综合Ⅱ"
+      }
+    ],
+    "航空机场": [
+      {
+        "level": "L2",
+        "name": "航空机场"
+      }
+    ],
+    "航运": [
+      {
+        "level": "L2",
+        "name": "航运港口"
+      }
+    ],
+    "航运港口": [
+      {
+        "level": "L2",
+        "name": "航运港口"
+      }
+    ],
+    "被动元件": [
+      {
+        "level": "L2",
+        "name": "元件"
+      }
+    ],
+    "计算机设备": [
+      {
+        "level": "L2",
+        "name": "计算机设备"
+      }
+    ],
+    "证券Ⅱ": [
+      {
+        "level": "L2",
+        "name": "证券Ⅱ"
+      }
+    ],
+    "证券Ⅲ": [
+      {
+        "level": "L2",
+        "name": "证券Ⅱ"
+      }
+    ],
+    "调味品": [
+      {
+        "level": "L2",
+        "name": "调味发酵品Ⅱ"
+      }
+    ],
+    "纸包装": [
+      {
+        "level": "L2",
+        "name": "包装印刷"
+      }
+    ],
+    "玻璃": [
+      {
+        "level": "L2",
+        "name": "玻璃玻纤"
+      }
+    ],
+    "玻璃纤维": [
+      {
+        "level": "L2",
+        "name": "玻璃玻纤"
+      }
+    ],
+    "贵金属": [
+      {
+        "level": "L2",
+        "name": "贵金属"
+      }
+    ],
+    "贸易Ⅱ": [
+      {
+        "level": "L2",
+        "name": "贸易Ⅱ"
+      }
+    ],
+    "贸易Ⅲ": [
+      {
+        "level": "L2",
+        "name": "贸易Ⅱ"
+      }
+    ],
+    "轮胎": [
+      {
+        "level": "L2",
+        "name": "橡胶"
+      }
+    ],
+    "通信设备": [
+      {
+        "level": "L2",
+        "name": "通信设备"
+      }
+    ],
+    "通用设备": [
+      {
+        "level": "L2",
+        "name": "通用设备"
+      }
+    ],
+    "物流综合": [
+      {
+        "level": "L2",
+        "name": "物流"
+      }
+    ],
+    "速冻食品": [
+      {
+        "level": "L2",
+        "name": "食品加工"
+      }
+    ],
+    "造纸Ⅱ": [
+      {
+        "level": "L2",
+        "name": "造纸"
+      }
+    ],
+    "造纸Ⅲ": [
+      {
+        "level": "L2",
+        "name": "造纸"
+      }
+    ],
+    "酒店": [
+      {
+        "level": "L2",
+        "name": "酒店餐饮"
+      }
+    ],
+    "酒店及餐饮": [
+      {
+        "level": "L2",
+        "name": "酒店餐饮"
+      }
+    ],
+    "锂": [
+      {
+        "level": "L2",
+        "name": "能源金属"
+      }
+    ],
+    "锂电化学品": [
+      {
+        "level": "L2",
+        "name": "电子化学品Ⅱ"
+      }
+    ],
+    "燃料电池": [
+      {
+        "level": "L2",
+        "name": "电池"
+      }
+    ],
+    "锂电设备": [
+      {
+        "level": "L2",
+        "name": "专用设备"
+      },
+      {
+        "level": "L2",
+        "name": "电池"
+      }
+    ],
+    "集成电路": [
+      {
+        "level": "L2",
+        "name": "半导体"
+      }
+    ],
+    "航空": [
+      {
+        "level": "L2",
+        "name": "航空机场"
+      }
+    ],
+    "综合Ⅲ": [
+      {
+        "level": "L2",
+        "name": "综合Ⅱ"
+      }
+    ],
+    "电网": [
+      {
+        "level": "L2",
+        "name": "电网设备"
+      }
+    ],
+    "输变电设备": [
+      {
+        "level": "L2",
+        "name": "电网设备"
+      }
+    ],
+    "配电设备": [
+      {
+        "level": "L2",
+        "name": "电网设备"
+      }
+    ],
+    "白色家电Ⅲ": [
+      {
+        "level": "L2",
+        "name": "白色家电"
+      }
+    ],
+    "黑色家电Ⅱ": [
+      {
+        "level": "L2",
+        "name": "黑色家电"
+      }
+    ],
+    "黑色家电Ⅲ": [
+      {
+        "level": "L2",
+        "name": "黑色家电"
+      }
+    ],
+    "石油开采Ⅱ": [
+      {
+        "level": "L2",
+        "name": "油气开采Ⅱ"
+      }
+    ],
+    "石油开采Ⅲ": [
+      {
+        "level": "L2",
+        "name": "油气开采Ⅱ"
+      }
+    ],
+    "铁路": [
+      {
+        "level": "L2",
+        "name": "铁路公路"
+      }
+    ],
+    "面板": [
+      {
+        "level": "L2",
+        "name": "光学光电子"
+      }
+    ],
+    "面板制造": [
+      {
+        "level": "L2",
+        "name": "光学光电子"
+      }
+    ],
+    "LED": [
+      {
+        "level": "L2",
+        "name": "光学光电子"
+      }
+    ],
+    "风电": [
+      {
+        "level": "L2",
+        "name": "风电设备"
+      }
+    ],
+    "广告推广": [
+      {
+        "level": "L2",
+        "name": "广告营销"
+      }
+    ],
+    "专业工程及其他": [
+      {
+        "level": "L2",
+        "name": "专业工程"
+      }
+    ],
+    "其他文化娱乐": [
+      {
+        "level": "L2",
+        "name": "影视院线"
+      },
+      {
+        "level": "L2",
+        "name": "数字媒体",
+        "weight": 0.8
+      }
+    ],
+    "小家电Ⅲ": [
+      {
+        "level": "L2",
+        "name": "小家电"
+      }
+    ],
+    "线下教育": [
+      {
+        "level": "L2",
+        "name": "教育"
+      }
+    ],
+    "教育服务": [
+      {
+        "level": "L2",
+        "name": "教育"
+      }
+    ],
+    "餐饮": [
+      {
+        "level": "L2",
+        "name": "酒店餐饮"
+      }
+    ],
+    "饮料": [
+      {
+        "level": "L2",
+        "name": "饮料乳品"
+      }
+    ],
+    "其他运输设备": [
+      {
+        "level": "L2",
+        "name": "摩托车及其他"
+      },
+      {
+        "level": "L3",
+        "name": "其他运输设备",
+        "weight": 0.95
+      }
+    ],
+    "无机盐": [
+      {
+        "level": "L2",
+        "name": "化学原料"
+      },
+      {
+        "level": "L3",
+        "name": "无机盐",
+        "weight": 0.95
+      }
+    ],
+    "板材": [
+      {
+        "level": "L2",
+        "name": "普钢"
+      },
+      {
+        "level": "L3",
+        "name": "板材",
+        "weight": 0.95
+      }
+    ],
+    "氟化工": [
+      {
+        "level": "L2",
+        "name": "化学制品"
+      },
+      {
+        "level": "L3",
+        "name": "氟化工",
+        "weight": 0.95
+      }
+    ],
+    "氮肥": [
+      {
+        "level": "L2",
+        "name": "农化制品"
+      },
+      {
+        "level": "L3",
+        "name": "氮肥",
+        "weight": 0.95
+      }
+    ],
+    "油田服务": [
+      {
+        "level": "L2",
+        "name": "油服工程"
+      },
+      {
+        "level": "L3",
+        "name": "油田服务",
+        "weight": 0.95
+      }
+    ],
+    "涤纶": [
+      {
+        "level": "L2",
+        "name": "化学纤维"
+      },
+      {
+        "level": "L3",
+        "name": "涤纶",
+        "weight": 0.95
+      }
+    ],
+    "磷肥及磷化工": [
+      {
+        "level": "L2",
+        "name": "农化制品"
+      },
+      {
+        "level": "L3",
+        "name": "磷肥及磷化工",
+        "weight": 0.95
+      }
+    ],
+    "租赁": [
+      {
+        "level": "L2",
+        "name": "多元金融"
+      },
+      {
+        "level": "L3",
+        "name": "租赁",
+        "weight": 0.95
+      }
+    ],
+    "聚氨酯": [
+      {
+        "level": "L2",
+        "name": "化学制品"
+      },
+      {
+        "level": "L3",
+        "name": "聚氨酯",
+        "weight": 0.95
+      }
+    ],
+    "肉制品": [
+      {
+        "level": "L2",
+        "name": "食品加工"
+      },
+      {
+        "level": "L3",
+        "name": "肉制品",
+        "weight": 0.95
+      }
+    ],
+    "膜材料": [
+      {
+        "level": "L2",
+        "name": "塑料"
+      },
+      {
+        "level": "L3",
+        "name": "膜材料",
+        "weight": 0.95
+      }
+    ],
+    "金属包装": [
+      {
+        "level": "L2",
+        "name": "包装印刷"
+      },
+      {
+        "level": "L3",
+        "name": "金属包装",
+        "weight": 0.95
+      }
+    ],
+    "钛白粉": [
+      {
+        "level": "L2",
+        "name": "化学原料"
+      },
+      {
+        "level": "L3",
+        "name": "钛白粉",
+        "weight": 0.95
+      }
+    ],
+    "钨": [
+      {
+        "level": "L2",
+        "name": "小金属"
+      },
+      {
+        "level": "L3",
+        "name": "钨",
+        "weight": 0.95
+      }
+    ],
+    "钾肥": [
+      {
+        "level": "L2",
+        "name": "农化制品"
+      },
+      {
+        "level": "L3",
+        "name": "钾肥",
+        "weight": 0.95
+      }
+    ],
+    "铁矿石": [
+      {
+        "level": "L2",
+        "name": "冶钢原料"
+      },
+      {
+        "level": "L3",
+        "name": "铁矿石",
+        "weight": 0.95
+      }
+    ],
+    "铅锌": [
+      {
+        "level": "L2",
+        "name": "工业金属"
+      },
+      {
+        "level": "L3",
+        "name": "铅锌",
+        "weight": 0.95
+      }
+    ],
+    "铜": [
+      {
+        "level": "L2",
+        "name": "工业金属"
+      },
+      {
+        "level": "L3",
+        "name": "铜",
+        "weight": 0.95
+      }
+    ],
+    "铝": [
+      {
+        "level": "L2",
+        "name": "工业金属"
+      },
+      {
+        "level": "L3",
+        "name": "铝",
+        "weight": 0.95
+      }
+    ],
+    "长材": [
+      {
+        "level": "L2",
+        "name": "普钢"
+      },
+      {
+        "level": "L3",
+        "name": "长材",
+        "weight": 0.95
+      }
+    ],
+    "食品及饲料添加剂": [
+      {
+        "level": "L2",
+        "name": "化学制品"
+      },
+      {
+        "level": "L3",
+        "name": "食品及饲料添加剂",
+        "weight": 0.95
+      }
+    ],
+    "资产管理Ⅱ": [
+      {
+        "level": "L2",
+        "name": "多元金融"
+      },
+      {
+        "level": "L3",
+        "name": "资产管理",
+        "weight": 0.95
+      }
+    ],
+    "资产管理Ⅲ": [
+      {
+        "level": "L2",
+        "name": "多元金融"
+      },
+      {
+        "level": "L3",
+        "name": "资产管理",
+        "weight": 0.95
+      }
+    ],
+    "金属制品Ⅱ": [
+      {
+        "level": "L2",
+        "name": "通用设备"
+      },
+      {
+        "level": "L3",
+        "name": "金属制品",
+        "weight": 0.95
+      }
+    ],
+    "金属制品Ⅲ": [
+      {
+        "level": "L2",
+        "name": "通用设备"
+      },
+      {
+        "level": "L3",
+        "name": "金属制品",
+        "weight": 0.95
+      }
+    ],
+    "电池综合服务": [
+      {
+        "level": "L2",
+        "name": "电力"
+      },
+      {
+        "level": "L3",
+        "name": "电能综合服务",
+        "weight": 0.95
+      }
+    ],
+    "涂料油墨颜料": [
+      {
+        "level": "L2",
+        "name": "化学制品"
+      },
+      {
+        "level": "L3",
+        "name": "涂料油墨",
+        "weight": 0.95
+      }
+    ],
+    "炼焦煤": [
+      {
+        "level": "L2",
+        "name": "煤炭开采"
+      },
+      {
+        "level": "L3",
+        "name": "焦煤",
+        "weight": 0.95
+      }
+    ],
+    "电信运营Ⅲ": [
+      {
+        "level": "L2",
+        "name": "通信服务"
+      },
+      {
+        "level": "L3",
+        "name": "电信运营商",
+        "weight": 0.95
+      }
+    ],
+    "电商及服务Ⅲ": [
+      {
+        "level": "L2",
+        "name": "互联网电商"
+      },
+      {
+        "level": "L3",
+        "name": "电商服务",
+        "weight": 0.95
+      }
+    ],
+    "运输设备": [
+      {
+        "level": "L2",
+        "name": "摩托车及其他"
+      },
+      {
+        "level": "L3",
+        "name": "其他运输设备",
+        "weight": 0.9
+      }
+    ],
+    "服务机器人": [
+      {
+        "level": "L2",
+        "name": "自动化设备"
+      },
+      {
+        "level": "L3",
+        "name": "机器人",
+        "weight": 0.9
+      }
+    ],
+    "民爆用品": [
+      {
+        "level": "L2",
+        "name": "化学制品"
+      },
+      {
+        "level": "L3",
+        "name": "民爆制品",
+        "weight": 0.95
+      }
+    ],
+    "机床设备": [
+      {
+        "level": "L2",
+        "name": "通用设备"
+      },
+      {
+        "level": "L2",
+        "name": "专用设备",
+        "weight": 0.85
+      }
+    ],
+    "核电设备": [
+      {
+        "level": "L2",
+        "name": "其他电源设备Ⅱ"
+      },
+      {
+        "level": "L3",
+        "name": "综合电力设备商",
+        "weight": 0.9
+      }
+    ],
+    "稀有金属": [
+      {
+        "level": "L2",
+        "name": "金属新材料"
+      },
+      {
+        "level": "L2",
+        "name": "小金属",
+        "weight": 0.9
+      }
+    ],
+    "稀土及磁性材料": [
+      {
+        "level": "L2",
+        "name": "金属新材料"
+      },
+      {
+        "level": "L3",
+        "name": "磁性材料",
+        "weight": 0.95
+      }
+    ],
+    "棉纺制品": [
+      {
+        "level": "L2",
+        "name": "纺织制造"
+      },
+      {
+        "level": "L3",
+        "name": "棉纺",
+        "weight": 0.9
+      }
+    ],
+    "贸易流通": [
+      {
+        "level": "L2",
+        "name": "贸易Ⅱ"
+      }
+    ],
+    "起重运输设备": [
+      {
+        "level": "L2",
+        "name": "摩托车及其他"
+      },
+      {
+        "level": "L3",
+        "name": "其他运输设备",
+        "weight": 0.85
+      }
+    ],
+    "酒类": [
+      {
+        "level": "L2",
+        "name": "非白酒"
+      },
+      {
+        "level": "L3",
+        "name": "其他酒类",
+        "weight": 0.9
+      }
+    ],
+    "饲料加工": [
+      {
+        "level": "L2",
+        "name": "饲料"
+      }
+    ],
+    "综合能源设备": [
+      {
+        "level": "L2",
+        "name": "其他电源设备Ⅱ"
+      },
+      {
+        "level": "L3",
+        "name": "综合电力设备商",
+        "weight": 0.95
+      }
+    ],
+    "环保及水务": [
+      {
+        "level": "L1",
+        "name": "环保"
+      },
+      {
+        "level": "L1",
+        "name": "公用事业",
+        "weight": 0.8
+      }
+    ],
+    "畜牧养殖": [
+      {
+        "level": "L2",
+        "name": "养殖业"
+      }
+    ],
+    "非乳饮料": [
+      {
+        "level": "L2",
+        "name": "饮料乳品"
+      },
+      {
+        "level": "L3",
+        "name": "软饮料",
+        "weight": 0.9
+      }
+    ],
+    "黄金": [
+      {
+        "level": "L2",
+        "name": "贵金属"
+      }
+    ]
+  },
+  "keyword_rules": [
+    {
+      "keyword": "种业",
+      "weight": 2.7,
+      "targets": [
+        {
+          "level": "L2",
+          "name": "种植业"
+        }
+      ]
+    },
+    {
+      "keyword": "育种",
+      "weight": 2.6,
+      "targets": [
+        {
+          "level": "L2",
+          "name": "种植业"
+        }
+      ]
+    },
+    {
+      "keyword": "农作物",
+      "weight": 2.0,
+      "targets": [
+        {
+          "level": "L2",
+          "name": "种植业"
+        }
+      ]
+    },
+    {
+      "keyword": "生猪养殖",
+      "weight": 2.9,
+      "targets": [
+        {
+          "level": "L2",
+          "name": "养殖业"
+        }
+      ]
+    },
+    {
+      "keyword": "畜禽养殖",
+      "weight": 2.8,
+      "targets": [
+        {
+          "level": "L2",
+          "name": "养殖业"
+        }
+      ]
+    },
+    {
+      "keyword": "水产养殖",
+      "weight": 2.7,
+      "targets": [
+        {
+          "level": "L2",
+          "name": "渔业"
+        }
+      ]
+    },
+    {
+      "keyword": "饲料",
+      "weight": 2.5,
+      "targets": [
+        {
+          "level": "L2",
+          "name": "饲料"
+        }
+      ]
+    },
+    {
+      "keyword": "动保",
+      "weight": 2.7,
+      "targets": [
+        {
+          "level": "L2",
+          "name": "动物保健Ⅱ"
+        }
+      ]
+    },
+    {
+      "keyword": "兽药",
+      "weight": 2.9,
+      "targets": [
+        {
+          "level": "L2",
+          "name": "动物保健Ⅱ"
+        }
+      ]
+    },
+    {
+      "keyword": "农产品加工",
+      "weight": 2.4,
+      "targets": [
+        {
+          "level": "L2",
+          "name": "农产品加工"
+        }
+      ]
+    },
+    {
+      "keyword": "林木",
+      "weight": 2.1,
+      "targets": [
+        {
+          "level": "L2",
+          "name": "林业Ⅱ"
+        }
+      ]
+    },
+    {
+      "keyword": "化工",
+      "weight": 1.4,
+      "targets": [
+        {
+          "level": "L1",
+          "name": "基础化工"
+        }
+      ]
+    },
+    {
+      "keyword": "农药",
+      "weight": 2.8,
+      "targets": [
+        {
+          "level": "L2",
+          "name": "农化制品"
+        }
+      ]
+    },
+    {
+      "keyword": "化肥",
+      "weight": 2.7,
+      "targets": [
+        {
+          "level": "L2",
+          "name": "农化制品"
+        }
+      ]
+    },
+    {
+      "keyword": "磷化工",
+      "weight": 2.5,
+      "targets": [
+        {
+          "level": "L2",
+          "name": "农化制品"
+        },
+        {
+          "level": "L2",
+          "name": "化学原料"
+        }
+      ]
+    },
+    {
+      "keyword": "纯碱",
+      "weight": 2.5,
+      "targets": [
+        {
+          "level": "L2",
+          "name": "化学原料"
+        }
+      ]
+    },
+    {
+      "keyword": "氯碱",
+      "weight": 2.5,
+      "targets": [
+        {
+          "level": "L2",
+          "name": "化学原料"
+        }
+      ]
+    },
+    {
+      "keyword": "有机硅",
+      "weight": 2.6,
+      "targets": [
+        {
+          "level": "L2",
+          "name": "化学制品"
+        }
+      ]
+    },
+    {
+      "keyword": "涂料",
+      "weight": 2.2,
+      "targets": [
+        {
+          "level": "L2",
+          "name": "化学制品"
+        }
+      ]
+    },
+    {
+      "keyword": "胶黏剂",
+      "weight": 2.4,
+      "targets": [
+        {
+          "level": "L2",
+          "name": "化学制品"
+        }
+      ]
+    },
+    {
+      "keyword": "塑料",
+      "weight": 2.0,
+      "targets": [
+        {
+          "level": "L2",
+          "name": "塑料"
+        }
+      ]
+    },
+    {
+      "keyword": "改性塑料",
+      "weight": 2.6,
+      "targets": [
+        {
+          "level": "L2",
+          "name": "塑料"
+        }
+      ]
+    },
+    {
+      "keyword": "橡胶",
+      "weight": 2.0,
+      "targets": [
+        {
+          "level": "L2",
+          "name": "橡胶"
+        }
+      ]
+    },
+    {
+      "keyword": "轮胎",
+      "weight": 2.8,
+      "targets": [
+        {
+          "level": "L2",
+          "name": "橡胶"
+        }
+      ]
+    },
+    {
+      "keyword": "粘胶",
+      "weight": 2.3,
+      "targets": [
+        {
+          "level": "L2",
+          "name": "化学纤维"
+        }
+      ]
+    },
+    {
+      "keyword": "氨纶",
+      "weight": 2.5,
+      "targets": [
+        {
+          "level": "L2",
+          "name": "化学纤维"
+        }
+      ]
+    },
+    {
+      "keyword": "碳纤维",
+      "weight": 2.9,
+      "targets": [
+        {
+          "level": "L2",
+          "name": "化学纤维"
+        },
+        {
+          "level": "L2",
+          "name": "非金属材料Ⅱ"
+        }
+      ]
+    },
+    {
+      "keyword": "光刻胶",
+      "weight": 3.0,
+      "targets": [
+        {
+          "level": "L2",
+          "name": "电子化学品Ⅱ"
+        }
+      ]
+    },
+    {
+      "keyword": "湿电子化学品",
+      "weight": 3.0,
+      "targets": [
+        {
+          "level": "L2",
+          "name": "电子化学品Ⅱ"
+        }
+      ]
+    },
+    {
+      "keyword": "钢铁",
+      "weight": 1.6,
+      "targets": [
+        {
+          "level": "L1",
+          "name": "钢铁"
+        }
+      ]
+    },
+    {
+      "keyword": "螺纹钢",
+      "weight": 2.5,
+      "targets": [
+        {
+          "level": "L2",
+          "name": "普钢"
+        }
+      ]
+    },
+    {
+      "keyword": "热轧",
+      "weight": 2.1,
+      "targets": [
+        {
+          "level": "L2",
+          "name": "普钢"
+        }
+      ]
+    },
+    {
+      "keyword": "特钢",
+      "weight": 2.8,
+      "targets": [
+        {
+          "level": "L2",
+          "name": "特钢Ⅱ"
+        }
+      ]
+    },
+    {
+      "keyword": "轴承钢",
+      "weight": 2.6,
+      "targets": [
+        {
+          "level": "L2",
+          "name": "特钢Ⅱ"
+        }
+      ]
+    },
+    {
+      "keyword": "铁矿",
+      "weight": 2.4,
+      "targets": [
+        {
+          "level": "L2",
+          "name": "冶钢原料"
+        }
+      ]
+    },
+    {
+      "keyword": "黄金",
+      "weight": 2.9,
+      "targets": [
+        {
+          "level": "L2",
+          "name": "贵金属"
+        }
+      ]
+    },
+    {
+      "keyword": "白银",
+      "weight": 2.7,
+      "targets": [
+        {
+          "level": "L2",
+          "name": "贵金属"
+        }
+      ]
+    },
+    {
+      "keyword": "铜箔",
+      "weight": 2.7,
+      "targets": [
+        {
+          "level": "L2",
+          "name": "金属新材料"
+        }
+      ]
+    },
+    {
+      "keyword": "铜加工",
+      "weight": 2.4,
+      "targets": [
+        {
+          "level": "L2",
+          "name": "工业金属"
+        }
+      ]
+    },
+    {
+      "keyword": "铝加工",
+      "weight": 2.4,
+      "targets": [
+        {
+          "level": "L2",
+          "name": "工业金属"
+        }
+      ]
+    },
+    {
+      "keyword": "镍",
+      "weight": 2.3,
+      "targets": [
+        {
+          "level": "L2",
+          "name": "能源金属"
+        }
+      ]
+    },
+    {
+      "keyword": "锂",
+      "weight": 2.7,
+      "targets": [
+        {
+          "level": "L2",
+          "name": "能源金属"
+        }
+      ]
+    },
+    {
+      "keyword": "锂盐",
+      "weight": 2.9,
+      "targets": [
+        {
+          "level": "L2",
+          "name": "能源金属"
+        },
+        {
+          "level": "L2",
+          "name": "化学制品"
+        }
+      ]
+    },
+    {
+      "keyword": "稀土",
+      "weight": 2.8,
+      "targets": [
+        {
+          "level": "L2",
+          "name": "小金属"
+        }
+      ]
+    },
+    {
+      "keyword": "钨钼",
+      "weight": 2.5,
+      "targets": [
+        {
+          "level": "L2",
+          "name": "小金属"
+        }
+      ]
+    },
+    {
+      "keyword": "磁材",
+      "weight": 2.5,
+      "targets": [
+        {
+          "level": "L2",
+          "name": "金属新材料"
+        }
+      ]
+    },
+    {
+      "keyword": "高温合金",
+      "weight": 2.8,
+      "targets": [
+        {
+          "level": "L2",
+          "name": "金属新材料"
+        }
+      ]
+    },
+    {
+      "keyword": "油气",
+      "weight": 2.0,
+      "targets": [
+        {
+          "level": "L2",
+          "name": "油气开采Ⅱ"
+        }
+      ]
+    },
+    {
+      "keyword": "原油",
+      "weight": 2.5,
+      "targets": [
+        {
+          "level": "L2",
+          "name": "油气开采Ⅱ"
+        }
+      ]
+    },
+    {
+      "keyword": "天然气",
+      "weight": 2.4,
+      "targets": [
+        {
+          "level": "L2",
+          "name": "油气开采Ⅱ"
+        },
+        {
+          "level": "L2",
+          "name": "燃气Ⅱ"
+        }
+      ]
+    },
+    {
+      "keyword": "炼油",
+      "weight": 2.6,
+      "targets": [
+        {
+          "level": "L2",
+          "name": "炼化及贸易"
+        }
+      ]
+    },
+    {
+      "keyword": "炼化",
+      "weight": 2.7,
+      "targets": [
+        {
+          "level": "L2",
+          "name": "炼化及贸易"
+        }
+      ]
+    },
+    {
+      "keyword": "成品油",
+      "weight": 2.2,
+      "targets": [
+        {
+          "level": "L2",
+          "name": "炼化及贸易"
+        }
+      ]
+    },
+    {
+      "keyword": "油服",
+      "weight": 2.8,
+      "targets": [
+        {
+          "level": "L2",
+          "name": "油服工程"
+        }
+      ]
+    },
+    {
+      "keyword": "钻井",
+      "weight": 2.5,
+      "targets": [
+        {
+          "level": "L2",
+          "name": "油服工程"
+        }
+      ]
+    },
+    {
+      "keyword": "煤炭",
+      "weight": 1.9,
+      "targets": [
+        {
+          "level": "L1",
+          "name": "煤炭"
+        }
+      ]
+    },
+    {
+      "keyword": "焦煤",
+      "weight": 2.7,
+      "targets": [
+        {
+          "level": "L2",
+          "name": "焦炭Ⅱ"
+        }
+      ]
+    },
+    {
+      "keyword": "煤矿",
+      "weight": 2.6,
+      "targets": [
+        {
+          "level": "L2",
+          "name": "煤炭开采"
+        }
+      ]
+    },
+    {
+      "keyword": "煤化工",
+      "weight": 2.4,
+      "targets": [
+        {
+          "level": "L2",
+          "name": "煤炭开采"
+        },
+        {
+          "level": "L2",
+          "name": "化学原料"
+        }
+      ]
+    },
+    {
+      "keyword": "水泥",
+      "weight": 2.8,
+      "targets": [
+        {
+          "level": "L2",
+          "name": "水泥"
+        }
+      ]
+    },
+    {
+      "keyword": "熟料",
+      "weight": 2.2,
+      "targets": [
+        {
+          "level": "L2",
+          "name": "水泥"
+        }
+      ]
+    },
+    {
+      "keyword": "玻纤",
+      "weight": 2.8,
+      "targets": [
+        {
+          "level": "L2",
+          "name": "玻璃玻纤"
+        }
+      ]
+    },
+    {
+      "keyword": "浮法玻璃",
+      "weight": 2.7,
+      "targets": [
+        {
+          "level": "L2",
+          "name": "玻璃玻纤"
+        }
+      ]
+    },
+    {
+      "keyword": "LOW-E",
+      "weight": 2.2,
+      "targets": [
+        {
+          "level": "L2",
+          "name": "玻璃玻纤"
+        }
+      ]
+    },
+    {
+      "keyword": "建材",
+      "weight": 1.7,
+      "targets": [
+        {
+          "level": "L1",
+          "name": "建筑材料"
+        }
+      ]
+    },
+    {
+      "keyword": "石膏板",
+      "weight": 2.3,
+      "targets": [
+        {
+          "level": "L2",
+          "name": "装修建材"
+        }
+      ]
+    },
+    {
+      "keyword": "防水材料",
+      "weight": 2.6,
+      "targets": [
+        {
+          "level": "L2",
+          "name": "装修建材"
+        }
+      ]
+    },
+    {
+      "keyword": "基建",
+      "weight": 2.3,
+      "targets": [
+        {
+          "level": "L2",
+          "name": "基础建设"
+        }
+      ]
+    },
+    {
+      "keyword": "公路工程",
+      "weight": 2.4,
+      "targets": [
+        {
+          "level": "L2",
+          "name": "基础建设"
+        }
+      ]
+    },
+    {
+      "keyword": "房建",
+      "weight": 2.6,
+      "targets": [
+        {
+          "level": "L2",
+          "name": "房屋建设Ⅱ"
+        }
+      ]
+    },
+    {
+      "keyword": "装饰装修",
+      "weight": 2.7,
+      "targets": [
+        {
+          "level": "L2",
+          "name": "装修装饰Ⅱ"
+        }
+      ]
+    },
+    {
+      "keyword": "幕墙",
+      "weight": 2.5,
+      "targets": [
+        {
+          "level": "L2",
+          "name": "装修装饰Ⅱ"
+        }
+      ]
+    },
+    {
+      "keyword": "工程咨询",
+      "weight": 2.7,
+      "targets": [
+        {
+          "level": "L2",
+          "name": "工程咨询服务Ⅱ"
+        }
+      ]
+    },
+    {
+      "keyword": "勘察设计",
+      "weight": 2.7,
+      "targets": [
+        {
+          "level": "L2",
+          "name": "工程咨询服务Ⅱ"
+        }
+      ]
+    },
+    {
+      "keyword": "化工工程",
+      "weight": 2.5,
+      "targets": [
+        {
+          "level": "L2",
+          "name": "专业工程"
+        }
+      ]
+    },
+    {
+      "keyword": "储能",
+      "weight": 2.5,
+      "targets": [
+        {
+          "level": "L2",
+          "name": "电池"
+        },
+        {
+          "level": "L2",
+          "name": "其他电源设备Ⅱ"
+        }
+      ]
+    },
+    {
+      "keyword": "锂电",
+      "weight": 2.7,
+      "targets": [
+        {
+          "level": "L2",
+          "name": "电池"
+        }
+      ]
+    },
+    {
+      "keyword": "动力电池",
+      "weight": 3.1,
+      "targets": [
+        {
+          "level": "L2",
+          "name": "电池"
+        }
+      ]
+    },
+    {
+      "keyword": "正极材料",
+      "weight": 2.8,
+      "targets": [
+        {
+          "level": "L2",
+          "name": "电池"
+        }
+      ]
+    },
+    {
+      "keyword": "负极材料",
+      "weight": 2.8,
+      "targets": [
+        {
+          "level": "L2",
+          "name": "电池"
+        }
+      ]
+    },
+    {
+      "keyword": "隔膜",
+      "weight": 2.7,
+      "targets": [
+        {
+          "level": "L2",
+          "name": "电池"
+        }
+      ]
+    },
+    {
+      "keyword": "电解液",
+      "weight": 2.7,
+      "targets": [
+        {
+          "level": "L2",
+          "name": "电池"
+        }
+      ]
+    },
+    {
+      "keyword": "BMS",
+      "weight": 2.5,
+      "targets": [
+        {
+          "level": "L2",
+          "name": "电池"
+        }
+      ]
+    },
+    {
+      "keyword": "光伏",
+      "weight": 2.6,
+      "targets": [
+        {
+          "level": "L2",
+          "name": "光伏设备"
+        }
+      ]
+    },
+    {
+      "keyword": "硅料",
+      "weight": 2.8,
+      "targets": [
+        {
+          "level": "L2",
+          "name": "光伏设备"
+        }
+      ]
+    },
+    {
+      "keyword": "硅片",
+      "weight": 2.7,
+      "targets": [
+        {
+          "level": "L2",
+          "name": "光伏设备"
+        }
+      ]
+    },
+    {
+      "keyword": "电池片",
+      "weight": 2.7,
+      "targets": [
+        {
+          "level": "L2",
+          "name": "光伏设备"
+        }
+      ]
+    },
+    {
+      "keyword": "组件",
+      "weight": 2.1,
+      "targets": [
+        {
+          "level": "L2",
+          "name": "光伏设备"
+        }
+      ]
+    },
+    {
+      "keyword": "逆变器",
+      "weight": 2.9,
+      "targets": [
+        {
+          "level": "L2",
+          "name": "光伏设备"
+        },
+        {
+          "level": "L2",
+          "name": "其他电源设备Ⅱ"
+        }
+      ]
+    },
+    {
+      "keyword": "风电",
+      "weight": 2.7,
+      "targets": [
+        {
+          "level": "L2",
+          "name": "风电设备"
+        }
+      ]
+    },
+    {
+      "keyword": "风机",
+      "weight": 2.7,
+      "targets": [
+        {
+          "level": "L2",
+          "name": "风电设备"
+        }
+      ]
+    },
+    {
+      "keyword": "叶片",
+      "weight": 2.4,
+      "targets": [
+        {
+          "level": "L2",
+          "name": "风电设备"
+        }
+      ]
+    },
+    {
+      "keyword": "塔筒",
+      "weight": 2.4,
+      "targets": [
+        {
+          "level": "L2",
+          "name": "风电设备"
+        }
+      ]
+    },
+    {
+      "keyword": "变压器",
+      "weight": 2.7,
+      "targets": [
+        {
+          "level": "L2",
+          "name": "电网设备"
+        }
+      ]
+    },
+    {
+      "keyword": "开关柜",
+      "weight": 2.5,
+      "targets": [
+        {
+          "level": "L2",
+          "name": "电网设备"
+        }
+      ]
+    },
+    {
+      "keyword": "配网",
+      "weight": 2.4,
+      "targets": [
+        {
+          "level": "L2",
+          "name": "电网设备"
+        }
+      ]
+    },
+    {
+      "keyword": "充电桩",
+      "weight": 2.8,
+      "targets": [
+        {
+          "level": "L2",
+          "name": "其他电源设备Ⅱ"
+        }
+      ]
+    },
+    {
+      "keyword": "伺服",
+      "weight": 2.6,
+      "targets": [
+        {
+          "level": "L2",
+          "name": "电机Ⅱ"
+        },
+        {
+          "level": "L2",
+          "name": "自动化设备"
+        }
+      ]
+    },
+    {
+      "keyword": "微电机",
+      "weight": 2.5,
+      "targets": [
+        {
+          "level": "L2",
+          "name": "电机Ⅱ"
+        }
+      ]
+    },
+    {
+      "keyword": "机器人",
+      "weight": 2.5,
+      "targets": [
+        {
+          "level": "L2",
+          "name": "自动化设备"
+        }
+      ]
+    },
+    {
+      "keyword": "工业机器人",
+      "weight": 2.9,
+      "targets": [
+        {
+          "level": "L2",
+          "name": "自动化设备"
+        }
+      ]
+    },
+    {
+      "keyword": "机器视觉",
+      "weight": 2.6,
+      "targets": [
+        {
+          "level": "L2",
+          "name": "自动化设备"
+        }
+      ]
+    },
+    {
+      "keyword": "机床",
+      "weight": 2.5,
+      "targets": [
+        {
+          "level": "L2",
+          "name": "通用设备"
+        }
+      ]
+    },
+    {
+      "keyword": "数控",
+      "weight": 2.4,
+      "targets": [
+        {
+          "level": "L2",
+          "name": "通用设备"
+        }
+      ]
+    },
+    {
+      "keyword": "压缩机",
+      "weight": 2.3,
+      "targets": [
+        {
+          "level": "L2",
+          "name": "通用设备"
+        }
+      ]
+    },
+    {
+      "keyword": "泵阀",
+      "weight": 2.3,
+      "targets": [
+        {
+          "level": "L2",
+          "name": "通用设备"
+        }
+      ]
+    },
+    {
+      "keyword": "半导体设备",
+      "weight": 2.9,
+      "targets": [
+        {
+          "level": "L2",
+          "name": "专用设备"
+        },
+        {
+          "level": "L2",
+          "name": "半导体"
+        }
+      ]
+    },
+    {
+      "keyword": "锂电设备",
+      "weight": 2.8,
+      "targets": [
+        {
+          "level": "L2",
+          "name": "专用设备"
+        },
+        {
+          "level": "L2",
+          "name": "电池"
+        }
+      ]
+    },
+    {
+      "keyword": "光伏设备",
+      "weight": 2.8,
+      "targets": [
+        {
+          "level": "L2",
+          "name": "专用设备"
+        },
+        {
+          "level": "L2",
+          "name": "光伏设备"
+        }
+      ]
+    },
+    {
+      "keyword": "检测设备",
+      "weight": 2.5,
+      "targets": [
+        {
+          "level": "L2",
+          "name": "专用设备"
+        }
+      ]
+    },
+    {
+      "keyword": "工程机械",
+      "weight": 2.7,
+      "targets": [
+        {
+          "level": "L2",
+          "name": "工程机械"
+        }
+      ]
+    },
+    {
+      "keyword": "挖掘机",
+      "weight": 2.8,
+      "targets": [
+        {
+          "level": "L2",
+          "name": "工程机械"
+        }
+      ]
+    },
+    {
+      "keyword": "起重机",
+      "weight": 2.7,
+      "targets": [
+        {
+          "level": "L2",
+          "name": "工程机械"
+        }
+      ]
+    },
+    {
+      "keyword": "轨道交通",
+      "weight": 2.8,
+      "targets": [
+        {
+          "level": "L2",
+          "name": "轨交设备Ⅱ"
+        }
+      ]
+    },
+    {
+      "keyword": "高铁装备",
+      "weight": 2.8,
+      "targets": [
+        {
+          "level": "L2",
+          "name": "轨交设备Ⅱ"
+        }
+      ]
+    },
+    {
+      "keyword": "军工",
+      "weight": 2.0,
+      "targets": [
+        {
+          "level": "L1",
+          "name": "国防军工"
+        }
+      ]
+    },
+    {
+      "keyword": "军贸",
+      "weight": 2.8,
+      "targets": [
+        {
+          "level": "L1",
+          "name": "国防军工"
+        }
+      ]
+    },
+    {
+      "keyword": "军民融合",
+      "weight": 2.4,
+      "targets": [
+        {
+          "level": "L1",
+          "name": "国防军工"
+        }
+      ]
+    },
+    {
+      "keyword": "导弹",
+      "weight": 3.0,
+      "targets": [
+        {
+          "level": "L1",
+          "name": "国防军工"
+        },
+        {
+          "level": "L2",
+          "name": "航天装备Ⅱ"
+        }
+      ]
+    },
+    {
+      "keyword": "卫星",
+      "weight": 2.8,
+      "targets": [
+        {
+          "level": "L2",
+          "name": "航天装备Ⅱ"
+        }
+      ]
+    },
+    {
+      "keyword": "航空发动机",
+      "weight": 3.0,
+      "targets": [
+        {
+          "level": "L2",
+          "name": "航空装备Ⅱ"
+        }
+      ]
+    },
+    {
+      "keyword": "机载系统",
+      "weight": 2.7,
+      "targets": [
+        {
+          "level": "L2",
+          "name": "航空装备Ⅱ"
+        }
+      ]
+    },
+    {
+      "keyword": "雷达",
+      "weight": 2.9,
+      "targets": [
+        {
+          "level": "L2",
+          "name": "军工电子Ⅱ"
+        }
+      ]
+    },
+    {
+      "keyword": "电子对抗",
+      "weight": 2.8,
+      "targets": [
+        {
+          "level": "L2",
+          "name": "军工电子Ⅱ"
+        }
+      ]
+    },
+    {
+      "keyword": "舰船",
+      "weight": 2.8,
+      "targets": [
+        {
+          "level": "L2",
+          "name": "航海装备Ⅱ"
+        }
+      ]
+    },
+    {
+      "keyword": "装甲",
+      "weight": 2.6,
+      "targets": [
+        {
+          "level": "L2",
+          "name": "地面兵装Ⅱ"
+        }
+      ]
+    },
+    {
+      "keyword": "弹药",
+      "weight": 2.6,
+      "targets": [
+        {
+          "level": "L2",
+          "name": "其他军工Ⅱ"
+        }
+      ]
+    },
+    {
+      "keyword": "芯片",
+      "weight": 3.2,
+      "targets": [
+        {
+          "level": "L2",
+          "name": "半导体"
+        }
+      ]
+    },
+    {
+      "keyword": "集成电路",
+      "weight": 3.2,
+      "targets": [
+        {
+          "level": "L2",
+          "name": "半导体"
+        }
+      ]
+    },
+    {
+      "keyword": "晶圆",
+      "weight": 3.0,
+      "targets": [
+        {
+          "level": "L2",
+          "name": "半导体"
+        }
+      ]
+    },
+    {
+      "keyword": "封装",
+      "weight": 2.4,
+      "targets": [
+        {
+          "level": "L2",
+          "name": "半导体"
+        }
+      ]
+    },
+    {
+      "keyword": "封测",
+      "weight": 2.8,
+      "targets": [
+        {
+          "level": "L2",
+          "name": "半导体"
+        }
+      ]
+    },
+    {
+      "keyword": "功率器件",
+      "weight": 2.7,
+      "targets": [
+        {
+          "level": "L2",
+          "name": "半导体"
+        }
+      ]
+    },
+    {
+      "keyword": "IGBT",
+      "weight": 2.9,
+      "targets": [
+        {
+          "level": "L2",
+          "name": "半导体"
+        }
+      ]
+    },
+    {
+      "keyword": "MOSFET",
+      "weight": 2.8,
+      "targets": [
+        {
+          "level": "L2",
+          "name": "半导体"
+        }
+      ]
+    },
+    {
+      "keyword": "射频",
+      "weight": 2.7,
+      "targets": [
+        {
+          "level": "L2",
+          "name": "半导体"
+        }
+      ]
+    },
+    {
+      "keyword": "EDA",
+      "weight": 2.8,
+      "targets": [
+        {
+          "level": "L2",
+          "name": "半导体"
+        },
+        {
+          "level": "L2",
+          "name": "软件开发"
+        }
+      ]
+    },
+    {
+      "keyword": "IP核",
+      "weight": 2.8,
+      "targets": [
+        {
+          "level": "L2",
+          "name": "半导体"
+        }
+      ]
+    },
+    {
+      "keyword": "消费电子",
+      "weight": 2.5,
+      "targets": [
+        {
+          "level": "L2",
+          "name": "消费电子"
+        }
+      ]
+    },
+    {
+      "keyword": "智能终端",
+      "weight": 2.4,
+      "targets": [
+        {
+          "level": "L2",
+          "name": "消费电子"
+        }
+      ]
+    },
+    {
+      "keyword": "TWS",
+      "weight": 2.6,
+      "targets": [
+        {
+          "level": "L2",
+          "name": "消费电子"
+        }
+      ]
+    },
+    {
+      "keyword": "PCB",
+      "weight": 2.8,
+      "targets": [
+        {
+          "level": "L2",
+          "name": "元件"
+        }
+      ]
+    },
+    {
+      "keyword": "MLCC",
+      "weight": 2.8,
+      "targets": [
+        {
+          "level": "L2",
+          "name": "元件"
+        }
+      ]
+    },
+    {
+      "keyword": "被动元件",
+      "weight": 2.7,
+      "targets": [
+        {
+          "level": "L2",
+          "name": "元件"
+        }
+      ]
+    },
+    {
+      "keyword": "面板",
+      "weight": 2.4,
+      "targets": [
+        {
+          "level": "L2",
+          "name": "光学光电子"
+        }
+      ]
+    },
+    {
+      "keyword": "显示模组",
+      "weight": 2.5,
+      "targets": [
+        {
+          "level": "L2",
+          "name": "光学光电子"
+        }
+      ]
+    },
+    {
+      "keyword": "激光",
+      "weight": 2.2,
+      "targets": [
+        {
+          "level": "L2",
+          "name": "光学光电子"
+        }
+      ]
+    },
+    {
+      "keyword": "传感器",
+      "weight": 2.5,
+      "targets": [
+        {
+          "level": "L2",
+          "name": "其他电子Ⅱ"
+        },
+        {
+          "level": "L2",
+          "name": "半导体"
+        }
+      ]
+    },
+    {
+      "keyword": "汽车电子",
+      "weight": 2.6,
+      "targets": [
+        {
+          "level": "L2",
+          "name": "汽车零部件"
+        },
+        {
+          "level": "L2",
+          "name": "半导体"
+        }
+      ]
+    },
+    {
+      "keyword": "新能源车",
+      "weight": 2.3,
+      "targets": [
+        {
+          "level": "L1",
+          "name": "汽车"
+        }
+      ]
+    },
+    {
+      "keyword": "整车",
+      "weight": 2.2,
+      "targets": [
+        {
+          "level": "L2",
+          "name": "乘用车"
+        },
+        {
+          "level": "L2",
+          "name": "商用车"
+        }
+      ]
+    },
+    {
+      "keyword": "乘用车",
+      "weight": 2.7,
+      "targets": [
+        {
+          "level": "L2",
+          "name": "乘用车"
+        }
+      ]
+    },
+    {
+      "keyword": "商用车",
+      "weight": 2.7,
+      "targets": [
+        {
+          "level": "L2",
+          "name": "商用车"
+        }
+      ]
+    },
+    {
+      "keyword": "客车",
+      "weight": 2.6,
+      "targets": [
+        {
+          "level": "L2",
+          "name": "商用车"
+        }
+      ]
+    },
+    {
+      "keyword": "卡车",
+      "weight": 2.6,
+      "targets": [
+        {
+          "level": "L2",
+          "name": "商用车"
+        }
+      ]
+    },
+    {
+      "keyword": "底盘",
+      "weight": 2.5,
+      "targets": [
+        {
+          "level": "L2",
+          "name": "汽车零部件"
+        }
+      ]
+    },
+    {
+      "keyword": "热管理",
+      "weight": 2.6,
+      "targets": [
+        {
+          "level": "L2",
+          "name": "汽车零部件"
+        }
+      ]
+    },
+    {
+      "keyword": "空气悬架",
+      "weight": 2.7,
+      "targets": [
+        {
+          "level": "L2",
+          "name": "汽车零部件"
+        }
+      ]
+    },
+    {
+      "keyword": "线控",
+      "weight": 2.5,
+      "targets": [
+        {
+          "level": "L2",
+          "name": "汽车零部件"
+        }
+      ]
+    },
+    {
+      "keyword": "后市场",
+      "weight": 2.3,
+      "targets": [
+        {
+          "level": "L2",
+          "name": "汽车服务"
+        }
+      ]
+    },
+    {
+      "keyword": "摩托车",
+      "weight": 2.4,
+      "targets": [
+        {
+          "level": "L2",
+          "name": "摩托车及其他"
+        }
+      ]
+    },
+    {
+      "keyword": "白电",
+      "weight": 2.4,
+      "targets": [
+        {
+          "level": "L2",
+          "name": "白色家电"
+        }
+      ]
+    },
+    {
+      "keyword": "空调",
+      "weight": 2.8,
+      "targets": [
+        {
+          "level": "L2",
+          "name": "白色家电"
+        }
+      ]
+    },
+    {
+      "keyword": "冰箱",
+      "weight": 2.6,
+      "targets": [
+        {
+          "level": "L2",
+          "name": "白色家电"
+        }
+      ]
+    },
+    {
+      "keyword": "洗衣机",
+      "weight": 2.6,
+      "targets": [
+        {
+          "level": "L2",
+          "name": "白色家电"
+        }
+      ]
+    },
+    {
+      "keyword": "厨电",
+      "weight": 2.7,
+      "targets": [
+        {
+          "level": "L2",
+          "name": "厨卫电器"
+        }
+      ]
+    },
+    {
+      "keyword": "集成灶",
+      "weight": 2.7,
+      "targets": [
+        {
+          "level": "L2",
+          "name": "厨卫电器"
+        }
+      ]
+    },
+    {
+      "keyword": "小家电",
+      "weight": 2.6,
+      "targets": [
+        {
+          "level": "L2",
+          "name": "小家电"
+        }
+      ]
+    },
+    {
+      "keyword": "清洁电器",
+      "weight": 2.6,
+      "targets": [
+        {
+          "level": "L2",
+          "name": "小家电"
+        }
+      ]
+    },
+    {
+      "keyword": "液晶电视",
+      "weight": 2.7,
+      "targets": [
+        {
+          "level": "L2",
+          "name": "黑色家电"
+        }
+      ]
+    },
+    {
+      "keyword": "显示终端",
+      "weight": 2.3,
+      "targets": [
+        {
+          "level": "L2",
+          "name": "黑色家电"
+        }
+      ]
+    },
+    {
+      "keyword": "压缩机部件",
+      "weight": 2.4,
+      "targets": [
+        {
+          "level": "L2",
+          "name": "家电零部件Ⅱ"
+        }
+      ]
+    },
+    {
+      "keyword": "白酒",
+      "weight": 3.0,
+      "targets": [
+        {
+          "level": "L2",
+          "name": "白酒Ⅱ"
+        }
+      ]
+    },
+    {
+      "keyword": "酱酒",
+      "weight": 2.8,
+      "targets": [
+        {
+          "level": "L2",
+          "name": "白酒Ⅱ"
+        }
+      ]
+    },
+    {
+      "keyword": "啤酒",
+      "weight": 2.7,
+      "targets": [
+        {
+          "level": "L2",
+          "name": "非白酒"
+        }
+      ]
+    },
+    {
+      "keyword": "饮料",
+      "weight": 2.1,
+      "targets": [
+        {
+          "level": "L2",
+          "name": "饮料乳品"
+        }
+      ]
+    },
+    {
+      "keyword": "乳制品",
+      "weight": 2.6,
+      "targets": [
+        {
+          "level": "L2",
+          "name": "饮料乳品"
+        }
+      ]
+    },
+    {
+      "keyword": "调味品",
+      "weight": 2.8,
+      "targets": [
+        {
+          "level": "L2",
+          "name": "调味发酵品Ⅱ"
+        }
+      ]
+    },
+    {
+      "keyword": "酵母",
+      "weight": 2.5,
+      "targets": [
+        {
+          "level": "L2",
+          "name": "调味发酵品Ⅱ"
+        }
+      ]
+    },
+    {
+      "keyword": "休闲食品",
+      "weight": 2.7,
+      "targets": [
+        {
+          "level": "L2",
+          "name": "休闲食品"
+        }
+      ]
+    },
+    {
+      "keyword": "烘焙",
+      "weight": 2.3,
+      "targets": [
+        {
+          "level": "L2",
+          "name": "食品加工"
+        }
+      ]
+    },
+    {
+      "keyword": "速冻食品",
+      "weight": 2.5,
+      "targets": [
+        {
+          "level": "L2",
+          "name": "食品加工"
+        }
+      ]
+    },
+    {
+      "keyword": "品牌服饰",
+      "weight": 2.5,
+      "targets": [
+        {
+          "level": "L2",
+          "name": "服装家纺"
+        }
+      ]
+    },
+    {
+      "keyword": "羽绒服",
+      "weight": 2.5,
+      "targets": [
+        {
+          "level": "L2",
+          "name": "服装家纺"
+        }
+      ]
+    },
+    {
+      "keyword": "鞋帽",
+      "weight": 2.2,
+      "targets": [
+        {
+          "level": "L2",
+          "name": "服装家纺"
+        }
+      ]
+    },
+    {
+      "keyword": "纱线",
+      "weight": 2.4,
+      "targets": [
+        {
+          "level": "L2",
+          "name": "纺织制造"
+        }
+      ]
+    },
+    {
+      "keyword": "面料",
+      "weight": 2.3,
+      "targets": [
+        {
+          "level": "L2",
+          "name": "纺织制造"
+        }
+      ]
+    },
+    {
+      "keyword": "珠宝",
+      "weight": 2.7,
+      "targets": [
+        {
+          "level": "L2",
+          "name": "饰品"
+        }
+      ]
+    },
+    {
+      "keyword": "黄金珠宝",
+      "weight": 2.8,
+      "targets": [
+        {
+          "level": "L2",
+          "name": "饰品"
+        }
+      ]
+    },
+    {
+      "keyword": "钻石",
+      "weight": 2.6,
+      "targets": [
+        {
+          "level": "L2",
+          "name": "饰品"
+        }
+      ]
+    },
+    {
+      "keyword": "造纸",
+      "weight": 2.7,
+      "targets": [
+        {
+          "level": "L2",
+          "name": "造纸"
+        }
+      ]
+    },
+    {
+      "keyword": "纸浆",
+      "weight": 2.4,
+      "targets": [
+        {
+          "level": "L2",
+          "name": "造纸"
+        }
+      ]
+    },
+    {
+      "keyword": "包装",
+      "weight": 2.1,
+      "targets": [
+        {
+          "level": "L2",
+          "name": "包装印刷"
+        }
+      ]
+    },
+    {
+      "keyword": "印刷",
+      "weight": 2.1,
+      "targets": [
+        {
+          "level": "L2",
+          "name": "包装印刷"
+        }
+      ]
+    },
+    {
+      "keyword": "家居",
+      "weight": 2.3,
+      "targets": [
+        {
+          "level": "L2",
+          "name": "家居用品"
+        }
+      ]
+    },
+    {
+      "keyword": "定制家居",
+      "weight": 2.7,
+      "targets": [
+        {
+          "level": "L2",
+          "name": "家居用品"
+        }
+      ]
+    },
+    {
+      "keyword": "文具",
+      "weight": 2.2,
+      "targets": [
+        {
+          "level": "L2",
+          "name": "文娱用品"
+        }
+      ]
+    },
+    {
+      "keyword": "创新药",
+      "weight": 3.0,
+      "targets": [
+        {
+          "level": "L2",
+          "name": "化学制药"
+        },
+        {
+          "level": "L2",
+          "name": "生物制品"
+        }
+      ]
+    },
+    {
+      "keyword": "仿制药",
+      "weight": 2.5,
+      "targets": [
+        {
+          "level": "L2",
+          "name": "化学制药"
+        }
+      ]
+    },
+    {
+      "keyword": "原料药",
+      "weight": 2.7,
+      "targets": [
+        {
+          "level": "L2",
+          "name": "化学制药"
+        }
+      ]
+    },
+    {
+      "keyword": "中成药",
+      "weight": 2.8,
+      "targets": [
+        {
+          "level": "L2",
+          "name": "中药Ⅱ"
+        }
+      ]
+    },
+    {
+      "keyword": "中药饮片",
+      "weight": 2.7,
+      "targets": [
+        {
+          "level": "L2",
+          "name": "中药Ⅱ"
+        }
+      ]
+    },
+    {
+      "keyword": "疫苗",
+      "weight": 2.9,
+      "targets": [
+        {
+          "level": "L2",
+          "name": "生物制品"
+        }
+      ]
+    },
+    {
+      "keyword": "血制品",
+      "weight": 2.7,
+      "targets": [
+        {
+          "level": "L2",
+          "name": "生物制品"
+        }
+      ]
+    },
+    {
+      "keyword": "医疗器械",
+      "weight": 3.0,
+      "targets": [
+        {
+          "level": "L2",
+          "name": "医疗器械"
+        }
+      ]
+    },
+    {
+      "keyword": "体外诊断",
+      "weight": 2.8,
+      "targets": [
+        {
+          "level": "L2",
+          "name": "医疗器械"
+        }
+      ]
+    },
+    {
+      "keyword": "IVD",
+      "weight": 2.8,
+      "targets": [
+        {
+          "level": "L2",
+          "name": "医疗器械"
+        }
+      ]
+    },
+    {
+      "keyword": "CRO",
+      "weight": 2.9,
+      "targets": [
+        {
+          "level": "L2",
+          "name": "医疗服务"
+        }
+      ]
+    },
+    {
+      "keyword": "CDMO",
+      "weight": 2.9,
+      "targets": [
+        {
+          "level": "L2",
+          "name": "医疗服务"
+        },
+        {
+          "level": "L2",
+          "name": "化学制药"
+        }
+      ]
+    },
+    {
+      "keyword": "医院",
+      "weight": 2.3,
+      "targets": [
+        {
+          "level": "L2",
+          "name": "医疗服务"
+        }
+      ]
+    },
+    {
+      "keyword": "连锁药房",
+      "weight": 2.6,
+      "targets": [
+        {
+          "level": "L2",
+          "name": "医药商业"
+        }
+      ]
+    },
+    {
+      "keyword": "药品流通",
+      "weight": 2.5,
+      "targets": [
+        {
+          "level": "L2",
+          "name": "医药商业"
+        }
+      ]
+    },
+    {
+      "keyword": "医美",
+      "weight": 2.8,
+      "targets": [
+        {
+          "level": "L2",
+          "name": "医疗美容"
+        }
+      ]
+    },
+    {
+      "keyword": "玻尿酸",
+      "weight": 2.8,
+      "targets": [
+        {
+          "level": "L2",
+          "name": "医疗美容"
+        }
+      ]
+    },
+    {
+      "keyword": "火电",
+      "weight": 2.5,
+      "targets": [
+        {
+          "level": "L2",
+          "name": "电力"
+        }
+      ]
+    },
+    {
+      "keyword": "水电",
+      "weight": 2.5,
+      "targets": [
+        {
+          "level": "L2",
+          "name": "电力"
+        }
+      ]
+    },
+    {
+      "keyword": "核电",
+      "weight": 2.7,
+      "targets": [
+        {
+          "level": "L2",
+          "name": "电力"
+        }
+      ]
+    },
+    {
+      "keyword": "绿电",
+      "weight": 2.4,
+      "targets": [
+        {
+          "level": "L2",
+          "name": "电力"
+        }
+      ]
+    },
+    {
+      "keyword": "城燃",
+      "weight": 2.6,
+      "targets": [
+        {
+          "level": "L2",
+          "name": "燃气Ⅱ"
+        }
+      ]
+    },
+    {
+      "keyword": "LNG",
+      "weight": 2.5,
+      "targets": [
+        {
+          "level": "L2",
+          "name": "燃气Ⅱ"
+        }
+      ]
+    },
+    {
+      "keyword": "环保",
+      "weight": 2.0,
+      "targets": [
+        {
+          "level": "L1",
+          "name": "环保"
+        }
+      ]
+    },
+    {
+      "keyword": "污水处理",
+      "weight": 2.8,
+      "targets": [
+        {
+          "level": "L2",
+          "name": "环境治理"
+        }
+      ]
+    },
+    {
+      "keyword": "固废",
+      "weight": 2.6,
+      "targets": [
+        {
+          "level": "L2",
+          "name": "环境治理"
+        }
+      ]
+    },
+    {
+      "keyword": "危废",
+      "weight": 2.6,
+      "targets": [
+        {
+          "level": "L2",
+          "name": "环境治理"
+        }
+      ]
+    },
+    {
+      "keyword": "垃圾焚烧",
+      "weight": 2.7,
+      "targets": [
+        {
+          "level": "L2",
+          "name": "环境治理"
+        }
+      ]
+    },
+    {
+      "keyword": "脱硫脱硝",
+      "weight": 2.8,
+      "targets": [
+        {
+          "level": "L2",
+          "name": "环保设备Ⅱ"
+        }
+      ]
+    },
+    {
+      "keyword": "除尘设备",
+      "weight": 2.5,
+      "targets": [
+        {
+          "level": "L2",
+          "name": "环保设备Ⅱ"
+        }
+      ]
+    },
+    {
+      "keyword": "物流",
+      "weight": 2.2,
+      "targets": [
+        {
+          "level": "L2",
+          "name": "物流"
+        }
+      ]
+    },
+    {
+      "keyword": "快递",
+      "weight": 2.8,
+      "targets": [
+        {
+          "level": "L2",
+          "name": "物流"
+        }
+      ]
+    },
+    {
+      "keyword": "冷链物流",
+      "weight": 2.8,
+      "targets": [
+        {
+          "level": "L2",
+          "name": "物流"
+        }
+      ]
+    },
+    {
+      "keyword": "高速公路",
+      "weight": 2.6,
+      "targets": [
+        {
+          "level": "L2",
+          "name": "铁路公路"
+        }
+      ]
+    },
+    {
+      "keyword": "港口",
+      "weight": 2.7,
+      "targets": [
+        {
+          "level": "L2",
+          "name": "航运港口"
+        }
+      ]
+    },
+    {
+      "keyword": "航运",
+      "weight": 2.7,
+      "targets": [
+        {
+          "level": "L2",
+          "name": "航运港口"
+        }
+      ]
+    },
+    {
+      "keyword": "机场",
+      "weight": 2.8,
+      "targets": [
+        {
+          "level": "L2",
+          "name": "航空机场"
+        }
+      ]
+    },
+    {
+      "keyword": "航空货运",
+      "weight": 2.5,
+      "targets": [
+        {
+          "level": "L2",
+          "name": "航空机场"
+        }
+      ]
+    },
+    {
+      "keyword": "地产开发",
+      "weight": 2.7,
+      "targets": [
+        {
+          "level": "L2",
+          "name": "房地产开发"
+        }
+      ]
+    },
+    {
+      "keyword": "园区开发",
+      "weight": 2.5,
+      "targets": [
+        {
+          "level": "L2",
+          "name": "房地产开发"
+        }
+      ]
+    },
+    {
+      "keyword": "物业",
+      "weight": 2.7,
+      "targets": [
+        {
+          "level": "L2",
+          "name": "房地产服务"
+        }
+      ]
+    },
+    {
+      "keyword": "物业管理",
+      "weight": 2.9,
+      "targets": [
+        {
+          "level": "L2",
+          "name": "房地产服务"
+        }
+      ]
+    },
+    {
+      "keyword": "超市",
+      "weight": 2.4,
+      "targets": [
+        {
+          "level": "L2",
+          "name": "一般零售"
+        }
+      ]
+    },
+    {
+      "keyword": "百货",
+      "weight": 2.4,
+      "targets": [
+        {
+          "level": "L2",
+          "name": "一般零售"
+        }
+      ]
+    },
+    {
+      "keyword": "电商",
+      "weight": 2.5,
+      "targets": [
+        {
+          "level": "L2",
+          "name": "互联网电商"
+        }
+      ]
+    },
+    {
+      "keyword": "跨境电商",
+      "weight": 2.7,
+      "targets": [
+        {
+          "level": "L2",
+          "name": "互联网电商"
+        }
+      ]
+    },
+    {
+      "keyword": "连锁",
+      "weight": 1.9,
+      "targets": [
+        {
+          "level": "L2",
+          "name": "专业连锁Ⅱ"
+        }
+      ]
+    },
+    {
+      "keyword": "家居卖场",
+      "weight": 2.4,
+      "targets": [
+        {
+          "level": "L2",
+          "name": "专业连锁Ⅱ"
+        }
+      ]
+    },
+    {
+      "keyword": "贸易",
+      "weight": 1.7,
+      "targets": [
+        {
+          "level": "L2",
+          "name": "贸易Ⅱ"
+        }
+      ]
+    },
+    {
+      "keyword": "免税",
+      "weight": 3.0,
+      "targets": [
+        {
+          "level": "L2",
+          "name": "旅游零售Ⅱ"
+        }
+      ]
+    },
+    {
+      "keyword": "酒店",
+      "weight": 2.8,
+      "targets": [
+        {
+          "level": "L2",
+          "name": "酒店餐饮"
+        }
+      ]
+    },
+    {
+      "keyword": "餐饮",
+      "weight": 2.4,
+      "targets": [
+        {
+          "level": "L2",
+          "name": "酒店餐饮"
+        }
+      ]
+    },
+    {
+      "keyword": "景区",
+      "weight": 2.8,
+      "targets": [
+        {
+          "level": "L2",
+          "name": "旅游及景区"
+        }
+      ]
+    },
+    {
+      "keyword": "文旅",
+      "weight": 2.4,
+      "targets": [
+        {
+          "level": "L2",
+          "name": "旅游及景区"
+        }
+      ]
+    },
+    {
+      "keyword": "教育",
+      "weight": 2.5,
+      "targets": [
+        {
+          "level": "L2",
+          "name": "教育"
+        }
+      ]
+    },
+    {
+      "keyword": "职业教育",
+      "weight": 2.8,
+      "targets": [
+        {
+          "level": "L2",
+          "name": "教育"
+        }
+      ]
+    },
+    {
+      "keyword": "检测认证",
+      "weight": 2.7,
+      "targets": [
+        {
+          "level": "L2",
+          "name": "专业服务"
+        }
+      ]
+    },
+    {
+      "keyword": "人力资源服务",
+      "weight": 2.5,
+      "targets": [
+        {
+          "level": "L2",
+          "name": "专业服务"
+        }
+      ]
+    },
+    {
+      "keyword": "到店",
+      "weight": 2.2,
+      "targets": [
+        {
+          "level": "L2",
+          "name": "本地生活服务Ⅱ"
+        }
+      ]
+    },
+    {
+      "keyword": "银行",
+      "weight": 1.9,
+      "targets": [
+        {
+          "level": "L1",
+          "name": "银行"
+        }
+      ]
+    },
+    {
+      "keyword": "大行",
+      "weight": 2.1,
+      "targets": [
+        {
+          "level": "L2",
+          "name": "国有大型银行Ⅱ"
+        }
+      ]
+    },
+    {
+      "keyword": "股份制银行",
+      "weight": 2.6,
+      "targets": [
+        {
+          "level": "L2",
+          "name": "股份制银行Ⅱ"
+        }
+      ]
+    },
+    {
+      "keyword": "城商行",
+      "weight": 2.6,
+      "targets": [
+        {
+          "level": "L2",
+          "name": "城商行Ⅱ"
+        }
+      ]
+    },
+    {
+      "keyword": "农商行",
+      "weight": 2.6,
+      "targets": [
+        {
+          "level": "L2",
+          "name": "农商行Ⅱ"
+        }
+      ]
+    },
+    {
+      "keyword": "村镇银行",
+      "weight": 2.3,
+      "targets": [
+        {
+          "level": "L2",
+          "name": "其他银行Ⅱ"
+        }
+      ]
+    },
+    {
+      "keyword": "券商",
+      "weight": 2.9,
+      "targets": [
+        {
+          "level": "L2",
+          "name": "证券Ⅱ"
+        }
+      ]
+    },
+    {
+      "keyword": "投行",
+      "weight": 2.7,
+      "targets": [
+        {
+          "level": "L2",
+          "name": "证券Ⅱ"
+        }
+      ]
+    },
+    {
+      "keyword": "经纪业务",
+      "weight": 2.4,
+      "targets": [
+        {
+          "level": "L2",
+          "name": "证券Ⅱ"
+        }
+      ]
+    },
+    {
+      "keyword": "保险",
+      "weight": 2.2,
+      "targets": [
+        {
+          "level": "L2",
+          "name": "保险Ⅱ"
+        }
+      ]
+    },
+    {
+      "keyword": "寿险",
+      "weight": 2.6,
+      "targets": [
+        {
+          "level": "L2",
+          "name": "保险Ⅱ"
+        }
+      ]
+    },
+    {
+      "keyword": "财险",
+      "weight": 2.6,
+      "targets": [
+        {
+          "level": "L2",
+          "name": "保险Ⅱ"
+        }
+      ]
+    },
+    {
+      "keyword": "信托",
+      "weight": 2.5,
+      "targets": [
+        {
+          "level": "L2",
+          "name": "多元金融"
+        }
+      ]
+    },
+    {
+      "keyword": "融资租赁",
+      "weight": 2.6,
+      "targets": [
+        {
+          "level": "L2",
+          "name": "多元金融"
+        }
+      ]
+    },
+    {
+      "keyword": "保理",
+      "weight": 2.4,
+      "targets": [
+        {
+          "level": "L2",
+          "name": "多元金融"
+        }
+      ]
+    },
+    {
+      "keyword": "软件",
+      "weight": 1.8,
+      "targets": [
+        {
+          "level": "L2",
+          "name": "软件开发"
+        }
+      ]
+    },
+    {
+      "keyword": "工业软件",
+      "weight": 2.7,
+      "targets": [
+        {
+          "level": "L2",
+          "name": "软件开发"
+        }
+      ]
+    },
+    {
+      "keyword": "ERP",
+      "weight": 2.5,
+      "targets": [
+        {
+          "level": "L2",
+          "name": "软件开发"
+        }
+      ]
+    },
+    {
+      "keyword": "操作系统",
+      "weight": 2.7,
+      "targets": [
+        {
+          "level": "L2",
+          "name": "软件开发"
+        }
+      ]
+    },
+    {
+      "keyword": "数据库",
+      "weight": 2.7,
+      "targets": [
+        {
+          "level": "L2",
+          "name": "软件开发"
+        }
+      ]
+    },
+    {
+      "keyword": "信创",
+      "weight": 2.8,
+      "targets": [
+        {
+          "level": "L2",
+          "name": "软件开发"
+        },
+        {
+          "level": "L2",
+          "name": "计算机设备"
+        }
+      ]
+    },
+    {
+      "keyword": "云计算",
+      "weight": 2.3,
+      "targets": [
+        {
+          "level": "L2",
+          "name": "IT服务Ⅱ"
+        }
+      ]
+    },
+    {
+      "keyword": "算力",
+      "weight": 2.4,
+      "targets": [
+        {
+          "level": "L2",
+          "name": "IT服务Ⅱ"
+        },
+        {
+          "level": "L2",
+          "name": "计算机设备"
+        }
+      ]
+    },
+    {
+      "keyword": "IDC",
+      "weight": 2.7,
+      "targets": [
+        {
+          "level": "L2",
+          "name": "IT服务Ⅱ"
+        }
+      ]
+    },
+    {
+      "keyword": "数据中心",
+      "weight": 2.7,
+      "targets": [
+        {
+          "level": "L2",
+          "name": "IT服务Ⅱ"
+        }
+      ]
+    },
+    {
+      "keyword": "人工智能",
+      "weight": 2.7,
+      "targets": [
+        {
+          "level": "L2",
+          "name": "软件开发"
+        },
+        {
+          "level": "L2",
+          "name": "IT服务Ⅱ"
+        }
+      ]
+    },
+    {
+      "keyword": "大模型",
+      "weight": 2.8,
+      "targets": [
+        {
+          "level": "L2",
+          "name": "软件开发"
+        },
+        {
+          "level": "L2",
+          "name": "IT服务Ⅱ"
+        }
+      ]
+    },
+    {
+      "keyword": "网络安全",
+      "weight": 2.7,
+      "targets": [
+        {
+          "level": "L2",
+          "name": "软件开发"
+        },
+        {
+          "level": "L2",
+          "name": "IT服务Ⅱ"
+        }
+      ]
+    },
+    {
+      "keyword": "服务器",
+      "weight": 2.1,
+      "targets": [
+        {
+          "level": "L2",
+          "name": "计算机设备"
+        }
+      ]
+    },
+    {
+      "keyword": "整机",
+      "weight": 2.1,
+      "targets": [
+        {
+          "level": "L2",
+          "name": "计算机设备"
+        }
+      ]
+    },
+    {
+      "keyword": "基站",
+      "weight": 2.7,
+      "targets": [
+        {
+          "level": "L2",
+          "name": "通信设备"
+        }
+      ]
+    },
+    {
+      "keyword": "交换机",
+      "weight": 2.5,
+      "targets": [
+        {
+          "level": "L2",
+          "name": "通信设备"
+        }
+      ]
+    },
+    {
+      "keyword": "路由器",
+      "weight": 2.5,
+      "targets": [
+        {
+          "level": "L2",
+          "name": "通信设备"
+        }
+      ]
+    },
+    {
+      "keyword": "光模块",
+      "weight": 2.8,
+      "targets": [
+        {
+          "level": "L2",
+          "name": "通信设备"
+        },
+        {
+          "level": "L2",
+          "name": "光学光电子"
+        }
+      ]
+    },
+    {
+      "keyword": "光纤",
+      "weight": 2.5,
+      "targets": [
+        {
+          "level": "L2",
+          "name": "通信设备"
+        }
+      ]
+    },
+    {
+      "keyword": "物联网",
+      "weight": 2.4,
+      "targets": [
+        {
+          "level": "L2",
+          "name": "通信服务"
+        },
+        {
+          "level": "L2",
+          "name": "通信设备"
+        }
+      ]
+    },
+    {
+      "keyword": "运营商服务",
+      "weight": 2.4,
+      "targets": [
+        {
+          "level": "L2",
+          "name": "通信服务"
+        }
+      ]
+    },
+    {
+      "keyword": "游戏",
+      "weight": 2.8,
+      "targets": [
+        {
+          "level": "L2",
+          "name": "游戏Ⅱ"
+        }
+      ]
+    },
+    {
+      "keyword": "手游",
+      "weight": 2.7,
+      "targets": [
+        {
+          "level": "L2",
+          "name": "游戏Ⅱ"
+        }
+      ]
+    },
+    {
+      "keyword": "广告",
+      "weight": 2.2,
+      "targets": [
+        {
+          "level": "L2",
+          "name": "广告营销"
+        }
+      ]
+    },
+    {
+      "keyword": "营销服务",
+      "weight": 2.5,
+      "targets": [
+        {
+          "level": "L2",
+          "name": "广告营销"
+        }
+      ]
+    },
+    {
+      "keyword": "短视频",
+      "weight": 2.8,
+      "targets": [
+        {
+          "level": "L2",
+          "name": "数字媒体"
+        },
+        {
+          "level": "L2",
+          "name": "社交Ⅱ"
+        }
+      ]
+    },
+    {
+      "keyword": "内容平台",
+      "weight": 2.4,
+      "targets": [
+        {
+          "level": "L2",
+          "name": "数字媒体"
+        }
+      ]
+    },
+    {
+      "keyword": "出版",
+      "weight": 2.6,
+      "targets": [
+        {
+          "level": "L2",
+          "name": "出版"
+        }
+      ]
+    },
+    {
+      "keyword": "院线",
+      "weight": 2.7,
+      "targets": [
+        {
+          "level": "L2",
+          "name": "影视院线"
+        }
+      ]
+    },
+    {
+      "keyword": "影视",
+      "weight": 2.6,
+      "targets": [
+        {
+          "level": "L2",
+          "name": "影视院线"
+        }
+      ]
+    },
+    {
+      "keyword": "社交",
+      "weight": 2.7,
+      "targets": [
+        {
+          "level": "L2",
+          "name": "社交Ⅱ"
+        }
+      ]
+    },
+    {
+      "keyword": "直播平台",
+      "weight": 2.5,
+      "targets": [
+        {
+          "level": "L2",
+          "name": "社交Ⅱ"
+        },
+        {
+          "level": "L2",
+          "name": "互联网电商"
+        }
+      ]
+    },
+    {
+      "keyword": "广播电视",
+      "weight": 2.4,
+      "targets": [
+        {
+          "level": "L2",
+          "name": "电视广播Ⅱ"
+        }
+      ]
+    },
+    {
+      "keyword": "体育",
+      "weight": 2.3,
+      "targets": [
+        {
+          "level": "L2",
+          "name": "体育Ⅱ"
+        }
+      ]
+    },
+    {
+      "keyword": "化妆品",
+      "weight": 2.9,
+      "targets": [
+        {
+          "level": "L2",
+          "name": "化妆品"
+        }
+      ]
+    },
+    {
+      "keyword": "护肤",
+      "weight": 2.6,
+      "targets": [
+        {
+          "level": "L2",
+          "name": "化妆品"
+        }
+      ]
+    },
+    {
+      "keyword": "彩妆",
+      "weight": 2.6,
+      "targets": [
+        {
+          "level": "L2",
+          "name": "化妆品"
+        }
+      ]
+    },
+    {
+      "keyword": "个护",
+      "weight": 2.5,
+      "targets": [
+        {
+          "level": "L2",
+          "name": "个护用品"
+        }
+      ]
+    },
+    {
+      "keyword": "纸尿裤",
+      "weight": 2.4,
+      "targets": [
+        {
+          "level": "L2",
+          "name": "个护用品"
+        }
+      ]
+    },
+    {
+      "keyword": "口腔护理",
+      "weight": 2.4,
+      "targets": [
+        {
+          "level": "L2",
+          "name": "个护用品"
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,41 @@
+trading_diff:
+- vol
+- amount
+- close_qfq
+
+atr_diff:
+- close_qfq
+- high_qfq
+- low_qfq
+
+ma_diff:
+- close_qfq
+- high_qfq
+- low_qfq
+
+boll_band_diff:
+- close_qfq
+- high_qfq
+- low_qfq
+
+fundamental_diff:
+- turnover_rate_f
+- volume_ratio
+- pe
+- pb
+- ps
+
+cost_diff_from:
+- close_qfq
+- high_qfq
+- low_qfq
+
+cost_diff:
+- his_low
+- his_high
+- cost_5pct
+- cost_15pct
+- cost_50pct
+- cost_85pct
+- cost_95pct
+- weight_avg

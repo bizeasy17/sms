@@ -1,0 +1,3 @@
+﻿case,status_code,has_resolved_params,has_snapshot,has_valuations,has_weighted_valuation,status
+GET_688002,200,true,true,true,true,PASS
+POST_688002_mixed,200,true,true,true,true,PASS

@@ -1,0 +1,50 @@
+# How to Run a Django Command as a Scheduled Job
+
+You can schedule a Django management command to run automatically using system schedulers like **cron** (Linux/macOS) or **Task Scheduler** (Windows).
+
+## 1. Create Your Django Command
+
+Place your custom command in `yourapp/management/commands/your_command.py`.
+
+Example:
+    python manage.py your_command
+
+## 2. Schedule with Cron (Linux/macOS)
+
+1. Open your crontab:
+    crontab -e
+
+2. Add a line to run the command (e.g., every day at midnight):
+    0 0 * * * /path/to/venv/bin/python /path/to/manage.py your_command --settings=yourproject.settings
+
+## 3. Schedule with Task Scheduler (Windows)
+
+1. Open Task Scheduler.
+2. Create a new task.
+3. Set the action to run:
+    Program/script: C:\path\to\python.exe
+    Add arguments: manage.py your_command --settings=yourproject.settings
+    Start in: C:\path\to\your\project
+
+## 4. Tips
+
+- Use absolute paths.
+- Activate your virtual environment if needed.
+- Redirect output to a log file for debugging.
+
+Refer to your OS documentation for more scheduling options.
+> python manage.py setup # 仅运行一次以设置环境
+> python manage.py createsuperuser # 创建超级用户localadmin
+> python manage.py import # 自选导入， 运行一次
+> python manage.py fetchcorp # 每月运行一次
+> python manage.py initdata # 运行一次，初始化数据 400条记录 from etl
+> python manage.py pulldata # 每日运行，差量获取数据 from etl
+> python manage.py fetchpredtmp # 获取每日预测数据，每日运行
+> daily_pick_candidates.bat # 无前台选股导出（CSV + 日志）
+> daily_funda_prediction.bat # 已串联 predict 与 daily_pick_candidates
+
+# 增加新特征，新模型步骤
+1. 修改 prediction/config/features.py，增加新特征字段，譬如pct_o2c
+2. 在prediction_util的相关类型trading, cost, fundamental中添加新特征的计算逻辑
+3. copy新模型到static/models/1.2/，按照命名规则命名
+4. 修改config/features/1.2， 增加新特征的配置，每个模型一个特征配置段

@@ -1,0 +1,42 @@
+{
+  "market": "CN",
+  "profiles": {
+    "688818.SH": {
+      "last_profile": "aggressive",
+      "pending_profile": null,
+      "pending_count": 0,
+      "cooldown_until": null,
+      "force_conservative_until": null,
+      "last_risk_score": 0.286,
+      "last_date": "2026-03-25"
+    },
+    "600519.SH": {
+      "last_profile": "aggressive",
+      "pending_profile": null,
+      "pending_count": 0,
+      "cooldown_until": null,
+      "force_conservative_until": null,
+      "last_risk_score": 0.282418,
+      "last_date": "2025-12-26"
+    },
+    "600000.SH": {
+      "last_profile": "balanced",
+      "pending_profile": null,
+      "pending_count": 0,
+      "cooldown_until": null,
+      "force_conservative_until": null,
+      "last_risk_score": 0.545859,
+      "last_date": "2025-04-30"
+    },
+    "600004.SH": {
+      "last_profile": "aggressive",
+      "pending_profile": null,
+      "pending_count": 0,
+      "cooldown_until": null,
+      "force_conservative_until": null,
+      "last_risk_score": 0.221916,
+      "last_date": "2025-10-31"
+    }
+  },
+  "updated_at": "2026-04-10T23:59:18"
+}

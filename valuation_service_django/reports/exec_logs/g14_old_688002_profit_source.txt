@@ -1,0 +1,23 @@
+﻿source: sw_l3
+profit_data_source: express_vip
+strict_express_match: True
+express_max_age_days: 180
+express_apply_reason: eligible_period_upgrade
+express_block_reason: None
+profit_snapshot_trade_date: 20260320
+profit_snapshot_end_date: 20250930
+express_end_date: 20251231
+express_ann_date: 20260228
+peg_growth_yoy_pct(base->effective): 46.2122 -> 107.0735
+netprofit(base->effective): 706782777.9300 -> 982269053.3790
+revenue(base->effective): 4085976026.2000 -> 5651207787.8600
+express_blend_alpha: 0.7000
+    method  evaluated_market_value  according_price
+market_cap                465.0461         101.0000
+        pe                247.5318          53.7596
+        ps                203.4435          44.1844
+        pb                223.9409          48.6361
+       peg                432.1984          93.8661
+ ev_ebitda                 59.8167          12.9912
+  fcff_dcf                123.4148          26.8036
+       ddm                  0.4599           0.0999

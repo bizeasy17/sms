@@ -1,0 +1,44 @@
+from django.core.management.base import BaseCommand, CommandError
+
+from analysis.utils.analysis_utils import (
+    analyze_top_bottom_gain_loss_statistics,
+)
+
+
+class Command(BaseCommand):
+    help = "Identify top and bottom assets based on time series analysis."
+
+    def add_arguments(self, parser):
+        parser.add_argument(
+            "--tscode", type=str, help="Time series code"
+        )
+        parser.add_argument(
+            "--freq", type=str, required=True, help="Frequency (e.g., daily, weekly)"
+        )
+        parser.add_argument(
+            "--distance",
+            type=int,
+            required=False,
+            help="Distance for gain/loss calculation",
+        )
+        parser.add_argument(
+            "--resume", help="Resume from last run"
+        )
+    
+    def handle(self, *args, **options):
+        ts_code = options["tscode"]
+        freq = options["freq"]
+        resume = options["resume"]
+        distance = options["distance"]
+
+        # Calculate tops and bottoms entry pct gain & loss
+        analyze_top_bottom_gain_loss_statistics(
+            ts_code=ts_code, freq=freq, resume=resume, distance=distance
+        )
+        self.stdout.write(
+            self.style.SUCCESS(
+                f"Running calculate_top_bottom_gain_loss_over_periods with ts_code={ts_code}, freq={freq}, resume from {resume}, distance={distance}"
+            )
+        )
+
+        # TODO: Implement your analysis logic here

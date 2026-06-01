@@ -1,0 +1,28 @@
+*.pyc
+smartinvestor_etl.zip
+smartinvestor_ln.zip
+tushare_earnings_service/logs/
+tushare_earnings_service/outputs/
+tushare_earnings_service/outputs_risk/
+
+# Large generated artifacts
+output/
+logs/
+**/output/**
+**/logs/**
+**/outputs/
+**/outputs_risk/
+**/output/
+**/logs/
+*.parquet
+**/*.parquet
+*.joblib
+**/*.joblib
+*.zip
+
+# Local settings and env files
+**/settings.py
+**/settings_local.py
+**/.env
+**/.env.*
+!**/.env.example

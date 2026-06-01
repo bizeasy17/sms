@@ -1,0 +1,17 @@
+﻿step_id,phase,step_name,run_type,result,detail,next_action
+1,prepare,确认Python环境,auto,PASS,Python 3.10.11 returned in terminal,None
+2,prepare,确认新项目Django可运行,auto,PASS,manage.py check passed with no blocking issues,None
+3,prepare,确认老项目Django可运行,auto,PASS,manage.py check passed with warning templates.W003 only,None
+4,template,模板顺序对齐样本A运行-新,auto,PASS,688002.SH output includes source=sw and L3 industry metadata,None
+5,template,模板顺序对齐样本A运行-老,auto,PASS,688002.SH output includes source=sw_l3 with expected method rows,None
+6,template,模板顺序对齐比对,manual,PASS,Structured compare completed in reports/template_parity_diff_20260322.csv with same resolved L3 industry and aligned outputs,None
+7,industry_match,business_topn样本A-新,auto,PASS,688002.SH top3 business_match scores printed and complete,None
+8,industry_match,business_topn样本A-老,auto,PASS,688002.SH top3 business_match scores printed and aligned with new,None
+15,valuation_method,银行EVEBITDA行为-新,auto,PASS,600036.SH requested ev_ebitda auto-switched to pb with diagnostics,None
+16,valuation_method,银行EVEBITDA行为-老,auto,PASS,600036.SH command no longer crashes; scenario/sensitivity gracefully skip EV/EBITDA when target is missing,None
+18,data_source,新项目数据时效检查,auto,PASS_WITH_WARNING,trading/fundamental max dates are 2026-03-20 and local StockExpressVip is empty because no source express table was found; runtime still uses Tushare express_vip fallback,Keep as warning and add separate task to backfill local express table when source becomes available
+20,persistence,新项目估值快照主键与维度抽查,auto,PASS,dup=0 and rows=69 for ValuationSnapshot uniqueness,None
+9,overall,multi-sample列表准备,manual,PASS,Standard 35-ticker sample pool has been created and trade-date verified,Use reports/sample_pool_30plus_20260322.csv as the input universe
+10,overall,multi-sample批量对比执行,auto,PASS,After refreshing legacy corporation_basic for the 4 drift tickers and rerunning parity PASS=35 FAIL=0 pass_rate_pct=100.00,None
+27,overall,30+样本端到端汇总,manual,PASS,End-to-end summary generated in reports/e2e_parity_summary_30plus_20260322.csv with no P0 blocking FAIL,None
+28,overall,迁移放行评审,manual,READY,Draft review minutes prepared at docs/go_live_review_minutes_20260322.md awaiting 3-party sign-off,Collect Product/Data/Engineering approvals

@@ -1,0 +1,11 @@
+﻿metric,value,notes
+sample_pool_size,35,from sample_pool_30plus_20260322.csv
+business_match_pass_rate_pct,100.00,from business_match_parity_summary_30plus_20260322.csv
+business_match_pass_count,35,from business_match_parity_summary_30plus_20260322.csv
+business_match_fail_count,0,from business_match_parity_summary_30plus_20260322.csv
+template_parity_sample,688002.SH,template_parity_diff_20260322.csv shows PASS
+bank_evebitda_behavior,new_and_old_pass,new side auto-switches; old side no crash
+data_freshness_status,PASS_WITH_WARNING,local StockExpressVip empty but runtime has Tushare fallback
+snapshot_pk_check,PASS,dup=0
+overall_gate_g16,PASS,No P0 blocking FAIL remains in current fast-track evidence
+residual_risks,1,"G08 warning remains: local express table backfill is pending"
