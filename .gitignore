@@ -26,3 +26,8 @@ __pycache__/
 # Editor
 .vscode/
 *.swp
+
+# Local settings
+settings.py
+**/settings.py
+
