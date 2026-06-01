@@ -28,6 +28,5 @@ __pycache__/
 *.swp
 
 # Local settings
-settings.py
-**/settings.py
+smartinvestor_etl/smartinvestor_etl/settings.py
 
