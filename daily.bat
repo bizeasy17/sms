@@ -3,7 +3,7 @@ setlocal EnableExtensions EnableDelayedExpansion
 
 set "UAT_ROOT=%~dp0"
 if "%UAT_ROOT:~-1%"=="\" set "UAT_ROOT=%UAT_ROOT:~0,-1%"
-set "PYTHON_CMD=C:\Users\HANJ29\Development\vdev1\Scripts\python.exe"
+set "PYTHON_CMD=C:\Users\HANJ29\Development\code\JIUCAI_DEV\.venv\Scripts\python.exe"
 if not exist "%PYTHON_CMD%" set "PYTHON_CMD=python"
 if not defined ENABLE_PARALLEL_REFRESH set "ENABLE_PARALLEL_REFRESH=1"
 if not defined LOW_FREQ_TRADITIONAL_FULL_REFRESH_MONTHDAY set "LOW_FREQ_TRADITIONAL_FULL_REFRESH_MONTHDAY=1"

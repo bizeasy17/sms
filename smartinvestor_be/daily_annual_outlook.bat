@@ -8,7 +8,7 @@ set "BEAR_PROFIT_GROWTH=4"
 set "BULL_MULTIPLE_PREMIUM=10"
 set "BEAR_MULTIPLE_DISCOUNT=10"
 set "TOP_N=50"
-set "VENV_PYTHON=C:\Users\HANJ29\Development\vdev1\Scripts\python.exe"
+set "VENV_PYTHON=C:\Users\HANJ29\Development\code\JIUCAI_DEV\.venv\Scripts\python.exe"
 
 set "BASE_DIR=%~dp0"
 cd /d "%BASE_DIR%"

@@ -4,7 +4,7 @@ setlocal EnableExtensions EnableDelayedExpansion
 set "BASE_DIR=%~dp0"
 cd /d "%BASE_DIR%"
 
-set "PYTHON_CMD=C:\Users\HANJ29\Development\vdev1\Scripts\python.exe"
+set "PYTHON_CMD=C:\Users\HANJ29\Development\code\JIUCAI_DEV\.venv\Scripts\python.exe"
 if not exist "%PYTHON_CMD%" set "PYTHON_CMD=python"
 if not defined DISCLOSURE_LOOKBACK_DAYS set "DISCLOSURE_LOOKBACK_DAYS=2"
 if not defined REMOTE_DIVIDEND_LOOKBACK_DAYS set "REMOTE_DIVIDEND_LOOKBACK_DAYS=%DISCLOSURE_LOOKBACK_DAYS%"

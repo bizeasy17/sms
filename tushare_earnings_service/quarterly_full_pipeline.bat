@@ -5,7 +5,7 @@ set "UAT_ROOT=C:\Users\HANJ29\Development\web\UAT"
 set "ETL_DIR=%UAT_ROOT%\smartinvestor_etl"
 set "EARNINGS_DIR=%UAT_ROOT%\tushare_earnings_service"
 
-set "PYTHON_CMD=C:\Users\HANJ29\Development\vdev1\Scripts\python.exe"
+set "PYTHON_CMD=C:\Users\HANJ29\Development\code\JIUCAI_DEV\.venv\Scripts\python.exe"
 if not exist "%PYTHON_CMD%" set "PYTHON_CMD=python"
 
 for /f %%i in ('powershell -NoProfile -Command "Get-Date -Format yyyyMMdd_HHmmss"') do set "RUN_STAMP=%%i"

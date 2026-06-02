@@ -5,7 +5,7 @@ set "BASE_DIR=%~dp0"
 cd /d "%BASE_DIR%"
 
 set "PYTHON_CMD="
-if exist "C:\Users\HANJ29\Development\vdev1\Scripts\python.exe" set "PYTHON_CMD=C:\Users\HANJ29\Development\vdev1\Scripts\python.exe"
+if exist "C:\Users\HANJ29\Development\code\JIUCAI_DEV\.venv\Scripts\python.exe" set "PYTHON_CMD=C:\Users\HANJ29\Development\code\JIUCAI_DEV\.venv\Scripts\python.exe"
 if not defined PYTHON_CMD set "PYTHON_CMD=%BASE_DIR%..\.venv\Scripts\python.exe"
 if exist "%PYTHON_CMD%" (
     "%PYTHON_CMD%" -c "import django" >nul 2>&1

@@ -1,7 +1,7 @@
 @echo off
 setlocal enableextensions enabledelayedexpansion
 
-set "VENV_PYTHON=C:\Users\HANJ29\Development\vdev1\Scripts\python.exe"
+set "VENV_PYTHON=C:\Users\HANJ29\Development\code\JIUCAI_DEV\.venv\Scripts\python.exe"
 set "BASE_DIR=%~dp0"
 cd /d "%BASE_DIR%"
 set "VALUATION_TABLE_PREFIX=valuation"
