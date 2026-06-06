@@ -1,6 +1,13 @@
 import axios from 'axios'
 
-const valuationMethodsCache = new Map<string, any>()
+const VALUATION_METHODS_CACHE_TTL_MS = 30 * 1000
+
+type CachedPayload = {
+  payload: any
+  cachedAt: number
+}
+
+const valuationMethodsCache = new Map<string, CachedPayload>()
 const valuationMethodsPending = new Map<string, Promise<any>>()
 
 function buildValuationCacheKey(tsCode: string, band: string, reportType: string, preferredVariant = '') {
@@ -22,8 +29,12 @@ export async function fetchValuationMethodsWithSharedCache(
   }
 
   const key = buildValuationCacheKey(normalizedTsCode, band, reportType, preferredVariant)
-  if (valuationMethodsCache.has(key)) {
-    return valuationMethodsCache.get(key)
+  const cached = valuationMethodsCache.get(key)
+  if (cached && (Date.now() - cached.cachedAt) <= VALUATION_METHODS_CACHE_TTL_MS) {
+    return cached.payload
+  }
+  if (cached) {
+    valuationMethodsCache.delete(key)
   }
   const pending = valuationMethodsPending.get(key)
   if (pending) {
@@ -41,7 +52,10 @@ export async function fetchValuationMethodsWithSharedCache(
     .then((res) => {
       const payload = res?.data
       if (payload && typeof payload === 'object') {
-        valuationMethodsCache.set(key, payload)
+        valuationMethodsCache.set(key, {
+          payload,
+          cachedAt: Date.now(),
+        })
       }
       return payload
     })

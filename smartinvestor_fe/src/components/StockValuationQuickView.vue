@@ -1802,9 +1802,9 @@ async function fetchPredictiveSignalOnly(requestSeq = ++predictiveFetchSeq.value
   predictiveLoading.value = true
   try {
     const valuationTsCode = ''
-    const earningsTsCodeCandidates = Array.from(
-      new Set([normalizedTsCode, canonicalTsCode, valuationTsCode].filter((code) => Boolean(code)))
-    )
+    const earningsTsCodeCandidates = canonicalTsCode
+      ? [canonicalTsCode]
+      : Array.from(new Set([normalizedTsCode, valuationTsCode].filter((code) => Boolean(code))))
     const normalizedSignalReportType = normalizeEarningsReportTypeForSignal(selectedEarningsReportType.value)
     const selectedValuationEndDateRaw = rows.value.find((item) => item.profit_report_end_date)?.profit_report_end_date || null
     const selectedValuationEndDate = shouldPinFinancialEndDate(
@@ -1854,10 +1854,16 @@ async function fetchPredictiveSignalOnly(requestSeq = ++predictiveFetchSeq.value
       predictiveCompare.value = compareData && typeof compareData === 'object'
         ? (compareData as PredictiveComparePayload)
         : null
-      const latestRaw = predictiveCompare.value?.latest_view
-      if (latestRaw && typeof latestRaw === 'object') {
+      const normalizedAnchorMode = String(selectedPredictAnchorMode.value || '').trim().toLowerCase()
+      const comparePayloadAny = predictiveCompare.value as any
+      const reportAnchorRaw = comparePayloadAny?.report_anchor_view || comparePayloadAny?.report_view
+      const latestRaw = comparePayloadAny?.latest_view
+      const preferredRaw = latestRaw || reportAnchorRaw
+      // For ann mode, keep primary signal from /earnings/signal to avoid
+      // compare payload accidentally downgrading to an older report period.
+      if (normalizedAnchorMode === 'live' && preferredRaw && typeof preferredRaw === 'object') {
         earningsSignal.value = buildEarningsSignalModel(
-          latestRaw,
+          preferredRaw,
           normalizedTsCode,
           String(selectedEarningsReportType.value || 'UNKNOWN').toUpperCase(),
         )
@@ -2026,6 +2032,10 @@ const predictiveContextLabel = computed(() => {
 })
 
 const predictiveLatestView = computed<EarningsSignal | null>(() => {
+  const anchorMode = String(selectedPredictAnchorMode.value || '').trim().toLowerCase()
+  if (anchorMode === 'ann') {
+    return earningsSignal.value
+  }
   const latestRaw = predictiveCompare.value?.latest_view
   if (latestRaw && typeof latestRaw === 'object') {
     return buildEarningsSignalModel(
@@ -2038,6 +2048,10 @@ const predictiveLatestView = computed<EarningsSignal | null>(() => {
 })
 
 const predictiveReportAnchorView = computed<EarningsSignal | null>(() => {
+  const anchorMode = String(selectedPredictAnchorMode.value || '').trim().toLowerCase()
+  if (anchorMode === 'ann') {
+    return earningsSignal.value
+  }
   const anchorRaw = predictiveCompare.value?.report_anchor_view
   if (anchorRaw && typeof anchorRaw === 'object') {
     return buildEarningsSignalModel(
@@ -2046,7 +2060,7 @@ const predictiveReportAnchorView = computed<EarningsSignal | null>(() => {
       String(selectedEarningsReportType.value || 'UNKNOWN').toUpperCase(),
     )
   }
-  return null
+  return earningsSignal.value
 })
 
 const predictiveCompareSummary = computed<PredictiveCompareSummary | null>(() => {

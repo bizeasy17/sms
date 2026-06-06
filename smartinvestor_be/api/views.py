@@ -7034,11 +7034,18 @@ def get_stock_valuation_methods(request, ts_code):
         )
 
         if valuation_report_type and not express_only and valuation_report_end_date is None:
-            valuation_report_end_date = _resolve_valuation_report_end_date_from_feature_panel(
+            valuation_report_end_date = _resolve_valuation_report_end_date_from_snapshot_latest(
                 ts_code=ts_code,
                 report_type=valuation_report_type,
+                market=market,
                 asof_date=current_trade_date,
             )
+            if valuation_report_end_date is None:
+                valuation_report_end_date = _resolve_valuation_report_end_date_from_feature_panel(
+                    ts_code=ts_code,
+                    report_type=valuation_report_type,
+                    asof_date=current_trade_date,
+                )
 
         if valuation_report_type or express_only or fusion_only:
             snapshot_qs = StockValuationSnapshot.objects.filter(
@@ -8380,6 +8387,36 @@ def _resolve_valuation_report_end_date_from_feature_panel(ts_code, report_type, 
     return _parse_date_like(df.iloc[0].get("end_date"))
 
 
+def _resolve_valuation_report_end_date_from_snapshot_latest(
+    ts_code,
+    report_type,
+    market="CN",
+    asof_date=None,
+):
+    normalized_ts_code = str(ts_code or "").strip().upper()
+    panel_report_type = _map_valuation_report_type_to_panel_type(report_type)
+    if not normalized_ts_code or panel_report_type not in {"Q1", "H1", "Q3", "FY"}:
+        return None
+
+    snapshot_qs = StockValuationSnapshotLatest.objects.filter(
+        ts_code=normalized_ts_code,
+        market=str(market or "CN").strip() or "CN",
+        profit_report_type=panel_report_type,
+    )
+    normalized_asof_date = _parse_date_like(asof_date)
+    if normalized_asof_date is not None:
+        snapshot_qs = snapshot_qs.filter(latest_trade_date__lte=normalized_asof_date)
+
+    row = (
+        snapshot_qs.order_by("-profit_report_end_date", "-latest_trade_date", "-updated_at")
+        .values("profit_report_end_date")
+        .first()
+    )
+    if not row:
+        return None
+    return _parse_date_like(row.get("profit_report_end_date"))
+
+
 def _infer_report_type_from_end_date(end_date):
     normalized = _parse_date_like(end_date)
     if normalized is None:
@@ -8883,10 +8920,9 @@ def _fetch_earnings_signal(
     if normalized_source == "predict" and normalized_anchor_mode in {"ann", "live"}:
         query_payload["anchor_mode"] = normalized_anchor_mode
 
-    if normalized_source == "snapshot":
-        normalized_financial_end_date = _parse_date_like(financial_end_date)
-        if normalized_financial_end_date is not None:
-            query_payload["financial_end_date"] = normalized_financial_end_date.strftime("%Y-%m-%d")
+    normalized_financial_end_date = _parse_date_like(financial_end_date)
+    if normalized_financial_end_date is not None:
+        query_payload["financial_end_date"] = normalized_financial_end_date.strftime("%Y-%m-%d")
 
     query = urlencode(query_payload)
     endpoint = "/api/forecast/predict/" if normalized_source == "predict" else "/api/forecast/signal/"

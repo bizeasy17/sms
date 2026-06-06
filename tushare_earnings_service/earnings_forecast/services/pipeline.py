@@ -2568,6 +2568,7 @@ class EarningsForecastPipeline:
         model_version: str | None = None,
         serving_slot: str = "production",
         requested_report_type: str | None = None,
+        requested_financial_end_date: str | None = None,
         anchor_mode: str = "ann",
         asof_date: datetime | pd.Timestamp | str | None = None,
     ) -> dict[str, Any]:
@@ -2583,10 +2584,16 @@ class EarningsForecastPipeline:
             requested_report_type = "FY"
         if requested_report_type == "UNKNOWN":
             requested_report_type = ""
+        requested_end_date = ""
+        if requested_financial_end_date:
+            parsed_end_date = pd.to_datetime(requested_financial_end_date, errors="coerce")
+            if pd.notna(parsed_end_date):
+                requested_end_date = pd.Timestamp(parsed_end_date).strftime("%Y-%m-%d")
 
         live_subset = self._build_live_predict_features(
             code,
             requested_report_type=requested_report_type or None,
+            requested_financial_end_date=requested_end_date or None,
             asof_date=asof_date,
         )
         latest_report_type = None
@@ -3423,6 +3430,7 @@ class EarningsForecastPipeline:
         self,
         ts_code: str,
         requested_report_type: str | None = None,
+        requested_financial_end_date: str | None = None,
         asof_date: datetime | pd.Timestamp | str | None = None,
     ) -> pd.DataFrame:
         code = str(ts_code or "").strip()
@@ -3580,6 +3588,13 @@ class EarningsForecastPipeline:
             frame = cached_frame[
                 cached_frame["report_type"].fillna("UNKNOWN").astype(str).str.upper() == requested_rt
             ]
+
+            if requested_financial_end_date and "end_date" in frame.columns:
+                requested_end_date_ts = pd.to_datetime(requested_financial_end_date, errors="coerce")
+                if pd.notna(requested_end_date_ts):
+                    requested_end_date_token = pd.Timestamp(requested_end_date_ts).strftime("%Y-%m-%d")
+                    frame_end_dates = pd.to_datetime(frame["end_date"], errors="coerce").dt.strftime("%Y-%m-%d")
+                    frame = frame[frame_end_dates == requested_end_date_token]
 
             # Same-day multi-report announcements (for example Q1 and FY both announced
             # on the same day) can cause the mixed merge_asof frame to retain only the
