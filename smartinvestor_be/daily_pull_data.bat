@@ -1,22 +1,24 @@
 @echo off
 echo Hello, Pull Fundamental Cost Program!
 PowerShell -ExecutionPolicy Bypass -Command "Set-ExecutionPolicy -ExecutionPolicy Unrestricted -Scope Process"
-cd "C:\Users\HANJ29\Development\"
-call ".\vdev1\Scripts\activate"
-cd ".\web\UAT\smartinvestor_be\"
+cd /d "C:\Users\HANJ29\Development\web\UAT\smartinvestor_be"
+set "PYTHON_CMD=C:\Users\HANJ29\Development\code\JIUCAI_DEV\.venv\Scripts\python.exe"
+if not exist "%PYTHON_CMD%" set "PYTHON_CMD=python"
 
-python manage.py fetchcorp
+echo [INFO] Using Python: %PYTHON_CMD%
+
+"%PYTHON_CMD%" manage.py fetchcorp
 echo Hello, Fetching corp info Completed!
 
-python manage.py pulldata --freq=D --dtype=trading --batch=True
+"%PYTHON_CMD%" manage.py pulldata --freq=D --dtype=trading --batch=True
 REM --resume="300145.SZ"
 echo Hello, Pull Trading dataset Completed!
 
-python manage.py pulldata --freq=D --dtype=fundamental --batch=True
+"%PYTHON_CMD%" manage.py pulldata --freq=D --dtype=fundamental --batch=True
 REM --resume="300145.SZ"
 echo Hello, Pull Fundamental dataset Completed!
 
-python manage.py pulldata --freq=D --dtype=cost --batch=True
+"%PYTHON_CMD%" manage.py pulldata --freq=D --dtype=cost --batch=True
 REM --resume="300145.SZ"
 echo Hello, Pull Cost dataset Completed!
 

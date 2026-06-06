@@ -11,7 +11,6 @@ from valuation.models import BacktestValuationSnapshot, StockValuationSnapshot
 from prediction.utils.prediction_util import get_tushare_pro
 from valuation.services.valuation_engine import test_valuation
 
-
 BUY_CANDIDATE_CORE_METHODS = ("pe", "pb", "ps")
 BUY_CANDIDATE_SUPPORT_METHODS = ("fcff_dcf", "ddm")
 BUY_CANDIDATE_OPTIONAL_METHODS = ("peg",)
@@ -89,8 +88,14 @@ def _build_snapshot_method_map(ts_codes, trade_date, market="CN"):
         valuation_price = row.get("valuation_price")
         valuation_market_cap = row.get("valuation_market_cap")
         method_map[method] = {
-            "valuation_price": float(valuation_price) if valuation_price is not None else None,
-            "valuation_market_cap": float(valuation_market_cap) if valuation_market_cap is not None else None,
+            "valuation_price": (
+                float(valuation_price) if valuation_price is not None else None
+            ),
+            "valuation_market_cap": (
+                float(valuation_market_cap)
+                if valuation_market_cap is not None
+                else None
+            ),
             "source": row.get("source"),
         }
     return snapshot_map
@@ -99,7 +104,9 @@ def _build_snapshot_method_map(ts_codes, trade_date, market="CN"):
 def _summarize_buy_candidate(current_price, method_map, band_pct):
     # Single source of truth: reuse the shared valuation service to keep
     # quick view, stock-picking, and backtest on identical valuation logic.
-    from valuation.services.valuation_summary import summarize_buy_candidate as _summarize_buy_candidate_shared
+    from valuation.services.valuation_summary import (
+        summarize_buy_candidate as _summarize_buy_candidate_shared,
+    )
 
     return _summarize_buy_candidate_shared(
         current_price=current_price,
@@ -172,7 +179,11 @@ def _calc_trailing_risk_metrics(price_series, entry_date, lookback_days):
         return None, None
 
     start_index = max(0, entry_index - max(1, int(lookback_days)) + 1)
-    window_prices = [price for _d, price in price_series[start_index : entry_index + 1] if price and price > 0]
+    window_prices = [
+        price
+        for _d, price in price_series[start_index : entry_index + 1]
+        if price and price > 0
+    ]
     if len(window_prices) < 2:
         return None, None
 
@@ -184,7 +195,9 @@ def _calc_trailing_risk_metrics(price_series, entry_date, lookback_days):
 
     trailing_vol_pct = None
     if returns:
-        trailing_vol_pct = float(pd.Series(returns, dtype="float64").std(ddof=0) * 100.0)
+        trailing_vol_pct = float(
+            pd.Series(returns, dtype="float64").std(ddof=0) * 100.0
+        )
 
     peak_price = max(window_prices)
     entry_price = window_prices[-1]
@@ -229,7 +242,13 @@ def _load_backtest_cache_map(ts_codes, trade_date, batch_key, market="CN"):
             batch_key=batch_key,
         )
         .order_by("ts_code", "valuation_method", "-updated_at")
-        .values("ts_code", "valuation_method", "valuation_price", "valuation_market_cap", "source")
+        .values(
+            "ts_code",
+            "valuation_method",
+            "valuation_price",
+            "valuation_market_cap",
+            "source",
+        )
     )
 
     snapshot_map = {}
@@ -242,8 +261,16 @@ def _load_backtest_cache_map(ts_codes, trade_date, batch_key, market="CN"):
         if method in method_map:
             continue
         method_map[method] = {
-            "valuation_price": float(row["valuation_price"]) if row.get("valuation_price") is not None else None,
-            "valuation_market_cap": float(row["valuation_market_cap"]) if row.get("valuation_market_cap") is not None else None,
+            "valuation_price": (
+                float(row["valuation_price"])
+                if row.get("valuation_price") is not None
+                else None
+            ),
+            "valuation_market_cap": (
+                float(row["valuation_market_cap"])
+                if row.get("valuation_market_cap") is not None
+                else None
+            ),
             "source": row.get("source"),
         }
     return snapshot_map
@@ -269,7 +296,9 @@ def _save_backtest_cache_map(ts_code, trade_date, method_map, batch_key, market=
                 batch_key=batch_key,
                 valuation_method=method,
                 valuation_price=_to_decimal_or_none(payload.get("valuation_price"), 6),
-                valuation_market_cap=_to_decimal_or_none(payload.get("valuation_market_cap"), 2),
+                valuation_market_cap=_to_decimal_or_none(
+                    payload.get("valuation_market_cap"), 2
+                ),
                 source=payload.get("source") or "live_pick",
             )
         )
@@ -277,12 +306,25 @@ def _save_backtest_cache_map(ts_code, trade_date, method_map, batch_key, market=
     BacktestValuationSnapshot.objects.bulk_create(
         rows,
         update_conflicts=True,
-        unique_fields=["ts_code", "trade_date", "market", "valuation_method", "batch_key"],
-        update_fields=["valuation_price", "valuation_market_cap", "source", "updated_at"],
+        unique_fields=[
+            "ts_code",
+            "trade_date",
+            "market",
+            "valuation_method",
+            "batch_key",
+        ],
+        update_fields=[
+            "valuation_price",
+            "valuation_market_cap",
+            "source",
+            "updated_at",
+        ],
     )
 
 
-def _extract_live_method_map(ts_code, trade_date, pro, strict_express_match, express_max_age_days):
+def _extract_live_method_map(
+    ts_code, trade_date, pro, strict_express_match, express_max_age_days
+):
     valuation_result = test_valuation(
         ts_code=ts_code,
         trade_date=trade_date,
@@ -301,7 +343,11 @@ def _extract_live_method_map(ts_code, trade_date, pro, strict_express_match, exp
             continue
         method_map[method] = {
             "valuation_price": _safe_price(row.get("implied_price")),
-            "valuation_market_cap": float(row.get("equity_value")) if row.get("equity_value") not in (None, "") else None,
+            "valuation_market_cap": (
+                float(row.get("equity_value"))
+                if row.get("equity_value") not in (None, "")
+                else None
+            ),
             "source": "live_pick",
         }
     return method_map
@@ -335,31 +381,89 @@ class Command(BaseCommand):
     help = "后台命令选出买入候选（无前台场景）"
 
     def add_arguments(self, parser):
-        parser.add_argument("--trade-date", type=str, help="交易日 YYYY-MM-DD，默认自动取最新交易日")
-        parser.add_argument("--scope", type=str, default="688", help="范围：ALL 或前缀，如 688 / 60,0,3")
+        parser.add_argument(
+            "--trade-date", type=str, help="交易日 YYYY-MM-DD，默认自动取最新交易日"
+        )
+        parser.add_argument(
+            "--scope", type=str, default="688", help="范围：ALL 或前缀，如 688 / 60,0,3"
+        )
         parser.add_argument("--freq", type=str, default="D", help="频率，默认 D")
-        parser.add_argument("--valuation-band-pct", type=float, default=0.1, help="低估偏离带")
+        parser.add_argument(
+            "--valuation-band-pct", type=float, default=0.1, help="低估偏离带"
+        )
         parser.add_argument("--code-offset", type=int, default=0, help="股票采样偏移")
         parser.add_argument("--code-limit", type=int, help="股票采样上限")
         parser.add_argument("--top", type=int, default=30, help="打印前 N 条候选")
         parser.add_argument("--output-csv", type=str, help="候选输出 CSV")
 
-        parser.add_argument("--risk-lookback-days", type=int, default=20, help="风控回看窗口（交易日）")
-        parser.add_argument("--risk-profile", type=str, default="medium", help="风险档位：none/medium/strict")
-        parser.add_argument("--max-trailing-vol-pct", type=float, help="覆盖风险档位：入场前波动率上限(%)")
-        parser.add_argument("--max-trailing-drawdown-pct", type=float, help="覆盖风险档位：入场前回撤上限(%)")
+        parser.add_argument(
+            "--risk-lookback-days", type=int, default=20, help="风控回看窗口（交易日）"
+        )
+        parser.add_argument(
+            "--risk-profile",
+            type=str,
+            default="medium",
+            help="风险档位：none/medium/strict",
+        )
+        parser.add_argument(
+            "--max-trailing-vol-pct",
+            type=float,
+            help="覆盖风险档位：入场前波动率上限(%%)",
+        )
+        parser.add_argument(
+            "--max-trailing-drawdown-pct",
+            type=float,
+            help="覆盖风险档位：入场前回撤上限(%%)",
+        )
 
         parser.add_argument("--min-score", type=float, help="附加过滤：最低低估分")
-        parser.add_argument("--min-core-under", type=int, help="附加过滤：核心低估方法最少个数")
-        parser.add_argument("--min-under-methods", type=int, help="附加过滤：低估方法最少个数")
-        parser.add_argument("--min-composite-gap-pct", type=float, help="附加过滤：组合估值最小溢价(小数)")
-        parser.add_argument("--min-conservative-gap-pct", type=float, help="附加过滤：保守估值最小溢价(小数)")
+        parser.add_argument(
+            "--min-core-under", type=int, help="附加过滤：核心低估方法最少个数"
+        )
+        parser.add_argument(
+            "--min-under-methods", type=int, help="附加过滤：低估方法最少个数"
+        )
+        parser.add_argument(
+            "--min-composite-gap-pct",
+            type=float,
+            help="附加过滤：组合估值最小溢价(小数)",
+        )
+        parser.add_argument(
+            "--min-conservative-gap-pct",
+            type=float,
+            help="附加过滤：保守估值最小溢价(小数)",
+        )
 
-        parser.add_argument("--use-live-valuation", action="store_true", default=False, help="快照缺失时使用实时估值")
-        parser.add_argument("--strict-express-match", action="store_true", default=False, help="实时估值时启用 express 严格匹配")
-        parser.add_argument("--express-max-age-days", type=int, default=180, help="实时估值 express 最大账龄")
-        parser.add_argument("--cache-batch-key", type=str, default="pick_runtime", help="实时估值缓存批次键")
-        parser.add_argument("--refresh-cache", action="store_true", default=False, help="实时估值时强制忽略缓存")
+        parser.add_argument(
+            "--use-live-valuation",
+            action="store_true",
+            default=False,
+            help="快照缺失时使用实时估值",
+        )
+        parser.add_argument(
+            "--strict-express-match",
+            action="store_true",
+            default=False,
+            help="实时估值时启用 express 严格匹配",
+        )
+        parser.add_argument(
+            "--express-max-age-days",
+            type=int,
+            default=180,
+            help="实时估值 express 最大账龄",
+        )
+        parser.add_argument(
+            "--cache-batch-key",
+            type=str,
+            default="pick_runtime",
+            help="实时估值缓存批次键",
+        )
+        parser.add_argument(
+            "--refresh-cache",
+            action="store_true",
+            default=False,
+            help="实时估值时强制忽略缓存",
+        )
 
     def handle(self, *_args, **options):
         freq = str(options.get("freq") or "D").strip().upper()
@@ -390,10 +494,15 @@ class Command(BaseCommand):
         use_live_valuation = bool(options.get("use_live_valuation"))
         strict_express_match = bool(options.get("strict_express_match"))
         express_max_age_days = int(options.get("express_max_age_days") or 180)
-        cache_batch_key = str(options.get("cache_batch_key") or "pick_runtime").strip() or "pick_runtime"
+        cache_batch_key = (
+            str(options.get("cache_batch_key") or "pick_runtime").strip()
+            or "pick_runtime"
+        )
         refresh_cache = bool(options.get("refresh_cache"))
 
-        trading_qs = StockTradingHistory.objects.filter(trade_date=trade_date, freq=freq)
+        trading_qs = StockTradingHistory.objects.filter(
+            trade_date=trade_date, freq=freq
+        )
         trading_qs = _resolve_scope_filter(trading_qs, scope)
         rows = list(
             trading_qs.values("ts_code", "close_qfq", "close").order_by("ts_code")
@@ -410,12 +519,16 @@ class Command(BaseCommand):
             raise CommandError("采样后没有股票可选")
 
         price_map = {
-            row["ts_code"]: (_safe_price(row.get("close_qfq")) or _safe_price(row.get("close")))
+            row["ts_code"]: (
+                _safe_price(row.get("close_qfq")) or _safe_price(row.get("close"))
+            )
             for row in rows
             if row["ts_code"] in ts_codes
         }
 
-        method_map_by_code = _build_snapshot_method_map(ts_codes=ts_codes, trade_date=trade_date, market="CN")
+        method_map_by_code = _build_snapshot_method_map(
+            ts_codes=ts_codes, trade_date=trade_date, market="CN"
+        )
         pro = get_tushare_pro() if use_live_valuation else None
 
         if use_live_valuation:
@@ -464,7 +577,9 @@ class Command(BaseCommand):
                         market="CN",
                     )
 
-        price_history = _build_price_history(ts_codes, trade_date, lookback_days=risk_lookback_days, freq=freq)
+        price_history = _build_price_history(
+            ts_codes, trade_date, lookback_days=risk_lookback_days, freq=freq
+        )
 
         candidates = []
         for ts_code in ts_codes:
@@ -486,7 +601,9 @@ class Command(BaseCommand):
             under_method_count = len(under_methods)
 
             composite_price = _safe_price(summary.get("composite_valuation_price"))
-            conservative_price = _safe_price(summary.get("conservative_valuation_price"))
+            conservative_price = _safe_price(
+                summary.get("conservative_valuation_price")
+            )
             composite_gap_pct = (
                 (composite_price - current_price) / current_price
                 if composite_price is not None and current_price is not None
@@ -498,18 +615,25 @@ class Command(BaseCommand):
                 else None
             )
 
-            if min_score is not None and (summary.get("undervalue_score") is None or float(summary.get("undervalue_score")) < float(min_score)):
+            if min_score is not None and (
+                summary.get("undervalue_score") is None
+                or float(summary.get("undervalue_score")) < float(min_score)
+            ):
                 continue
             if min_core_under is not None and core_under_count < int(min_core_under):
                 continue
-            if min_under_methods is not None and under_method_count < int(min_under_methods):
+            if min_under_methods is not None and under_method_count < int(
+                min_under_methods
+            ):
                 continue
             if min_composite_gap_pct is not None and (
-                composite_gap_pct is None or composite_gap_pct < float(min_composite_gap_pct)
+                composite_gap_pct is None
+                or composite_gap_pct < float(min_composite_gap_pct)
             ):
                 continue
             if min_conservative_gap_pct is not None and (
-                conservative_gap_pct is None or conservative_gap_pct < float(min_conservative_gap_pct)
+                conservative_gap_pct is None
+                or conservative_gap_pct < float(min_conservative_gap_pct)
             ):
                 continue
 
@@ -519,11 +643,13 @@ class Command(BaseCommand):
                 lookback_days=risk_lookback_days,
             )
             if max_trailing_vol_pct is not None and (
-                trailing_vol_pct is None or trailing_vol_pct > float(max_trailing_vol_pct)
+                trailing_vol_pct is None
+                or trailing_vol_pct > float(max_trailing_vol_pct)
             ):
                 continue
             if max_trailing_drawdown_pct is not None and (
-                trailing_drawdown_pct is None or trailing_drawdown_pct > float(max_trailing_drawdown_pct)
+                trailing_drawdown_pct is None
+                or trailing_drawdown_pct > float(max_trailing_drawdown_pct)
             ):
                 continue
 
@@ -533,17 +659,43 @@ class Command(BaseCommand):
                     "ts_code": ts_code,
                     "current_price": round(current_price, 4),
                     "undervalue_score": summary.get("undervalue_score"),
-                    "composite_valuation_price": summary.get("composite_valuation_price"),
-                    "conservative_valuation_price": summary.get("conservative_valuation_price"),
-                    "composite_gap_pct": round(composite_gap_pct * 100.0, 4) if composite_gap_pct is not None else None,
-                    "conservative_gap_pct": round(conservative_gap_pct * 100.0, 4) if conservative_gap_pct is not None else None,
+                    "composite_valuation_price": summary.get(
+                        "composite_valuation_price"
+                    ),
+                    "conservative_valuation_price": summary.get(
+                        "conservative_valuation_price"
+                    ),
+                    "composite_gap_pct": (
+                        round(composite_gap_pct * 100.0, 4)
+                        if composite_gap_pct is not None
+                        else None
+                    ),
+                    "conservative_gap_pct": (
+                        round(conservative_gap_pct * 100.0, 4)
+                        if conservative_gap_pct is not None
+                        else None
+                    ),
                     "core_under_count": core_under_count,
                     "under_method_count": under_method_count,
-                    "trailing_vol_pct": round(trailing_vol_pct, 4) if trailing_vol_pct is not None else None,
-                    "trailing_drawdown_pct": round(trailing_drawdown_pct, 4) if trailing_drawdown_pct is not None else None,
-                    "valuation_valid_methods": ",".join(summary.get("valuation_valid_methods") or []),
-                    "valuation_under_methods": ",".join(summary.get("valuation_under_methods") or []),
-                    "buy_candidate_rule_version": summary.get("buy_candidate_rule_version"),
+                    "trailing_vol_pct": (
+                        round(trailing_vol_pct, 4)
+                        if trailing_vol_pct is not None
+                        else None
+                    ),
+                    "trailing_drawdown_pct": (
+                        round(trailing_drawdown_pct, 4)
+                        if trailing_drawdown_pct is not None
+                        else None
+                    ),
+                    "valuation_valid_methods": ",".join(
+                        summary.get("valuation_valid_methods") or []
+                    ),
+                    "valuation_under_methods": ",".join(
+                        summary.get("valuation_under_methods") or []
+                    ),
+                    "buy_candidate_rule_version": summary.get(
+                        "buy_candidate_rule_version"
+                    ),
                     "buy_candidate_reason": summary.get("buy_candidate_reason"),
                 }
             )

@@ -8,7 +8,7 @@ set "RISK_PROFILE=medium"
 set "VALUATION_BAND_PCT=0.1"
 set "RISK_LOOKBACK_DAYS=20"
 set "TOP_N=50"
-set "VENV_PYTHON=C:\Users\HANJ29\Development\vdev1\Scripts\python.exe"
+set "VENV_PYTHON=C:\Users\HANJ29\Development\code\JIUCAI_DEV\.venv\Scripts\python.exe"
 
 set "BASE_DIR=%~dp0"
 cd /d "%BASE_DIR%"
