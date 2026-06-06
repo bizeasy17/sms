@@ -806,6 +806,7 @@ def predict_latest(request):
     try:
         ts_code = request.GET.get("ts_code") or request.POST.get("ts_code")
         report_type = str(request.GET.get("report_type") or request.POST.get("report_type") or "").strip().upper()
+        financial_end_date = str(request.GET.get("financial_end_date") or request.POST.get("financial_end_date") or "").strip()
         serving_slot = str(request.GET.get("serving_slot") or request.POST.get("serving_slot") or "production").strip().lower()
         model_version = str(request.GET.get("model_version") or request.POST.get("model_version") or "").strip()
         anchor_mode = str(request.GET.get("anchor_mode") or request.POST.get("anchor_mode") or "ann").strip().lower()
@@ -817,6 +818,7 @@ def predict_latest(request):
             payload = json.loads(request.body.decode("utf-8"))
             ts_code = payload.get("ts_code")
             report_type = str(payload.get("report_type") or report_type).strip().upper()
+            financial_end_date = str(payload.get("financial_end_date") or financial_end_date).strip()
             serving_slot = str(payload.get("serving_slot") or serving_slot).strip().lower()
             model_version = str(payload.get("model_version") or model_version).strip()
             payload_anchor_mode = str(payload.get("anchor_mode") or "").strip().lower()
@@ -830,6 +832,28 @@ def predict_latest(request):
 
         if serving_slot not in {"production", "candidate"}:
             serving_slot = "production"
+
+        normalized_financial_end_date = _normalize_end_date_token(financial_end_date)
+        if report_type in {"Q1", "H1", "Q3", "FY"} and anchor_mode == "ann":
+            snapshot_query = EarningsSignalSnapshot.objects.filter(ts_code=str(ts_code).strip().upper(), report_type=report_type)
+            snapshots = list(snapshot_query.order_by("-updated_at"))
+            prev_year_income_sign_map = _build_prev_year_income_sign_map(snapshots)
+
+            selected_payload = None
+            if normalized_financial_end_date:
+                selected_payload = _select_payload_by_financial_end_date(
+                    ts_code=str(ts_code).strip().upper(),
+                    report_type=report_type,
+                    financial_end_date=normalized_financial_end_date,
+                    snapshots=snapshots,
+                    prev_year_income_sign_map=prev_year_income_sign_map,
+                )
+
+            if selected_payload is None and snapshots:
+                selected_payload = _snapshot_to_payload(snapshots[0], prev_year_income_sign_map)
+
+            if selected_payload is not None:
+                return JsonResponse({"ok": True, "result": selected_payload})
 
         config_path = _resolve_config_path(request)
         pipeline = EarningsForecastPipeline(config_path=config_path)
@@ -847,6 +871,7 @@ def predict_latest(request):
                 serving_slot=serving_slot,
                 requested_report_type=report_type or None,
                 anchor_mode=anchor_mode,
+                requested_financial_end_date=financial_end_date or None,
             )
         return JsonResponse({"ok": True, "result": result})
     except Exception as exc:
