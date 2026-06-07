@@ -30,6 +30,7 @@ from prediction.models import (
 from valuation.models import (
     StockValuationSnapshot,
     StockValuationSnapshotLatest,
+    StockValuationVariantSummaryLatest,
     IndustryVariantCache,
     IndustryVariantMetricDaily,
 )
@@ -500,6 +501,9 @@ MAX_VALUATION_CANDIDATES_IN_RESPONSE = int(getattr(settings, "MAX_VALUATION_CAND
 LIVE_VALUATION_RISK_USE_PERSISTED_FIRST = bool(
     getattr(settings, "LIVE_VALUATION_RISK_USE_PERSISTED_FIRST", True)
 )
+LIVE_VALUATION_SUMMARY_USE_PERSISTED_FIRST = bool(
+    getattr(settings, "LIVE_VALUATION_SUMMARY_USE_PERSISTED_FIRST", True)
+)
 PREDICTIVE_UNDERVALUED_MIN_SIGNAL_SCORE_DEFAULT = float(
     getattr(settings, "PREDICTIVE_UNDERVALUED_MIN_SIGNAL_SCORE_DEFAULT", 100) or 100
 )
@@ -654,6 +658,59 @@ def _load_persisted_valuation_risk_payload(
         "status": snapshot.status,
         "metadata": snapshot.metadata or {},
         "factors": factor_rows,
+    }
+
+
+def _load_persisted_variant_summary_payload(
+    *,
+    ts_code,
+    market,
+    valuation_variant,
+    trade_date=None,
+    profit_report_type=None,
+    profit_report_end_date=None,
+):
+    qs = StockValuationVariantSummaryLatest.objects.filter(
+        ts_code=ts_code,
+        market=market,
+        valuation_variant=valuation_variant or "default",
+    )
+
+    normalized_report_type = str(profit_report_type or "").strip().upper()
+    if normalized_report_type == "FY":
+        normalized_report_type = "ANNUAL"
+    if normalized_report_type:
+        qs = qs.filter(profit_report_type=normalized_report_type)
+
+    report_end_dt = _parse_date_like(profit_report_end_date)
+    if report_end_dt is not None:
+        qs = qs.filter(profit_report_end_date=report_end_dt)
+
+    snapshot = None
+    if trade_date is not None:
+        trade_dt = _parse_date_like(trade_date)
+        if trade_dt is not None:
+            snapshot = qs.filter(latest_trade_date=trade_dt).order_by("-updated_at").first()
+    if snapshot is None:
+        snapshot = qs.order_by("-latest_trade_date", "-updated_at").first()
+    if snapshot is None:
+        return None
+
+    return {
+        "composite_valuation_price": float(snapshot.composite_valuation_price)
+        if snapshot.composite_valuation_price is not None
+        else None,
+        "conservative_valuation_price": float(snapshot.conservative_valuation_price)
+        if snapshot.conservative_valuation_price is not None
+        else None,
+        "undervalue_score": float(snapshot.undervalue_score) if snapshot.undervalue_score is not None else None,
+        "buy_candidate": bool(snapshot.buy_candidate),
+        "buy_candidate_reason": snapshot.buy_candidate_reason or "",
+        "buy_candidate_rule_version": snapshot.buy_candidate_rule_version or "",
+        "valuation_valid_methods": list(snapshot.valuation_valid_methods or []),
+        "valuation_under_methods": list(snapshot.valuation_under_methods or []),
+        "valuation_core_methods": list(snapshot.valuation_core_methods or []),
+        "summary_source": "persisted_variant_summary_latest",
     }
 
 
@@ -7488,6 +7545,7 @@ def get_stock_valuation_methods(request, ts_code):
         market_style_by_variant = {}
         market_style_by_variant_normalized = {}
         for variant, variant_rows in data_by_variant.items():
+            anchor_row = (variant_rows or [{}])[0] if variant_rows else {}
             market_style_payload = _build_market_style_payload_for_variant(
                 variant=variant,
                 variant_rows=variant_rows,
@@ -7510,8 +7568,25 @@ def get_stock_valuation_methods(request, ts_code):
             )
             market_style_by_variant[variant] = market_style_payload
             market_style_by_variant_normalized[variant] = market_style_payload_normalized
+            persisted_summary_payload = None
+            if LIVE_VALUATION_SUMMARY_USE_PERSISTED_FIRST:
+                persisted_summary_payload = _load_persisted_variant_summary_payload(
+                    ts_code=ts_code,
+                    market=market,
+                    valuation_variant=variant,
+                    trade_date=anchor_row.get("latest_trade_date") or current_trade_date,
+                    profit_report_type=anchor_row.get("profit_report_type") or valuation_report_type,
+                    profit_report_end_date=anchor_row.get("profit_report_end_date"),
+                )
+            base_summary_payload = persisted_summary_payload or _build_valuation_summary_payload(
+                current_price,
+                variant_rows,
+                band_pct,
+                ts_code=ts_code,
+                freq=freq,
+            )
             summary_by_variant[variant] = _merge_summary_with_market_style(
-                _build_valuation_summary_payload(current_price, variant_rows, band_pct, ts_code=ts_code, freq=freq),
+                base_summary_payload,
                 market_style_payload,
             )
             summary_by_variant_normalized[variant] = _merge_summary_with_market_style(

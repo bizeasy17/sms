@@ -7,6 +7,7 @@ from prediction.models import (
     StockValuationSnapshot,
     StockValuationSnapshotHistory,
     StockValuationSnapshotLatest,
+    StockValuationVariantSummaryLatest,
 )
 
 
@@ -23,6 +24,7 @@ def _apply_table_prefix(prefix):
     StockValuationSnapshot._meta.db_table = f"{prefix}_stockvaluationsnapshot"
     StockValuationSnapshotHistory._meta.db_table = f"{prefix}_stockvaluationsnapshothistory"
     StockValuationSnapshotLatest._meta.db_table = f"{prefix}_stockvaluationsnapshotlatest"
+    StockValuationVariantSummaryLatest._meta.db_table = f"{prefix}_stockvaluationvariantsummarylatest"
 
 
 _apply_table_prefix(_resolve_prefix())
@@ -135,6 +137,7 @@ __all__ = [
     "StockValuationSnapshot",
     "StockValuationSnapshotHistory",
     "StockValuationSnapshotLatest",
+    "StockValuationVariantSummaryLatest",
     "ValuationFundBasic",
     "ValuationFundPortfolio",
     "ValuationFundNav",
