@@ -28,7 +28,7 @@
         </el-alert>
         <div style="font-size: 12px; color: #606266; margin-bottom: 8px; display: flex; align-items: center; gap: 8px;">
           <span>财报季:</span>
-          <el-radio-group v-model="selectedEarningsReportType" size="small">
+          <el-radio-group v-model="selectedEarningsReportType" size="small" @change="onUserReportTypeChange">
             <el-radio-button label="Q1">Q1</el-radio-button>
             <el-radio-button label="H1">H1</el-radio-button>
             <el-radio-button label="Q3">Q3</el-radio-button>
@@ -2497,31 +2497,42 @@ async function fetchValuationRows(includePredictive = true) {
   }
 }
 
+function onUserReportTypeChange() {
+  if (programmaticReportTypeSync.value) {
+    return
+  }
+  userPinnedReportType.value = true
+  // Guard against stale auto-sync skip flag swallowing the first manual switch.
+  skipNextValuationFetch.value = false
+}
+
 watch(
   [() => stockTradeStore.tsCode, () => selectedEarningsReportType.value],
-  () => {
+  ([newTsCode, newReportType], [oldTsCode, oldReportType]) => {
+    const normalizedNewTsCode = String(newTsCode || '').trim().toUpperCase()
+    const normalizedOldTsCode = String(oldTsCode || '').trim().toUpperCase()
+    const normalizedNewReportType = String(newReportType || '').trim().toUpperCase()
+    const normalizedOldReportType = String(oldReportType || '').trim().toUpperCase()
+
+    if (normalizedNewTsCode !== normalizedOldTsCode) {
+      // Reset pin state before fetching for a newly selected stock.
+      userPinnedReportType.value = false
+    }
+
+    if (
+      normalizedNewReportType !== normalizedOldReportType
+      && !programmaticReportTypeSync.value
+    ) {
+      // Ensure the first manual report-type switch uses explicit report_type.
+      userPinnedReportType.value = true
+      skipNextValuationFetch.value = false
+    }
+
     if (skipNextValuationFetch.value) {
       skipNextValuationFetch.value = false
       return
     }
     fetchValuationRows()
-  }
-)
-
-watch(
-  () => stockTradeStore.tsCode,
-  () => {
-    userPinnedReportType.value = false
-  }
-)
-
-watch(
-  () => selectedEarningsReportType.value,
-  () => {
-    if (programmaticReportTypeSync.value) {
-      return
-    }
-    userPinnedReportType.value = true
   }
 )
 

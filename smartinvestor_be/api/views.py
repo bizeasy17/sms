@@ -575,6 +575,18 @@ def _parse_optional_float_list(value):
     return [float(item.strip()) for item in value.split(",") if item.strip()]
 
 
+def _sanitize_non_finite_numbers(payload):
+    if isinstance(payload, dict):
+        return {key: _sanitize_non_finite_numbers(value) for key, value in payload.items()}
+    if isinstance(payload, list):
+        return [_sanitize_non_finite_numbers(item) for item in payload]
+    if isinstance(payload, tuple):
+        return tuple(_sanitize_non_finite_numbers(item) for item in payload)
+    if isinstance(payload, float) and (math.isnan(payload) or math.isinf(payload)):
+        return None
+    return payload
+
+
 def _normalize_report_dates(report_end_date, report_ann_date):
     end_dt = _parse_date_like(report_end_date)
     ann_dt = _parse_date_like(report_ann_date)
@@ -1864,6 +1876,9 @@ def _load_dividend_events(ts_code, start_date=None, end_date=None):
         stock_bonus = _parse_optional_float(event.get("stk_div"), default=0.0) or 0.0
         stock_boost = _parse_optional_float(event.get("stk_bo_rate"), default=0.0) or 0.0
         stock_convert = _parse_optional_float(event.get("stk_co_rate"), default=0.0) or 0.0
+        stock_bonus = stock_bonus if math.isfinite(stock_bonus) else 0.0
+        stock_boost = stock_boost if math.isfinite(stock_boost) else 0.0
+        stock_convert = stock_convert if math.isfinite(stock_convert) else 0.0
         if stock_bonus <= 0 and stock_boost <= 0 and stock_convert <= 0:
             continue
 
@@ -7608,7 +7623,8 @@ def get_stock_valuation_methods(request, ts_code):
         )
 
         return Response(
-            {
+            _sanitize_non_finite_numbers(
+                {
                 "ts_code": ts_code,
                 "market": market,
                 "freq": freq,
@@ -7637,7 +7653,8 @@ def get_stock_valuation_methods(request, ts_code):
                 "valuation_risk": valuation_risk_payload,
                 "valuation_risk_by_variant": valuation_risk_by_variant,
                 "data": rows,
-            }
+                }
+            )
         )
     except ValueError as e:
         return Response({"error": str(e)}, status=400)
