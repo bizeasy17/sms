@@ -768,6 +768,33 @@ def _load_latest_indicator_profile(ts_code):
         if end_date is not None and not pd.isna(end_date):
             profile["indicator_end_date"] = str(end_date)
 
+    history_map = {}
+    if "end_date" in df.columns and "ebit" in df.columns:
+        for _, history_row in df.iterrows():
+            end_date = _parse_date_like(history_row.get("end_date"))
+            ebit_value = _to_float_or_none(history_row.get("ebit"))
+            if end_date is None or ebit_value is None:
+                continue
+            history_map[end_date] = ebit_value
+
+    latest_ebit = None
+    if "ebit" in df.columns:
+        value = latest_row.get("ebit")
+        if value is not None and not pd.isna(value):
+            latest_ebit = float(value)
+            profile["financial_ebit"] = latest_ebit
+
+    if latest_ebit is not None and "end_date" in df.columns:
+        latest_end_date = _parse_date_like(latest_row.get("end_date"))
+        if latest_end_date is not None:
+            compare_end_date = datetime.date(latest_end_date.year - 1, latest_end_date.month, latest_end_date.day)
+            compare_ebit = history_map.get(compare_end_date)
+            if compare_ebit is not None:
+                profile["financial_prev_ebit"] = float(compare_ebit)
+                if abs(float(compare_ebit)) > 1e-9:
+                    profile["financial_ebit_yoy"] = (float(latest_ebit) - float(compare_ebit)) / abs(float(compare_ebit))
+            profile["financial_ebit_end_date"] = str(latest_end_date)
+
     try:
         today = datetime.date.today()
         long_ago = today - datetime.timedelta(days=3650)
@@ -4657,6 +4684,27 @@ def _pick_stocks_by_valuation_fast(request, trade_date, scope, freq="D", from_in
     min_valuation_score_raw = (
         request.query_params.get("min_valuation_score", "") if hasattr(request, "query_params") else ""
     )
+    min_netprofit_yoy_raw = (
+        request.query_params.get("min_netprofit_yoy", "") if hasattr(request, "query_params") else ""
+    )
+    min_ebit_yoy_raw = (
+        request.query_params.get("min_ebit_yoy", "") if hasattr(request, "query_params") else ""
+    )
+    require_positive_prev_netprofit_raw = (
+        request.query_params.get("require_positive_prev_netprofit", "1")
+        if hasattr(request, "query_params")
+        else "1"
+    )
+    require_positive_prev_ebit_raw = (
+        request.query_params.get("require_positive_prev_ebit", "1")
+        if hasattr(request, "query_params")
+        else "1"
+    )
+    apply_financial_filters_raw = (
+        request.query_params.get("apply_financial_filters", "1")
+        if hasattr(request, "query_params")
+        else "1"
+    )
 
     try:
         valuation_band_pct = max(0.01, float(valuation_band_pct_raw))
@@ -4717,6 +4765,38 @@ def _pick_stocks_by_valuation_fast(request, trade_date, scope, freq="D", from_in
             min_valuation_score = _to_float_or_none(valuation_score_raw)
             valuation_score_level = "CUSTOM" if min_valuation_score is not None else "ALL"
 
+    min_netprofit_yoy = _to_float_or_none(min_netprofit_yoy_raw)
+    min_ebit_yoy = _to_float_or_none(min_ebit_yoy_raw)
+
+    def _normalize_yoy_threshold(value):
+        numeric = _to_float_or_none(value)
+        if numeric is None:
+            return None
+        # Dual-input compatibility:
+        # 1) "3" means 3% -> 0.03 ratio.
+        # 2) "0.03" is already ratio.
+        if abs(float(numeric)) > 1.0:
+            return float(numeric) / 100.0
+        return float(numeric)
+
+    def _parse_bool_flag(raw_value, default=True):
+        if raw_value is None:
+            return default
+        text_value = str(raw_value).strip().lower()
+        if text_value == "":
+            return default
+        return text_value in {"1", "true", "yes", "y", "on"}
+
+    require_positive_prev_netprofit = _parse_bool_flag(require_positive_prev_netprofit_raw, True)
+    require_positive_prev_ebit = _parse_bool_flag(require_positive_prev_ebit_raw, True)
+    apply_financial_filters = _parse_bool_flag(apply_financial_filters_raw, True)
+    netprofit_growth_floor = 0.2 if netprofit_growth == "HIGH" else (0.1 if netprofit_growth == "MEDIUM" else None)
+    min_netprofit_yoy_ratio = _normalize_yoy_threshold(min_netprofit_yoy)
+    min_ebit_yoy_ratio = _normalize_yoy_threshold(min_ebit_yoy)
+    effective_netprofit_yoy_floor = (
+        min_netprofit_yoy_ratio if min_netprofit_yoy_ratio is not None else netprofit_growth_floor
+    )
+
     trading_qs = StockTradingHistory.objects.filter(
         trade_date=trade_date_for_query,
         freq=normalized_freq,
@@ -4760,10 +4840,8 @@ def _pick_stocks_by_valuation_fast(request, trade_date, scope, freq="D", from_in
     industry_context_map = _build_industry_context_map(ts_codes=ts_codes, market="CN")
 
     traditional_risk_map = {}
-    traditional_netprofit_map = {}
     if picking_mode != "predictive":
         traditional_risk_map = _build_latest_risk_snapshot_map(ts_codes, market="CN")
-        traditional_netprofit_map = _build_latest_income_netprofit_map(ts_codes)
 
     perf_after_snapshot = time.perf_counter()
 
@@ -4889,24 +4967,11 @@ def _pick_stocks_by_valuation_fast(request, trade_date, scope, freq="D", from_in
         traditional_metric_payload = {}
         if picking_mode != "predictive":
             risk_payload = traditional_risk_map.get(ts_code) or {}
-            netprofit_payload = traditional_netprofit_map.get(ts_code) or {}
-            traditional_metric_payload = {
-                **risk_payload,
-                **netprofit_payload,
-            }
+            traditional_metric_payload = {**risk_payload}
 
             row_risk_level = str(risk_payload.get("valuation_risk_level") or "").strip().upper()
             if risk_level_set and row_risk_level not in risk_level_set:
                 continue
-
-            row_netprofit = _to_float_or_none(netprofit_payload.get("financial_netprofit"))
-            row_netprofit_yoy = _to_float_or_none(netprofit_payload.get("financial_netprofit_yoy"))
-            if min_netprofit_growth is not None:
-                if row_netprofit_yoy is not None:
-                    if row_netprofit_yoy < min_netprofit_growth:
-                        continue
-                elif row_netprofit is None or row_netprofit <= 0:
-                    continue
 
         corp_obj = corp_map.get(ts_code)
         corp_basic = {}
@@ -4933,6 +4998,76 @@ def _pick_stocks_by_valuation_fast(request, trade_date, scope, freq="D", from_in
                 **traditional_metric_payload,
             }
         )
+
+    if picking_mode != "predictive" and result:
+        financial_filters_active = bool(apply_financial_filters) and (
+            effective_netprofit_yoy_floor is not None
+            or min_ebit_yoy_ratio is not None
+            or bool(require_positive_prev_netprofit)
+            or bool(require_positive_prev_ebit)
+        )
+        if financial_filters_active:
+            candidate_codes = [
+                str(item.get("ts_code") or "").strip().upper()
+                for item in result
+                if item.get("ts_code")
+            ]
+            candidate_codes = list(dict.fromkeys([code for code in candidate_codes if code]))
+
+            netprofit_map = _build_latest_income_netprofit_map(candidate_codes)
+            indicator_map = {}
+            if min_ebit_yoy_ratio is not None or require_positive_prev_ebit:
+                indicator_map = {
+                    code: _load_latest_indicator_profile(code)
+                    for code in candidate_codes
+                }
+
+            filtered_rows = []
+            for item in result:
+                ts_code = str(item.get("ts_code") or "").strip().upper()
+                netprofit_payload = netprofit_map.get(ts_code) or {}
+                indicator_payload = indicator_map.get(ts_code) or {}
+
+                row_netprofit = _to_float_or_none(netprofit_payload.get("financial_netprofit"))
+                row_netprofit_yoy = _to_float_or_none(netprofit_payload.get("financial_netprofit_yoy"))
+                row_prev_netprofit = _to_float_or_none(netprofit_payload.get("financial_prev_netprofit"))
+                if row_prev_netprofit is None and row_netprofit is not None and row_netprofit_yoy is not None:
+                    yoy_base = 1.0 + float(row_netprofit_yoy)
+                    if abs(yoy_base) > 1e-9:
+                        row_prev_netprofit = float(row_netprofit) / yoy_base
+
+                row_ebit = _to_float_or_none(indicator_payload.get("financial_ebit"))
+                row_ebit_yoy = _to_float_or_none(indicator_payload.get("financial_ebit_yoy"))
+                row_prev_ebit = _to_float_or_none(indicator_payload.get("financial_prev_ebit"))
+                if row_prev_ebit is None and row_ebit is not None and row_ebit_yoy is not None:
+                    yoy_base = 1.0 + float(row_ebit_yoy)
+                    if abs(yoy_base) > 1e-9:
+                        row_prev_ebit = float(row_ebit) / yoy_base
+
+                if effective_netprofit_yoy_floor is not None:
+                    if row_netprofit_yoy is not None:
+                        if row_netprofit_yoy < effective_netprofit_yoy_floor:
+                            continue
+                    elif row_netprofit is None or row_netprofit <= 0:
+                        continue
+
+                if min_ebit_yoy_ratio is not None:
+                    if row_ebit_yoy is not None:
+                        if row_ebit_yoy < min_ebit_yoy_ratio:
+                            continue
+                    elif row_ebit is None or row_ebit <= 0:
+                        continue
+
+                if require_positive_prev_netprofit and (row_prev_netprofit is None or row_prev_netprofit < 0):
+                    continue
+                if require_positive_prev_ebit and (row_prev_ebit is None or row_prev_ebit < 0):
+                    continue
+
+                item.update(netprofit_payload)
+                item.update(indicator_payload)
+                filtered_rows.append(item)
+
+            result = filtered_rows
 
     if picking_mode == "predictive" and result:
         predictive_ts_codes = [row.get("ts_code") for row in result if row.get("ts_code")]
@@ -5138,6 +5273,16 @@ def _pick_stocks_by_valuation_fast(request, trade_date, scope, freq="D", from_in
                 "netprofit_growth": netprofit_growth,
                 "valuation_score": valuation_score_level,
                 "min_valuation_score": min_valuation_score,
+                "effective_financial_filters": {
+                    "apply_financial_filters": bool(apply_financial_filters),
+                    "min_netprofit_yoy": min_netprofit_yoy,
+                    "min_ebit_yoy": min_ebit_yoy,
+                    "min_netprofit_yoy_ratio": min_netprofit_yoy_ratio,
+                    "min_ebit_yoy_ratio": min_ebit_yoy_ratio,
+                    "require_positive_prev_netprofit": require_positive_prev_netprofit,
+                    "require_positive_prev_ebit": require_positive_prev_ebit,
+                    "netprofit_growth_floor": effective_netprofit_yoy_floor,
+                },
             },
             "meta": {
                 "latest_trade_date_for_freq": latest_trade_date,

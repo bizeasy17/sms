@@ -34,6 +34,13 @@
                             </span>
                         </el-col>
                     </el-row>
+                    <el-row v-if="showFinancialStageHint" style="margin-bottom: 8px;">
+                        <el-col :span="24">
+                            <el-tag size="small" type="warning" effect="light">
+                                财务条件二阶段过滤已启用：首轮先按估值/风险出候选，再按净利YoY、EBITYoY和上一年净利/EBIT条件过滤。
+                            </el-tag>
+                        </el-col>
+                    </el-row>
                     <el-row>
                         <el-col :span="24">
                             <el-table :data="pickingResult" style="width: 100%" size="small" height="400" @row-dblclick="onRowDblClick">
@@ -291,6 +298,7 @@ const curToIndex = ref(25);
 const totalFiltered = ref(0);
 const currentRangeStart = ref(0);
 const currentRangeEnd = ref(0);
+const effectiveFinancialFilters = ref<Record<string, any>>({});
 const overviewTab = ref("valuation");
 const trendChartCompRef = ref<InstanceType<typeof StockChart> | null>(null);
 
@@ -324,6 +332,29 @@ const detailDialogTitle = computed(() => {
     }
     const row = pickingResult.value[detailRowIndex.value] || {};
     return `${row.name || ""} | ${row.ts_code || ""}`.trim() || "个股详情";
+});
+const showFinancialStageHint = computed(() => {
+    if (isPredictiveMode.value) {
+        return false;
+    }
+    const filters = effectiveFinancialFilters.value || {};
+    const applyFinancialFilters = Boolean(filters.apply_financial_filters);
+    if (!applyFinancialFilters) {
+        return false;
+    }
+    const hasNumericThreshold = (value: any) => {
+        if (value === null || value === undefined || String(value).trim() === "") {
+            return false;
+        }
+        const numeric = Number(value);
+        return Number.isFinite(numeric);
+    };
+    const requirePrevNetprofit = Boolean(filters.require_positive_prev_netprofit);
+    const requirePrevEbit = Boolean(filters.require_positive_prev_ebit);
+    return hasNumericThreshold(filters.min_netprofit_yoy)
+        || hasNumericThreshold(filters.min_ebit_yoy)
+        || requirePrevNetprofit
+        || requirePrevEbit;
 });
 
 function resolvePreferredValuationVariant(row: any) {
@@ -722,6 +753,7 @@ async function fetchPickingResult() {
         const minEbitYoyVal = String(valuationStockPickingStore.minEbitYoy || "").trim();
         const requirePositivePrevNetprofitVal = valuationStockPickingStore.requirePositivePrevNetprofit ? "1" : "0";
         const requirePositivePrevEbitVal = valuationStockPickingStore.requirePositivePrevEbit ? "1" : "0";
+        const applyFinancialFiltersVal = valuationStockPickingStore.applyFinancialFilters ? "1" : "0";
         const priorityPolicyVal = String(valuationStockPickingStore.priorityPolicy || "score_desc").trim().toLowerCase();
         const pickingModeVal = valuationStockPickingStore.pickingMode.split(":")[1].toLowerCase();
         const earningsReportTypeVal = valuationStockPickingStore.earningsReportType.split(":")[1];
@@ -747,6 +779,7 @@ async function fetchPickingResult() {
         search.set("valuation_pick_strategy", valuationPickStrategyVal);
         if (minNetprofitYoyVal) search.set("min_netprofit_yoy", minNetprofitYoyVal);
         if (minEbitYoyVal) search.set("min_ebit_yoy", minEbitYoyVal);
+        search.set("apply_financial_filters", applyFinancialFiltersVal);
         search.set("require_positive_prev_netprofit", requirePositivePrevNetprofitVal);
         search.set("require_positive_prev_ebit", requirePositivePrevEbitVal);
         if (priorityPolicyVal) search.set("priority_policy", priorityPolicyVal);
@@ -773,6 +806,8 @@ async function fetchPickingResult() {
         if (res.data) {
             pickingResult.value = res.data.data || [];
             const responseMeta = (res.data || {}).meta || {};
+            const responseValuationFilter = (res.data || {}).valuation_filter || {};
+            effectiveFinancialFilters.value = responseValuationFilter.effective_financial_filters || {};
             totalFiltered.value = Number(responseMeta.total_filtered || 0);
             if (isFirstPageRequest) {
                 valuationStockPickingStore.markResultDate(

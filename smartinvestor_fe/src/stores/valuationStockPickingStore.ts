@@ -19,6 +19,7 @@ export type ValuationStockPickingParams = {
     minEbitYoy: string;
     requirePositivePrevNetprofit: boolean;
     requirePositivePrevEbit: boolean;
+    applyFinancialFilters: boolean;
     financialFilterMode: string;
     priorityPolicy: string;
     buyCandidateOnly: string;
@@ -60,6 +61,7 @@ export const useValuationStockPickingStore = defineStore("valuationStockPicking"
     const minEbitYoy = ref("");
     const requirePositivePrevNetprofit = ref(true);
     const requirePositivePrevEbit = ref(true);
+    const applyFinancialFilters = ref(true);
     const financialFilterMode = ref("all");
     const priorityPolicy = ref("score_desc");
     const buyCandidateOnly = ref("BC:ONLY");
@@ -92,6 +94,7 @@ export const useValuationStockPickingStore = defineStore("valuationStockPicking"
     function setMinEbitYoy(value: string) { minEbitYoy.value = value; }
     function setRequirePositivePrevNetprofit(value: boolean) { requirePositivePrevNetprofit.value = value; }
     function setRequirePositivePrevEbit(value: boolean) { requirePositivePrevEbit.value = value; }
+    function setApplyFinancialFilters(value: boolean) { applyFinancialFilters.value = value; }
     function setFinancialFilterMode(value: string) { financialFilterMode.value = value; }
     function setPriorityPolicy(value: string) { priorityPolicy.value = value; }
     function setBuyCandidateOnly(value: string) { buyCandidateOnly.value = value; }
@@ -138,6 +141,7 @@ export const useValuationStockPickingStore = defineStore("valuationStockPicking"
         minEbitYoy,
         requirePositivePrevNetprofit,
         requirePositivePrevEbit,
+        applyFinancialFilters,
         financialFilterMode,
         priorityPolicy,
         buyCandidateOnly,
@@ -169,6 +173,7 @@ export const useValuationStockPickingStore = defineStore("valuationStockPicking"
         setMinEbitYoy,
         setRequirePositivePrevNetprofit,
         setRequirePositivePrevEbit,
+        setApplyFinancialFilters,
         setFinancialFilterMode,
         setPriorityPolicy,
         setBuyCandidateOnly,

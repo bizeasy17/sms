@@ -168,36 +168,6 @@
                     </div>
 
                     <div class="filter-item">
-                        <span class="filter-label">净利YoY最小值：</span>
-                        <el-input-number v-model="selectedMinNetprofitYoy" :min="-100" :max="300" :step="1" class="filter-control" />
-                    </div>
-
-                    <div class="filter-item">
-                        <span class="filter-label">EBIT YoY最小值：</span>
-                        <el-input-number v-model="selectedMinEbitYoy" :min="-100" :max="300" :step="1" class="filter-control" />
-                    </div>
-
-                    <div class="filter-item">
-                        <span class="filter-label">上一年净利不为负：</span>
-                        <el-switch v-model="selectedRequirePositivePrevNetprofit" class="filter-control filter-control--switch" />
-                    </div>
-
-                    <div class="filter-item">
-                        <span class="filter-label">上一年EBIT不为负：</span>
-                        <el-switch v-model="selectedRequirePositivePrevEbit" class="filter-control filter-control--switch" />
-                    </div>
-
-                    <div class="filter-item filter-item--u8 filter-item--order-2">
-                        <span class="filter-label">状态：</span>
-                        <el-radio-group v-model="selectedValuationStatus" size="small" class="filter-control filter-radio-group">
-                            <el-radio-button label="VS:NONE">不筛选</el-radio-button>
-                            <el-radio-button label="VS:UNDER">低估</el-radio-button>
-                            <el-radio-button label="VS:FAIR">正常</el-radio-button>
-                            <el-radio-button label="VS:OVER">高估</el-radio-button>
-                        </el-radio-group>
-                    </div>
-
-                    <div class="filter-item">
                         <span class="filter-label">买入候选：</span>
                         <el-radio-group v-model="selectedBuyCandidateOnly" size="small" class="filter-control filter-radio-group">
                             <el-radio-button label="BC:NONE">全部</el-radio-button>
@@ -222,6 +192,50 @@
                                 :value="item.industry_code"
                             />
                         </el-select>
+                    </div>
+
+                    <div class="filter-divider" aria-hidden="true"></div>
+
+                    <div class="filter-item">
+                        <span class="filter-label">净利YoY最小值：</span>
+                        <el-input-number v-model="selectedMinNetprofitYoy" :min="-100" :max="300" :step="1" class="filter-control" :disabled="!selectedApplyFinancialFilters" />
+                    </div>
+
+                    <div class="filter-item">
+                        <span class="filter-label">EBIT YoY最小值：</span>
+                        <el-input-number v-model="selectedMinEbitYoy" :min="-100" :max="300" :step="1" class="filter-control" :disabled="!selectedApplyFinancialFilters" />
+                    </div>
+
+                    <div class="filter-item">
+                        <span class="filter-label">上一年净利不为负：</span>
+                        <el-switch v-model="selectedRequirePositivePrevNetprofit" class="filter-control filter-control--switch" :disabled="!selectedApplyFinancialFilters" />
+                    </div>
+
+                    <div class="filter-item">
+                        <span class="filter-label">上一年EBIT不为负：</span>
+                        <el-switch v-model="selectedRequirePositivePrevEbit" class="filter-control filter-control--switch" :disabled="!selectedApplyFinancialFilters" />
+                    </div>
+
+                    <div class="filter-item filter-item--full filter-item--hint">
+                        <div class="filter-note-row">
+                            <span class="filter-note-switch">
+                                <span class="filter-note-switch__label">应用财务条件</span>
+                                <el-switch v-model="selectedApplyFinancialFilters" />
+                            </span>
+                            <span class="filter-note">
+                                说明：财务条件采用二阶段过滤。先按估值/风险筛出候选，再对候选应用净利YoY、EBITYoY和上一年净利/EBIT条件。
+                            </span>
+                        </div>
+                    </div>
+
+                    <div class="filter-item filter-item--u8 filter-item--order-2">
+                        <span class="filter-label">状态：</span>
+                        <el-radio-group v-model="selectedValuationStatus" size="small" class="filter-control filter-radio-group">
+                            <el-radio-button label="VS:NONE">不筛选</el-radio-button>
+                            <el-radio-button label="VS:UNDER">低估</el-radio-button>
+                            <el-radio-button label="VS:FAIR">正常</el-radio-button>
+                            <el-radio-button label="VS:OVER">高估</el-radio-button>
+                        </el-radio-group>
                     </div>
 
                     <div class="filter-item filter-item--u8 filter-item--order-3">
@@ -263,6 +277,7 @@ const selectedMinNetprofitYoy = ref<number | null>(null);
 const selectedMinEbitYoy = ref<number | null>(null);
 const selectedRequirePositivePrevNetprofit = ref(true);
 const selectedRequirePositivePrevEbit = ref(true);
+const selectedApplyFinancialFilters = ref(true);
 const selectedPriorityPolicy = ref("score_desc");
 const selectedBuyCandidateOnly = ref("BC:ONLY");
 const selectedSwIndustry = ref("");
@@ -383,6 +398,7 @@ function applyTraditionalQuickStrategy() {
     selectedMinEbitYoy.value = profile.min_ebit_yoy === null || profile.min_ebit_yoy === undefined ? null : Number(profile.min_ebit_yoy);
     selectedRequirePositivePrevNetprofit.value = Boolean(profile.require_positive_prev_netprofit ?? true);
     selectedRequirePositivePrevEbit.value = Boolean(profile.require_positive_prev_ebit ?? true);
+    selectedApplyFinancialFilters.value = Boolean(profile.apply_financial_filters ?? true);
     selectedPriorityPolicy.value = String(profile.priority_policy ?? "score_desc");
     selectedBuyCandidateOnly.value = profile.buy_candidate_only || "BC:ONLY";
     selectedQuickStrategy.value = "traditional";
@@ -407,6 +423,7 @@ function applyPredictiveQuickStrategy() {
     selectedMinEbitYoy.value = profile.min_ebit_yoy === null || profile.min_ebit_yoy === undefined ? null : Number(profile.min_ebit_yoy);
     selectedRequirePositivePrevNetprofit.value = Boolean(profile.require_positive_prev_netprofit ?? true);
     selectedRequirePositivePrevEbit.value = Boolean(profile.require_positive_prev_ebit ?? true);
+    selectedApplyFinancialFilters.value = Boolean(profile.apply_financial_filters ?? true);
     selectedPriorityPolicy.value = String(profile.priority_policy ?? "score_desc");
     selectedBuyCandidateOnly.value = profile.buy_candidate_only || "BC:ONLY";
     selectedQuickStrategy.value = "predictive";
@@ -553,6 +570,11 @@ function applyBacktestPrefillFromQuery() {
         selectedRequirePositivePrevEbit.value = parseBooleanFromQuery(requirePositivePrevEbit, true);
     }
 
+    const applyFinancialFilters = params.get("apply_financial_filters");
+    if (applyFinancialFilters !== null) {
+        selectedApplyFinancialFilters.value = parseBooleanFromQuery(applyFinancialFilters, true);
+    }
+
     const priorityPolicy = params.get("priority_policy");
     if (priorityPolicy) {
         selectedPriorityPolicy.value = String(priorityPolicy);
@@ -612,6 +634,7 @@ watch(
         selectedMinEbitYoy,
         selectedRequirePositivePrevNetprofit,
         selectedRequirePositivePrevEbit,
+        selectedApplyFinancialFilters,
         selectedPriorityPolicy,
         selectedBuyCandidateOnly,
         selectedSwIndustry,
@@ -637,6 +660,7 @@ watch(
         valuationStockPickingStore.setMinEbitYoy(selectedMinEbitYoy.value === null ? "" : String(selectedMinEbitYoy.value));
         valuationStockPickingStore.setRequirePositivePrevNetprofit(selectedRequirePositivePrevNetprofit.value);
         valuationStockPickingStore.setRequirePositivePrevEbit(selectedRequirePositivePrevEbit.value);
+        valuationStockPickingStore.setApplyFinancialFilters(selectedApplyFinancialFilters.value);
         valuationStockPickingStore.setPriorityPolicy(selectedPriorityPolicy.value);
         valuationStockPickingStore.setBuyCandidateOnly(selectedBuyCandidateOnly.value);
         valuationStockPickingStore.setSwIndustry(selectedSwIndustry.value);
@@ -727,6 +751,40 @@ defineOptions({
     grid-column: span 12;
 }
 
+.filter-item--full {
+    grid-column: 1 / -1;
+}
+
+.filter-item--hint {
+    align-items: flex-start;
+    min-height: 0;
+}
+
+.filter-note {
+    color: #909399;
+    line-height: 1.5;
+}
+
+.filter-note-row {
+    width: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: flex-start;
+    gap: 12px;
+}
+
+.filter-note-switch {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    flex: 0 0 auto;
+    color: #606266;
+}
+
+.filter-note-switch__label {
+    white-space: nowrap;
+}
+
 .filter-item--order-1 {
     order: 1;
 }
@@ -737,6 +795,14 @@ defineOptions({
 
 .filter-item--order-3 {
     order: 3;
+}
+
+.filter-divider {
+    grid-column: 1 / -1;
+    border-top: 1px solid #e5e7eb;
+    margin: 2px 0;
+    min-height: 0;
+    order: 10;
 }
 
 :deep(.filter-radio-group) {
@@ -777,6 +843,11 @@ defineOptions({
     .filter-label {
         width: 84px;
         min-width: 84px;
+    }
+
+    .filter-note-row {
+        align-items: flex-start;
+        flex-direction: column;
     }
 }
 </style>
