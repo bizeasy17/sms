@@ -1367,6 +1367,7 @@ def _build_latest_snapshot_method_map(
         "compare_group",
         "match_score",
         "latest_trade_date",
+        "updated_at",
     )
 
     grouped = {}
@@ -1396,6 +1397,7 @@ def _build_latest_snapshot_method_map(
                 "compare_group": row.get("compare_group"),
                 "match_score": float(row.get("match_score")) if row.get("match_score") is not None else None,
                 "latest_trade_date": row.get("latest_trade_date"),
+                "snapshot_updated_at": row.get("updated_at"),
             }
         )
 
@@ -1418,6 +1420,7 @@ def _build_latest_snapshot_method_map(
                 "express_ann_date": selected.get("express_ann_date"),
                 "valuation_variant": _normalize_valuation_variant(selected.get("valuation_variant"), fallback="default"),
                 "latest_trade_date": selected.get("latest_trade_date"),
+                "snapshot_updated_at": selected.get("snapshot_updated_at"),
                 "candidate_count": len(candidates),
                 "compare_group": selected.get("compare_group"),
                 "match_score": selected.get("match_score"),
@@ -4487,23 +4490,26 @@ def _attach_signal_window_returns(rows, trade_date_for_query, freq="D", signal_e
         row["signal_peak_return_pct"] = None
         row["signal_trough_return_pct"] = None
 
-    code_min_start = {}
-    for row in rows:
-        ts_code = str(row.get("ts_code") or "").strip().upper()
-        asof_date = (
-            _parse_date_like(row.get("screened_trade_date"))
-            or _parse_date_like(row.get("result_trade_date"))
-            or _parse_date_like(row.get("trade_date"))
-            or _parse_date_like(row.get("earnings_asof_date"))
-            or _parse_date_like(row.get("latest_financial_ann_date"))
-            or _parse_date_like(row.get("valuation_profit_report_ann_date"))
+    def _row_signal_anchor_date(row):
+        return (
+            _parse_date_like(row.get("valuation_profit_report_ann_date"))
             or _parse_date_like(row.get("profit_report_ann_date"))
+            or _parse_date_like(row.get("financial_ann_date"))
             or _parse_date_like(row.get("valuation_express_ann_date"))
             or _parse_date_like(row.get("express_ann_date"))
-            or _parse_date_like(row.get("financial_ann_date"))
+            or _parse_date_like(row.get("latest_financial_ann_date"))
+            or _parse_date_like(row.get("earnings_asof_date"))
+            or _parse_date_like(row.get("screened_trade_date"))
+            or _parse_date_like(row.get("result_trade_date"))
+            or _parse_date_like(row.get("trade_date"))
             or _parse_date_like(row.get("valuation_profit_report_end_date"))
             or _parse_date_like(row.get("profit_report_end_date"))
         )
+
+    code_min_start = {}
+    for row in rows:
+        ts_code = str(row.get("ts_code") or "").strip().upper()
+        asof_date = _row_signal_anchor_date(row)
         if not ts_code or asof_date is None or asof_date > end_date:
             continue
         prev = code_min_start.get(ts_code)
@@ -4539,20 +4545,7 @@ def _attach_signal_window_returns(rows, trade_date_for_query, freq="D", signal_e
 
     for row in rows:
         ts_code = str(row.get("ts_code") or "").strip().upper()
-        asof_date = (
-            _parse_date_like(row.get("screened_trade_date"))
-            or _parse_date_like(row.get("result_trade_date"))
-            or _parse_date_like(row.get("trade_date"))
-            or _parse_date_like(row.get("earnings_asof_date"))
-            or _parse_date_like(row.get("latest_financial_ann_date"))
-            or _parse_date_like(row.get("valuation_profit_report_ann_date"))
-            or _parse_date_like(row.get("profit_report_ann_date"))
-            or _parse_date_like(row.get("valuation_express_ann_date"))
-            or _parse_date_like(row.get("express_ann_date"))
-            or _parse_date_like(row.get("financial_ann_date"))
-            or _parse_date_like(row.get("valuation_profit_report_end_date"))
-            or _parse_date_like(row.get("profit_report_end_date"))
-        )
+        asof_date = _row_signal_anchor_date(row)
         series = by_code.get(ts_code) or []
         if not ts_code or asof_date is None or not series:
             continue
@@ -4891,6 +4884,7 @@ def _pick_stocks_by_valuation_fast(request, trade_date, scope, freq="D", from_in
         selected_profit_report_type = _normalize_valuation_profit_report_type(
             selected_method_payload.get("profit_report_type")
         )
+        selected_snapshot_updated_at = selected_method_payload.get("snapshot_updated_at")
         selected_valuation_variant = _normalize_valuation_variant(
             selected_method_payload.get("valuation_variant"),
             fallback="",
@@ -4929,6 +4923,7 @@ def _pick_stocks_by_valuation_fast(request, trade_date, scope, freq="D", from_in
             "valuation_profit_report_type": selected_profit_report_type,
             "valuation_express_ann_date": selected_method_payload.get("express_ann_date"),
             "earnings_asof_date": selected_profit_report_ann_date or selected_profit_report_end_date,
+            "valuation_snapshot_updated_at": selected_snapshot_updated_at,
             "valuation_variant": selected_valuation_variant or None,
             "valuation_pick_strategy": valuation_pick_strategy,
             "valuation_candidate_count": selected_candidate_count,

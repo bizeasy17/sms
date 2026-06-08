@@ -83,6 +83,16 @@
                                         </template>
                                     </el-table-column>
                                     <el-table-column prop="valuation_price" label="估值价" :width="90" />
+                                    <el-table-column prop="valuation_snapshot_updated_at" label="快照更新时间" :width="170">
+                                        <template #default="{ row }">
+                                            <span>{{ formatDateTime(row.valuation_snapshot_updated_at) }}</span>
+                                        </template>
+                                    </el-table-column>
+                                    <el-table-column prop="valuation_profit_report_ann_date" label="财报发布日" :width="120">
+                                        <template #default="{ row }">
+                                            <span>{{ formatDateOnly(row.valuation_profit_report_ann_date || row.financial_ann_date) }}</span>
+                                        </template>
+                                    </el-table-column>
                                     <el-table-column prop="conservative_valuation_price" label="保守估值价" :width="110">
                                         <template #default="{ row }">
                                             <span>{{ formatPrice(row.conservative_valuation_price) }}</span>
@@ -626,6 +636,35 @@ function formatScore(value: any) {
     const numeric = Number(value);
     if (!Number.isFinite(numeric)) return "-";
     return numeric.toFixed(0);
+}
+
+function formatDateTime(value: any) {
+    const text = String(value || "").trim();
+    if (!text) return "-";
+    const parsed = new Date(text);
+    if (Number.isNaN(parsed.getTime())) {
+        return text;
+    }
+    const yyyy = parsed.getFullYear();
+    const mm = String(parsed.getMonth() + 1).padStart(2, "0");
+    const dd = String(parsed.getDate()).padStart(2, "0");
+    const hh = String(parsed.getHours()).padStart(2, "0");
+    const mi = String(parsed.getMinutes()).padStart(2, "0");
+    const ss = String(parsed.getSeconds()).padStart(2, "0");
+    return `${yyyy}-${mm}-${dd} ${hh}:${mi}:${ss}`;
+}
+
+function formatDateOnly(value: any) {
+    const text = String(value || "").trim();
+    if (!text) return "-";
+    const parsed = new Date(text);
+    if (Number.isNaN(parsed.getTime())) {
+        return text.length >= 10 ? text.slice(0, 10) : text;
+    }
+    const yyyy = parsed.getFullYear();
+    const mm = String(parsed.getMonth() + 1).padStart(2, "0");
+    const dd = String(parsed.getDate()).padStart(2, "0");
+    return `${yyyy}-${mm}-${dd}`;
 }
 
 function resolveUndervalueScore(row: Record<string, any>) {
