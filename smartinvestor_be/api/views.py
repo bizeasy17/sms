@@ -4672,9 +4672,6 @@ def _pick_stocks_by_valuation_fast(request, trade_date, scope, freq="D", from_in
     feature_data_source_raw = (
         request.query_params.get("feature_data_source", "") if hasattr(request, "query_params") else ""
     )
-    fiscal_year_raw = (
-        request.query_params.get("fiscal_year", "") if hasattr(request, "query_params") else ""
-    )
     netprofit_growth_raw = (
         request.query_params.get("netprofit_growth", "ALL") if hasattr(request, "query_params") else "ALL"
     )
@@ -4704,6 +4701,11 @@ def _pick_stocks_by_valuation_fast(request, trade_date, scope, freq="D", from_in
         request.query_params.get("apply_financial_filters", "1")
         if hasattr(request, "query_params")
         else "1"
+    )
+    priority_policy_raw = (
+        request.query_params.get("priority_policy", "score_desc")
+        if hasattr(request, "query_params")
+        else "score_desc"
     )
 
     try:
@@ -4737,10 +4739,6 @@ def _pick_stocks_by_valuation_fast(request, trade_date, scope, freq="D", from_in
         min_target_return_pct = _to_float_or_none(min_target_return_pct_raw)
     except (TypeError, ValueError):
         min_target_return_pct = None
-    try:
-        fiscal_year = int(fiscal_year_raw) if str(fiscal_year_raw).strip() else None
-    except (TypeError, ValueError):
-        fiscal_year = None
     netprofit_growth = str(netprofit_growth_raw or "ALL").strip().upper()
     if netprofit_growth not in {"ALL", "MEDIUM", "HIGH"}:
         netprofit_growth = "ALL"
@@ -4790,6 +4788,17 @@ def _pick_stocks_by_valuation_fast(request, trade_date, scope, freq="D", from_in
     require_positive_prev_netprofit = _parse_bool_flag(require_positive_prev_netprofit_raw, True)
     require_positive_prev_ebit = _parse_bool_flag(require_positive_prev_ebit_raw, True)
     apply_financial_filters = _parse_bool_flag(apply_financial_filters_raw, True)
+    priority_policy = str(priority_policy_raw or "score_desc").strip().lower()
+    allowed_priority_policies = {
+        "score_desc",
+        "deep_discount_first",
+        "target_discount_first",
+        "high_price_first",
+        "low_price_first",
+        "low_risk_high_score",
+    }
+    if priority_policy not in allowed_priority_policies:
+        priority_policy = "score_desc"
     netprofit_growth_floor = 0.2 if netprofit_growth == "HIGH" else (0.1 if netprofit_growth == "MEDIUM" else None)
     min_netprofit_yoy_ratio = _normalize_yoy_threshold(min_netprofit_yoy)
     min_ebit_yoy_ratio = _normalize_yoy_threshold(min_ebit_yoy)
@@ -5071,6 +5080,11 @@ def _pick_stocks_by_valuation_fast(request, trade_date, scope, freq="D", from_in
 
     if picking_mode == "predictive" and result:
         predictive_ts_codes = [row.get("ts_code") for row in result if row.get("ts_code")]
+        predictive_ts_codes = list(
+            dict.fromkeys(
+                [str(code or "").strip().upper() for code in predictive_ts_codes if code]
+            )
+        )
         earnings_end_date_map = {}
         if earnings_report_type in {"Q1", "H1", "Q3", "FY"}:
             for row in result:
@@ -5150,9 +5164,35 @@ def _pick_stocks_by_valuation_fast(request, trade_date, scope, freq="D", from_in
             logger.warning("predictive valuation pick degraded: %s", err)
         perf_after_earnings = time.perf_counter()
 
+        predictive_netprofit_map = _build_latest_income_netprofit_map(predictive_ts_codes)
+        predictive_indicator_map = {
+            code: _load_latest_indicator_profile(code)
+            for code in predictive_ts_codes
+        }
+
         predictive_rows = []
         for row in result:
             ts_code = row.get("ts_code")
+            ts_code_norm = str(ts_code or "").strip().upper()
+            netprofit_payload = predictive_netprofit_map.get(ts_code_norm) or {}
+            indicator_payload = predictive_indicator_map.get(ts_code_norm) or {}
+
+            financial_netprofit = _to_float_or_none(netprofit_payload.get("financial_netprofit"))
+            financial_netprofit_yoy = _to_float_or_none(netprofit_payload.get("financial_netprofit_yoy"))
+            financial_prev_netprofit = _to_float_or_none(netprofit_payload.get("financial_prev_netprofit"))
+            if financial_prev_netprofit is None and financial_netprofit is not None and financial_netprofit_yoy is not None:
+                yoy_base = 1.0 + float(financial_netprofit_yoy)
+                if abs(yoy_base) > 1e-9:
+                    financial_prev_netprofit = float(financial_netprofit) / yoy_base
+
+            financial_ebit = _to_float_or_none(indicator_payload.get("financial_ebit"))
+            financial_ebit_yoy = _to_float_or_none(indicator_payload.get("financial_ebit_yoy"))
+            financial_prev_ebit = _to_float_or_none(indicator_payload.get("financial_prev_ebit"))
+            if financial_prev_ebit is None and financial_ebit is not None and financial_ebit_yoy is not None:
+                yoy_base = 1.0 + float(financial_ebit_yoy)
+                if abs(yoy_base) > 1e-9:
+                    financial_prev_ebit = float(financial_ebit) / yoy_base
+
             earnings_payload = earnings_map.get(ts_code) or _build_earnings_default_data(
                 ts_code,
                 earnings_report_type if earnings_report_type != "ALL" else "",
@@ -5180,13 +5220,11 @@ def _pick_stocks_by_valuation_fast(request, trade_date, scope, freq="D", from_in
                 continue
             if feature_data_source and earnings_source_value != feature_data_source:
                 continue
-            if fiscal_year is not None and earnings_fiscal_year != fiscal_year:
-                continue
-            if min_netprofit_growth is not None and (
+            if bool(apply_financial_filters) and min_netprofit_growth is not None and (
                 pred_earnings_growth is None or pred_earnings_growth < min_netprofit_growth
             ):
                 continue
-            if min_netprofit_growth is not None and prev_year_netprofit_non_negative is not True:
+            if bool(apply_financial_filters) and min_netprofit_growth is not None and prev_year_netprofit_non_negative is not True:
                 continue
 
             merged_row = {
@@ -5211,6 +5249,10 @@ def _pick_stocks_by_valuation_fast(request, trade_date, scope, freq="D", from_in
                 "feature_data_source": earnings_payload.get("feature_data_source"),
                 "financial_fiscal_year": earnings_fiscal_year,
                 "financial_ann_date": earnings_payload.get("financial_ann_date"),
+                "financial_netprofit_yoy": financial_netprofit_yoy,
+                "financial_ebit_yoy": financial_ebit_yoy,
+                "financial_prev_netprofit": financial_prev_netprofit,
+                "financial_prev_ebit": financial_prev_ebit,
                 "predictive_explain": earnings_payload.get("explain") or {},
             }
             merged_row["predictive_pick_score"] = _compute_predictive_pick_score(merged_row)
@@ -5229,6 +5271,89 @@ def _pick_stocks_by_valuation_fast(request, trade_date, scope, freq="D", from_in
     else:
         perf_after_earnings = time.perf_counter()
         predictive_earnings_stats = {}
+
+    def _row_primary_score(item):
+        if picking_mode == "predictive":
+            score = _to_float_or_none(item.get("predictive_pick_score"))
+            if score is not None:
+                return score
+            return _to_float_or_none(item.get("signal_score"))
+        score = _to_float_or_none(item.get("valuation_score"))
+        if score is not None:
+            return score
+        return _to_float_or_none(item.get("undervalue_score"))
+
+    def _row_close_price(item):
+        price = _to_float_or_none(item.get("close_qfq"))
+        if price is not None:
+            return price
+        return _to_float_or_none(item.get("close"))
+
+    def _row_risk_rank(item):
+        risk_text = _canonicalize_risk_level(
+            item.get("risk_level") or item.get("valuation_risk_level")
+        )
+        return {"LOW": 0, "MEDIUM": 1, "HIGH": 2}.get(risk_text, 9)
+
+    def _sort_result_key(item):
+        score = _row_primary_score(item)
+        valuation_gap = _to_float_or_none(item.get("valuation_gap_pct"))
+        target_return = _to_float_or_none(item.get("target_return_pct"))
+        close_price = _row_close_price(item)
+        ts_code_key = str(item.get("ts_code") or "")
+
+        if priority_policy == "deep_discount_first":
+            return (
+                valuation_gap is None,
+                -(valuation_gap if valuation_gap is not None else -999999.0),
+                score is None,
+                -(score if score is not None else -999999.0),
+                ts_code_key,
+            )
+        if priority_policy == "target_discount_first":
+            return (
+                target_return is None,
+                -(target_return if target_return is not None else -999999.0),
+                score is None,
+                -(score if score is not None else -999999.0),
+                ts_code_key,
+            )
+        if priority_policy == "high_price_first":
+            return (
+                close_price is None,
+                -(close_price if close_price is not None else -999999.0),
+                score is None,
+                -(score if score is not None else -999999.0),
+                ts_code_key,
+            )
+        if priority_policy == "low_price_first":
+            return (
+                close_price is None,
+                close_price if close_price is not None else 999999.0,
+                score is None,
+                -(score if score is not None else -999999.0),
+                ts_code_key,
+            )
+        if priority_policy == "low_risk_high_score":
+            return (
+                _row_risk_rank(item),
+                score is None,
+                -(score if score is not None else -999999.0),
+                target_return is None,
+                -(target_return if target_return is not None else -999999.0),
+                ts_code_key,
+            )
+        return (
+            score is None,
+            -(score if score is not None else -999999.0),
+            target_return is None,
+            -(target_return if target_return is not None else -999999.0),
+            valuation_gap is None,
+            -(valuation_gap if valuation_gap is not None else -999999.0),
+            ts_code_key,
+        )
+
+    result = sorted(result, key=_sort_result_key)
 
     paged_result = result[from_index:to_index]
     if picking_mode != "predictive":
@@ -5269,10 +5394,10 @@ def _pick_stocks_by_valuation_fast(request, trade_date, scope, freq="D", from_in
                 "min_signal_score": min_signal_score,
                 "min_target_return_pct": min_target_return_pct,
                 "feature_data_source": feature_data_source,
-                "fiscal_year": fiscal_year,
                 "netprofit_growth": netprofit_growth,
                 "valuation_score": valuation_score_level,
                 "min_valuation_score": min_valuation_score,
+                "priority_policy": priority_policy,
                 "effective_financial_filters": {
                     "apply_financial_filters": bool(apply_financial_filters),
                     "min_netprofit_yoy": min_netprofit_yoy,

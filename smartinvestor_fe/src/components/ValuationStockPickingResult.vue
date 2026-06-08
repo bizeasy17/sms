@@ -123,24 +123,24 @@
                                             <span v-else>-</span>
                                         </template>
                                     </el-table-column>
-                                    <el-table-column v-if="!isPredictiveMode" prop="financial_netprofit_yoy" label="净利YoY(%)" :width="95">
+                                    <el-table-column prop="financial_netprofit_yoy" label="净利YoY(%)" :width="95">
                                         <template #default="{ row }">
                                             <span>{{ formatPercent(row.financial_netprofit_yoy) }}</span>
                                         </template>
                                     </el-table-column>
-                                    <el-table-column v-if="!isPredictiveMode" prop="financial_ebit_yoy" label="EBITYoY(%)" :width="95">
+                                    <el-table-column prop="financial_ebit_yoy" label="EBITYoY(%)" :width="95">
                                         <template #default="{ row }">
                                             <span>{{ formatPercent(row.financial_ebit_yoy) }}</span>
                                         </template>
                                     </el-table-column>
-                                    <el-table-column v-if="!isPredictiveMode" prop="financial_prev_netprofit" label="上一年净利" :width="95">
+                                    <el-table-column prop="financial_prev_netprofit" label="上一年净利" :width="95">
                                         <template #default="{ row }">
                                             <el-tag :type="Number(row.financial_prev_netprofit) >= 0 ? 'success' : 'danger'" size="small" effect="light">
                                                 {{ Number.isFinite(Number(row.financial_prev_netprofit)) ? (Number(row.financial_prev_netprofit) >= 0 ? '>=0' : '<0') : '-' }}
                                             </el-tag>
                                         </template>
                                     </el-table-column>
-                                    <el-table-column v-if="!isPredictiveMode" prop="financial_prev_ebit" label="上一年EBIT" :width="95">
+                                    <el-table-column prop="financial_prev_ebit" label="上一年EBIT" :width="95">
                                         <template #default="{ row }">
                                             <el-tag :type="Number(row.financial_prev_ebit) >= 0 ? 'success' : 'danger'" size="small" effect="light">
                                                 {{ Number.isFinite(Number(row.financial_prev_ebit)) ? (Number(row.financial_prev_ebit) >= 0 ? '>=0' : '<0') : '-' }}
@@ -792,7 +792,6 @@ async function fetchPickingResult() {
             if (sharedMinScoreVal) search.set("min_signal_score", sharedMinScoreVal);
             if (valuationStockPickingStore.minTargetReturnPct) search.set("min_target_return_pct", valuationStockPickingStore.minTargetReturnPct);
             if (featureDataSourceVal !== "ALL") search.set("feature_data_source", featureDataSourceVal);
-            if (valuationStockPickingStore.fiscalYear) search.set("fiscal_year", valuationStockPickingStore.fiscalYear);
         } else {
             if (sharedMinScoreVal) search.set("min_valuation_score", sharedMinScoreVal);
         }

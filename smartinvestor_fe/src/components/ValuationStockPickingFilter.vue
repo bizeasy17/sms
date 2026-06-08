@@ -150,11 +150,6 @@
                         </el-select>
                     </div>
 
-                    <div v-if="isPredictiveMode" class="filter-item">
-                        <span class="filter-label">财报年份：</span>
-                        <el-input v-model="selectedFiscalYear" size="small" placeholder="如 2024" class="filter-control" clearable />
-                    </div>
-
                     <div class="filter-item">
                         <span class="filter-label">优先策略：</span>
                         <el-select v-model="selectedPriorityPolicy" size="small" class="filter-control" placeholder="优先策略">
@@ -287,7 +282,6 @@ const selectedRiskLevel = ref<string[]>(["LOW", "MEDIUM"]);
 const selectedMinSignalScore = ref<number | null>(85);
 const selectedMinTargetReturnPct = ref("");
 const selectedFeatureDataSource = ref("EDS:ALL");
-const selectedFiscalYear = ref("");
 const selectedQuickStrategy = ref("");
 const quickConditionExpanded = ref(true);
 const swIndustryOptions = ref<Array<{ industry_code: string; industry_name: string }>>([]);
@@ -299,7 +293,6 @@ const defaultQuickProfiles = {
         signal_action: "SA:ALL",
         min_target_return_pct: "",
         feature_data_source: "EDS:ALL",
-        fiscal_year: "",
         valuation_method: "VM:RECOMMENDED",
         valuation_band_pct: "0.1",
         valuation_pick_strategy: "VPS:BASELINE",
@@ -315,7 +308,6 @@ const defaultQuickProfiles = {
         signal_action: "SA:BUY",
         min_target_return_pct: "",
         feature_data_source: "EDS:ALL",
-        fiscal_year: "",
         valuation_method: "VM:RECOMMENDED",
         valuation_band_pct: "0.1",
         valuation_pick_strategy: "VPS:BASELINE",
@@ -389,7 +381,6 @@ function applyTraditionalQuickStrategy() {
     selectedSignalAction.value = firstOfMulti(profile.signal_action, "SA:ALL");
     selectedMinTargetReturnPct.value = String(profile.min_target_return_pct ?? "");
     selectedFeatureDataSource.value = profile.feature_data_source || "EDS:ALL";
-    selectedFiscalYear.value = String(profile.fiscal_year ?? "");
     selectedValuationMethod.value = profile.valuation_method || "VM:RECOMMENDED";
     selectedValuationStatus.value = firstOfMulti(profile.valuation_status, "VS:UNDER");
     selectedValuationBand.value = String(profile.valuation_band_pct ?? "0.1");
@@ -414,7 +405,6 @@ function applyPredictiveQuickStrategy() {
     selectedMinSignalScore.value = Number.isFinite(score) ? score : 85;
     selectedMinTargetReturnPct.value = String(profile.min_target_return_pct ?? "");
     selectedFeatureDataSource.value = profile.feature_data_source || "EDS:ALL";
-    selectedFiscalYear.value = String(profile.fiscal_year ?? "");
     selectedValuationMethod.value = profile.valuation_method || "VM:RECOMMENDED";
     selectedValuationStatus.value = profile.valuation_status || "VS:UNDER";
     selectedValuationBand.value = String(profile.valuation_band_pct ?? "0.1");
@@ -644,7 +634,6 @@ watch(
         selectedMinSignalScore,
         selectedMinTargetReturnPct,
         selectedFeatureDataSource,
-        selectedFiscalYear,
     ],
     () => {
         valuationStockPickingStore.setTradeDate(formatDateForApi(selectedDate.value));
@@ -672,7 +661,6 @@ watch(
         );
         valuationStockPickingStore.setMinTargetReturnPct(selectedMinTargetReturnPct.value);
         valuationStockPickingStore.setFeatureDataSource(selectedFeatureDataSource.value);
-        valuationStockPickingStore.setFiscalYear(selectedFiscalYear.value);
     },
     { immediate: true }
 );
