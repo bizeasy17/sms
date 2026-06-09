@@ -2,38 +2,6 @@
     <el-row :gutter="18">
         <el-col :span="24">
             <el-card>
-                    <el-row style="margin-bottom: 10px;">
-                        <el-col :span="24" style="display: flex; align-items: center; gap: 12px; flex-wrap: wrap;">
-                            <span style="font-size: 12px; color: #606266;">周度低估清单下载：</span>
-                            <el-link
-                                v-if="downloadLinks.traditional.available && downloadLinks.traditional.downloadUrl"
-                                :href="downloadLinks.traditional.downloadUrl"
-                                type="primary"
-                                underline="hover"
-                                target="_blank"
-                            >
-                                下载传统估值 CSV
-                            </el-link>
-                            <span v-else style="font-size: 12px; color: #909399;">传统估值 CSV 未生成</span>
-                            <span v-if="downloadLinks.traditional.updatedAt" style="font-size: 12px; color: #909399;">
-                                {{ downloadLinks.traditional.updatedAt }}
-                            </span>
-
-                            <el-link
-                                v-if="downloadLinks.predictive.available && downloadLinks.predictive.downloadUrl"
-                                :href="downloadLinks.predictive.downloadUrl"
-                                type="success"
-                                underline="hover"
-                                target="_blank"
-                            >
-                                下载预测估值 CSV
-                            </el-link>
-                            <span v-else style="font-size: 12px; color: #909399;">预测估值 CSV 未生成</span>
-                            <span v-if="downloadLinks.predictive.updatedAt" style="font-size: 12px; color: #909399;">
-                                {{ downloadLinks.predictive.updatedAt }}
-                            </span>
-                        </el-col>
-                    </el-row>
                     <el-row v-if="showFinancialStageHint" style="margin-bottom: 8px;">
                         <el-col :span="24">
                             <el-tag size="small" type="warning" effect="light">
@@ -43,7 +11,8 @@
                     </el-row>
                     <el-row>
                         <el-col :span="24">
-                            <el-table :data="pickingResult" style="width: 100%" size="small" height="400" @row-dblclick="onRowDblClick">
+                            <div ref="tableWrapperRef" class="result-table-wrapper">
+                            <el-table :data="pickingResult" style="width: 100%" size="small" :height="tableHeight" @row-dblclick="onRowDblClick">
                                     <el-table-column prop="ts_code" label="代码" fixed="left">
                                         <template #default="{ row }">
                                             <div style="display:flex; align-items:center; gap:6px; flex-wrap:wrap;">
@@ -192,17 +161,21 @@
                                         </template>
                                     </el-table-column>
                             </el-table>
+                            </div>
                         </el-col>
                     </el-row>
                     <el-row :gutter="12" style="margin-top: 10px;">
                         <el-col :span="controlSpan">
+                            <div ref="tableControlRef" class="result-table-controls">
                             <el-button type="primary" @click="fetchPrevPage" size="small">上一页</el-button>
                             <el-button type="primary" @click="fetchNextPage" size="small">下一页</el-button>
+                            <el-button type="success" plain @click="exportPickingResultCsv" size="small" :loading="isExportingAllCsv" :disabled="isExportingAllCsv || totalFiltered === 0">导出CSV</el-button>
                             <el-button type="warning" plain @click="sortByUndervalue('desc')" size="small">低估分降序</el-button>
                             <el-button type="warning" plain @click="sortByUndervalue('asc')" size="small">低估分升序</el-button>
                             <span style="margin-left: 10px; color: #606266; font-size: 12px;">
                                 命中总数: {{ totalFiltered }} | 当前范围: {{ currentRangeStart }}-{{ currentRangeEnd }}
                             </span>
+                            </div>
                         </el-col>
                     </el-row>
             </el-card>
@@ -278,8 +251,8 @@
 </template>
 
 <script setup lang="ts">
-import { ElCard, ElTable, ElTableColumn, ElMessage, ElLink, ElRow, ElCol, ElButton, ElTag, ElTabs, ElTabPane, ElDialog, ElCheckTag, ElText } from "element-plus";
-import { computed, ref, watch, onMounted, nextTick } from "vue";
+import { ElCard, ElTable, ElTableColumn, ElMessage, ElRow, ElCol, ElButton, ElTag, ElTabs, ElTabPane, ElDialog, ElCheckTag, ElText } from "element-plus";
+import { computed, ref, watch, onMounted, nextTick, onBeforeUnmount } from "vue";
 import axios from "axios";
 import { inject } from "vue";
 import { useValuationStockPickingStore } from "../stores/valuationStockPickingStore";
@@ -313,22 +286,14 @@ const currentRangeEnd = ref(0);
 const effectiveFinancialFilters = ref<Record<string, any>>({});
 const overviewTab = ref("valuation");
 const trendChartCompRef = ref<InstanceType<typeof StockChart> | null>(null);
+const tableWrapperRef = ref<HTMLElement | null>(null);
+const tableControlRef = ref<HTMLElement | null>(null);
+const tableHeight = ref(460);
+const isExportingAllCsv = ref(false);
 
 const baseURL = inject<string>("baseURL", "");
 const pickingResult = ref<Array<Record<string, any>>>([]);
 const isPredictiveMode = computed(() => valuationStockPickingStore.pickingMode === "MODE:PREDICTIVE");
-const downloadLinks = ref({
-    traditional: {
-        available: false,
-        downloadUrl: "",
-        updatedAt: "",
-    },
-    predictive: {
-        available: false,
-        downloadUrl: "",
-        updatedAt: "",
-    },
-});
 
 const hasPrevStock = computed(() => detailRowIndex.value > 0);
 const hasNextStock = computed(() => detailRowIndex.value >= 0 && detailRowIndex.value < pickingResult.value.length - 1);
@@ -412,31 +377,188 @@ function normalizeScopeForApi(scopeRaw: string): string {
         .join(",");
 }
 
-async function loadWeeklyDownloadLinks() {
-    if (!baseURL) {
+function updateTableHeight() {
+    const wrapper = tableWrapperRef.value;
+    if (!wrapper) {
         return;
     }
-    try {
-        const res = await axios.get(buildApiUrl("/stock-pick-valuation/weekly-downloads/"));
-        const data = res?.data?.data || {};
-        downloadLinks.value = {
-            traditional: {
-                available: Boolean(data?.traditional?.available),
-                downloadUrl: data?.traditional?.download_url ? buildApiUrl(data.traditional.download_url) : "",
-                updatedAt: data?.traditional?.updated_at || "",
-            },
-            predictive: {
-                available: Boolean(data?.predictive?.available),
-                downloadUrl: data?.predictive?.download_url ? buildApiUrl(data.predictive.download_url) : "",
-                updatedAt: data?.predictive?.updated_at || "",
-            },
-        };
-    } catch (_error) {
-        downloadLinks.value = {
-            traditional: { available: false, downloadUrl: "", updatedAt: "" },
-            predictive: { available: false, downloadUrl: "", updatedAt: "" },
-        };
+    const controls = tableControlRef.value;
+    const rect = wrapper.getBoundingClientRect();
+    const viewportHeight = window.innerHeight || document.documentElement.clientHeight;
+    const controlsHeight = controls?.getBoundingClientRect().height || 0;
+    const reservedBottomSpace = controlsHeight + 56;
+    const nextHeight = Math.max(260, Math.floor(viewportHeight - rect.top - reservedBottomSpace));
+    tableHeight.value = nextHeight;
+}
+
+function toCsvCell(value: unknown) {
+    const text = String(value ?? "");
+    const escaped = text.replace(/"/g, '""');
+    return `"${escaped}"`;
+}
+
+function buildPickingSearchParams(from: number, to: number) {
+    const valuationMethodVal = valuationStockPickingStore.valuationMethod.split(":")[1].toLowerCase();
+    const valuationStatusVal = valuationStockPickingStore.valuationStatus.split(":")[1] !== "NONE" ? valuationStockPickingStore.valuationStatus.split(":")[1].toLowerCase() : "";
+    const buyCandidateOnlyVal = valuationStockPickingStore.buyCandidateOnly.split(":")[1] === "ONLY" ? "1" : "";
+    const valuationPickStrategyVal = valuationStockPickingStore.valuationPickStrategy.split(":")[1].toLowerCase();
+    const minNetprofitYoyVal = String(valuationStockPickingStore.minNetprofitYoy || "").trim();
+    const minEbitYoyVal = String(valuationStockPickingStore.minEbitYoy || "").trim();
+    const requirePositivePrevNetprofitVal = valuationStockPickingStore.requirePositivePrevNetprofit ? "1" : "0";
+    const requirePositivePrevEbitVal = valuationStockPickingStore.requirePositivePrevEbit ? "1" : "0";
+    const applyFinancialFiltersVal = valuationStockPickingStore.applyFinancialFilters ? "1" : "0";
+    const priorityPolicyVal = String(valuationStockPickingStore.priorityPolicy || "score_desc").trim().toLowerCase();
+    const pickingModeVal = valuationStockPickingStore.pickingMode.split(":")[1].toLowerCase();
+    const earningsReportTypeVal = valuationStockPickingStore.earningsReportType.split(":")[1];
+    const signalActionVal = valuationStockPickingStore.signalAction.split(":")[1];
+    const riskLevelParam = String(valuationStockPickingStore.riskLevel || "")
+        .split(",")
+        .map((item) => item.trim().toUpperCase())
+        .filter((item) => item === "LOW" || item === "MEDIUM" || item === "HIGH")
+        .join(",");
+    const featureDataSourceVal = valuationStockPickingStore.featureDataSource.split(":")[1];
+    const sharedMinScoreVal = String(valuationStockPickingStore.minSignalScore || "").trim();
+
+    const search = new URLSearchParams();
+    search.set("freq", valuationStockPickingStore.freq);
+    search.set("from_index", String(from));
+    search.set("to_index", String(to));
+    search.set("quick_preview", "1");
+    search.set("preview_scan_limit", QUICK_PREVIEW_SCAN_LIMIT);
+    search.set("picking_mode", pickingModeVal);
+    search.set("valuation_method", valuationMethodVal);
+    if (valuationStatusVal) search.set("valuation_status", valuationStatusVal);
+    search.set("valuation_band_pct", valuationStockPickingStore.valuationBandPct);
+    search.set("valuation_pick_strategy", valuationPickStrategyVal);
+    if (minNetprofitYoyVal) search.set("min_netprofit_yoy", minNetprofitYoyVal);
+    if (minEbitYoyVal) search.set("min_ebit_yoy", minEbitYoyVal);
+    search.set("apply_financial_filters", applyFinancialFiltersVal);
+    search.set("require_positive_prev_netprofit", requirePositivePrevNetprofitVal);
+    search.set("require_positive_prev_ebit", requirePositivePrevEbitVal);
+    if (priorityPolicyVal) search.set("priority_policy", priorityPolicyVal);
+    if (buyCandidateOnlyVal) search.set("buy_candidate_only", buyCandidateOnlyVal);
+    if (valuationStockPickingStore.swIndustry) search.set("sw_industry", valuationStockPickingStore.swIndustry);
+    search.set("earnings_report_type", earningsReportTypeVal);
+    if (riskLevelParam) search.set("risk_level", riskLevelParam);
+    if (pickingModeVal === "predictive") {
+        if (signalActionVal !== "ALL") search.set("signal_action", signalActionVal);
+        if (sharedMinScoreVal) search.set("min_signal_score", sharedMinScoreVal);
+        if (valuationStockPickingStore.minTargetReturnPct) search.set("min_target_return_pct", valuationStockPickingStore.minTargetReturnPct);
+        if (featureDataSourceVal !== "ALL") search.set("feature_data_source", featureDataSourceVal);
+    } else {
+        if (sharedMinScoreVal) search.set("min_valuation_score", sharedMinScoreVal);
     }
+    return search;
+}
+
+function buildPickingRequestUrl(from: number, to: number) {
+    const scopePath = normalizeScopeForApi(valuationStockPickingStore.scopeParam);
+    const search = buildPickingSearchParams(from, to);
+    return `${buildApiUrl(`/stock-pick-valuation/${valuationStockPickingStore.tradeDate}/${scopePath}/`)}?${search.toString()}`;
+}
+
+async function exportPickingResultCsv() {
+    if (isExportingAllCsv.value) {
+        return;
+    }
+    if (valuationStockPickingStore.scopeParam === "SCOPE:NONE") {
+        ElMessage.warning("暂无可导出的选股结果");
+        return;
+    }
+
+    isExportingAllCsv.value = true;
+    const exportRows: Array<Record<string, any>> = [];
+
+    try {
+        const chunkSize = 500;
+        let cursor = 0;
+        let expectedTotal = Math.max(0, Number(totalFiltered.value || 0));
+
+        while (true) {
+            const url = buildPickingRequestUrl(cursor, cursor + chunkSize);
+            const res = await axios.get(url);
+            const rows = Array.isArray(res.data?.data) ? res.data.data : [];
+            exportRows.push(...rows);
+
+            const responseTotal = Number(res.data?.meta?.total_filtered || 0);
+            if (responseTotal > 0) {
+                expectedTotal = responseTotal;
+            }
+
+            if (!rows.length) {
+                break;
+            }
+            cursor += rows.length;
+            if (rows.length < chunkSize) {
+                break;
+            }
+            if (expectedTotal > 0 && cursor >= expectedTotal) {
+                break;
+            }
+        }
+    } catch (_error) {
+        ElMessage.error("导出失败：全量结果拉取异常，请稍后重试");
+        isExportingAllCsv.value = false;
+        return;
+    }
+
+    if (!exportRows.length) {
+        ElMessage.warning("暂无可导出的选股结果");
+        isExportingAllCsv.value = false;
+        return;
+    }
+    const headers = [
+        "名称",
+        "代码",
+        "最高涨幅(%)",
+        "最低涨幅(%)",
+        "当前涨幅(%)",
+        "SW行业",
+        "估值法",
+        "当前价格",
+        "估值价",
+        "快照更新时间",
+        "财报发布日",
+        "估值判断",
+        "估值分数",
+    ];
+
+    const lines = [headers.map((cell) => toCsvCell(cell)).join(",")];
+    for (const row of exportRows) {
+        const line = [
+            row.name || "",
+            row.ts_code || "",
+            formatPercent(row.signal_peak_return_pct),
+            formatPercent(row.signal_trough_return_pct),
+            formatPercent(row.signal_current_return_pct),
+            row.sw_l3_name || row.industry_name || "",
+            methodLabel(row.valuation_method),
+            formatPrice(row.close_qfq),
+            formatPrice(row.valuation_price),
+            formatDateTime(row.valuation_snapshot_updated_at),
+            formatDateOnly(row.valuation_profit_report_ann_date || row.financial_ann_date),
+            row.valuation_status || "",
+            formatScore(row.valuation_score ?? row.undervalue_score),
+        ];
+        lines.push(line.map((cell) => toCsvCell(cell)).join(","));
+    }
+
+    const csvContent = "\uFEFF" + lines.join("\n");
+    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+    const fileDate = formatDateOnly(valuationStockPickingStore.tradeDate || new Date());
+    const fileMode = isPredictiveMode.value ? "predictive" : "traditional";
+    const fileName = `stock_picking_${fileMode}_${fileDate}.csv`;
+
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = fileName;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+    ElMessage.success(`CSV导出成功，共 ${exportRows.length} 条`);
+    isExportingAllCsv.value = false;
 }
 
 function syncDetailStock(row: any) {
@@ -794,59 +916,7 @@ async function fetchPickingResult() {
         }
 
         const isFirstPageRequest = fromIndex.value === 0;
-        const valuationMethodVal = valuationStockPickingStore.valuationMethod.split(":")[1].toLowerCase();
-        const valuationStatusVal = valuationStockPickingStore.valuationStatus.split(":")[1] !== "NONE" ? valuationStockPickingStore.valuationStatus.split(":")[1].toLowerCase() : "";
-        const buyCandidateOnlyVal = valuationStockPickingStore.buyCandidateOnly.split(":")[1] === "ONLY" ? "1" : "";
-        const valuationPickStrategyVal = valuationStockPickingStore.valuationPickStrategy.split(":")[1].toLowerCase();
-        const minNetprofitYoyVal = String(valuationStockPickingStore.minNetprofitYoy || "").trim();
-        const minEbitYoyVal = String(valuationStockPickingStore.minEbitYoy || "").trim();
-        const requirePositivePrevNetprofitVal = valuationStockPickingStore.requirePositivePrevNetprofit ? "1" : "0";
-        const requirePositivePrevEbitVal = valuationStockPickingStore.requirePositivePrevEbit ? "1" : "0";
-        const applyFinancialFiltersVal = valuationStockPickingStore.applyFinancialFilters ? "1" : "0";
-        const priorityPolicyVal = String(valuationStockPickingStore.priorityPolicy || "score_desc").trim().toLowerCase();
-        const pickingModeVal = valuationStockPickingStore.pickingMode.split(":")[1].toLowerCase();
-        const earningsReportTypeVal = valuationStockPickingStore.earningsReportType.split(":")[1];
-        const signalActionVal = valuationStockPickingStore.signalAction.split(":")[1];
-        const riskLevelParam = String(valuationStockPickingStore.riskLevel || "")
-            .split(",")
-            .map((item) => item.trim().toUpperCase())
-            .filter((item) => item === "LOW" || item === "MEDIUM" || item === "HIGH")
-            .join(",");
-        const featureDataSourceVal = valuationStockPickingStore.featureDataSource.split(":")[1];
-        const sharedMinScoreVal = String(valuationStockPickingStore.minSignalScore || "").trim();
-
-        const search = new URLSearchParams();
-        search.set("freq", valuationStockPickingStore.freq);
-        search.set("from_index", String(fromIndex.value));
-        search.set("to_index", String(toIndex.value));
-        search.set("quick_preview", "1");
-        search.set("preview_scan_limit", QUICK_PREVIEW_SCAN_LIMIT);
-        search.set("picking_mode", pickingModeVal);
-        search.set("valuation_method", valuationMethodVal);
-        if (valuationStatusVal) search.set("valuation_status", valuationStatusVal);
-        search.set("valuation_band_pct", valuationStockPickingStore.valuationBandPct);
-        search.set("valuation_pick_strategy", valuationPickStrategyVal);
-        if (minNetprofitYoyVal) search.set("min_netprofit_yoy", minNetprofitYoyVal);
-        if (minEbitYoyVal) search.set("min_ebit_yoy", minEbitYoyVal);
-        search.set("apply_financial_filters", applyFinancialFiltersVal);
-        search.set("require_positive_prev_netprofit", requirePositivePrevNetprofitVal);
-        search.set("require_positive_prev_ebit", requirePositivePrevEbitVal);
-        if (priorityPolicyVal) search.set("priority_policy", priorityPolicyVal);
-        if (buyCandidateOnlyVal) search.set("buy_candidate_only", buyCandidateOnlyVal);
-        if (valuationStockPickingStore.swIndustry) search.set("sw_industry", valuationStockPickingStore.swIndustry);
-        search.set("earnings_report_type", earningsReportTypeVal);
-        if (riskLevelParam) search.set("risk_level", riskLevelParam);
-        if (pickingModeVal === "predictive") {
-            if (signalActionVal !== "ALL") search.set("signal_action", signalActionVal);
-            if (sharedMinScoreVal) search.set("min_signal_score", sharedMinScoreVal);
-            if (valuationStockPickingStore.minTargetReturnPct) search.set("min_target_return_pct", valuationStockPickingStore.minTargetReturnPct);
-            if (featureDataSourceVal !== "ALL") search.set("feature_data_source", featureDataSourceVal);
-        } else {
-            if (sharedMinScoreVal) search.set("min_valuation_score", sharedMinScoreVal);
-        }
-
-        const scopePath = normalizeScopeForApi(valuationStockPickingStore.scopeParam);
-        const url = `${buildApiUrl(`/stock-pick-valuation/${valuationStockPickingStore.tradeDate}/${scopePath}/`)}?${search.toString()}`;
+        const url = buildPickingRequestUrl(fromIndex.value, toIndex.value);
         const requestFrom = fromIndex.value;
         const requestTo = toIndex.value;
         const res = await axios.get(url);
@@ -901,6 +971,7 @@ async function fetchPickingResult() {
                     pct_change_qfq: item.pct_change_qfq,
                 }))
             );
+            nextTick(() => updateTableHeight());
         }
     } catch (error) {
         ElMessage.error("获取估值选股结果失败，请稍后重试");
@@ -912,25 +983,7 @@ async function warmupPickingCache() {
         if (valuationStockPickingStore.scopeParam === "SCOPE:NONE") {
             return;
         }
-        const valuationMethodVal = valuationStockPickingStore.valuationMethod.split(":")[1].toLowerCase();
-        const valuationStatusVal = valuationStockPickingStore.valuationStatus.split(":")[1] !== "NONE" ? valuationStockPickingStore.valuationStatus.split(":")[1].toLowerCase() : "";
-        const valuationPickStrategyVal = valuationStockPickingStore.valuationPickStrategy.split(":")[1].toLowerCase();
-        const pickingModeVal = valuationStockPickingStore.pickingMode.split(":")[1].toLowerCase();
-
-        const search = new URLSearchParams();
-        search.set("freq", valuationStockPickingStore.freq);
-        search.set("from_index", "0");
-        search.set("to_index", "1");
-        search.set("quick_preview", "1");
-        search.set("preview_scan_limit", QUICK_PREVIEW_SCAN_LIMIT);
-        search.set("picking_mode", pickingModeVal);
-        search.set("valuation_method", valuationMethodVal);
-        if (valuationStatusVal) search.set("valuation_status", valuationStatusVal);
-        search.set("valuation_band_pct", valuationStockPickingStore.valuationBandPct);
-        search.set("valuation_pick_strategy", valuationPickStrategyVal);
-
-        const scopePath = normalizeScopeForApi(valuationStockPickingStore.scopeParam);
-        const url = `${buildApiUrl(`/stock-pick-valuation/${valuationStockPickingStore.tradeDate}/${scopePath}/`)}?${search.toString()}`;
+        const url = buildPickingRequestUrl(0, 1);
         await axios.get(url);
     } catch (_error) {
         // Warmup is best-effort and should not affect user interaction.
@@ -986,12 +1039,28 @@ watch(
 
 onMounted(() => {
     stockChartFilterStore.setTopBottomSwitch(false);
-    loadWeeklyDownloadLinks();
+    updateTableHeight();
+    window.addEventListener("resize", updateTableHeight);
     warmupPickingCache();
+});
+
+onBeforeUnmount(() => {
+    window.removeEventListener("resize", updateTableHeight);
 });
 </script>
 
 <style scoped>
+.result-table-wrapper {
+    width: 100%;
+}
+
+.result-table-controls {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
 .stock-title-actions {
     display: flex;
     align-items: center;
