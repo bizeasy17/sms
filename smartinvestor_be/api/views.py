@@ -65,6 +65,20 @@ WEEKLY_UNDERVALUED_FILE_PREFIX = {
 
 WEEKLY_UNDERVALUED_JOB_CONFIG_FILE = "job_strategy_config.json"
 WEEKLY_STRATEGY_STYLE_KEYS = ("CONSERVATIVE", "BALANCED", "AGGRESSIVE")
+VALUATION_PICK_CACHE_TTL_SECONDS = 90
+
+
+def _build_valuation_pick_cache_key(payload):
+    normalized_payload = payload if isinstance(payload, dict) else {}
+    encoded = json.dumps(
+        normalized_payload,
+        sort_keys=True,
+        ensure_ascii=True,
+        separators=(",", ":"),
+        default=str,
+    )
+    digest = hashlib.md5(encoded.encode("utf-8")).hexdigest()
+    return f"valuation_pick:v1:{digest}"
 
 
 def _normalize_weekly_strategy_style(value, default_style="BALANCED"):
@@ -4499,14 +4513,21 @@ def _attach_signal_window_returns(rows, trade_date_for_query, freq="D", signal_e
         row["signal_trough_return_pct"] = None
 
     def _row_signal_anchor_date(row):
+        # Prefer the latest known announcement date across all announcement sources.
+        ann_dates = [
+            _parse_date_like(row.get("valuation_profit_report_ann_date")),
+            _parse_date_like(row.get("profit_report_ann_date")),
+            _parse_date_like(row.get("financial_ann_date")),
+            _parse_date_like(row.get("valuation_express_ann_date")),
+            _parse_date_like(row.get("express_ann_date")),
+            _parse_date_like(row.get("latest_financial_ann_date")),
+        ]
+        ann_dates = [item for item in ann_dates if item is not None]
+        if ann_dates:
+            return max(ann_dates)
+
         return (
-            _parse_date_like(row.get("valuation_profit_report_ann_date"))
-            or _parse_date_like(row.get("profit_report_ann_date"))
-            or _parse_date_like(row.get("financial_ann_date"))
-            or _parse_date_like(row.get("valuation_express_ann_date"))
-            or _parse_date_like(row.get("express_ann_date"))
-            or _parse_date_like(row.get("latest_financial_ann_date"))
-            or _parse_date_like(row.get("earnings_asof_date"))
+            _parse_date_like(row.get("earnings_asof_date"))
             or _parse_date_like(row.get("screened_trade_date"))
             or _parse_date_like(row.get("result_trade_date"))
             or _parse_date_like(row.get("trade_date"))
@@ -4806,6 +4827,148 @@ def _pick_stocks_by_valuation_fast(request, trade_date, scope, freq="D", from_in
     effective_netprofit_yoy_floor = (
         min_netprofit_yoy_ratio if min_netprofit_yoy_ratio is not None else netprofit_growth_floor
     )
+
+    cache_key = _build_valuation_pick_cache_key(
+        {
+            "trade_date": trade_date_for_query,
+            "freq": normalized_freq,
+            "scope": str(scope or ""),
+            "valuation_method": selected_valuation_method,
+            "valuation_status": valuation_status,
+            "valuation_band_pct": valuation_band_pct,
+            "valuation_pick_strategy": valuation_pick_strategy,
+            "buy_candidate_only": buy_candidate_only,
+            "sw_industry": sw_industry,
+            "picking_mode": picking_mode,
+            "earnings_report_type": earnings_report_type,
+            "valuation_express_only": valuation_express_only,
+            "signal_action": signal_action,
+            "risk_level": risk_level,
+            "feature_data_source": feature_data_source,
+            "min_signal_score": min_signal_score,
+            "min_target_return_pct": min_target_return_pct,
+            "netprofit_growth": netprofit_growth,
+            "min_valuation_score": min_valuation_score,
+            "priority_policy": priority_policy,
+            "apply_financial_filters": apply_financial_filters,
+            "effective_netprofit_yoy_floor": effective_netprofit_yoy_floor,
+            "min_ebit_yoy_ratio": min_ebit_yoy_ratio,
+            "require_positive_prev_netprofit": require_positive_prev_netprofit,
+            "require_positive_prev_ebit": require_positive_prev_ebit,
+        }
+    )
+
+    def _ms(start, end):
+        return round((end - start) * 1000.0, 2)
+
+    def _build_pick_response(
+        *,
+        paged_result,
+        total_filtered,
+        strategy_effective_stocks,
+        predictive_stats,
+        timing_ms,
+        cache_hit,
+    ):
+        return Response(
+            {
+                "data": paged_result,
+                "trade_date": trade_date_for_query,
+                "freq": normalized_freq,
+                "valuation_filter": {
+                    "method": selected_valuation_method,
+                    "status": valuation_status,
+                    "band_pct": valuation_band_pct,
+                    "buy_candidate_only": buy_candidate_only,
+                    "pick_strategy": valuation_pick_strategy,
+                    "sw_industry": sw_industry,
+                    "strict_snapshot_only": True,
+                    "picking_mode": picking_mode,
+                    "earnings_report_type": "快" if valuation_express_only else earnings_report_type,
+                    "signal_action": signal_action,
+                    "risk_level": risk_level,
+                    "min_signal_score": min_signal_score,
+                    "min_target_return_pct": min_target_return_pct,
+                    "feature_data_source": feature_data_source,
+                    "netprofit_growth": netprofit_growth,
+                    "valuation_score": valuation_score_level,
+                    "min_valuation_score": min_valuation_score,
+                    "priority_policy": priority_policy,
+                    "effective_financial_filters": {
+                        "apply_financial_filters": bool(apply_financial_filters),
+                        "min_netprofit_yoy": min_netprofit_yoy,
+                        "min_ebit_yoy": min_ebit_yoy,
+                        "min_netprofit_yoy_ratio": min_netprofit_yoy_ratio,
+                        "min_ebit_yoy_ratio": min_ebit_yoy_ratio,
+                        "require_positive_prev_netprofit": require_positive_prev_netprofit,
+                        "require_positive_prev_ebit": require_positive_prev_ebit,
+                        "netprofit_growth_floor": effective_netprofit_yoy_floor,
+                    },
+                },
+                "meta": {
+                    "latest_trade_date_for_freq": latest_trade_date,
+                    "requested_trade_date_has_data": requested_date_has_data,
+                    "requested_trade_date": normalized_trade_date,
+                    "resolved_trade_date": trade_date_for_query,
+                    "auto_latest": auto_latest,
+                    "total_filtered": total_filtered,
+                    "strategy_effective_stocks": strategy_effective_stocks,
+                    "page_from_index": from_index,
+                    "page_to_index": to_index,
+                    "current_page_size": len(paged_result),
+                    "valuation_method_recommendation_desc": recommendation_desc,
+                    "sw_industry": sw_industry,
+                    "predictive_mode_enabled": picking_mode == "predictive",
+                    "cache_hit": bool(cache_hit),
+                    "timing_ms": timing_ms,
+                    "predictive_earnings_stats": predictive_stats,
+                },
+            }
+        )
+
+    cached_bundle = None
+    try:
+        cached_bundle = cache.get(cache_key)
+    except Exception as cache_err:
+        logger.debug("valuation pick cache get failed: %s", cache_err)
+
+    if isinstance(cached_bundle, dict) and isinstance(cached_bundle.get("result"), list):
+        cached_result = cached_bundle.get("result") or []
+        paged_result = [
+            (row.copy() if isinstance(row, dict) else row)
+            for row in cached_result[from_index:to_index]
+        ]
+        if picking_mode != "predictive":
+            _attach_traditional_quick_metrics(paged_result, market="CN")
+        _attach_recent_financial_report_badge(
+            paged_result,
+            asof_date=trade_date_for_query,
+            market="CN",
+            include_official_ann_lookup=bool(apply_financial_filters),
+        )
+        _attach_signal_window_returns(
+            paged_result,
+            trade_date_for_query=trade_date_for_query,
+            freq=normalized_freq,
+            signal_end_date=latest_trade_date,
+        )
+
+        perf_after_all = time.perf_counter()
+        cached_total_ms = _ms(perf_t0, perf_after_all)
+        return _build_pick_response(
+            paged_result=paged_result,
+            total_filtered=len(cached_result),
+            strategy_effective_stocks=int(cached_bundle.get("multi_candidate_rows") or 0),
+            predictive_stats=(cached_bundle.get("predictive_earnings_stats") or {}),
+            timing_ms={
+                "total": cached_total_ms,
+                "load_trading_rows": 0.0,
+                "build_valuation_snapshot": 0.0,
+                "predictive_earnings_enrich": 0.0,
+                "post_process_and_page": cached_total_ms,
+            },
+            cache_hit=True,
+        )
 
     trading_qs = StockTradingHistory.objects.filter(
         trade_date=trade_date_for_query,
@@ -5397,68 +5560,32 @@ def _pick_stocks_by_valuation_fast(request, trade_date, scope, freq="D", from_in
     )
     perf_after_all = time.perf_counter()
 
-    def _ms(start, end):
-        return round((end - start) * 1000.0, 2)
-
-    return Response(
-        {
-            "data": paged_result,
-            "trade_date": trade_date_for_query,
-            "freq": normalized_freq,
-            "valuation_filter": {
-                "method": selected_valuation_method,
-                "status": valuation_status,
-                "band_pct": valuation_band_pct,
-                "buy_candidate_only": buy_candidate_only,
-                "pick_strategy": valuation_pick_strategy,
-                "sw_industry": sw_industry,
-                "strict_snapshot_only": True,
-                "picking_mode": picking_mode,
-                "earnings_report_type": "快" if valuation_express_only else earnings_report_type,
-                "signal_action": signal_action,
-                "risk_level": risk_level,
-                "min_signal_score": min_signal_score,
-                "min_target_return_pct": min_target_return_pct,
-                "feature_data_source": feature_data_source,
-                "netprofit_growth": netprofit_growth,
-                "valuation_score": valuation_score_level,
-                "min_valuation_score": min_valuation_score,
-                "priority_policy": priority_policy,
-                "effective_financial_filters": {
-                    "apply_financial_filters": bool(apply_financial_filters),
-                    "min_netprofit_yoy": min_netprofit_yoy,
-                    "min_ebit_yoy": min_ebit_yoy,
-                    "min_netprofit_yoy_ratio": min_netprofit_yoy_ratio,
-                    "min_ebit_yoy_ratio": min_ebit_yoy_ratio,
-                    "require_positive_prev_netprofit": require_positive_prev_netprofit,
-                    "require_positive_prev_ebit": require_positive_prev_ebit,
-                    "netprofit_growth_floor": effective_netprofit_yoy_floor,
-                },
-            },
-            "meta": {
-                "latest_trade_date_for_freq": latest_trade_date,
-                "requested_trade_date_has_data": requested_date_has_data,
-                "requested_trade_date": normalized_trade_date,
-                "resolved_trade_date": trade_date_for_query,
-                "auto_latest": auto_latest,
-                "total_filtered": len(result),
-                "strategy_effective_stocks": multi_candidate_rows,
-                "page_from_index": from_index,
-                "page_to_index": to_index,
-                "current_page_size": len(paged_result),
-                "valuation_method_recommendation_desc": recommendation_desc,
-                "sw_industry": sw_industry,
-                "predictive_mode_enabled": picking_mode == "predictive",
-                "timing_ms": {
-                    "total": _ms(perf_t0, perf_after_all),
-                    "load_trading_rows": _ms(perf_t0, perf_after_trading),
-                    "build_valuation_snapshot": _ms(perf_after_trading, perf_after_snapshot),
-                    "predictive_earnings_enrich": _ms(perf_after_snapshot, perf_after_earnings),
-                    "post_process_and_page": _ms(perf_after_earnings, perf_after_all),
-                },
+    try:
+        cache.set(
+            cache_key,
+            {
+                "result": result,
+                "multi_candidate_rows": multi_candidate_rows,
                 "predictive_earnings_stats": predictive_earnings_stats,
             },
-        }
+            VALUATION_PICK_CACHE_TTL_SECONDS,
+        )
+    except Exception as cache_err:
+        logger.debug("valuation pick cache set failed: %s", cache_err)
+
+    return _build_pick_response(
+        paged_result=paged_result,
+        total_filtered=len(result),
+        strategy_effective_stocks=multi_candidate_rows,
+        predictive_stats=predictive_earnings_stats,
+        timing_ms={
+            "total": _ms(perf_t0, perf_after_all),
+            "load_trading_rows": _ms(perf_t0, perf_after_trading),
+            "build_valuation_snapshot": _ms(perf_after_trading, perf_after_snapshot),
+            "predictive_earnings_enrich": _ms(perf_after_snapshot, perf_after_earnings),
+            "post_process_and_page": _ms(perf_after_earnings, perf_after_all),
+        },
+        cache_hit=False,
     )
 
 
