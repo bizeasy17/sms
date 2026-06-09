@@ -133,28 +133,30 @@
                                             <span v-else>-</span>
                                         </template>
                                     </el-table-column>
-                                    <el-table-column prop="financial_netprofit_yoy" label="净利YoY(%)" :width="95">
+                                    <el-table-column v-if="showFinancialColumns" prop="financial_netprofit_yoy" label="净利YoY(%)" :width="95">
                                         <template #default="{ row }">
                                             <span>{{ formatPercent(row.financial_netprofit_yoy) }}</span>
                                         </template>
                                     </el-table-column>
-                                    <el-table-column prop="financial_ebit_yoy" label="EBITYoY(%)" :width="95">
+                                    <el-table-column v-if="showFinancialColumns" prop="financial_ebit_yoy" label="EBITYoY(%)" :width="95">
                                         <template #default="{ row }">
                                             <span>{{ formatPercent(row.financial_ebit_yoy) }}</span>
                                         </template>
                                     </el-table-column>
-                                    <el-table-column prop="financial_prev_netprofit" label="上一年净利" :width="95">
+                                    <el-table-column v-if="showFinancialColumns" prop="financial_prev_netprofit" label="上一年净利" :width="95">
                                         <template #default="{ row }">
-                                            <el-tag :type="Number(row.financial_prev_netprofit) >= 0 ? 'success' : 'danger'" size="small" effect="light">
-                                                {{ Number.isFinite(Number(row.financial_prev_netprofit)) ? (Number(row.financial_prev_netprofit) >= 0 ? '>=0' : '<0') : '-' }}
+                                            <el-tag v-if="Number.isFinite(Number(row.financial_prev_netprofit))" :type="Number(row.financial_prev_netprofit) >= 0 ? 'success' : 'danger'" size="small" effect="light">
+                                                {{ Number(row.financial_prev_netprofit) >= 0 ? '>=0' : '<0' }}
                                             </el-tag>
+                                            <span v-else>-</span>
                                         </template>
                                     </el-table-column>
-                                    <el-table-column prop="financial_prev_ebit" label="上一年EBIT" :width="95">
+                                    <el-table-column v-if="showFinancialColumns" prop="financial_prev_ebit" label="上一年EBIT" :width="95">
                                         <template #default="{ row }">
-                                            <el-tag :type="Number(row.financial_prev_ebit) >= 0 ? 'success' : 'danger'" size="small" effect="light">
-                                                {{ Number.isFinite(Number(row.financial_prev_ebit)) ? (Number(row.financial_prev_ebit) >= 0 ? '>=0' : '<0') : '-' }}
+                                            <el-tag v-if="Number.isFinite(Number(row.financial_prev_ebit))" :type="Number(row.financial_prev_ebit) >= 0 ? 'success' : 'danger'" size="small" effect="light">
+                                                {{ Number(row.financial_prev_ebit) >= 0 ? '>=0' : '<0' }}
                                             </el-tag>
+                                            <span v-else>-</span>
                                         </template>
                                     </el-table-column>
                                     <el-table-column v-if="isPredictiveMode" prop="earnings_report_type" label="报告口径" :width="90">
@@ -365,6 +367,14 @@ const showFinancialStageHint = computed(() => {
         || hasNumericThreshold(filters.min_ebit_yoy)
         || requirePrevNetprofit
         || requirePrevEbit;
+});
+
+const showFinancialColumns = computed(() => {
+    const filters = effectiveFinancialFilters.value || {};
+    if (Object.prototype.hasOwnProperty.call(filters, "apply_financial_filters")) {
+        return Boolean(filters.apply_financial_filters);
+    }
+    return Boolean(valuationStockPickingStore.applyFinancialFilters);
 });
 
 function resolvePreferredValuationVariant(row: any) {
@@ -950,6 +960,7 @@ watch(
         () => valuationStockPickingStore.valuationPickStrategy,
         () => valuationStockPickingStore.minNetprofitYoy,
         () => valuationStockPickingStore.minEbitYoy,
+        () => valuationStockPickingStore.applyFinancialFilters,
         () => valuationStockPickingStore.requirePositivePrevNetprofit,
         () => valuationStockPickingStore.requirePositivePrevEbit,
         () => valuationStockPickingStore.priorityPolicy,
