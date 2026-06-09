@@ -8120,6 +8120,44 @@ def get_stock_valuation_methods(request, ts_code):
             base_band_pct=band_pct,
         )
 
+        variant_meta_map = {
+            str(item.get("valuation_variant") or ""): item
+            for item in (valuation_variants or [])
+            if isinstance(item, dict)
+        }
+        traditional_tiered_template_by_variant = {}
+        for variant, variant_rows in (data_by_variant or {}).items():
+            variant_meta = variant_meta_map.get(str(variant or ""), {})
+            variant_industry_name = (
+                (variant_meta or {}).get("industry_name")
+                or ((variant_rows or [{}])[0] or {}).get("industry_name")
+                or (variant_meta or {}).get("label")
+                or "默认估值"
+            )
+            variant_industry_code = (
+                (variant_meta or {}).get("industry_code")
+                or ((variant_rows or [{}])[0] or {}).get("industry_code")
+                or None
+            )
+            template_payload = _build_traditional_tiered_template(
+                variant_rows=variant_rows,
+                summary_payload=summary_by_variant.get(variant) or {},
+                current_price=current_price,
+                industry_name=variant_industry_name,
+                industry_code=variant_industry_code,
+                indicator_profile=indicator_profile,
+                ts_code=ts_code,
+                freq=freq,
+            )
+            if template_payload:
+                traditional_tiered_template_by_variant[variant] = template_payload
+
+        traditional_tiered_template = _blend_traditional_tiered_template(
+            traditional_tiered_template_by_variant=traditional_tiered_template_by_variant,
+            valuation_variants=valuation_variants,
+            active_variant=active_variant,
+        ) or traditional_tiered_template_by_variant.get(active_variant)
+
         return Response(
             _sanitize_non_finite_numbers(
                 {
@@ -8150,6 +8188,8 @@ def get_stock_valuation_methods(request, ts_code):
                 "market_style_by_variant_normalized_to_latest_share": market_style_by_variant_normalized,
                 "valuation_risk": valuation_risk_payload,
                 "valuation_risk_by_variant": valuation_risk_by_variant,
+                "traditional_tiered_template": traditional_tiered_template,
+                "traditional_tiered_template_by_variant": traditional_tiered_template_by_variant,
                 "data": rows,
                 }
             )
@@ -8389,6 +8429,992 @@ def _to_float_or_none(value):
         return float(value)
     except (TypeError, ValueError):
         return None
+
+
+TRADITIONAL_TIER_SCHEMES = {
+    "high_growth": {
+        "style_label": "高成长风格",
+        "tiers": {
+            "conservative": {
+                "label": "风控优先",
+                "weights": {"pe": 0.20, "peg": 0.20, "ps": 0.15, "scarcity_overlay": 0.15, "sw_history": 0.10, "fcff_dcf": 0.10, "pb": 0.08, "ddm": 0.02},
+                "range_multiplier": (0.94, 1.04),
+            },
+            "balanced": {
+                "label": "平衡",
+                "weights": {"pe": 0.28, "peg": 0.24, "ps": 0.16, "scarcity_overlay": 0.14, "sw_history": 0.08, "fcff_dcf": 0.06, "pb": 0.03, "ddm": 0.01},
+                "range_multiplier": (0.95, 1.08),
+            },
+            "aggressive": {
+                "label": "成长进攻",
+                "weights": {"pe": 0.35, "peg": 0.28, "ps": 0.16, "scarcity_overlay": 0.12, "sw_history": 0.06, "fcff_dcf": 0.02, "pb": 0.01, "ddm": 0.00},
+                "range_multiplier": (0.95, 1.15),
+            },
+        },
+    },
+    "stable_value": {
+        "style_label": "稳健价值风格",
+        "tiers": {
+            "conservative": {
+                "label": "风控优先",
+                "weights": {"pb": 0.30, "fcff_dcf": 0.24, "pe": 0.16, "sw_history": 0.10, "ps": 0.08, "scarcity_overlay": 0.06, "peg": 0.04, "ddm": 0.02},
+                "range_multiplier": (0.96, 1.04),
+            },
+            "balanced": {
+                "label": "平衡",
+                "weights": {"pb": 0.24, "fcff_dcf": 0.22, "pe": 0.20, "sw_history": 0.12, "ps": 0.10, "scarcity_overlay": 0.06, "peg": 0.04, "ddm": 0.02},
+                "range_multiplier": (0.95, 1.08),
+            },
+            "aggressive": {
+                "label": "成长进攻",
+                "weights": {"pb": 0.18, "fcff_dcf": 0.17, "pe": 0.28, "sw_history": 0.12, "ps": 0.12, "scarcity_overlay": 0.07, "peg": 0.04, "ddm": 0.02},
+                "range_multiplier": (0.94, 1.13),
+            },
+        },
+    },
+    "balanced": {
+        "style_label": "平衡风格",
+        "tiers": {
+            "conservative": {
+                "label": "风控优先",
+                "weights": {"pe": 0.23, "peg": 0.18, "ps": 0.14, "scarcity_overlay": 0.12, "sw_history": 0.12, "fcff_dcf": 0.10, "pb": 0.09, "ddm": 0.02},
+                "range_multiplier": (0.95, 1.04),
+            },
+            "balanced": {
+                "label": "平衡",
+                "weights": {"pe": 0.26, "peg": 0.20, "ps": 0.15, "scarcity_overlay": 0.12, "sw_history": 0.10, "fcff_dcf": 0.09, "pb": 0.06, "ddm": 0.02},
+                "range_multiplier": (0.95, 1.08),
+            },
+            "aggressive": {
+                "label": "成长进攻",
+                "weights": {"pe": 0.31, "peg": 0.24, "ps": 0.15, "scarcity_overlay": 0.11, "sw_history": 0.08, "fcff_dcf": 0.06, "pb": 0.04, "ddm": 0.01},
+                "range_multiplier": (0.95, 1.14),
+            },
+        },
+    },
+    "cyclical_resource": {
+        "style_label": "周期资源风格",
+        "tiers": {
+            "conservative": {
+                "label": "风控优先",
+                "weights": {"sw_history": 0.22, "scarcity_overlay": 0.20, "fcff_dcf": 0.18, "pb": 0.16, "ps": 0.10, "pe": 0.08, "peg": 0.04, "ddm": 0.02},
+                "range_multiplier": (0.95, 1.04),
+            },
+            "balanced": {
+                "label": "平衡",
+                "weights": {"sw_history": 0.24, "scarcity_overlay": 0.22, "fcff_dcf": 0.20, "ps": 0.14, "pb": 0.10, "pe": 0.06, "peg": 0.03, "ddm": 0.01},
+                "range_multiplier": (0.95, 1.08),
+            },
+            "aggressive": {
+                "label": "成长进攻",
+                "weights": {"sw_history": 0.27, "scarcity_overlay": 0.24, "fcff_dcf": 0.22, "ps": 0.17, "pb": 0.07, "pe": 0.02, "peg": 0.01, "ddm": 0.00},
+                "range_multiplier": (0.95, 1.14),
+            },
+        },
+    },
+}
+
+TRADITIONAL_INDUSTRY_SCHEME_OVERRIDES = [
+    {
+        "scheme_key": "cyclical_resource",
+        "keywords": ["煤", "油", "金属", "钢", "铜", "有色", "化工", "资源"],
+    }
+]
+
+TRADITIONAL_STYLE_INDUSTRY_GROWTH_KEYWORDS = [
+    "仪器", "半导体", "软件", "医疗", "创新", "新能源", "算力", "通信", "生物",
+]
+TRADITIONAL_STYLE_INDUSTRY_STABLE_KEYWORDS = [
+    "银行", "公用", "消费", "电力", "燃气", "保险", "白酒",
+]
+
+# Phase A: industry-code-first regime mapping.
+# Use concise SW-style code prefixes (digits only) and keep keyword logic as fallback.
+TRADITIONAL_REGIME_CODE_RULES = [
+    {
+        "regime": "high_growth",
+        "code_prefixes": ["80108", "80175", "80176", "8515", "8517"],
+    },
+    {
+        "regime": "cyclical_resource",
+        "code_prefixes": [
+            "80102", "80103", "80104", "80105", "80106", "80107", "80109", "80111", "80112", "80117", "80118", "80119", "80120", "80121",
+            "8503", "85037", "85038", "85039", "85040",
+        ],
+    },
+    {
+        "regime": "stable_value",
+        "code_prefixes": ["80178", "80179", "80188", "80195", "80196"],
+    },
+]
+
+TRADITIONAL_STYLE_SCORE_RULES = {
+    "industry_growth_bias": 1.15,
+    "industry_stable_bias": -0.9,
+    "roe_high_threshold": 20.0,
+    "roe_mid_threshold": 12.0,
+    "roe_high_bonus": 0.7,
+    "roe_mid_bonus": 0.35,
+    "gross_margin_high_threshold": 40.0,
+    "gross_margin_mid_threshold": 28.0,
+    "gross_margin_high_bonus": 0.55,
+    "gross_margin_mid_bonus": 0.25,
+    "debt_low_threshold": 35.0,
+    "debt_high_threshold": 65.0,
+    "debt_low_bonus": 0.2,
+    "debt_high_penalty": -0.2,
+    "peg_available_bonus": 0.25,
+    "pb_fcff_available_penalty": -0.1,
+}
+TRADITIONAL_STYLE_SCORE_THRESHOLDS = {
+    "high_growth_min": 1.1,
+    "stable_value_max": -0.35,
+}
+
+TRADITIONAL_METHOD_WINSOR_RULES = {
+    "enabled": True,
+    "lower_percentile": 0.15,
+    "upper_percentile": 0.85,
+    "min_methods": 6,
+}
+
+TRADITIONAL_TIER_MIN_GAP_RULES = {
+    "high_growth": {"down": 0.055, "up": 0.085},
+    "balanced": {"down": 0.045, "up": 0.070},
+    "stable_value": {"down": 0.035, "up": 0.055},
+    "cyclical_resource": {"down": 0.050, "up": 0.080},
+    "volatility_adjust": {
+        "high": 0.015,
+        "medium": 0.0,
+        "low": -0.010,
+    },
+    "dispersion_scale": 0.02,
+    "dispersion_cap": 0.025,
+    "min_floor": 0.02,
+    "max_ceiling": 0.16,
+}
+
+
+def _quantile_linear(sorted_values, quantile):
+    if not sorted_values:
+        return None
+    q = max(0.0, min(1.0, float(quantile)))
+    if len(sorted_values) == 1:
+        return float(sorted_values[0])
+    index = (len(sorted_values) - 1) * q
+    low = int(math.floor(index))
+    high = int(math.ceil(index))
+    low_val = float(sorted_values[low])
+    high_val = float(sorted_values[high])
+    if low == high:
+        return low_val
+    return low_val + (high_val - low_val) * (index - low)
+
+
+def _winsorize_method_price_map(method_price_map, rules=None):
+    normalized = {
+        str(method): float(price)
+        for method, price in (method_price_map or {}).items()
+        if _to_float_or_none(price) is not None and float(price) > 0
+    }
+    meta = {
+        "enabled": False,
+        "applied": False,
+        "lower_percentile": None,
+        "upper_percentile": None,
+        "lower_bound": None,
+        "upper_bound": None,
+        "method_count": len(normalized),
+        "clipped_count": 0,
+    }
+    if not normalized:
+        return normalized, meta
+
+    cfg = rules if isinstance(rules, dict) else TRADITIONAL_METHOD_WINSOR_RULES
+    enabled = bool(cfg.get("enabled", True))
+    min_methods = int(cfg.get("min_methods", 6) or 6)
+    lower_pct = float(cfg.get("lower_percentile", 0.15) or 0.15)
+    upper_pct = float(cfg.get("upper_percentile", 0.85) or 0.85)
+    lower_pct = max(0.0, min(1.0, lower_pct))
+    upper_pct = max(0.0, min(1.0, upper_pct))
+    if lower_pct > upper_pct:
+        lower_pct, upper_pct = upper_pct, lower_pct
+
+    meta.update({
+        "enabled": enabled,
+        "lower_percentile": lower_pct,
+        "upper_percentile": upper_pct,
+    })
+
+    if not enabled or len(normalized) < max(2, min_methods):
+        return normalized, meta
+
+    sorted_values = sorted(normalized.values())
+    lower_bound = _quantile_linear(sorted_values, lower_pct)
+    upper_bound = _quantile_linear(sorted_values, upper_pct)
+    if lower_bound is None or upper_bound is None:
+        return normalized, meta
+    if lower_bound > upper_bound:
+        lower_bound, upper_bound = upper_bound, lower_bound
+
+    clipped = {}
+    clipped_count = 0
+    for method, price in normalized.items():
+        next_price = min(max(price, lower_bound), upper_bound)
+        if abs(next_price - price) > 1e-9:
+            clipped_count += 1
+        clipped[method] = float(next_price)
+
+    meta.update({
+        "applied": clipped_count > 0,
+        "clipped_count": clipped_count,
+        "lower_bound": round(float(lower_bound), 4),
+        "upper_bound": round(float(upper_bound), 4),
+    })
+    return clipped, meta
+
+
+def _normalize_industry_code_for_regime(industry_code):
+    raw = str(industry_code or "").strip().upper()
+    if not raw:
+        return ""
+    digits = "".join(ch for ch in raw if ch.isdigit())
+    return digits
+
+
+def _resolve_regime_by_industry_code(industry_code):
+    code = _normalize_industry_code_for_regime(industry_code)
+    if not code:
+        return None, None
+    for item in TRADITIONAL_REGIME_CODE_RULES:
+        regime = str((item or {}).get("regime") or "").strip()
+        prefixes = (item or {}).get("code_prefixes")
+        if not regime or not isinstance(prefixes, (list, tuple, set)):
+            continue
+        for prefix in prefixes:
+            text = str(prefix or "").strip()
+            if text and code.startswith(text):
+                return regime, text
+    return None, None
+
+
+def _resolve_traditional_style(industry_name, indicator_profile, method_price_map, industry_code=None):
+    name = str(industry_name or "").lower()
+    growth_score = 0.0
+    reasons = []
+
+    regime_by_code, matched_prefix = _resolve_regime_by_industry_code(industry_code)
+    if regime_by_code:
+        reasons.append(f"industry_code_prefix={matched_prefix}")
+        if regime_by_code == "high_growth":
+            growth_score += 1.35
+        elif regime_by_code == "stable_value":
+            growth_score -= 0.95
+        elif regime_by_code == "cyclical_resource":
+            growth_score += 0.05
+
+    if any(keyword.lower() in name for keyword in TRADITIONAL_STYLE_INDUSTRY_GROWTH_KEYWORDS):
+        growth_score += float(TRADITIONAL_STYLE_SCORE_RULES.get("industry_growth_bias", 1.15) or 1.15)
+        reasons.append("industry_growth_bias")
+    elif any(keyword.lower() in name for keyword in TRADITIONAL_STYLE_INDUSTRY_STABLE_KEYWORDS):
+        growth_score += float(TRADITIONAL_STYLE_SCORE_RULES.get("industry_stable_bias", -0.9) or -0.9)
+        reasons.append("industry_stable_bias")
+
+    roe = _to_float_or_none((indicator_profile or {}).get("roe"))
+    gross_margin = _to_float_or_none((indicator_profile or {}).get("gross_margin"))
+    debt_to_assets = _to_float_or_none((indicator_profile or {}).get("debt_to_assets"))
+
+    if roe is not None:
+        if roe >= float(TRADITIONAL_STYLE_SCORE_RULES.get("roe_high_threshold", 20.0) or 20.0):
+            growth_score += float(TRADITIONAL_STYLE_SCORE_RULES.get("roe_high_bonus", 0.7) or 0.7)
+            reasons.append("roe>=20")
+        elif roe >= float(TRADITIONAL_STYLE_SCORE_RULES.get("roe_mid_threshold", 12.0) or 12.0):
+            growth_score += float(TRADITIONAL_STYLE_SCORE_RULES.get("roe_mid_bonus", 0.35) or 0.35)
+            reasons.append("roe>=12")
+
+    if gross_margin is not None:
+        if gross_margin >= float(TRADITIONAL_STYLE_SCORE_RULES.get("gross_margin_high_threshold", 40.0) or 40.0):
+            growth_score += float(TRADITIONAL_STYLE_SCORE_RULES.get("gross_margin_high_bonus", 0.55) or 0.55)
+            reasons.append("gross_margin>=40")
+        elif gross_margin >= float(TRADITIONAL_STYLE_SCORE_RULES.get("gross_margin_mid_threshold", 28.0) or 28.0):
+            growth_score += float(TRADITIONAL_STYLE_SCORE_RULES.get("gross_margin_mid_bonus", 0.25) or 0.25)
+            reasons.append("gross_margin>=28")
+
+    if debt_to_assets is not None:
+        if debt_to_assets <= float(TRADITIONAL_STYLE_SCORE_RULES.get("debt_low_threshold", 35.0) or 35.0):
+            growth_score += float(TRADITIONAL_STYLE_SCORE_RULES.get("debt_low_bonus", 0.2) or 0.2)
+            reasons.append("debt_to_assets<=35")
+        elif debt_to_assets >= float(TRADITIONAL_STYLE_SCORE_RULES.get("debt_high_threshold", 65.0) or 65.0):
+            growth_score += float(TRADITIONAL_STYLE_SCORE_RULES.get("debt_high_penalty", -0.2) or -0.2)
+            reasons.append("debt_to_assets>=65")
+
+    if _to_float_or_none((method_price_map or {}).get("peg")) is not None:
+        growth_score += float(TRADITIONAL_STYLE_SCORE_RULES.get("peg_available_bonus", 0.25) or 0.25)
+        reasons.append("peg_available")
+    if _to_float_or_none((method_price_map or {}).get("pb")) is not None and _to_float_or_none((method_price_map or {}).get("fcff_dcf")) is not None:
+        growth_score += float(TRADITIONAL_STYLE_SCORE_RULES.get("pb_fcff_available_penalty", -0.1) or -0.1)
+        reasons.append("pb_fcff_available")
+
+    if regime_by_code in {"high_growth", "stable_value", "cyclical_resource"}:
+        style_key = regime_by_code
+    elif growth_score >= float(TRADITIONAL_STYLE_SCORE_THRESHOLDS.get("high_growth_min", 1.1) or 1.1):
+        style_key = "high_growth"
+    elif growth_score <= float(TRADITIONAL_STYLE_SCORE_THRESHOLDS.get("stable_value_max", -0.35) or -0.35):
+        style_key = "stable_value"
+    else:
+        style_key = "balanced"
+    return style_key, round(growth_score, 3), reasons
+
+
+def _resolve_traditional_scheme_key(style_key, industry_name):
+    industry_text = str(industry_name or "").strip()
+    if industry_text:
+        for item in TRADITIONAL_INDUSTRY_SCHEME_OVERRIDES:
+            scheme_key = str((item or {}).get("scheme_key") or "").strip()
+            keywords = (item or {}).get("keywords")
+            if not scheme_key or not isinstance(keywords, (list, tuple, set)):
+                continue
+            for keyword in keywords:
+                text = str(keyword or "").strip()
+                if text and text in industry_text and scheme_key in TRADITIONAL_TIER_SCHEMES:
+                    return scheme_key, text
+    normalized_style_key = str(style_key or "balanced").strip().lower()
+    if normalized_style_key in TRADITIONAL_TIER_SCHEMES:
+        return normalized_style_key, None
+    return "balanced", None
+
+
+def _weighted_template_target(method_price_map, weights):
+    total_weight = float(sum(float(v) for v in (weights or {}).values()))
+    if total_weight <= 0:
+        return None, 0.0, []
+
+    weighted_sum = 0.0
+    covered_weight = 0.0
+    used_methods = []
+    for method, weight in (weights or {}).items():
+        price = _to_float_or_none((method_price_map or {}).get(method))
+        normalized_weight = float(weight)
+        if price is None or price <= 0 or normalized_weight <= 0:
+            continue
+        weighted_sum += float(price) * normalized_weight
+        covered_weight += normalized_weight
+        used_methods.append(method)
+
+    if covered_weight <= 0:
+        return None, 0.0, []
+
+    target_price = weighted_sum / covered_weight
+    coverage_ratio = max(0.0, min(1.0, covered_weight / total_weight))
+    return round(target_price, 4), round(coverage_ratio, 4), used_methods
+
+
+def _enforce_monotonic_tier_targets(tier_payload, scheme, current_price):
+    order = ["conservative", "balanced", "aggressive"]
+    raw_targets = []
+    for key in order:
+        tier = (tier_payload or {}).get(key) or {}
+        target = _to_float_or_none(tier.get("target_price"))
+        if target is None or target <= 0:
+            return {"enabled": True, "applied": False, "reason": "missing_target"}
+        raw_targets.append(float(target))
+
+    if raw_targets[0] <= raw_targets[1] <= raw_targets[2]:
+        return {
+            "enabled": True,
+            "applied": False,
+            "reason": "already_monotonic",
+            "before": [round(v, 4) for v in raw_targets],
+            "after": [round(v, 4) for v in raw_targets],
+        }
+
+    adjusted_targets = sorted(raw_targets)
+    cp = _to_float_or_none(current_price)
+    tiers_cfg = (scheme or {}).get("tiers") if isinstance((scheme or {}).get("tiers"), dict) else {}
+
+    for idx, key in enumerate(order):
+        tier = (tier_payload or {}).get(key)
+        if not isinstance(tier, dict):
+            continue
+        target = adjusted_targets[idx]
+        tier_cfg = (tiers_cfg or {}).get(key) if isinstance((tiers_cfg or {}).get(key), dict) else {}
+        lower_multiplier, upper_multiplier = tier_cfg.get("range_multiplier") or (0.95, 1.08)
+        tier["target_price"] = round(float(target), 4)
+        tier["range"] = {
+            "lower": round(float(target) * float(lower_multiplier), 4),
+            "upper": round(float(target) * float(upper_multiplier), 4),
+        }
+        if cp is not None and cp > 0:
+            tier["expected_return_pct"] = round(((float(target) / cp) - 1.0) * 100.0, 2)
+        else:
+            tier["expected_return_pct"] = None
+
+    return {
+        "enabled": True,
+        "applied": True,
+        "reason": "sorted_targets",
+        "before": [round(v, 4) for v in raw_targets],
+        "after": [round(v, 4) for v in adjusted_targets],
+    }
+
+
+def _apply_tier_min_gap_constraints(tier_payload, scheme, current_price, style_key, volatility_profile, method_price_map):
+    cp = _to_float_or_none(current_price)
+    if cp is None or cp <= 0:
+        return {
+            "enabled": True,
+            "applied": False,
+            "reason": "invalid_current_price",
+        }
+
+    conservative = _to_float_or_none(((tier_payload or {}).get("conservative") or {}).get("target_price"))
+    balanced = _to_float_or_none(((tier_payload or {}).get("balanced") or {}).get("target_price"))
+    aggressive = _to_float_or_none(((tier_payload or {}).get("aggressive") or {}).get("target_price"))
+    if conservative is None or balanced is None or aggressive is None:
+        return {
+            "enabled": True,
+            "applied": False,
+            "reason": "missing_target",
+        }
+
+    cfg = TRADITIONAL_TIER_MIN_GAP_RULES
+    style_key_normalized = str(style_key or "balanced").strip().lower()
+    style_cfg = cfg.get(style_key_normalized) or cfg.get("balanced") or {"down": 0.045, "up": 0.07}
+    base_down = float(style_cfg.get("down", 0.045) or 0.045)
+    base_up = float(style_cfg.get("up", 0.07) or 0.07)
+
+    volatility_bucket = str((volatility_profile or {}).get("volatility_bucket") or "medium").strip().lower()
+    if volatility_bucket not in {"high", "medium", "low"}:
+        volatility_bucket = "medium"
+    vol_adjust = float(((cfg.get("volatility_adjust") or {}).get(volatility_bucket, 0.0)) or 0.0)
+
+    valid_prices = [float(v) for v in (method_price_map or {}).values() if _to_float_or_none(v) is not None and float(v) > 0]
+    dispersion_adjust = 0.0
+    dispersion_value = None
+    if len(valid_prices) >= 2:
+        sorted_prices = sorted(valid_prices)
+        median = _quantile_linear(sorted_prices, 0.5)
+        low = sorted_prices[0]
+        high = sorted_prices[-1]
+        if median is not None and median > 0 and high >= low:
+            dispersion_value = (high - low) / median
+            dispersion_adjust = min(
+                float(cfg.get("dispersion_cap", 0.025) or 0.025),
+                max(0.0, float(dispersion_value) * float(cfg.get("dispersion_scale", 0.02) or 0.02)),
+            )
+
+    min_floor = float(cfg.get("min_floor", 0.02) or 0.02)
+    max_ceiling = float(cfg.get("max_ceiling", 0.16) or 0.16)
+    min_down_gap_pct = max(min_floor, min(max_ceiling, base_down + vol_adjust + dispersion_adjust))
+    min_up_gap_pct = max(min_floor, min(max_ceiling, base_up + vol_adjust + dispersion_adjust))
+
+    required_conservative_max = balanced * (1.0 - min_down_gap_pct)
+    required_aggressive_min = balanced * (1.0 + min_up_gap_pct)
+
+    adjusted_conservative = min(float(conservative), float(required_conservative_max))
+    adjusted_aggressive = max(float(aggressive), float(required_aggressive_min))
+    if adjusted_aggressive <= adjusted_conservative:
+        adjusted_aggressive = max(adjusted_aggressive, adjusted_conservative * (1.0 + min_down_gap_pct + min_up_gap_pct))
+
+    applied = (
+        abs(adjusted_conservative - float(conservative)) > 1e-9
+        or abs(adjusted_aggressive - float(aggressive)) > 1e-9
+    )
+
+    if applied:
+        tiers_cfg = (scheme or {}).get("tiers") if isinstance((scheme or {}).get("tiers"), dict) else {}
+        adjustments = {
+            "conservative": adjusted_conservative,
+            "balanced": float(balanced),
+            "aggressive": adjusted_aggressive,
+        }
+        for tier_key, target in adjustments.items():
+            tier = (tier_payload or {}).get(tier_key)
+            if not isinstance(tier, dict):
+                continue
+            tier_cfg = (tiers_cfg or {}).get(tier_key) if isinstance((tiers_cfg or {}).get(tier_key), dict) else {}
+            lower_multiplier, upper_multiplier = tier_cfg.get("range_multiplier") or (0.95, 1.08)
+            tier["target_price"] = round(float(target), 4)
+            tier["range"] = {
+                "lower": round(float(target) * float(lower_multiplier), 4),
+                "upper": round(float(target) * float(upper_multiplier), 4),
+            }
+            tier["expected_return_pct"] = round(((float(target) / cp) - 1.0) * 100.0, 2)
+
+    return {
+        "enabled": True,
+        "applied": applied,
+        "style_key": style_key_normalized,
+        "volatility_bucket": volatility_bucket,
+        "min_down_gap_pct": round(min_down_gap_pct, 4),
+        "min_up_gap_pct": round(min_up_gap_pct, 4),
+        "dispersion": round(float(dispersion_value), 4) if dispersion_value is not None else None,
+        "before": {
+            "conservative": round(float(conservative), 4),
+            "balanced": round(float(balanced), 4),
+            "aggressive": round(float(aggressive), 4),
+        },
+        "after": {
+            "conservative": round(float(adjusted_conservative), 4),
+            "balanced": round(float(balanced), 4),
+            "aggressive": round(float(adjusted_aggressive), 4),
+        },
+    }
+
+
+def _load_traditional_volatility_profile(ts_code, current_price=None, freq="D", lookback=60):
+    try:
+        records = list(
+            StockTradingHistory.objects.filter(ts_code=ts_code, freq=freq)
+            .order_by("-trade_date")
+            .values("trade_date", "high_qfq", "low_qfq", "close_qfq")[:lookback]
+        )
+        if not records:
+            return None
+        df = pd.DataFrame(records)
+        if df.empty:
+            return None
+        df = df.sort_values("trade_date").reset_index(drop=True)
+        df = calculate_atr(df=df, period=20, high_col="high_qfq", low_col="low_qfq", close_col="close_qfq")
+
+        latest_row = df.iloc[-1].to_dict() if len(df) else {}
+        close_price = _to_float_or_none(latest_row.get("close_qfq"))
+        if close_price is None or close_price <= 0:
+            close_price = _to_float_or_none(current_price)
+        atr_value = _to_float_or_none(latest_row.get("atr"))
+        atr_ratio = None
+        if close_price is not None and close_price > 0 and atr_value is not None and atr_value > 0:
+            atr_ratio = atr_value / close_price
+
+        returns = pd.to_numeric(df.get("close_qfq"), errors="coerce").pct_change()
+        realized_volatility = None
+        if returns is not None:
+            clean_returns = returns.dropna()
+            if len(clean_returns) >= 10:
+                tail_std = clean_returns.tail(20).std()
+                if pd.notnull(tail_std):
+                    realized_volatility = float(tail_std * (252 ** 0.5))
+
+        volatility_bucket = "medium"
+        if atr_ratio is not None:
+            if atr_ratio <= 0.03:
+                volatility_bucket = "low"
+            elif atr_ratio >= 0.06:
+                volatility_bucket = "high"
+        volatility_label = {"low": "低波动", "medium": "中波动", "high": "高波动"}.get(volatility_bucket, "中波动")
+        return {
+            "atr": round(atr_value, 4) if atr_value is not None else None,
+            "atr_ratio": round(atr_ratio, 4) if atr_ratio is not None else None,
+            "realized_volatility_20d": round(realized_volatility, 4) if realized_volatility is not None else None,
+            "volatility_bucket": volatility_bucket,
+            "volatility_label": volatility_label,
+            "lookback": lookback,
+        }
+    except Exception:
+        return None
+
+
+def _resolve_position_guidance(current_price, conservative_range, balanced_range, aggressive_range, style_key=None, industry_name=None, volatility_profile=None):
+    cp = _to_float_or_none(current_price)
+    style_key_normalized = str(style_key or "balanced").strip().lower()
+    style_label = {
+        "high_growth": "高成长风格",
+        "stable_value": "稳健价值风格",
+        "balanced": "平衡风格",
+        "cyclical_resource": "周期资源风格",
+    }.get(style_key_normalized, "平衡风格")
+
+    volatility_bucket = str((volatility_profile or {}).get("volatility_bucket") or "medium").lower()
+    if volatility_bucket not in {"low", "medium", "high"}:
+        volatility_bucket = "medium"
+    volatility_label = (volatility_profile or {}).get("volatility_label") or {"low": "低波动", "medium": "中波动", "high": "高波动"}.get(volatility_bucket, "中波动")
+
+    default_payload = {
+        "suggested_position_range": "35%-55%",
+        "message": "位于平衡区间，维持中性仓位。",
+        "state_key": "within_balanced",
+        "state_label": "平衡区间",
+    }
+    if cp is None or cp <= 0:
+        payload = dict(default_payload)
+    else:
+        c_low = _to_float_or_none((conservative_range or {}).get("lower"))
+        b_low = _to_float_or_none((balanced_range or {}).get("lower"))
+        b_high = _to_float_or_none((balanced_range or {}).get("upper"))
+        a_high = _to_float_or_none((aggressive_range or {}).get("upper"))
+
+        if c_low is not None and cp < c_low:
+            payload = {
+                "suggested_position_range": "52%-68%" if volatility_bucket == "high" else "60%-75%",
+                "message": "低于保守区间下沿，建议分批加仓。",
+                "state_key": "below_conservative",
+                "state_label": "低估区",
+            }
+        elif b_low is not None and cp < b_low:
+            payload = {
+                "suggested_position_range": "40%-58%" if volatility_bucket == "high" else "45%-65%",
+                "message": "低于平衡区间下沿，建议温和加仓。",
+                "state_key": "below_balanced",
+                "state_label": "偏低区",
+            }
+        elif b_high is not None and cp <= b_high:
+            payload = dict(default_payload)
+        elif a_high is not None and cp <= a_high:
+            payload = {
+                "suggested_position_range": "20%-35%" if volatility_bucket == "high" else "25%-40%",
+                "message": "位于进攻区间，建议控制仓位。",
+                "state_key": "within_aggressive",
+                "state_label": "偏高区",
+            }
+        else:
+            payload = {
+                "suggested_position_range": "12%-25%" if volatility_bucket == "high" else "15%-30%",
+                "message": "高于进攻区间上沿，建议防守降仓。",
+                "state_key": "above_aggressive",
+                "state_label": "高估区",
+            }
+
+    summary = f"{style_label} | {volatility_label} | {payload['state_label']} | 仓位 {payload['suggested_position_range']}"
+    payload.update({
+        "style_key": style_key_normalized,
+        "style_label": style_label,
+        "volatility_bucket": volatility_bucket,
+        "volatility_label": volatility_label,
+        "industry_name": industry_name or "",
+        "holding_summary": summary,
+    })
+    return payload
+
+
+def _build_traditional_tiered_template(
+    *,
+    variant_rows,
+    summary_payload,
+    current_price,
+    industry_name,
+    industry_code,
+    indicator_profile,
+    ts_code,
+    freq="D",
+):
+    cp = _to_float_or_none(current_price)
+    if cp is None or cp <= 0:
+        return None
+
+    method_price_map_raw = {}
+    for row in (variant_rows or []):
+        method = _normalize_valuation_method_name((row or {}).get("valuation_method"))
+        price = _to_float_or_none((row or {}).get("valuation_price"))
+        if not method or price is None or price <= 0:
+            continue
+        method_price_map_raw[method] = float(price)
+    if not method_price_map_raw:
+        return None
+
+    method_price_map, winsor_meta = _winsorize_method_price_map(method_price_map_raw, rules=TRADITIONAL_METHOD_WINSOR_RULES)
+    style_key, style_score, style_reasons = _resolve_traditional_style(
+        industry_name=industry_name,
+        indicator_profile=indicator_profile or {},
+        method_price_map=method_price_map,
+        industry_code=industry_code,
+    )
+    scheme_key, matched_keyword = _resolve_traditional_scheme_key(style_key, industry_name)
+    scheme = TRADITIONAL_TIER_SCHEMES.get(scheme_key) or TRADITIONAL_TIER_SCHEMES["balanced"]
+
+    tier_payload = {}
+    for tier_key in ["conservative", "balanced", "aggressive"]:
+        tier_cfg = ((scheme or {}).get("tiers") or {}).get(tier_key) or {}
+        weights = tier_cfg.get("weights") or {}
+        target_price, coverage_ratio, used_methods = _weighted_template_target(method_price_map, weights)
+        lower_multiplier, upper_multiplier = tier_cfg.get("range_multiplier") or (0.95, 1.08)
+        lower = round(target_price * float(lower_multiplier), 4) if target_price is not None else None
+        upper = round(target_price * float(upper_multiplier), 4) if target_price is not None else None
+        return_pct = None
+        if target_price is not None and cp > 0:
+            return_pct = round(((target_price / cp) - 1.0) * 100.0, 2)
+        tier_payload[tier_key] = {
+            "label": tier_cfg.get("label") or tier_key,
+            "target_price": round(target_price, 4) if target_price is not None else None,
+            "expected_return_pct": return_pct,
+            "range": {"lower": lower, "upper": upper},
+            "coverage_ratio": coverage_ratio,
+            "used_methods": used_methods,
+            "weights": {k: round(float(v), 4) for k, v in (weights or {}).items()},
+        }
+
+    volatility_profile = _load_traditional_volatility_profile(ts_code=ts_code, current_price=cp, freq=freq) if ts_code else None
+    monotonic_meta = _enforce_monotonic_tier_targets(tier_payload, scheme, cp)
+    spacing_meta = _apply_tier_min_gap_constraints(
+        tier_payload=tier_payload,
+        scheme=scheme,
+        current_price=cp,
+        style_key=style_key,
+        volatility_profile=volatility_profile,
+        method_price_map=method_price_map,
+    )
+    guidance = _resolve_position_guidance(
+        current_price=cp,
+        conservative_range=(tier_payload.get("conservative") or {}).get("range"),
+        balanced_range=(tier_payload.get("balanced") or {}).get("range"),
+        aggressive_range=(tier_payload.get("aggressive") or {}).get("range"),
+        style_key=style_key,
+        industry_name=industry_name,
+        volatility_profile=volatility_profile,
+    )
+
+    reference_composite = _to_float_or_none((summary_payload or {}).get("composite_valuation_price"))
+    reference_conservative = _to_float_or_none((summary_payload or {}).get("conservative_valuation_price"))
+
+    return {
+        "enabled": True,
+        "style_key": style_key,
+        "style_label": scheme.get("style_label") or style_key,
+        "scheme_key": scheme_key,
+        "industry_scheme_override_keyword": matched_keyword,
+        "style_score": style_score,
+        "style_reasons": style_reasons,
+        "industry_name": industry_name or "",
+        "industry_code": industry_code or None,
+        "indicator_profile": {
+            "roe": _to_float_or_none((indicator_profile or {}).get("roe")),
+            "gross_margin": _to_float_or_none((indicator_profile or {}).get("gross_margin")),
+            "debt_to_assets": _to_float_or_none((indicator_profile or {}).get("debt_to_assets")),
+            "indicator_end_date": (indicator_profile or {}).get("indicator_end_date"),
+        },
+        "method_prices": {k: round(float(v), 4) for k, v in (method_price_map or {}).items()},
+        "method_prices_raw": {k: round(float(v), 4) for k, v in (method_price_map_raw or {}).items()},
+        "winsorization": winsor_meta,
+        "tier_monotonicity": monotonic_meta,
+        "tier_spacing": spacing_meta,
+        "tiers": tier_payload,
+        "position_guidance": guidance,
+        "volatility_profile": volatility_profile,
+        "holding_summary": guidance.get("holding_summary"),
+        "reference": {
+            "current_price": cp,
+            "traditional_composite_price": reference_composite,
+            "traditional_conservative_price": reference_conservative,
+        },
+    }
+
+
+def _build_traditional_variant_weights(
+    traditional_tiered_template_by_variant,
+    valuation_variants,
+    active_variant,
+):
+    template_map = traditional_tiered_template_by_variant or {}
+    if not template_map:
+        return {}, []
+
+    meta_map = {
+        str(item.get("valuation_variant") or ""): item
+        for item in (valuation_variants or [])
+        if isinstance(item, dict)
+    }
+    raw_items = []
+    for variant, template in template_map.items():
+        if not isinstance(template, dict):
+            continue
+        variant_key = str(variant or "")
+        meta = meta_map.get(variant_key, {})
+        compare_group = str((meta or {}).get("compare_group") or "").strip().lower()
+        match_score = _to_float_or_none((meta or {}).get("match_score"))
+        if match_score is None:
+            if compare_group == "business_match":
+                match_score = 30.0
+            elif compare_group == "sw_l3_baseline":
+                match_score = 45.0
+            elif variant_key == "default":
+                match_score = 35.0
+            else:
+                match_score = 25.0
+
+        match_component = _clip_float(float(match_score) / 100.0, lower=0.12, upper=1.0)
+        coverage = _to_float_or_none((((template.get("tiers") or {}).get("balanced") or {}).get("coverage_ratio")))
+        coverage_component = _clip_float(coverage if coverage is not None else 0.55, lower=0.2, upper=1.0)
+        style_score = _to_float_or_none(template.get("style_score"))
+        quality_component = _clip_float((style_score / 100.0) if style_score is not None else 0.72, lower=0.35, upper=1.0)
+
+        group_bias = 1.0
+        if compare_group == "business_match":
+            group_bias = 1.12
+            if match_score >= 60.0:
+                group_bias += 0.08
+            elif match_score >= 45.0:
+                group_bias += 0.04
+        elif compare_group == "sw_l3_baseline":
+            group_bias = 1.06
+        elif variant_key == "default":
+            group_bias = 1.03
+        active_bias = 1.06 if variant_key == str(active_variant or "") else 1.0
+
+        raw_weight = float(match_component) * float(coverage_component) * float(quality_component) * group_bias * active_bias
+        raw_items.append(
+            {
+                "valuation_variant": variant_key,
+                "raw_weight": max(0.0001, float(raw_weight)),
+                "match_score": round(float(match_score), 4),
+                "coverage_component": round(float(coverage_component), 4),
+                "quality_component": round(float(quality_component), 4),
+                "group_bias": round(float(group_bias), 4),
+                "compare_group": compare_group or None,
+            }
+        )
+
+    if not raw_items:
+        return {}, []
+
+    total_raw = sum(item.get("raw_weight", 0.0) for item in raw_items) or 1.0
+    normalized = {}
+    detail_rows = []
+    for item in raw_items:
+        variant_key = item["valuation_variant"]
+        weight = float(item.get("raw_weight", 0.0)) / float(total_raw)
+        normalized[variant_key] = round(weight, 6)
+        detail = dict(item)
+        detail["weight"] = round(weight, 6)
+        detail_rows.append(detail)
+    detail_rows.sort(key=lambda x: -float(x.get("weight") or 0.0))
+    return normalized, detail_rows
+
+
+def _blend_traditional_tiered_template(
+    traditional_tiered_template_by_variant,
+    valuation_variants,
+    active_variant,
+):
+    template_map = traditional_tiered_template_by_variant or {}
+    if not template_map:
+        return None
+
+    if active_variant in template_map and len(template_map) == 1:
+        single = dict(template_map.get(active_variant) or {})
+        single["variant_weights"] = {str(active_variant or "default"): 1.0}
+        single["variant_weights_detail"] = [
+            {"valuation_variant": str(active_variant or "default"), "weight": 1.0}
+        ]
+        single["blend"] = {
+            "enabled": True,
+            "applied": False,
+            "reason": "single_variant",
+            "dominant_variant": str(active_variant or "default"),
+        }
+        return single
+
+    variant_weights, variant_weight_rows = _build_traditional_variant_weights(
+        traditional_tiered_template_by_variant=template_map,
+        valuation_variants=valuation_variants,
+        active_variant=active_variant,
+    )
+    if not variant_weights:
+        return template_map.get(active_variant)
+
+    dominant_variant = max(variant_weights.keys(), key=lambda key: float(variant_weights.get(key) or 0.0))
+    dominant_template = dict(template_map.get(dominant_variant) or {})
+    blended_template = dict(dominant_template)
+
+    cp = _to_float_or_none(((dominant_template.get("reference") or {}).get("current_price")))
+    tiers = {}
+    for tier_key in ["conservative", "balanced", "aggressive"]:
+        target_acc = 0.0
+        lower_acc = 0.0
+        upper_acc = 0.0
+        coverage_acc = 0.0
+        weights_acc = {}
+        methods_set = set()
+        has_value = False
+        label = ((dominant_template.get("tiers") or {}).get(tier_key) or {}).get("label") or tier_key
+
+        for variant, weight in variant_weights.items():
+            tpl = template_map.get(variant) or {}
+            tier_payload = (tpl.get("tiers") or {}).get(tier_key) or {}
+            target = _to_float_or_none(tier_payload.get("target_price"))
+            lower = _to_float_or_none((tier_payload.get("range") or {}).get("lower"))
+            upper = _to_float_or_none((tier_payload.get("range") or {}).get("upper"))
+            coverage = _to_float_or_none(tier_payload.get("coverage_ratio"))
+            if target is None:
+                continue
+            has_value = True
+            w = float(weight)
+            target_acc += float(target) * w
+            lower_acc += float(lower if lower is not None else target) * w
+            upper_acc += float(upper if upper is not None else target) * w
+            coverage_acc += float(coverage if coverage is not None else 0.0) * w
+            for method in (tier_payload.get("used_methods") or []):
+                methods_set.add(str(method))
+            for method, method_weight in (tier_payload.get("weights") or {}).items():
+                val = _to_float_or_none(method_weight)
+                if val is None:
+                    continue
+                weights_acc[method] = float(weights_acc.get(method, 0.0)) + float(val) * w
+
+        if not has_value:
+            continue
+
+        expected_return_pct = None
+        if cp is not None and cp > 0:
+            expected_return_pct = round(((target_acc / cp) - 1.0) * 100.0, 2)
+        tiers[tier_key] = {
+            "label": label,
+            "target_price": round(float(target_acc), 4),
+            "expected_return_pct": expected_return_pct,
+            "range": {
+                "lower": round(float(lower_acc), 4),
+                "upper": round(float(upper_acc), 4),
+            },
+            "coverage_ratio": round(float(coverage_acc), 4),
+            "used_methods": sorted(methods_set),
+            "weights": {
+                key: round(float(val), 4)
+                for key, val in sorted(weights_acc.items(), key=lambda x: -x[1])
+            },
+        }
+
+    if not tiers:
+        return template_map.get(active_variant)
+
+    blended_template["tiers"] = tiers
+    blended_template["style_key"] = dominant_template.get("style_key")
+    blended_template["style_label"] = dominant_template.get("style_label")
+    blended_template["scheme_key"] = dominant_template.get("scheme_key")
+    blended_template["industry_name"] = dominant_template.get("industry_name")
+    blended_template["industry_code"] = dominant_template.get("industry_code")
+    blended_template["variant_weights"] = variant_weights
+    blended_template["variant_weights_detail"] = variant_weight_rows
+    blended_template["blend"] = {
+        "enabled": True,
+        "applied": True,
+        "dominant_variant": dominant_variant,
+        "active_variant": str(active_variant or "default"),
+        "variant_count": len(variant_weights),
+    }
+
+    scheme_key = str(blended_template.get("scheme_key") or "balanced").strip().lower()
+    scheme = TRADITIONAL_TIER_SCHEMES.get(scheme_key) or TRADITIONAL_TIER_SCHEMES.get("balanced")
+    monotonic_meta = _enforce_monotonic_tier_targets(blended_template.get("tiers") or {}, scheme, cp)
+    spacing_meta = _apply_tier_min_gap_constraints(
+        tier_payload=blended_template.get("tiers") or {},
+        scheme=scheme,
+        current_price=cp,
+        style_key=blended_template.get("style_key"),
+        volatility_profile=blended_template.get("volatility_profile") or {},
+        method_price_map=blended_template.get("method_prices") or {},
+    )
+    guidance = _resolve_position_guidance(
+        current_price=cp,
+        conservative_range=((blended_template.get("tiers") or {}).get("conservative") or {}).get("range"),
+        balanced_range=((blended_template.get("tiers") or {}).get("balanced") or {}).get("range"),
+        aggressive_range=((blended_template.get("tiers") or {}).get("aggressive") or {}).get("range"),
+        style_key=blended_template.get("style_key"),
+        industry_name=blended_template.get("industry_name"),
+        volatility_profile=blended_template.get("volatility_profile") or {},
+    )
+    blended_template["tier_monotonicity"] = monotonic_meta
+    blended_template["tier_spacing"] = spacing_meta
+    blended_template["position_guidance"] = guidance
+    blended_template["holding_summary"] = guidance.get("holding_summary")
+    return blended_template
 
 
 def _clip_float(value, *, lower=None, upper=None):

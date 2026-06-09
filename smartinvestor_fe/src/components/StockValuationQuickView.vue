@@ -238,6 +238,9 @@
               仓位建议 {{ traditionalTieredTemplate?.position_guidance?.suggested_position_range || '-' }}
               <span style="margin-left: 8px; color: #64748b;">{{ traditionalTieredTemplate?.position_guidance?.message || '' }}</span>
             </div>
+            <div v-if="traditionalBlendHintText" style="margin-top: 4px; color: #94a3b8; font-size: 11px; line-height: 1.4;">
+              {{ traditionalBlendHintText }}
+            </div>
             <div style="margin-top: 6px; color: #64748b; font-size: 12px;">
               权重预览: 保守 {{ tierWeightPreview(traditionalTieredTemplate?.tiers?.conservative?.weights) }}
             </div>
@@ -638,6 +641,14 @@ type TraditionalTieredTemplate = {
   style_score: number
   style_reasons: string[]
   industry_name: string
+  variant_weights?: Record<string, number>
+  blend?: {
+    enabled?: boolean
+    applied?: boolean
+    dominant_variant?: string
+    active_variant?: string
+    variant_count?: number
+  } | null
   indicator_profile?: {
     roe?: number | null
     gross_margin?: number | null
@@ -822,6 +833,7 @@ const summaryNormalized = ref<ValuationSummary>(emptySummary())
 const summaryOptimized = ref<ValuationSummary>(emptySummary())
 const summaryNormalizedOptimized = ref<ValuationSummary>(emptySummary())
 const traditionalTieredTemplateByVariant = ref<Record<string, TraditionalTieredTemplate>>({})
+const topTraditionalTieredTemplate = ref<TraditionalTieredTemplate | null>(null)
 const traditionalTieredTemplate = ref<TraditionalTieredTemplate | null>(null)
 const valuationSectionExpanded = ref(true)
 const traditionalValuationTab = ref('snapshot')
@@ -920,15 +932,14 @@ function onVariantTabChange(tabName: string | number) {
   summaryNormalized.value = summaryByVariantNormalized.value[variant] || emptySummary()
   summaryOptimized.value = summaryByVariantOptimized.value[variant] || emptySummary()
   summaryNormalizedOptimized.value = summaryByVariantNormalizedOptimized.value[variant] || emptySummary()
-  traditionalTieredTemplate.value =
-    traditionalTieredTemplateByVariant.value[variant]
-    || _buildFallbackTraditionalTieredTemplate(
-      variant,
-      variantRows,
-      summaryByVariant.value[variant] || emptySummary(),
-      currentPrice.value ?? stockTradeStore.close,
-    )
-    || null
+  traditionalTieredTemplate.value = resolveTraditionalTemplatePriority(
+    topTraditionalTieredTemplate.value,
+    traditionalTieredTemplateByVariant.value,
+    variant,
+    variantRows,
+    summaryByVariant.value[variant] || emptySummary(),
+    currentPrice.value ?? stockTradeStore.close,
+  )
 }
 
 function methodLabel(method: string) {
@@ -949,6 +960,53 @@ function tierWeightPreview(weights: Record<string, number> | null | undefined) {
     .map(([method, weight]) => `${methodLabel(method)} ${(Number(weight) * 100).toFixed(0)}%`)
   return entries.length ? entries.join(' | ') : '-'
 }
+
+function resolveTraditionalTemplatePriority(
+  topTemplate: TraditionalTieredTemplate | null | undefined,
+  byVariant: Record<string, TraditionalTieredTemplate>,
+  variant: string,
+  variantRows: ValuationMethodRow[],
+  summaryPayload: ValuationSummary,
+  currentPriceInput: number | null,
+): TraditionalTieredTemplate | null {
+  if (topTemplate && typeof topTemplate === 'object') {
+    return topTemplate
+  }
+  if (byVariant && byVariant[variant]) {
+    return byVariant[variant]
+  }
+  return (
+    _buildFallbackTraditionalTieredTemplate(
+      variant,
+      variantRows,
+      summaryPayload,
+      currentPriceInput,
+    ) || null
+  )
+}
+
+const traditionalBlendHintText = computed(() => {
+  const payload = traditionalTieredTemplate.value
+  if (!payload || !payload.enabled) return ''
+  const blend = payload.blend
+  const variantWeights = payload.variant_weights
+  if (!blend || !blend.enabled || !variantWeights || typeof variantWeights !== 'object') {
+    return ''
+  }
+
+  const dominant = String(blend.dominant_variant || '').trim()
+  const topWeights = Object.entries(variantWeights)
+    .filter(([, weight]) => Number.isFinite(Number(weight)) && Number(weight) > 0)
+    .sort((a, b) => Number(b[1]) - Number(a[1]))
+    .slice(0, 3)
+    .map(([variantName, weight]) => `${variantName} ${(Number(weight) * 100).toFixed(1)}%`)
+
+  const chunks: string[] = []
+  if (blend.applied) chunks.push('融合已启用')
+  if (dominant) chunks.push(`主导 ${dominant}`)
+  if (topWeights.length) chunks.push(`权重 ${topWeights.join(' | ')}`)
+  return chunks.join(' · ')
+})
 
 function _clamp(value: number, low: number, high: number) {
   return Math.max(low, Math.min(high, value))
@@ -2441,16 +2499,16 @@ async function fetchValuationRows(includePredictive = true) {
     const resolvedVariantRows = Array.isArray(resolvedRows)
       ? (resolvedRows as ValuationMethodRow[])
       : ((res.data?.data || []) as ValuationMethodRow[])
-    traditionalTieredTemplate.value =
-      traditionalTieredTemplateByVariant.value[resolvedActive] ||
-      _buildFallbackTraditionalTieredTemplate(
-        resolvedActive,
-        resolvedVariantRows,
-        summaryPayload[resolvedActive] || resolveSummary(res.data?.summary),
-        fetchedCurrentPrice ?? stockTradeStore.close,
-      ) ||
-      (res.data?.traditional_tiered_template as TraditionalTieredTemplate) ||
-      null
+    topTraditionalTieredTemplate.value =
+      (res.data?.traditional_tiered_template as TraditionalTieredTemplate) || null
+    traditionalTieredTemplate.value = resolveTraditionalTemplatePriority(
+      topTraditionalTieredTemplate.value,
+      traditionalTieredTemplateByVariant.value,
+      resolvedActive,
+      resolvedVariantRows,
+      summaryPayload[resolvedActive] || resolveSummary(res.data?.summary),
+      fetchedCurrentPrice ?? stockTradeStore.close,
+    )
     const activeRisk = riskByVariant[resolvedActive] || res.data?.valuation_risk || null
     valuationRisk.value = activeRisk
       ? {
@@ -2484,6 +2542,7 @@ async function fetchValuationRows(includePredictive = true) {
     summaryNormalized.value = emptySummary()
     summaryOptimized.value = emptySummary()
     summaryNormalizedOptimized.value = emptySummary()
+    topTraditionalTieredTemplate.value = null
     traditionalTieredTemplate.value = null
     earningsSignal.value = null
     predictiveCompare.value = null
