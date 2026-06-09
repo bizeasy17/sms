@@ -272,7 +272,7 @@ const selectedMinNetprofitYoy = ref<number | null>(null);
 const selectedMinEbitYoy = ref<number | null>(null);
 const selectedRequirePositivePrevNetprofit = ref(true);
 const selectedRequirePositivePrevEbit = ref(true);
-const selectedApplyFinancialFilters = ref(true);
+const selectedApplyFinancialFilters = ref(false);
 const selectedPriorityPolicy = ref("score_desc");
 const selectedBuyCandidateOnly = ref("BC:ONLY");
 const selectedSwIndustry = ref("");
@@ -389,7 +389,7 @@ function applyTraditionalQuickStrategy() {
     selectedMinEbitYoy.value = profile.min_ebit_yoy === null || profile.min_ebit_yoy === undefined ? null : Number(profile.min_ebit_yoy);
     selectedRequirePositivePrevNetprofit.value = Boolean(profile.require_positive_prev_netprofit ?? true);
     selectedRequirePositivePrevEbit.value = Boolean(profile.require_positive_prev_ebit ?? true);
-    selectedApplyFinancialFilters.value = Boolean(profile.apply_financial_filters ?? true);
+    selectedApplyFinancialFilters.value = Boolean(profile.apply_financial_filters ?? false);
     selectedPriorityPolicy.value = String(profile.priority_policy ?? "score_desc");
     selectedBuyCandidateOnly.value = profile.buy_candidate_only || "BC:ONLY";
     selectedQuickStrategy.value = "traditional";
@@ -413,7 +413,7 @@ function applyPredictiveQuickStrategy() {
     selectedMinEbitYoy.value = profile.min_ebit_yoy === null || profile.min_ebit_yoy === undefined ? null : Number(profile.min_ebit_yoy);
     selectedRequirePositivePrevNetprofit.value = Boolean(profile.require_positive_prev_netprofit ?? true);
     selectedRequirePositivePrevEbit.value = Boolean(profile.require_positive_prev_ebit ?? true);
-    selectedApplyFinancialFilters.value = Boolean(profile.apply_financial_filters ?? true);
+    selectedApplyFinancialFilters.value = Boolean(profile.apply_financial_filters ?? false);
     selectedPriorityPolicy.value = String(profile.priority_policy ?? "score_desc");
     selectedBuyCandidateOnly.value = profile.buy_candidate_only || "BC:ONLY";
     selectedQuickStrategy.value = "predictive";
@@ -562,7 +562,7 @@ function applyBacktestPrefillFromQuery() {
 
     const applyFinancialFilters = params.get("apply_financial_filters");
     if (applyFinancialFilters !== null) {
-        selectedApplyFinancialFilters.value = parseBooleanFromQuery(applyFinancialFilters, true);
+        selectedApplyFinancialFilters.value = parseBooleanFromQuery(applyFinancialFilters, false);
     }
 
     const priorityPolicy = params.get("priority_policy");
