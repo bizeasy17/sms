@@ -8523,9 +8523,13 @@ TRADITIONAL_INDUSTRY_SCHEME_OVERRIDES = [
 
 TRADITIONAL_STYLE_INDUSTRY_GROWTH_KEYWORDS = [
     "仪器", "半导体", "软件", "医疗", "创新", "新能源", "算力", "通信", "生物",
+    "ai", "aigc", "llm", "大语言模型", "模型", "agent", "智能体", "推理", "云计算", "数据中心",
 ]
 TRADITIONAL_STYLE_INDUSTRY_STABLE_KEYWORDS = [
-    "银行", "公用", "消费", "电力", "燃气", "保险", "白酒",
+    "银行", "公用", "消费", "电力", "燃气", "保险", "白酒", "公路", "铁路", "港口", "水务", "运营商",
+]
+TRADITIONAL_STYLE_INDUSTRY_CYCLICAL_KEYWORDS = [
+    "煤", "油", "石化", "化工", "钢", "有色", "铜", "铝", "建材", "地产", "航运", "资源", "周期",
 ]
 
 # Phase A: industry-code-first regime mapping.
@@ -8533,12 +8537,12 @@ TRADITIONAL_STYLE_INDUSTRY_STABLE_KEYWORDS = [
 TRADITIONAL_REGIME_CODE_RULES = [
     {
         "regime": "high_growth",
-        "code_prefixes": ["80108", "80175", "80176", "8515", "8517"],
+        "code_prefixes": ["80108", "80175", "80176", "8515"],
     },
     {
         "regime": "cyclical_resource",
         "code_prefixes": [
-            "80102", "80103", "80104", "80105", "80106", "80107", "80109", "80111", "80112", "80117", "80118", "80119", "80120", "80121",
+            "80102", "80103", "80104", "80105", "80106", "80107", "80109", "80111", "80112", "80117", "80118", "80119", "80120", "80121", "8517",
             "8503", "85037", "85038", "85039", "85040",
         ],
     },
@@ -8682,8 +8686,70 @@ def _normalize_industry_code_for_regime(industry_code):
     return digits
 
 
-def _resolve_regime_by_industry_code(industry_code):
-    code = _normalize_industry_code_for_regime(industry_code)
+_SW_REGIME_LOOKUP_CACHE = None
+_SUGGESTED_REGIME_LOOKUP_CACHE = None
+
+
+def _normalize_regime_value(raw):
+    text = str(raw or "").strip().lower()
+    allowed = {"high_growth", "stable_value", "cyclical_resource", "balanced"}
+    return text if text in allowed else ""
+
+
+def _load_suggested_regime_lookup():
+    global _SUGGESTED_REGIME_LOOKUP_CACHE
+    if isinstance(_SUGGESTED_REGIME_LOOKUP_CACHE, dict):
+        return _SUGGESTED_REGIME_LOOKUP_CACHE
+
+    lookup = {}
+    suggested_path = Path(settings.BASE_DIR) / "static" / "regime_mapping_suggested_v1.csv"
+    try:
+        with suggested_path.open("r", encoding="utf-8-sig", newline="") as f:
+            reader = csv.DictReader(f)
+            for row in reader:
+                if not isinstance(row, dict):
+                    continue
+                regime = _normalize_regime_value(row.get("suggested_regime"))
+                if not regime:
+                    continue
+                reason = f"suggested_v1:{regime}"
+                index_code = _normalize_industry_code_for_regime(row.get("index_code"))
+                industry_code = _normalize_industry_code_for_regime(row.get("industry_code"))
+                for code in [index_code, industry_code]:
+                    if code:
+                        lookup[code] = (regime, reason)
+    except Exception:
+        lookup = {}
+
+    _SUGGESTED_REGIME_LOOKUP_CACHE = lookup
+    return lookup
+
+
+def _resolve_regime_by_keywords(industry_name):
+    name = str(industry_name or "").strip().lower()
+    if not name:
+        return None, None
+
+    for keyword in TRADITIONAL_STYLE_INDUSTRY_STABLE_KEYWORDS:
+        text = str(keyword or "").strip().lower()
+        if text and text in name:
+            return "stable_value", text
+
+    for keyword in TRADITIONAL_STYLE_INDUSTRY_CYCLICAL_KEYWORDS:
+        text = str(keyword or "").strip().lower()
+        if text and text in name:
+            return "cyclical_resource", text
+
+    for keyword in TRADITIONAL_STYLE_INDUSTRY_GROWTH_KEYWORDS:
+        text = str(keyword or "").strip().lower()
+        if text and text in name:
+            return "high_growth", text
+
+    return None, None
+
+
+def _resolve_regime_by_code_prefix(code_digits):
+    code = _normalize_industry_code_for_regime(code_digits)
     if not code:
         return None, None
     for item in TRADITIONAL_REGIME_CODE_RULES:
@@ -8698,14 +8764,115 @@ def _resolve_regime_by_industry_code(industry_code):
     return None, None
 
 
+def _load_sw_regime_lookup():
+    global _SW_REGIME_LOOKUP_CACHE
+    if isinstance(_SW_REGIME_LOOKUP_CACHE, dict):
+        return _SW_REGIME_LOOKUP_CACHE
+
+    lookup = {}
+    mapping_path = Path(settings.BASE_DIR) / "static" / "valuation_config" / "sw_industry_mapping_CN.json"
+    try:
+        with mapping_path.open("r", encoding="utf-8") as f:
+            payload = json.load(f)
+    except Exception:
+        _SW_REGIME_LOOKUP_CACHE = lookup
+        return lookup
+
+    levels = payload.get("levels") if isinstance(payload, dict) else {}
+    if not isinstance(levels, dict):
+        _SW_REGIME_LOOKUP_CACHE = lookup
+        return lookup
+
+    l1_regime_by_prefix2 = {}
+    l1_map = levels.get("L1") if isinstance(levels.get("L1"), dict) else {}
+    for _, entry in l1_map.items():
+        if not isinstance(entry, dict):
+            continue
+        index_code = _normalize_industry_code_for_regime(entry.get("index_code"))
+        industry_code = _normalize_industry_code_for_regime(entry.get("industry_code"))
+        industry_name = str(entry.get("industry_name") or "").strip()
+
+        regime, matched = _resolve_regime_by_code_prefix(index_code or industry_code)
+        source = f"sw_l1_prefix={matched}" if regime and matched else ""
+        if not regime:
+            regime, matched = _resolve_regime_by_keywords(industry_name)
+            if regime and matched:
+                source = f"sw_l1_keyword={matched}"
+        if not regime:
+            regime = "balanced"
+            source = "sw_l1_default_balanced"
+
+        if industry_code and len(industry_code) >= 2:
+            l1_regime_by_prefix2[industry_code[:2]] = (regime, source)
+
+    for level_name, level_map in levels.items():
+        if not isinstance(level_map, dict):
+            continue
+        for _, entry in level_map.items():
+            if not isinstance(entry, dict):
+                continue
+
+            index_code = _normalize_industry_code_for_regime(entry.get("index_code"))
+            industry_code = _normalize_industry_code_for_regime(entry.get("industry_code"))
+            industry_name = str(entry.get("industry_name") or "").strip()
+
+            regime, matched = _resolve_regime_by_code_prefix(index_code or industry_code)
+            source = f"sw_{level_name}_prefix={matched}" if regime and matched else ""
+            if not regime:
+                regime, matched = _resolve_regime_by_keywords(industry_name)
+                if regime and matched:
+                    source = f"sw_{level_name}_keyword={matched}"
+            if not regime and industry_code and len(industry_code) >= 2:
+                inherited = l1_regime_by_prefix2.get(industry_code[:2])
+                if inherited:
+                    regime, source = inherited
+                    source = f"sw_l1_inherit:{source}"
+            if not regime:
+                regime = "balanced"
+                source = f"sw_{level_name}_default_balanced"
+
+            for code in [index_code, industry_code]:
+                if code:
+                    lookup[code] = (regime, source)
+
+    _SW_REGIME_LOOKUP_CACHE = lookup
+    return lookup
+
+
+def _resolve_regime_by_industry_code(industry_code, industry_name=None):
+    code = _normalize_industry_code_for_regime(industry_code)
+    if code:
+        suggested_lookup = _load_suggested_regime_lookup()
+        suggested_hit = suggested_lookup.get(code)
+        if isinstance(suggested_hit, tuple) and len(suggested_hit) >= 2:
+            return suggested_hit[0], suggested_hit[1]
+
+        sw_lookup = _load_sw_regime_lookup()
+        sw_hit = sw_lookup.get(code)
+        if isinstance(sw_hit, tuple) and len(sw_hit) >= 2:
+            return sw_hit[0], sw_hit[1]
+
+        regime, matched_prefix = _resolve_regime_by_code_prefix(code)
+        if regime:
+            return regime, f"industry_code_prefix={matched_prefix}"
+
+    regime, matched_keyword = _resolve_regime_by_keywords(industry_name)
+    if regime:
+        return regime, f"industry_keyword={matched_keyword}"
+
+    if code or str(industry_name or "").strip():
+        return "balanced", "fallback_balanced"
+    return None, None
+
+
 def _resolve_traditional_style(industry_name, indicator_profile, method_price_map, industry_code=None):
     name = str(industry_name or "").lower()
     growth_score = 0.0
     reasons = []
 
-    regime_by_code, matched_prefix = _resolve_regime_by_industry_code(industry_code)
+    regime_by_code, regime_reason = _resolve_regime_by_industry_code(industry_code, industry_name=industry_name)
     if regime_by_code:
-        reasons.append(f"industry_code_prefix={matched_prefix}")
+        reasons.append(str(regime_reason or "industry_regime_resolved"))
         if regime_by_code == "high_growth":
             growth_score += 1.35
         elif regime_by_code == "stable_value":
@@ -8716,6 +8883,9 @@ def _resolve_traditional_style(industry_name, indicator_profile, method_price_ma
     if any(keyword.lower() in name for keyword in TRADITIONAL_STYLE_INDUSTRY_GROWTH_KEYWORDS):
         growth_score += float(TRADITIONAL_STYLE_SCORE_RULES.get("industry_growth_bias", 1.15) or 1.15)
         reasons.append("industry_growth_bias")
+    elif any(keyword.lower() in name for keyword in TRADITIONAL_STYLE_INDUSTRY_CYCLICAL_KEYWORDS):
+        growth_score += 0.08
+        reasons.append("industry_cyclical_bias")
     elif any(keyword.lower() in name for keyword in TRADITIONAL_STYLE_INDUSTRY_STABLE_KEYWORDS):
         growth_score += float(TRADITIONAL_STYLE_SCORE_RULES.get("industry_stable_bias", -0.9) or -0.9)
         reasons.append("industry_stable_bias")
@@ -8755,7 +8925,7 @@ def _resolve_traditional_style(industry_name, indicator_profile, method_price_ma
         growth_score += float(TRADITIONAL_STYLE_SCORE_RULES.get("pb_fcff_available_penalty", -0.1) or -0.1)
         reasons.append("pb_fcff_available")
 
-    if regime_by_code in {"high_growth", "stable_value", "cyclical_resource"}:
+    if regime_by_code in {"high_growth", "stable_value", "cyclical_resource", "balanced"}:
         style_key = regime_by_code
     elif growth_score >= float(TRADITIONAL_STYLE_SCORE_THRESHOLDS.get("high_growth_min", 1.1) or 1.1):
         style_key = "high_growth"

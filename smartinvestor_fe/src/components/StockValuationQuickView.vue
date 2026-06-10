@@ -1,19 +1,10 @@
 <template>
-  <el-card
-    :class="{ 'embedded-valuation-card': embedded }"
-    :shadow="embedded ? 'never' : 'always'"
-    :body-style="embedded ? { padding: '0' } : undefined"
-    :style="embedded ? 'border: none;' : ''"
-  >
+  <el-card :class="{ 'embedded-valuation-card': embedded }" :shadow="embedded ? 'never' : 'always'"
+    :body-style="embedded ? { padding: '0' } : undefined" :style="embedded ? 'border: none;' : ''">
     <el-skeleton :loading="loading" animated :rows="4">
       <template #default>
-        <el-alert
-          v-if="activeCorporateActionImpact"
-          type="warning"
-          :closable="false"
-          show-icon
-          style="margin-bottom: 8px;"
-        >
+        <el-alert v-if="activeCorporateActionImpact" type="warning" :closable="false" show-icon
+          style="margin-bottom: 8px;">
           <template #title>
             检测到除权摊薄影响: 股本变化 {{ formatGap(activeCorporateActionImpact.share_change_ratio_pct) }}%
           </template>
@@ -47,9 +38,13 @@
               <div class="holding-summary-card-header">
                 <span class="holding-summary-card-title">持仓建议</span>
                 <div class="holding-summary-card-badges">
-                  <el-tag size="small" effect="light" type="danger">{{ traditionalTieredTemplate?.style_label || '均衡' }}</el-tag>
-                  <el-tag size="small" effect="light" type="info">{{ traditionalTieredTemplate?.volatility_profile?.volatility_label || traditionalTieredTemplate?.position_guidance?.volatility_label || '中波动' }}</el-tag>
-                  <el-tag size="small" effect="light" type="warning">仓位 {{ traditionalTieredTemplate?.position_guidance?.suggested_position_range || '-' }}</el-tag>
+                  <el-tag size="small" effect="light" type="danger">{{ traditionalTieredTemplate?.style_label || '均衡'
+                    }}</el-tag>
+                  <el-tag size="small" effect="light" type="info">{{
+                    traditionalTieredTemplate?.volatility_profile?.volatility_label ||
+                    traditionalTieredTemplate?.position_guidance?.volatility_label || '中波动' }}</el-tag>
+                  <el-tag size="small" effect="light" type="warning">仓位 {{
+                    traditionalTieredTemplate?.position_guidance?.suggested_position_range || '-' }}</el-tag>
                 </div>
               </div>
             </template>
@@ -84,124 +79,174 @@
             <el-tab-pane label="三档估值+仓位" name="tiered" />
           </el-tabs>
           <div v-if="traditionalValuationTab === 'snapshot'">
-          <div style="color: #606266; margin-bottom: 6px;">
-            <span>传统信号:</span>
-            <el-tag size="small" effect="light" style="margin-left: 6px;" :type="earningsActionTagType(summary.buy_candidate ? 'BUY' : 'SELL')">{{ earningsActionLabel(summary.buy_candidate ? 'BUY' : 'SELL') }}</el-tag>
-            <span style="margin-left: 6px;">低估分 {{ formatScore(summary.undervalue_score) }}</span>
-            <span style="margin-left: 6px;">风险分 {{ formatScore(valuationRisk?.risk_score) }}</span>
-            <el-tag size="small" effect="light" style="margin-left: 6px;" :type="valuationRiskTagType(valuationRisk?.risk_level)">{{ riskLevelLabel(valuationRisk?.risk_level) }}</el-tag>
-          </div>
-          <el-alert
-            v-if="traditionalFiscalStaleHint"
-            type="warning"
-            :closable="false"
-            show-icon
-            style="margin-bottom: 8px;"
-          >
-            <template #title>{{ traditionalFiscalStaleHint }}</template>
-          </el-alert>
-          <div style="color: #606266; margin-bottom: 6px;">
-            <span>估值财报:</span>
-            <span style="margin-left: 6px;">{{ valuationReportMeta }}</span>
-          </div>
-          <div v-if="traditionalOptimizationMetaText" style="margin-bottom: 6px; color: #409eff;">
-            <span>传统优化:</span>
-            <span style="margin-left: 6px;">{{ traditionalOptimizationMetaText }}</span>
-          </div>
-          <el-row :gutter="10">
-            <el-col :span="12">
-              <div class="valuation-side-card valuation-side-card-primary">
-                <div>
-                  <span>组合估值价:</span>
-                  <span style="margin-left: 6px; font-weight: 600;">{{ formatPrice(summary.composite_valuation_price) }}</span>
-                  <span style="margin-left: 4px; color: #93c5fd; font-weight: 600;">/ {{ formatPrice(summaryOptimized.composite_valuation_price_optimized ?? summary.composite_valuation_price) }}</span>
-                  <span style="margin-left: 4px; color: #f59e0b; font-weight: 600;">/ {{ formatPrice(applyMarketOverallAdjustedPrice(summary.composite_valuation_price, marketOverallMultiplierForDisplay)) }}</span>
-                </div>
-                <div style="margin-top: 4px;">
-                  <span>偏离:</span>
-                  <span style="margin-left: 6px;">{{ formatGap(summary.composite_valuation_gap_pct) }}%</span>
-                  <span style="margin-left: 8px; color: #8c8c8c;">锚{{ formatAnchorDateSuffix(summary.anchor_trade_date) }} <span :style="{ color: anchorSnapshotTrendColor(resolveAnchorSnapshotReturnPct(summary)) }">{{ anchorSnapshotTrendSymbol(resolveAnchorSnapshotReturnPct(summary)) }}</span> {{ formatGap(resolveAnchorSnapshotReturnPct(summary)) }}%</span>
-                  <el-tag size="small" effect="light" style="margin-left: 8px;" :type="statusTagType(summary.composite_valuation_status)">{{ statusLabel(summary.composite_valuation_status) }}</el-tag>
-                </div>
-                <div style="margin-top: 4px;">
-                  <span>统一股本口径(当前):</span>
-                  <span style="margin-left: 6px; font-weight: 600;">{{ formatPrice(summaryNormalized.composite_valuation_price) }}</span>
-                  <span style="margin-left: 4px; color: #93c5fd; font-weight: 600;">/ {{ formatPrice(summaryNormalizedOptimized.composite_valuation_price_optimized ?? summaryNormalized.composite_valuation_price) }}</span>
-                </div>
-                <div style="margin-top: 4px;">
-                  <span>归一化偏离:</span>
-                  <span style="margin-left: 6px;">{{ formatGap(summaryNormalized.composite_valuation_gap_pct) }}%</span>
-                  <span style="margin-left: 8px; color: #8c8c8c;">锚{{ formatAnchorDateSuffix(summaryNormalized.anchor_trade_date) }} <span :style="{ color: anchorSnapshotTrendColor(resolveAnchorSnapshotReturnPct(summaryNormalized)) }">{{ anchorSnapshotTrendSymbol(resolveAnchorSnapshotReturnPct(summaryNormalized)) }}</span> {{ formatGap(resolveAnchorSnapshotReturnPct(summaryNormalized)) }}%</span>
-                  <el-tag size="small" effect="light" style="margin-left: 8px;" :type="statusTagType(summaryNormalized.composite_valuation_status)">{{ statusLabel(summaryNormalized.composite_valuation_status) }}</el-tag>
-                </div>
-              </div>
-            </el-col>
-            <el-col :span="12">
-              <div class="valuation-side-card valuation-side-card-secondary">
-                <div>
-                  <span>保守估值价:</span>
-                  <span style="margin-left: 6px; font-weight: 600;">{{ formatPrice(summary.conservative_valuation_price) }}</span>
-                  <span style="margin-left: 4px; color: #93c5fd; font-weight: 600;">/ {{ formatPrice(summaryOptimized.conservative_valuation_price_optimized ?? summary.conservative_valuation_price) }}</span>
-                  <span style="margin-left: 4px; color: #f59e0b; font-weight: 600;">/ {{ formatPrice(applyMarketOverallAdjustedPrice(summary.conservative_valuation_price, marketOverallMultiplierForDisplay)) }}</span>
-                </div>
-                <div style="margin-top: 4px;">
-                  <span>偏离:</span>
-                  <span style="margin-left: 6px;">{{ formatGap(summary.conservative_valuation_gap_pct) }}%</span>
-                  <span style="margin-left: 8px; color: #8c8c8c;">锚{{ formatAnchorDateSuffix(summary.anchor_trade_date) }} <span :style="{ color: anchorSnapshotTrendColor(resolveAnchorSnapshotReturnPct(summary)) }">{{ anchorSnapshotTrendSymbol(resolveAnchorSnapshotReturnPct(summary)) }}</span> {{ formatGap(resolveAnchorSnapshotReturnPct(summary)) }}%</span>
-                  <el-tag size="small" effect="light" style="margin-left: 8px;" :type="statusTagType(summary.conservative_valuation_status)">{{ statusLabel(summary.conservative_valuation_status) }}</el-tag>
-                </div>
-                <div style="margin-top: 4px;">
-                  <span>统一股本口径(当前):</span>
-                  <span style="margin-left: 6px; font-weight: 600;">{{ formatPrice(summaryNormalized.conservative_valuation_price) }}</span>
-                  <span style="margin-left: 4px; color: #93c5fd; font-weight: 600;">/ {{ formatPrice(summaryNormalizedOptimized.conservative_valuation_price_optimized ?? summaryNormalized.conservative_valuation_price) }}</span>
-                </div>
-                <div style="margin-top: 4px;">
-                  <span>归一化偏离:</span>
-                  <span style="margin-left: 6px;">{{ formatGap(summaryNormalized.conservative_valuation_gap_pct) }}%</span>
-                  <span style="margin-left: 8px; color: #8c8c8c;">锚{{ formatAnchorDateSuffix(summaryNormalized.anchor_trade_date) }} <span :style="{ color: anchorSnapshotTrendColor(resolveAnchorSnapshotReturnPct(summaryNormalized)) }">{{ anchorSnapshotTrendSymbol(resolveAnchorSnapshotReturnPct(summaryNormalized)) }}</span> {{ formatGap(resolveAnchorSnapshotReturnPct(summaryNormalized)) }}%</span>
-                  <el-tag size="small" effect="light" style="margin-left: 8px;" :type="statusTagType(summaryNormalized.conservative_valuation_status)">{{ statusLabel(summaryNormalized.conservative_valuation_status) }}</el-tag>
-                </div>
-              </div>
-            </el-col>
-          </el-row>
-          <div
-            v-if="summary.market_style_valuation_price !== null || summaryNormalized.market_style_valuation_price !== null"
-            style="margin-top: 6px; padding-top: 6px; border-top: 1px dashed #e5e7eb; color: #606266;"
-          >
-            <span>市场风格价:</span>
-            <span style="margin-left: 6px; font-weight: 600;">{{ formatPrice(summary.market_style_valuation_price) }}</span>
-            <span style="margin-left: 4px; color: #93c5fd; font-weight: 600;">/ {{ formatPrice(summaryOptimized.market_style_valuation_price_optimized ?? summary.market_style_valuation_price) }}</span>
-            <span style="margin-left: 8px;">{{ formatGap(summary.market_style_valuation_gap_pct) }}%</span>
-            <el-tag size="small" effect="light" style="margin-left: 8px;" :type="statusTagType(summary.market_style_valuation_status)">
-              {{ statusLabel(summary.market_style_valuation_status) }}
-            </el-tag>
-            <div style="margin-top: 4px; color: #606266;">
-              <span>统一股本口径(当前):</span>
-              <span style="margin-left: 6px; font-weight: 600;">{{ formatPrice(summaryNormalized.market_style_valuation_price) }}</span>
-              <span style="margin-left: 4px; color: #93c5fd; font-weight: 600;">/ {{ formatPrice(summaryNormalizedOptimized.market_style_valuation_price_optimized ?? summaryNormalized.market_style_valuation_price) }}</span>
-              <span style="margin-left: 8px;">{{ formatGap(summaryNormalized.market_style_valuation_gap_pct) }}%</span>
-              <el-tag size="small" effect="light" style="margin-left: 8px;" :type="statusTagType(summaryNormalized.market_style_valuation_status)">
-                {{ statusLabel(summaryNormalized.market_style_valuation_status) }}
-              </el-tag>
+            <div style="color: #606266; margin-bottom: 6px;">
+              <span>传统信号:</span>
+              <el-tag size="small" effect="light" style="margin-left: 6px;"
+                :type="earningsActionTagType(summary.buy_candidate ? 'BUY' : 'SELL')">{{
+                  earningsActionLabel(summary.buy_candidate ? 'BUY' : 'SELL') }}</el-tag>
+              <span style="margin-left: 6px;">低估分 {{ formatScore(summary.undervalue_score) }}</span>
+              <span style="margin-left: 6px;">风险分 {{ formatScore(valuationRisk?.risk_score) }}</span>
+              <el-tag size="small" effect="light" style="margin-left: 6px;"
+                :type="valuationRiskTagType(valuationRisk?.risk_level)">{{ riskLevelLabel(valuationRisk?.risk_level)
+                }}</el-tag>
             </div>
-          </div>
+            <el-alert v-if="traditionalFiscalStaleHint" type="warning" :closable="false" show-icon
+              style="margin-bottom: 8px;">
+              <template #title>{{ traditionalFiscalStaleHint }}</template>
+            </el-alert>
+            <div style="color: #606266; margin-bottom: 6px;">
+              <span>估值财报:</span>
+              <span style="margin-left: 6px;">{{ valuationReportMeta }}</span>
+            </div>
+            <div v-if="traditionalOptimizationMetaText" style="margin-bottom: 6px; color: #409eff;">
+              <span>传统优化:</span>
+              <span style="margin-left: 6px;">{{ traditionalOptimizationMetaText }}</span>
+            </div>
+            <el-row :gutter="10">
+              <el-col :span="12">
+                <div class="valuation-side-card valuation-side-card-primary">
+                  <div>
+                    <span>组合估值价:</span>
+                    <span style="margin-left: 6px; font-weight: 600;">{{ formatPrice(summary.composite_valuation_price)
+                      }}</span>
+                    <span style="margin-left: 4px; color: #93c5fd; font-weight: 600;">/ {{
+                      formatPrice(summaryOptimized.composite_valuation_price_optimized ??
+                      summary.composite_valuation_price)
+                      }}</span>
+                    <span style="margin-left: 4px; color: #f59e0b; font-weight: 600;">/ {{
+                      formatPrice(applyMarketOverallAdjustedPrice(summary.composite_valuation_price,
+                      marketOverallMultiplierForDisplay)) }}</span>
+                  </div>
+                  <div style="margin-top: 4px;">
+                    <span>偏离:</span>
+                    <span style="margin-left: 6px;">{{ formatGap(summary.composite_valuation_gap_pct) }}%</span>
+                    <span style="margin-left: 8px; color: #8c8c8c;">锚{{
+                      formatAnchorDateSuffix(summary.anchor_trade_date) }}
+                      <span :style="{ color: anchorSnapshotTrendColor(resolveAnchorSnapshotReturnPct(summary)) }">{{
+                        anchorSnapshotTrendSymbol(resolveAnchorSnapshotReturnPct(summary)) }}</span> {{
+                          formatGap(resolveAnchorSnapshotReturnPct(summary)) }}%</span>
+                    <el-tag size="small" effect="light" style="margin-left: 8px;"
+                      :type="statusTagType(summary.composite_valuation_status)">{{
+                        statusLabel(summary.composite_valuation_status) }}</el-tag>
+                  </div>
+                  <div style="margin-top: 4px;">
+                    <span>统一股本口径(当前):</span>
+                    <span style="margin-left: 6px; font-weight: 600;">{{
+                      formatPrice(summaryNormalized.composite_valuation_price) }}</span>
+                    <span style="margin-left: 4px; color: #93c5fd; font-weight: 600;">/ {{
+                      formatPrice(summaryNormalizedOptimized.composite_valuation_price_optimized ??
+                      summaryNormalized.composite_valuation_price) }}</span>
+                  </div>
+                  <div style="margin-top: 4px;">
+                    <span>归一化偏离:</span>
+                    <span style="margin-left: 6px;">{{ formatGap(summaryNormalized.composite_valuation_gap_pct)
+                      }}%</span>
+                    <span style="margin-left: 8px; color: #8c8c8c;">锚{{
+                      formatAnchorDateSuffix(summaryNormalized.anchor_trade_date) }} <span
+                        :style="{ color: anchorSnapshotTrendColor(resolveAnchorSnapshotReturnPct(summaryNormalized)) }">{{
+                          anchorSnapshotTrendSymbol(resolveAnchorSnapshotReturnPct(summaryNormalized)) }}</span> {{
+                          formatGap(resolveAnchorSnapshotReturnPct(summaryNormalized)) }}%</span>
+                    <el-tag size="small" effect="light" style="margin-left: 8px;"
+                      :type="statusTagType(summaryNormalized.composite_valuation_status)">{{
+                        statusLabel(summaryNormalized.composite_valuation_status) }}</el-tag>
+                  </div>
+                </div>
+              </el-col>
+              <el-col :span="12">
+                <div class="valuation-side-card valuation-side-card-secondary">
+                  <div>
+                    <span>保守估值价:</span>
+                    <span style="margin-left: 6px; font-weight: 600;">{{
+                      formatPrice(summary.conservative_valuation_price)
+                      }}</span>
+                    <span style="margin-left: 4px; color: #93c5fd; font-weight: 600;">/ {{
+                      formatPrice(summaryOptimized.conservative_valuation_price_optimized ??
+                      summary.conservative_valuation_price) }}</span>
+                    <span style="margin-left: 4px; color: #f59e0b; font-weight: 600;">/ {{
+                      formatPrice(applyMarketOverallAdjustedPrice(summary.conservative_valuation_price,
+                      marketOverallMultiplierForDisplay)) }}</span>
+                  </div>
+                  <div style="margin-top: 4px;">
+                    <span>偏离:</span>
+                    <span style="margin-left: 6px;">{{ formatGap(summary.conservative_valuation_gap_pct) }}%</span>
+                    <span style="margin-left: 8px; color: #8c8c8c;">锚{{
+                      formatAnchorDateSuffix(summary.anchor_trade_date) }}
+                      <span :style="{ color: anchorSnapshotTrendColor(resolveAnchorSnapshotReturnPct(summary)) }">{{
+                        anchorSnapshotTrendSymbol(resolveAnchorSnapshotReturnPct(summary)) }}</span> {{
+                          formatGap(resolveAnchorSnapshotReturnPct(summary)) }}%</span>
+                    <el-tag size="small" effect="light" style="margin-left: 8px;"
+                      :type="statusTagType(summary.conservative_valuation_status)">{{
+                        statusLabel(summary.conservative_valuation_status) }}</el-tag>
+                  </div>
+                  <div style="margin-top: 4px;">
+                    <span>统一股本口径(当前):</span>
+                    <span style="margin-left: 6px; font-weight: 600;">{{
+                      formatPrice(summaryNormalized.conservative_valuation_price) }}</span>
+                    <span style="margin-left: 4px; color: #93c5fd; font-weight: 600;">/ {{
+                      formatPrice(summaryNormalizedOptimized.conservative_valuation_price_optimized ??
+                      summaryNormalized.conservative_valuation_price) }}</span>
+                  </div>
+                  <div style="margin-top: 4px;">
+                    <span>归一化偏离:</span>
+                    <span style="margin-left: 6px;">{{ formatGap(summaryNormalized.conservative_valuation_gap_pct)
+                      }}%</span>
+                    <span style="margin-left: 8px; color: #8c8c8c;">锚{{
+                      formatAnchorDateSuffix(summaryNormalized.anchor_trade_date) }} <span
+                        :style="{ color: anchorSnapshotTrendColor(resolveAnchorSnapshotReturnPct(summaryNormalized)) }">{{
+                          anchorSnapshotTrendSymbol(resolveAnchorSnapshotReturnPct(summaryNormalized)) }}</span> {{
+                          formatGap(resolveAnchorSnapshotReturnPct(summaryNormalized)) }}%</span>
+                    <el-tag size="small" effect="light" style="margin-left: 8px;"
+                      :type="statusTagType(summaryNormalized.conservative_valuation_status)">{{
+                        statusLabel(summaryNormalized.conservative_valuation_status) }}</el-tag>
+                  </div>
+                </div>
+              </el-col>
+            </el-row>
+            <div
+              v-if="summary.market_style_valuation_price !== null || summaryNormalized.market_style_valuation_price !== null"
+              style="margin-top: 6px; padding-top: 6px; border-top: 1px dashed #e5e7eb; color: #606266;">
+              <span>市场风格价:</span>
+              <span style="margin-left: 6px; font-weight: 600;">{{ formatPrice(summary.market_style_valuation_price)
+                }}</span>
+              <span style="margin-left: 4px; color: #93c5fd; font-weight: 600;">/ {{
+                formatPrice(summaryOptimized.market_style_valuation_price_optimized ??
+                  summary.market_style_valuation_price)
+                }}</span>
+              <span style="margin-left: 8px;">{{ formatGap(summary.market_style_valuation_gap_pct) }}%</span>
+              <el-tag size="small" effect="light" style="margin-left: 8px;"
+                :type="statusTagType(summary.market_style_valuation_status)">
+                {{ statusLabel(summary.market_style_valuation_status) }}
+              </el-tag>
+              <div style="margin-top: 4px; color: #606266;">
+                <span>统一股本口径(当前):</span>
+                <span style="margin-left: 6px; font-weight: 600;">{{
+                  formatPrice(summaryNormalized.market_style_valuation_price)
+                  }}</span>
+                <span style="margin-left: 4px; color: #93c5fd; font-weight: 600;">/ {{
+                  formatPrice(summaryNormalizedOptimized.market_style_valuation_price_optimized ??
+                    summaryNormalized.market_style_valuation_price) }}</span>
+                <span style="margin-left: 8px;">{{ formatGap(summaryNormalized.market_style_valuation_gap_pct)
+                  }}%</span>
+                <el-tag size="small" effect="light" style="margin-left: 8px;"
+                  :type="statusTagType(summaryNormalized.market_style_valuation_status)">
+                  {{ statusLabel(summaryNormalized.market_style_valuation_status) }}
+                </el-tag>
+              </div>
+            </div>
           </div>
           <div v-else>
             <div style="color: #606266; margin-bottom: 6px;">{{ holdingSummaryText }}</div>
-            <el-alert
-              v-if="traditionalTieredTemplate && traditionalTieredTemplate.style_reasons?.length"
-              type="info"
-              :closable="false"
-              show-icon
-              style="margin-bottom: 8px;"
-            >
+            <el-alert v-if="traditionalTieredTemplate && traditionalTieredTemplate.style_reasons?.length" type="info"
+              :closable="false" show-icon style="margin-bottom: 8px;">
               <template #title>
                 风格识别: {{ traditionalTieredTemplate.style_label }}
-                <span style="margin-left: 6px; color: #64748b;">score {{ formatGap(traditionalTieredTemplate.style_score) }}</span>
+                <span style="margin-left: 6px; color: #64748b;">score {{
+                  formatGap(traditionalTieredTemplate.style_score) }}</span>
               </template>
               <template #default>
                 <div style="font-size: 12px; color: #64748b;">
-                  行业 {{ traditionalTieredTemplate.industry_name || '-' }} | 依据 {{ traditionalTieredTemplate.style_reasons.join(' / ') }}
+                  行业 {{ traditionalTieredTemplate.industry_name || '-' }} | 依据 {{
+                    traditionalTieredTemplate.style_reasons.join(' / ') }}
                 </div>
               </template>
             </el-alert>
@@ -209,36 +254,57 @@
               <el-col :span="8">
                 <div class="valuation-side-card valuation-side-card-secondary">
                   <div><strong>{{ traditionalTieredTemplate?.tiers?.conservative?.label || '风控优先' }}</strong></div>
-                  <div style="margin-top: 4px;">目标价 {{ formatPrice(traditionalTieredTemplate?.tiers?.conservative?.target_price) }}</div>
-                  <div style="margin-top: 4px;">预期收益 {{ formatGap(traditionalTieredTemplate?.tiers?.conservative?.expected_return_pct) }}%</div>
-                  <div style="margin-top: 4px;">区间 {{ formatPrice(traditionalTieredTemplate?.tiers?.conservative?.range?.lower) }} - {{ formatPrice(traditionalTieredTemplate?.tiers?.conservative?.range?.upper) }}</div>
-                  <div style="margin-top: 4px; color: #64748b;">覆盖 {{ tierCoverageText(traditionalTieredTemplate?.tiers?.conservative?.coverage_ratio) }}</div>
+                  <div style="margin-top: 4px;">目标价 {{
+                    formatPrice(traditionalTieredTemplate?.tiers?.conservative?.target_price)
+                    }}</div>
+                  <div style="margin-top: 4px;">预期收益 {{
+                    formatGap(traditionalTieredTemplate?.tiers?.conservative?.expected_return_pct) }}%</div>
+                  <div style="margin-top: 4px;">区间 {{
+                    formatPrice(traditionalTieredTemplate?.tiers?.conservative?.range?.lower)
+                    }} - {{ formatPrice(traditionalTieredTemplate?.tiers?.conservative?.range?.upper) }}</div>
+                  <div style="margin-top: 4px; color: #64748b;">覆盖 {{
+                    tierCoverageText(traditionalTieredTemplate?.tiers?.conservative?.coverage_ratio) }}</div>
                 </div>
               </el-col>
               <el-col :span="8">
                 <div class="valuation-side-card valuation-side-card-primary">
                   <div><strong>{{ traditionalTieredTemplate?.tiers?.balanced?.label || '平衡' }}</strong></div>
-                  <div style="margin-top: 4px;">目标价 {{ formatPrice(traditionalTieredTemplate?.tiers?.balanced?.target_price) }}</div>
-                  <div style="margin-top: 4px;">预期收益 {{ formatGap(traditionalTieredTemplate?.tiers?.balanced?.expected_return_pct) }}%</div>
-                  <div style="margin-top: 4px;">区间 {{ formatPrice(traditionalTieredTemplate?.tiers?.balanced?.range?.lower) }} - {{ formatPrice(traditionalTieredTemplate?.tiers?.balanced?.range?.upper) }}</div>
-                  <div style="margin-top: 4px; color: #64748b;">覆盖 {{ tierCoverageText(traditionalTieredTemplate?.tiers?.balanced?.coverage_ratio) }}</div>
+                  <div style="margin-top: 4px;">目标价 {{
+                    formatPrice(traditionalTieredTemplate?.tiers?.balanced?.target_price) }}
+                  </div>
+                  <div style="margin-top: 4px;">预期收益 {{
+                    formatGap(traditionalTieredTemplate?.tiers?.balanced?.expected_return_pct) }}%</div>
+                  <div style="margin-top: 4px;">区间 {{
+                    formatPrice(traditionalTieredTemplate?.tiers?.balanced?.range?.lower) }} -
+                    {{ formatPrice(traditionalTieredTemplate?.tiers?.balanced?.range?.upper) }}</div>
+                  <div style="margin-top: 4px; color: #64748b;">覆盖 {{
+                    tierCoverageText(traditionalTieredTemplate?.tiers?.balanced?.coverage_ratio) }}</div>
                 </div>
               </el-col>
               <el-col :span="8">
                 <div class="valuation-side-card valuation-side-card-secondary">
                   <div><strong>{{ traditionalTieredTemplate?.tiers?.aggressive?.label || '成长进攻' }}</strong></div>
-                  <div style="margin-top: 4px;">目标价 {{ formatPrice(traditionalTieredTemplate?.tiers?.aggressive?.target_price) }}</div>
-                  <div style="margin-top: 4px;">预期收益 {{ formatGap(traditionalTieredTemplate?.tiers?.aggressive?.expected_return_pct) }}%</div>
-                  <div style="margin-top: 4px;">区间 {{ formatPrice(traditionalTieredTemplate?.tiers?.aggressive?.range?.lower) }} - {{ formatPrice(traditionalTieredTemplate?.tiers?.aggressive?.range?.upper) }}</div>
-                  <div style="margin-top: 4px; color: #64748b;">覆盖 {{ tierCoverageText(traditionalTieredTemplate?.tiers?.aggressive?.coverage_ratio) }}</div>
+                  <div style="margin-top: 4px;">目标价 {{
+                    formatPrice(traditionalTieredTemplate?.tiers?.aggressive?.target_price)
+                    }}</div>
+                  <div style="margin-top: 4px;">预期收益 {{
+                    formatGap(traditionalTieredTemplate?.tiers?.aggressive?.expected_return_pct) }}%</div>
+                  <div style="margin-top: 4px;">区间 {{
+                    formatPrice(traditionalTieredTemplate?.tiers?.aggressive?.range?.lower) }}
+                    - {{ formatPrice(traditionalTieredTemplate?.tiers?.aggressive?.range?.upper) }}</div>
+                  <div style="margin-top: 4px; color: #64748b;">覆盖 {{
+                    tierCoverageText(traditionalTieredTemplate?.tiers?.aggressive?.coverage_ratio) }}</div>
                 </div>
               </el-col>
             </el-row>
             <div style="margin-top: 8px; color: #334155; font-size: 12px;">
               仓位建议 {{ traditionalTieredTemplate?.position_guidance?.suggested_position_range || '-' }}
-              <span style="margin-left: 8px; color: #64748b;">{{ traditionalTieredTemplate?.position_guidance?.message || '' }}</span>
+              <span style="margin-left: 8px; color: #64748b;">{{ traditionalTieredTemplate?.position_guidance?.message
+                || ''
+                }}</span>
             </div>
-            <div v-if="traditionalBlendHintText" style="margin-top: 4px; color: #94a3b8; font-size: 11px; line-height: 1.4;">
+            <div v-if="traditionalBlendHintText"
+              style="margin-top: 4px; color: #94a3b8; font-size: 11px; line-height: 1.4;">
               {{ traditionalBlendHintText }}
             </div>
             <div style="margin-top: 6px; color: #64748b; font-size: 12px;">
@@ -261,25 +327,26 @@
               <span style="font-size: 11px; color: #64748b;">{{ predictiveContextLabel }}</span>
               <span v-if="predictiveLoading" style="font-size: 11px; color: #64748b;">刷新中...</span>
               <span v-else style="font-size: 11px; color: #94a3b8;">{{ predictiveRefreshMeta }}</span>
-              <el-select v-model="selectedPredictModelSlot" size="small" style="width: 132px;" :disabled="predictiveLoading">
+              <el-select v-model="selectedPredictModelSlot" size="small" style="width: 132px;"
+                :disabled="predictiveLoading">
                 <el-option label="生产模型(默认)" value="production" />
                 <el-option label="候选模型" value="candidate" />
               </el-select>
-              <el-button
-                size="small"
-                text
-                :disabled="predictiveLoading || !stockTradeStore.tsCode"
-                @click="fetchPredictiveSignalOnly()"
-              >
+              <el-button size="small" text :disabled="predictiveLoading || !stockTradeStore.tsCode"
+                @click="fetchPredictiveSignalOnly()">
                 刷新
               </el-button>
             </div>
           </div>
           <div style="color: #606266; margin-bottom: 6px;">
             <span>预测信号:</span>
-            <el-tag size="small" effect="light" style="margin-left: 6px;" :type="earningsActionTagType(earningsSignal?.action)">{{ earningsActionLabel(earningsSignal?.action) }}</el-tag>
+            <el-tag size="small" effect="light" style="margin-left: 6px;"
+              :type="earningsActionTagType(earningsSignal?.action)">{{ earningsActionLabel(earningsSignal?.action)
+              }}</el-tag>
             <span style="margin-left: 6px;">分数 {{ formatScore(earningsSignal?.signal_score) }}</span>
-            <el-tag size="small" effect="light" style="margin-left: 6px;" :type="earningsRiskTagType(earningsSignal?.risk_level)">{{ riskLevelLabel(earningsSignal?.risk_level) }}</el-tag>
+            <el-tag size="small" effect="light" style="margin-left: 6px;"
+              :type="earningsRiskTagType(earningsSignal?.risk_level)">{{ riskLevelLabel(earningsSignal?.risk_level)
+              }}</el-tag>
           </div>
           <el-tabs v-model="predictiveValuationTab" style="margin-bottom: 6px;">
             <el-tab-pane label="预测快照" name="snapshot" />
@@ -293,19 +360,32 @@
                 <div class="valuation-side-card valuation-side-card-primary">
                   <div style="display: flex; align-items: center; justify-content: space-between;">
                     <strong>最新预测估值</strong>
-                    <el-tag size="small" effect="light" :type="earningsActionTagType(predictiveLatestView?.action)">{{ earningsActionLabel(predictiveLatestView?.action) }}</el-tag>
+                    <el-tag size="small" effect="light" :type="earningsActionTagType(predictiveLatestView?.action)">{{
+                      earningsActionLabel(predictiveLatestView?.action) }}</el-tag>
                   </div>
                   <div style="margin-top: 6px; color: #334155;">
                     <span style="font-size: 12px;">分数优先</span>
-                    <span style="margin-left: 6px; font-size: 20px; font-weight: 700;">{{ formatScore(predictiveLatestView?.signal_score) }}</span>
-                    <el-tag size="small" effect="light" style="margin-left: 6px;" :type="earningsRiskTagType(predictiveLatestView?.risk_level)">{{ riskLevelLabel(predictiveLatestView?.risk_level) }}</el-tag>
+                    <span style="margin-left: 6px; font-size: 20px; font-weight: 700;">{{
+                      formatScore(predictiveLatestView?.signal_score) }}</span>
+                    <el-tag size="small" effect="light" style="margin-left: 6px;"
+                      :type="earningsRiskTagType(predictiveLatestView?.risk_level)">{{
+                        riskLevelLabel(predictiveLatestView?.risk_level) }}</el-tag>
                   </div>
-                  <div style="margin-top: 6px;">目标价 {{ formatPrice(resolvePredictiveCoreTargetPrice(predictiveLatestView)) }}</div>
-                  <div style="margin-top: 4px;">区间 {{ formatPrice(resolvePredictiveCoreTargetLow(predictiveLatestView)) }} - {{ formatPrice(resolvePredictiveCoreTargetHigh(predictiveLatestView)) }}</div>
-                  <div style="margin-top: 4px;">预期收益 {{ formatGap(resolvePredictiveCoreReturnPct(predictiveLatestView)) }}%</div>
+                  <div style="margin-top: 6px;">目标价 {{
+                    formatPrice(resolvePredictiveCoreTargetPrice(predictiveLatestView)) }}
+                  </div>
+                  <div style="margin-top: 4px;">区间 {{ formatPrice(resolvePredictiveCoreTargetLow(predictiveLatestView))
+                    }} - {{
+                      formatPrice(resolvePredictiveCoreTargetHigh(predictiveLatestView)) }}</div>
+                  <div style="margin-top: 4px;">预期收益 {{ formatGap(resolvePredictiveCoreReturnPct(predictiveLatestView))
+                    }}%
+                  </div>
                   <div style="margin-top: 4px; color: #64748b; font-size: 12px;">
-                    锚点{{ formatAnchorDateSuffix(predictiveLatestView?.anchor_trade_date ?? predictiveLatestView?.asof_date) }}
-                    <span style="margin-left: 6px;">公告 {{ formatDateOnly(predictiveLatestView?.financial_ann_date) || '-' }}</span>
+                    锚点{{ formatAnchorDateSuffix(predictiveLatestView?.anchor_trade_date ??
+                    predictiveLatestView?.asof_date) }}
+                    <span style="margin-left: 6px;">公告 {{ formatDateOnly(predictiveLatestView?.financial_ann_date) ||
+                      '-'
+                      }}</span>
                   </div>
                 </div>
               </el-col>
@@ -313,27 +393,43 @@
                 <div class="valuation-side-card valuation-side-card-secondary">
                   <div style="display: flex; align-items: center; justify-content: space-between;">
                     <strong>{{ selectedEarningsReportType }} 发布时点估值</strong>
-                    <el-tag size="small" effect="light" :type="earningsActionTagType(predictiveReportAnchorView?.action)">{{ earningsActionLabel(predictiveReportAnchorView?.action) }}</el-tag>
+                    <el-tag size="small" effect="light"
+                      :type="earningsActionTagType(predictiveReportAnchorView?.action)">{{
+                        earningsActionLabel(predictiveReportAnchorView?.action) }}</el-tag>
                   </div>
                   <div style="margin-top: 6px; color: #334155;">
                     <span style="font-size: 12px;">分数优先</span>
-                    <span style="margin-left: 6px; font-size: 20px; font-weight: 700;">{{ formatScore(predictiveReportAnchorView?.signal_score) }}</span>
-                    <el-tag size="small" effect="light" style="margin-left: 6px;" :type="earningsRiskTagType(predictiveReportAnchorView?.risk_level)">{{ riskLevelLabel(predictiveReportAnchorView?.risk_level) }}</el-tag>
+                    <span style="margin-left: 6px; font-size: 20px; font-weight: 700;">{{
+                      formatScore(predictiveReportAnchorView?.signal_score) }}</span>
+                    <el-tag size="small" effect="light" style="margin-left: 6px;"
+                      :type="earningsRiskTagType(predictiveReportAnchorView?.risk_level)">{{
+                        riskLevelLabel(predictiveReportAnchorView?.risk_level) }}</el-tag>
                   </div>
-                  <div style="margin-top: 6px;">目标价 {{ formatPrice(resolvePredictiveCoreTargetPrice(predictiveReportAnchorView)) }}</div>
-                  <div style="margin-top: 4px;">区间 {{ formatPrice(resolvePredictiveCoreTargetLow(predictiveReportAnchorView)) }} - {{ formatPrice(resolvePredictiveCoreTargetHigh(predictiveReportAnchorView)) }}</div>
-                  <div style="margin-top: 4px;">预期收益 {{ formatGap(resolvePredictiveCoreReturnPct(predictiveReportAnchorView)) }}%</div>
+                  <div style="margin-top: 6px;">目标价 {{
+                    formatPrice(resolvePredictiveCoreTargetPrice(predictiveReportAnchorView))
+                    }}</div>
+                  <div style="margin-top: 4px;">区间 {{
+                    formatPrice(resolvePredictiveCoreTargetLow(predictiveReportAnchorView)) }}
+                    - {{ formatPrice(resolvePredictiveCoreTargetHigh(predictiveReportAnchorView)) }}</div>
+                  <div style="margin-top: 4px;">预期收益 {{
+                    formatGap(resolvePredictiveCoreReturnPct(predictiveReportAnchorView))
+                    }}%</div>
                   <div style="margin-top: 4px; color: #64748b; font-size: 12px;">
-                    锚点{{ formatAnchorDateSuffix(predictiveReportAnchorView?.anchor_trade_date ?? predictiveReportAnchorView?.asof_date) }}
-                    <span style="margin-left: 6px;">公告 {{ formatDateOnly(predictiveReportAnchorView?.financial_ann_date) || '-' }}</span>
+                    锚点{{ formatAnchorDateSuffix(predictiveReportAnchorView?.anchor_trade_date ??
+                    predictiveReportAnchorView?.asof_date) }}
+                    <span style="margin-left: 6px;">公告 {{ formatDateOnly(predictiveReportAnchorView?.financial_ann_date)
+                      || '-'
+                      }}</span>
                   </div>
                 </div>
               </el-col>
             </el-row>
             <div style="margin-bottom: 8px; color: #475569; font-size: 12px;">
               <span>分数变化 {{ formatGap(predictiveCompareSummary?.score_delta) }}</span>
-              <span style="margin-left: 10px;">目标价变化 {{ formatGap(predictiveCompareSummary?.target_price_delta_pct) }}%</span>
-              <el-tag size="small" effect="light" style="margin-left: 10px;" :type="predictiveCompareSummary?.action_changed ? 'warning' : 'success'">
+              <span style="margin-left: 10px;">目标价变化 {{ formatGap(predictiveCompareSummary?.target_price_delta_pct)
+                }}%</span>
+              <el-tag size="small" effect="light" style="margin-left: 10px;"
+                :type="predictiveCompareSummary?.action_changed ? 'warning' : 'success'">
                 {{ predictiveCompareSummary?.action_changed ? '操作变化' : '操作稳定' }}
               </el-tag>
             </div>
@@ -342,23 +438,26 @@
                 {{ predictiveDetailExpanded ? '收起价格细节' : '展开价格细节' }}
               </el-button>
             </div>
-            <div v-show="predictiveDetailExpanded" style="padding: 8px; border: 1px dashed #e5e7eb; border-radius: 6px; color: #64748b; font-size: 12px; line-height: 1.7;">
-              <div>最新视图: 原始目标价 {{ formatPrice(predictiveLatestView?.target_price_raw) }} | 优化目标价 {{ formatPrice(predictiveLatestView?.target_price_optimized) }} | 市场因子价 {{ formatPrice(applyMarketOverallAdjustedPrice(predictiveLatestView?.target_price_raw ?? predictiveLatestView?.target_price, marketOverallMultiplierForDisplay)) }}</div>
-              <div>报告视图: 原始目标价 {{ formatPrice(predictiveReportAnchorView?.target_price_raw) }} | 优化目标价 {{ formatPrice(predictiveReportAnchorView?.target_price_optimized) }} | 市场因子价 {{ formatPrice(applyMarketOverallAdjustedPrice(predictiveReportAnchorView?.target_price_raw ?? predictiveReportAnchorView?.target_price, marketOverallMultiplierForDisplay)) }}</div>
+            <div v-show="predictiveDetailExpanded"
+              style="padding: 8px; border: 1px dashed #e5e7eb; border-radius: 6px; color: #64748b; font-size: 12px; line-height: 1.7;">
+              <div>最新视图: 原始目标价 {{ formatPrice(predictiveLatestView?.target_price_raw) }} | 优化目标价 {{
+                formatPrice(predictiveLatestView?.target_price_optimized) }} | 市场因子价 {{
+                  formatPrice(applyMarketOverallAdjustedPrice(predictiveLatestView?.target_price_raw ??
+                    predictiveLatestView?.target_price, marketOverallMultiplierForDisplay)) }}</div>
+              <div>报告视图: 原始目标价 {{ formatPrice(predictiveReportAnchorView?.target_price_raw) }} | 优化目标价 {{
+                formatPrice(predictiveReportAnchorView?.target_price_optimized) }} | 市场因子价 {{
+                  formatPrice(applyMarketOverallAdjustedPrice(predictiveReportAnchorView?.target_price_raw ??
+                    predictiveReportAnchorView?.target_price, marketOverallMultiplierForDisplay)) }}</div>
             </div>
           </div>
           <div v-else>
             <div style="color: #606266; margin-bottom: 6px;">{{ predictiveTierSummaryText }}</div>
-            <el-alert
-              v-if="predictiveTieredTemplate"
-              type="info"
-              :closable="false"
-              show-icon
-              style="margin-bottom: 8px;"
-            >
+            <el-alert v-if="predictiveTieredTemplate" type="info" :closable="false" show-icon
+              style="margin-bottom: 8px;">
               <template #title>
                 预测质量风格: {{ predictiveTieredTemplate.styleLabel }}
-                <span style="margin-left: 6px; color: #64748b;">score {{ formatGap(predictiveTieredTemplate.reliabilityScore) }}</span>
+                <span style="margin-left: 6px; color: #64748b;">score {{
+                  formatGap(predictiveTieredTemplate.reliabilityScore) }}</span>
               </template>
               <template #default>
                 <div style="font-size: 12px; color: #64748b;">
@@ -370,31 +469,48 @@
               <el-col :span="8">
                 <div class="valuation-side-card valuation-side-card-secondary">
                   <div><strong>风控优先</strong></div>
-                  <div style="margin-top: 4px;">目标价 {{ formatPrice(predictiveTieredTemplate?.tiers?.conservative?.targetPrice) }}</div>
-                  <div style="margin-top: 4px;">预期收益 {{ formatGap(predictiveTieredTemplate?.tiers?.conservative?.expectedReturnPct) }}%</div>
-                  <div style="margin-top: 4px;">区间 {{ formatPrice(predictiveTieredTemplate?.tiers?.conservative?.rangeLower) }} - {{ formatPrice(predictiveTieredTemplate?.tiers?.conservative?.rangeUpper) }}</div>
+                  <div style="margin-top: 4px;">目标价 {{
+                    formatPrice(predictiveTieredTemplate?.tiers?.conservative?.targetPrice)
+                    }}</div>
+                  <div style="margin-top: 4px;">预期收益 {{
+                    formatGap(predictiveTieredTemplate?.tiers?.conservative?.expectedReturnPct) }}%</div>
+                  <div style="margin-top: 4px;">区间 {{
+                    formatPrice(predictiveTieredTemplate?.tiers?.conservative?.rangeLower) }}
+                    - {{ formatPrice(predictiveTieredTemplate?.tiers?.conservative?.rangeUpper) }}</div>
                 </div>
               </el-col>
               <el-col :span="8">
                 <div class="valuation-side-card valuation-side-card-primary">
                   <div><strong>平衡</strong></div>
-                  <div style="margin-top: 4px;">目标价 {{ formatPrice(predictiveTieredTemplate?.tiers?.balanced?.targetPrice) }}</div>
-                  <div style="margin-top: 4px;">预期收益 {{ formatGap(predictiveTieredTemplate?.tiers?.balanced?.expectedReturnPct) }}%</div>
-                  <div style="margin-top: 4px;">区间 {{ formatPrice(predictiveTieredTemplate?.tiers?.balanced?.rangeLower) }} - {{ formatPrice(predictiveTieredTemplate?.tiers?.balanced?.rangeUpper) }}</div>
+                  <div style="margin-top: 4px;">目标价 {{
+                    formatPrice(predictiveTieredTemplate?.tiers?.balanced?.targetPrice) }}
+                  </div>
+                  <div style="margin-top: 4px;">预期收益 {{
+                    formatGap(predictiveTieredTemplate?.tiers?.balanced?.expectedReturnPct)
+                    }}%</div>
+                  <div style="margin-top: 4px;">区间 {{ formatPrice(predictiveTieredTemplate?.tiers?.balanced?.rangeLower)
+                    }} - {{
+                      formatPrice(predictiveTieredTemplate?.tiers?.balanced?.rangeUpper) }}</div>
                 </div>
               </el-col>
               <el-col :span="8">
                 <div class="valuation-side-card valuation-side-card-secondary">
                   <div><strong>进攻</strong></div>
-                  <div style="margin-top: 4px;">目标价 {{ formatPrice(predictiveTieredTemplate?.tiers?.aggressive?.targetPrice) }}</div>
-                  <div style="margin-top: 4px;">预期收益 {{ formatGap(predictiveTieredTemplate?.tiers?.aggressive?.expectedReturnPct) }}%</div>
-                  <div style="margin-top: 4px;">区间 {{ formatPrice(predictiveTieredTemplate?.tiers?.aggressive?.rangeLower) }} - {{ formatPrice(predictiveTieredTemplate?.tiers?.aggressive?.rangeUpper) }}</div>
+                  <div style="margin-top: 4px;">目标价 {{
+                    formatPrice(predictiveTieredTemplate?.tiers?.aggressive?.targetPrice) }}
+                  </div>
+                  <div style="margin-top: 4px;">预期收益 {{
+                    formatGap(predictiveTieredTemplate?.tiers?.aggressive?.expectedReturnPct) }}%</div>
+                  <div style="margin-top: 4px;">区间 {{
+                    formatPrice(predictiveTieredTemplate?.tiers?.aggressive?.rangeLower) }} -
+                    {{ formatPrice(predictiveTieredTemplate?.tiers?.aggressive?.rangeUpper) }}</div>
                 </div>
               </el-col>
             </el-row>
             <div style="margin-top: 8px; color: #334155; font-size: 12px;">
               仓位建议 {{ predictiveTieredTemplate?.positionRange || '-' }}
-              <span style="margin-left: 8px; color: #64748b;">{{ predictiveTieredTemplate?.positionMessage || '' }}</span>
+              <span style="margin-left: 8px; color: #64748b;">{{ predictiveTieredTemplate?.positionMessage || ''
+                }}</span>
             </div>
           </div>
         </div>
@@ -406,92 +522,84 @@
           {{ valuationRisk?.summary || '-' }}
         </div>
         <div v-show="variantTableExpanded">
-          <el-tabs
-            v-if="variantTabs.length > 1"
-            v-model="activeVariant"
-            class="valuation-variant-tabs"
-            @tab-change="onVariantTabChange"
-          >
-            <el-tab-pane
-              v-for="item in variantTabs"
-              :key="item.valuation_variant"
-              :name="item.valuation_variant"
-              :label="item.label"
-            />
+          <el-tabs v-if="variantTabs.length > 1" v-model="activeVariant" class="valuation-variant-tabs"
+            @tab-change="onVariantTabChange">
+            <el-tab-pane v-for="item in variantTabs" :key="item.valuation_variant" :name="item.valuation_variant"
+              :label="item.label" />
           </el-tabs>
           <el-table :data="visibleRows" size="small" style="width: 100%" empty-text="暂无估值数据">
-          <el-table-column prop="valuation_method" label="方法" :width="95">
-            <template #default="{ row }">
-              <span>{{ methodLabel(row.valuation_method) }}</span>
-              <el-tag
-                v-if="row.corporate_action_impact?.impact_detected"
-                size="small"
-                effect="light"
-                type="warning"
-                style="margin-left: 6px;"
-              >
-                除权影响
-              </el-tag>
-            </template>
-          </el-table-column>
-          <el-table-column prop="valuation_price" label="估值价(原/指)" :width="170">
-            <template #default="{ row }">
-              <span>{{ formatPrice(row.valuation_price) }}</span>
-              <span style="margin-left: 4px; color: #93c5fd; font-weight: 600;">
-                / {{ formatPrice(applyMarketOverallAdjustedPrice(row.valuation_price, marketOverallMultiplierForDisplay)) }}
-              </span>
-            </template>
-          </el-table-column>
-          <el-table-column prop="valuation_gap_pct" label="偏离(%)" :width="95">
-            <template #default="{ row }">
-              <span :style="{ color: Number(row.valuation_gap_pct || 0) >= 0 ? '#cf1322' : '#389e0d' }">
-                {{ formatGap(row.valuation_gap_pct) }}
-              </span>
-            </template>
-          </el-table-column>
-          <el-table-column prop="valuation_status" label="判断" :width="90">
-            <template #default="{ row }">
-              <el-tag v-if="row.valuation_status === 'under'" type="danger" size="small" effect="light">低估</el-tag>
-              <el-tag v-else-if="row.valuation_status === 'over'" type="success" size="small" effect="light">高估</el-tag>
-              <el-tag v-else-if="row.valuation_status === 'fair'" type="info" size="small" effect="light">合理</el-tag>
-              <span v-else>-</span>
-            </template>
-          </el-table-column>
-          <el-table-column label="敏感" :width="90">
-            <template #default="{ row }">
-              <el-tag v-if="isThresholdSensitive(row.valuation_gap_pct)" type="warning" size="small" effect="light">阈值敏感</el-tag>
-              <span v-else>-</span>
-            </template>
-          </el-table-column>
-          <el-table-column prop="source" label="来源" :width="90">
-            <template #default="{ row }">
-              <el-tag v-if="row.source === 'snapshot_cache' || row.source === 'prefill_command'" type="warning" size="small" effect="light">缓存</el-tag>
-              <el-tag v-else-if="row.source === 'live_compute'" type="primary" size="small" effect="light">实时</el-tag>
-              <span v-else>{{ row.source || '-' }}</span>
-            </template>
-          </el-table-column>
-          <el-table-column prop="profit_data_source" label="财报来源" :width="130">
-            <template #default="{ row }">
-              <span>{{ row.profit_data_source || '-' }}</span>
-            </template>
-          </el-table-column>
-          <el-table-column prop="profit_report_end_date" label="财报期" :width="110">
-            <template #default="{ row }">
-              <span>{{ row.profit_report_end_date || '-' }}</span>
-            </template>
-          </el-table-column>
-          <el-table-column label="归一化估值" :width="122" show-overflow-tooltip>
-            <template #default="{ row }">
-              <span>{{ formatPrice(row.valuation_price_normalized_to_latest_share) }}</span>
-            </template>
-          </el-table-column>
-          <el-table-column label="归一化偏离(%)" :width="122" show-overflow-tooltip>
-            <template #default="{ row }">
-              <span :style="{ color: Number(row.valuation_gap_pct_normalized_to_latest_share || 0) >= 0 ? '#cf1322' : '#389e0d' }">
-                {{ formatGap(row.valuation_gap_pct_normalized_to_latest_share) }}
-              </span>
-            </template>
-          </el-table-column>
+            <el-table-column prop="valuation_method" label="方法" :width="95">
+              <template #default="{ row }">
+                <span>{{ methodLabel(row.valuation_method) }}</span>
+                <el-tag v-if="row.corporate_action_impact?.impact_detected" size="small" effect="light" type="warning"
+                  style="margin-left: 6px;">
+                  除权影响
+                </el-tag>
+              </template>
+            </el-table-column>
+            <el-table-column prop="valuation_price" label="估值价(原/指)" :width="170">
+              <template #default="{ row }">
+                <span>{{ formatPrice(row.valuation_price) }}</span>
+                <span style="margin-left: 4px; color: #93c5fd; font-weight: 600;">
+                  / {{ formatPrice(applyMarketOverallAdjustedPrice(row.valuation_price,
+                  marketOverallMultiplierForDisplay)) }}
+                </span>
+              </template>
+            </el-table-column>
+            <el-table-column prop="valuation_gap_pct" label="偏离(%)" :width="95">
+              <template #default="{ row }">
+                <span :style="{ color: Number(row.valuation_gap_pct || 0) >= 0 ? '#cf1322' : '#389e0d' }">
+                  {{ formatGap(row.valuation_gap_pct) }}
+                </span>
+              </template>
+            </el-table-column>
+            <el-table-column prop="valuation_status" label="判断" :width="90">
+              <template #default="{ row }">
+                <el-tag v-if="row.valuation_status === 'under'" type="danger" size="small" effect="light">低估</el-tag>
+                <el-tag v-else-if="row.valuation_status === 'over'" type="success" size="small"
+                  effect="light">高估</el-tag>
+                <el-tag v-else-if="row.valuation_status === 'fair'" type="info" size="small" effect="light">合理</el-tag>
+                <span v-else>-</span>
+              </template>
+            </el-table-column>
+            <el-table-column label="敏感" :width="90">
+              <template #default="{ row }">
+                <el-tag v-if="isThresholdSensitive(row.valuation_gap_pct)" type="warning" size="small"
+                  effect="light">阈值敏感</el-tag>
+                <span v-else>-</span>
+              </template>
+            </el-table-column>
+            <el-table-column prop="source" label="来源" :width="90">
+              <template #default="{ row }">
+                <el-tag v-if="row.source === 'snapshot_cache' || row.source === 'prefill_command'" type="warning"
+                  size="small" effect="light">缓存</el-tag>
+                <el-tag v-else-if="row.source === 'live_compute'" type="primary" size="small" effect="light">实时</el-tag>
+                <span v-else>{{ row.source || '-' }}</span>
+              </template>
+            </el-table-column>
+            <el-table-column prop="profit_data_source" label="财报来源" :width="130">
+              <template #default="{ row }">
+                <span>{{ row.profit_data_source || '-' }}</span>
+              </template>
+            </el-table-column>
+            <el-table-column prop="profit_report_end_date" label="财报期" :width="110">
+              <template #default="{ row }">
+                <span>{{ row.profit_report_end_date || '-' }}</span>
+              </template>
+            </el-table-column>
+            <el-table-column label="归一化估值" :width="122" show-overflow-tooltip>
+              <template #default="{ row }">
+                <span>{{ formatPrice(row.valuation_price_normalized_to_latest_share) }}</span>
+              </template>
+            </el-table-column>
+            <el-table-column label="归一化偏离(%)" :width="122" show-overflow-tooltip>
+              <template #default="{ row }">
+                <span
+                  :style="{ color: Number(row.valuation_gap_pct_normalized_to_latest_share || 0) >= 0 ? '#cf1322' : '#389e0d' }">
+                  {{ formatGap(row.valuation_gap_pct_normalized_to_latest_share) }}
+                </span>
+              </template>
+            </el-table-column>
           </el-table>
         </div>
       </template>
@@ -640,6 +748,7 @@ type TraditionalTieredTemplate = {
   style_label: string
   style_score: number
   style_reasons: string[]
+  industry_code?: string | null
   industry_name: string
   variant_weights?: Record<string, number>
   blend?: {
@@ -1044,6 +1153,59 @@ function _resolveFallbackTierWeights(methodPrices: Record<string, number>, style
   return result
 }
 
+type PredictiveIndustryRegime = 'growth' | 'cyclical' | 'defensive'
+
+const PREDICTIVE_REGIME_CODE_RULES: Array<{ regime: PredictiveIndustryRegime; prefixes: string[] }> = [
+  // 与后端传统高成长映射保持一致
+  { regime: 'growth', prefixes: ['80108', '80175', '80176', '8515'] },
+  // 与后端传统周期资源映射保持一致
+  {
+    regime: 'cyclical',
+    prefixes: ['80102', '80103', '80104', '80105', '80106', '80107', '80109', '80111', '80112', '80117', '80118', '80119', '80120', '80121', '8517', '8503', '85037', '85038', '85039', '85040'],
+  },
+  // 与后端传统稳定价值映射保持一致
+  { regime: 'defensive', prefixes: ['80178', '80179', '80188', '80195', '80196'] },
+]
+
+function _normalizeIndustryCode(raw: unknown): string {
+  const text = String(raw || '').trim().toUpperCase()
+  if (!text) return ''
+  const matched = text.match(/\d+/)
+  return matched ? matched[0] : ''
+}
+
+function _resolvePredictiveIndustryRegime(industryCodeRaw: unknown): PredictiveIndustryRegime | null {
+  const code = _normalizeIndustryCode(industryCodeRaw)
+  if (!code) return null
+  for (const rule of PREDICTIVE_REGIME_CODE_RULES) {
+    if (rule.prefixes.some((prefix) => code.startsWith(prefix))) {
+      return rule.regime
+    }
+  }
+  return null
+}
+
+function _resolvePredictiveRegimeFromTraditionalStyleKey(styleKeyRaw: unknown): PredictiveIndustryRegime | null {
+  const styleKey = String(styleKeyRaw || '').trim().toLowerCase()
+  if (!styleKey) return null
+  if (styleKey === 'high_growth') return 'growth'
+  if (styleKey === 'cyclical_resource') return 'cyclical'
+  if (styleKey === 'stable_value') return 'defensive'
+  return null
+}
+
+function _resolvePredictiveIndustryCodeCandidates(): string[] {
+  const activeVariantName = String(activeVariant.value || 'default')
+  const activeMeta = variantTabs.value.find((item) => String(item.valuation_variant || '') === activeVariantName)
+  const fromActiveMeta = String(activeMeta?.industry_code || '').trim()
+  const fromTemplate = String(traditionalTieredTemplate.value?.industry_code || '').trim()
+  const fromRows = (rows.value || [])
+    .map((row) => String(row?.industry_code || '').trim())
+    .filter((code) => Boolean(code))
+  const ordered = [fromActiveMeta, fromTemplate, ...fromRows].filter((code) => Boolean(code))
+  return Array.from(new Set(ordered))
+}
+
 function _buildFallbackTraditionalTieredTemplate(
   variant: string,
   variantRows: ValuationMethodRow[],
@@ -1098,21 +1260,21 @@ function _buildFallbackTraditionalTieredTemplate(
 
   const rangeRule = volatilityBucket === 'high'
     ? {
-        conservative: [0.95, 1.02],
-        balanced: [0.94, 1.07],
-        aggressive: [0.92, 1.14],
-      }
+      conservative: [0.95, 1.02],
+      balanced: [0.94, 1.07],
+      aggressive: [0.92, 1.14],
+    }
     : volatilityBucket === 'low'
       ? {
-          conservative: [0.97, 1.03],
-          balanced: [0.96, 1.06],
-          aggressive: [0.94, 1.1],
-        }
+        conservative: [0.97, 1.03],
+        balanced: [0.96, 1.06],
+        aggressive: [0.94, 1.1],
+      }
       : {
-          conservative: [0.96, 1.03],
-          balanced: [0.95, 1.07],
-          aggressive: [0.93, 1.12],
-        }
+        conservative: [0.96, 1.03],
+        balanced: [0.95, 1.07],
+        aggressive: [0.93, 1.12],
+      }
 
   const buildTier = (
     label: string,
@@ -1758,63 +1920,63 @@ function buildEarningsSignalModel(earningsData: any, fallbackTsCode: string, fal
     quantitative_target_components:
       earningsData.quantitative_target_components && typeof earningsData.quantitative_target_components === 'object'
         ? {
-            base_return_pct: toNullableNumber(earningsData.quantitative_target_components.base_return_pct),
-            prob_return_pct: toNullableNumber(earningsData.quantitative_target_components.prob_return_pct),
-            earnings_return_pct: toNullableNumber(earningsData.quantitative_target_components.earnings_return_pct),
-            industry_return_pct: toNullableNumber(earningsData.quantitative_target_components.industry_return_pct),
-            max_abs_return_cap_pct: toNullableNumber(earningsData.quantitative_target_components.max_abs_return_cap_pct),
-            market_regime: earningsData.quantitative_target_components.market_regime
-              ? String(earningsData.quantitative_target_components.market_regime).toUpperCase()
-              : null,
-            market_overall_adjustment:
-              earningsData.quantitative_target_components.market_overall_adjustment
+          base_return_pct: toNullableNumber(earningsData.quantitative_target_components.base_return_pct),
+          prob_return_pct: toNullableNumber(earningsData.quantitative_target_components.prob_return_pct),
+          earnings_return_pct: toNullableNumber(earningsData.quantitative_target_components.earnings_return_pct),
+          industry_return_pct: toNullableNumber(earningsData.quantitative_target_components.industry_return_pct),
+          max_abs_return_cap_pct: toNullableNumber(earningsData.quantitative_target_components.max_abs_return_cap_pct),
+          market_regime: earningsData.quantitative_target_components.market_regime
+            ? String(earningsData.quantitative_target_components.market_regime).toUpperCase()
+            : null,
+          market_overall_adjustment:
+            earningsData.quantitative_target_components.market_overall_adjustment
               && typeof earningsData.quantitative_target_components.market_overall_adjustment === 'object'
-                ? {
-                    enabled: Boolean(earningsData.quantitative_target_components.market_overall_adjustment.enabled),
-                    state: earningsData.quantitative_target_components.market_overall_adjustment.state
-                      ? String(earningsData.quantitative_target_components.market_overall_adjustment.state)
-                      : null,
-                    score: toNullableNumber(earningsData.quantitative_target_components.market_overall_adjustment.score),
-                    multiplier: toNullableNumber(earningsData.quantitative_target_components.market_overall_adjustment.multiplier),
-                    asof_trade_date: earningsData.quantitative_target_components.market_overall_adjustment.asof_trade_date
-                      ? String(earningsData.quantitative_target_components.market_overall_adjustment.asof_trade_date)
-                      : null,
-                  }
-                : null,
-          }
+              ? {
+                enabled: Boolean(earningsData.quantitative_target_components.market_overall_adjustment.enabled),
+                state: earningsData.quantitative_target_components.market_overall_adjustment.state
+                  ? String(earningsData.quantitative_target_components.market_overall_adjustment.state)
+                  : null,
+                score: toNullableNumber(earningsData.quantitative_target_components.market_overall_adjustment.score),
+                multiplier: toNullableNumber(earningsData.quantitative_target_components.market_overall_adjustment.multiplier),
+                asof_trade_date: earningsData.quantitative_target_components.market_overall_adjustment.asof_trade_date
+                  ? String(earningsData.quantitative_target_components.market_overall_adjustment.asof_trade_date)
+                  : null,
+              }
+              : null,
+        }
         : null,
     predictive_tiered_template:
       earningsData.predictive_tiered_template && typeof earningsData.predictive_tiered_template === 'object'
         ? {
-            styleKey: String(earningsData.predictive_tiered_template.styleKey || 'balanced') as PredictiveTieredTemplate['styleKey'],
-            styleLabel: String(earningsData.predictive_tiered_template.styleLabel || '均衡可信度'),
-            reliabilityScore: Number(toNullableNumber(earningsData.predictive_tiered_template.reliabilityScore) ?? 50),
-            reasons: Array.isArray(earningsData.predictive_tiered_template.reasons)
-              ? earningsData.predictive_tiered_template.reasons.map((item: any) => String(item))
-              : [],
-            tiers: {
-              conservative: {
-                targetPrice: toNullableNumber(earningsData.predictive_tiered_template?.tiers?.conservative?.targetPrice),
-                expectedReturnPct: toNullableNumber(earningsData.predictive_tiered_template?.tiers?.conservative?.expectedReturnPct),
-                rangeLower: toNullableNumber(earningsData.predictive_tiered_template?.tiers?.conservative?.rangeLower),
-                rangeUpper: toNullableNumber(earningsData.predictive_tiered_template?.tiers?.conservative?.rangeUpper),
-              },
-              balanced: {
-                targetPrice: toNullableNumber(earningsData.predictive_tiered_template?.tiers?.balanced?.targetPrice),
-                expectedReturnPct: toNullableNumber(earningsData.predictive_tiered_template?.tiers?.balanced?.expectedReturnPct),
-                rangeLower: toNullableNumber(earningsData.predictive_tiered_template?.tiers?.balanced?.rangeLower),
-                rangeUpper: toNullableNumber(earningsData.predictive_tiered_template?.tiers?.balanced?.rangeUpper),
-              },
-              aggressive: {
-                targetPrice: toNullableNumber(earningsData.predictive_tiered_template?.tiers?.aggressive?.targetPrice),
-                expectedReturnPct: toNullableNumber(earningsData.predictive_tiered_template?.tiers?.aggressive?.expectedReturnPct),
-                rangeLower: toNullableNumber(earningsData.predictive_tiered_template?.tiers?.aggressive?.rangeLower),
-                rangeUpper: toNullableNumber(earningsData.predictive_tiered_template?.tiers?.aggressive?.rangeUpper),
-              },
+          styleKey: String(earningsData.predictive_tiered_template.styleKey || 'balanced') as PredictiveTieredTemplate['styleKey'],
+          styleLabel: String(earningsData.predictive_tiered_template.styleLabel || '均衡可信度'),
+          reliabilityScore: Number(toNullableNumber(earningsData.predictive_tiered_template.reliabilityScore) ?? 50),
+          reasons: Array.isArray(earningsData.predictive_tiered_template.reasons)
+            ? earningsData.predictive_tiered_template.reasons.map((item: any) => String(item))
+            : [],
+          tiers: {
+            conservative: {
+              targetPrice: toNullableNumber(earningsData.predictive_tiered_template?.tiers?.conservative?.targetPrice),
+              expectedReturnPct: toNullableNumber(earningsData.predictive_tiered_template?.tiers?.conservative?.expectedReturnPct),
+              rangeLower: toNullableNumber(earningsData.predictive_tiered_template?.tiers?.conservative?.rangeLower),
+              rangeUpper: toNullableNumber(earningsData.predictive_tiered_template?.tiers?.conservative?.rangeUpper),
             },
-            positionRange: String(earningsData.predictive_tiered_template.positionRange || '35%-55%'),
-            positionMessage: String(earningsData.predictive_tiered_template.positionMessage || '位于平衡区间，维持中性仓位。'),
-          }
+            balanced: {
+              targetPrice: toNullableNumber(earningsData.predictive_tiered_template?.tiers?.balanced?.targetPrice),
+              expectedReturnPct: toNullableNumber(earningsData.predictive_tiered_template?.tiers?.balanced?.expectedReturnPct),
+              rangeLower: toNullableNumber(earningsData.predictive_tiered_template?.tiers?.balanced?.rangeLower),
+              rangeUpper: toNullableNumber(earningsData.predictive_tiered_template?.tiers?.balanced?.rangeUpper),
+            },
+            aggressive: {
+              targetPrice: toNullableNumber(earningsData.predictive_tiered_template?.tiers?.aggressive?.targetPrice),
+              expectedReturnPct: toNullableNumber(earningsData.predictive_tiered_template?.tiers?.aggressive?.expectedReturnPct),
+              rangeLower: toNullableNumber(earningsData.predictive_tiered_template?.tiers?.aggressive?.rangeLower),
+              rangeUpper: toNullableNumber(earningsData.predictive_tiered_template?.tiers?.aggressive?.rangeUpper),
+            },
+          },
+          positionRange: String(earningsData.predictive_tiered_template.positionRange || '35%-55%'),
+          positionMessage: String(earningsData.predictive_tiered_template.positionMessage || '位于平衡区间，维持中性仓位。'),
+        }
         : null,
   }
 }
@@ -1887,13 +2049,13 @@ async function fetchPredictiveSignalOnly(requestSeq = ++predictiveFetchSeq.value
     predictiveFusionFallbackHit.value = fusionFallbackNeeded
     const effectiveEarningsResp = fusionFallbackNeeded
       ? await fetchEarningsSignalWithFallback(
-          earningsTsCodeCandidates,
-          requestSeq,
-          'ALL',
-          selectedPredictModelSlot.value,
-          selectedPredictAnchorMode.value,
-          null,
-        )
+        earningsTsCodeCandidates,
+        requestSeq,
+        'ALL',
+        selectedPredictModelSlot.value,
+        selectedPredictAnchorMode.value,
+        null,
+      )
       : earningsResp
     if (requestSeq !== predictiveFetchSeq.value || normalizedTsCode !== String(stockTradeStore.tsCode || '').trim().toUpperCase()) {
       return
@@ -2185,7 +2347,34 @@ const predictiveTieredTemplate = computed<PredictiveTieredTemplate | null>(() =>
   const reliabilityScore = Math.max(5, Math.min(95, signalScore - riskPenalty - dispersionPenalty - freshnessPenalty))
   let styleKey: 'high_confidence' | 'balanced' | 'low_confidence' = 'balanced'
   let styleLabel = '均衡可信度'
-  if (reliabilityScore >= 75) {
+
+  const industryCodeCandidates = _resolvePredictiveIndustryCodeCandidates()
+  const resolvedIndustryCode = industryCodeCandidates[0] || ''
+  const hasIndustryCode = Boolean(resolvedIndustryCode)
+  const traditionalStyleKey = String(traditionalTieredTemplate.value?.style_key || '').trim().toLowerCase()
+  let industryRegime = _resolvePredictiveRegimeFromTraditionalStyleKey(traditionalStyleKey)
+  let industryRegimeReason = ''
+  if (industryRegime) {
+    industryRegimeReason = `traditional_style_key=${traditionalStyleKey}`
+  } else {
+    industryRegime = _resolvePredictiveIndustryRegime(resolvedIndustryCode)
+    industryRegimeReason = industryRegime ? `industry_code=${resolvedIndustryCode}` : (hasIndustryCode ? 'fallback_balanced' : 'none')
+  }
+
+  if (industryRegime === 'growth') {
+    styleKey = 'high_confidence'
+    styleLabel = '成长景气'
+  } else if (industryRegime === 'cyclical') {
+    styleKey = 'balanced'
+    styleLabel = '周期风格'
+  } else if (industryRegime === 'defensive') {
+    styleKey = 'low_confidence'
+    styleLabel = '稳健防守'
+  } else if (hasIndustryCode) {
+    // 有行业编码但未命中时不返回none，统一回落到balanced。
+    styleKey = 'balanced'
+    styleLabel = '均衡可信度'
+  } else if (reliabilityScore >= 75) {
     styleKey = 'high_confidence'
     styleLabel = '高可信度'
   } else if (reliabilityScore < 50) {
@@ -2232,6 +2421,9 @@ const predictiveTieredTemplate = computed<PredictiveTieredTemplate | null>(() =>
     styleLabel,
     reliabilityScore: Number(reliabilityScore.toFixed(2)),
     reasons: [
+      industryRegime ? `industry_regime=${industryRegime}` : (hasIndustryCode ? 'industry_regime=fallback_balanced' : 'industry_regime=none'),
+      `industry_regime_reason=${industryRegimeReason}`,
+      resolvedIndustryCode ? `industry_code=${resolvedIndustryCode}` : 'industry_code=-',
       `signal=${signalScore.toFixed(1)}`,
       `risk=${riskNormalized || '-'}`,
       `dispersion=${(dispersion * 100).toFixed(2)}%`,
@@ -2426,20 +2618,20 @@ async function fetchValuationRows(includePredictive = true) {
     const summaryPayload =
       res.data?.summary_by_variant && typeof res.data.summary_by_variant === 'object'
         ? Object.fromEntries(
-            Object.entries(res.data.summary_by_variant as Record<string, unknown>).map(([variant, payload]) => [
-              variant,
-              resolveSummary(payload),
-            ])
-          )
+          Object.entries(res.data.summary_by_variant as Record<string, unknown>).map(([variant, payload]) => [
+            variant,
+            resolveSummary(payload),
+          ])
+        )
         : {}
     const summaryPayloadNormalized =
       res.data?.summary_by_variant_normalized_to_latest_share && typeof res.data.summary_by_variant_normalized_to_latest_share === 'object'
         ? Object.fromEntries(
-            Object.entries(res.data.summary_by_variant_normalized_to_latest_share as Record<string, unknown>).map(([variant, payload]) => [
-              variant,
-              resolveSummary(payload),
-            ])
-          )
+          Object.entries(res.data.summary_by_variant_normalized_to_latest_share as Record<string, unknown>).map(([variant, payload]) => [
+            variant,
+            resolveSummary(payload),
+          ])
+        )
         : {}
     const riskByVariant =
       res.data?.valuation_risk_by_variant && typeof res.data.valuation_risk_by_variant === 'object'
@@ -2453,20 +2645,20 @@ async function fetchValuationRows(includePredictive = true) {
     summaryByVariantOptimized.value =
       res.data?.summary_by_variant_optimized && typeof res.data.summary_by_variant_optimized === 'object'
         ? Object.fromEntries(
-            Object.entries(res.data.summary_by_variant_optimized as Record<string, unknown>).map(([variant, payload]) => [
-              variant,
-              resolveSummary(payload),
-            ])
-          )
+          Object.entries(res.data.summary_by_variant_optimized as Record<string, unknown>).map(([variant, payload]) => [
+            variant,
+            resolveSummary(payload),
+          ])
+        )
         : {}
     summaryByVariantNormalizedOptimized.value =
       res.data?.summary_by_variant_normalized_to_latest_share_optimized && typeof res.data.summary_by_variant_normalized_to_latest_share_optimized === 'object'
         ? Object.fromEntries(
-            Object.entries(res.data.summary_by_variant_normalized_to_latest_share_optimized as Record<string, unknown>).map(([variant, payload]) => [
-              variant,
-              resolveSummary(payload),
-            ])
-          )
+          Object.entries(res.data.summary_by_variant_normalized_to_latest_share_optimized as Record<string, unknown>).map(([variant, payload]) => [
+            variant,
+            resolveSummary(payload),
+          ])
+        )
         : {}
     traditionalTieredTemplateByVariant.value =
       res.data?.traditional_tiered_template_by_variant && typeof res.data.traditional_tiered_template_by_variant === 'object'
@@ -2512,10 +2704,10 @@ async function fetchValuationRows(includePredictive = true) {
     const activeRisk = riskByVariant[resolvedActive] || res.data?.valuation_risk || null
     valuationRisk.value = activeRisk
       ? {
-          risk_level: String(activeRisk.risk_level || ''),
-          risk_score: Number.isFinite(Number(activeRisk.risk_score)) ? Number(activeRisk.risk_score) : null,
-          summary: activeRisk.summary ? String(activeRisk.summary) : null,
-        }
+        risk_level: String(activeRisk.risk_level || ''),
+        risk_score: Number.isFinite(Number(activeRisk.risk_score)) ? Number(activeRisk.risk_score) : null,
+        summary: activeRisk.summary ? String(activeRisk.summary) : null,
+      }
       : null
 
     if (includePredictive) {
