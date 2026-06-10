@@ -38,12 +38,12 @@
                   controls-position="right"
                 />
                 <el-button size="small" @click="refreshRotationList">刷新</el-button>
-                <el-button size="small" type="primary" plain @click="recomputeRotationList">立即重算</el-button>
               </div>
               <div class="sw-rotation-meta" v-if="rotationMeta.generated_at">
                 <span>快照 {{ rotationMeta.asof_date || '-' }}</span>
                 <span>生成 {{ rotationMeta.generated_at || '-' }}</span>
                 <span>版本 {{ rotationMeta.scoring_version || '-' }}</span>
+                <span>run {{ rotationMeta.run_id || '-' }}</span>
               </div>
               <el-scrollbar class="sw-rotation-scroll">
                 <div
@@ -70,6 +70,10 @@
                 </div>
                 <el-empty v-if="!rotationRows.length" description="暂无轮动候选" />
               </el-scrollbar>
+              <div class="sw-rotation-actions-bottom">
+                <el-button size="small" type="primary" plain @click="recomputeRotationList">立即重算</el-button>
+                <el-button size="small" type="success" plain @click="openRotationRunDialog">查看topN表现</el-button>
+              </div>
             </div>
 
             <el-scrollbar v-else class="sw-industry-list-scroll">
@@ -233,6 +237,40 @@
       </template>
       <StockChartFilter :show-recent-report-panel="false" @toggle-recent-report-panel="noopToggleRecent" />
     </el-dialog>
+
+    <el-dialog v-model="rotationRunDialogVisible" width="88%" top="6vh" title="TopN表现（按run）">
+      <div class="sw-rotation-run-layout" v-loading="rotationRunLoading">
+        <div class="sw-rotation-run-list">
+          <div class="sw-rotation-run-list-title">最近run</div>
+          <el-scrollbar class="sw-rotation-run-scroll">
+            <div
+              v-for="item in rotationRunList"
+              :key="item.run_id"
+              class="sw-rotation-run-item"
+              :class="{ active: selectedRotationRunId === item.run_id }"
+              @click="selectRotationRun(item.run_id)"
+            >
+              <div class="sw-rotation-run-id">{{ item.run_id }}</div>
+              <div class="sw-rotation-run-meta">{{ item.asof_date || '-' }} | {{ item.created_at || '-' }}</div>
+            </div>
+            <el-empty v-if="!rotationRunList.length" description="暂无run" />
+          </el-scrollbar>
+        </div>
+        <div class="sw-rotation-run-chart-wrap">
+          <div class="sw-rotation-run-headline" v-if="selectedRotationRunId">
+            <span>当前run: {{ selectedRotationRunId }}</span>
+            <span>窗口: {{ rotationRunWindows.join('/') }}</span>
+          </div>
+          <v-chart
+            v-if="rotationRunChartOption"
+            :option="rotationRunChartOption"
+            autoresize
+            class="sw-rotation-run-chart"
+          />
+          <el-empty v-else description="暂无可展示的run表现数据" />
+        </div>
+      </div>
+    </el-dialog>
   </DefaultLayout>
 </template>
 
@@ -242,14 +280,14 @@ import axios from 'axios'
 import { ElButton, ElCard, ElCol, ElDialog, ElEmpty, ElInput, ElInputNumber, ElLink, ElMessage, ElOption, ElPagination, ElRadioButton, ElRadioGroup, ElRow, ElScrollbar, ElSelect, ElTable, ElTableColumn, ElTabPane, ElTabs, ElTag } from 'element-plus'
 import { use } from 'echarts/core'
 import { CanvasRenderer } from 'echarts/renderers'
-import { LineChart } from 'echarts/charts'
+import { BarChart, LineChart } from 'echarts/charts'
 import { TooltipComponent, GridComponent, DataZoomComponent, LegendComponent, MarkLineComponent } from 'echarts/components'
 import VChart from 'vue-echarts'
 import DefaultLayout from '../layouts/DefaultLayout.vue'
 import StockChartFilter from '../components/StockChartFilter.vue'
 import { useStockTradeStore } from '../stores/stockTradeStore'
 
-use([CanvasRenderer, LineChart, TooltipComponent, GridComponent, DataZoomComponent, LegendComponent, MarkLineComponent])
+use([CanvasRenderer, LineChart, BarChart, TooltipComponent, GridComponent, DataZoomComponent, LegendComponent, MarkLineComponent])
 
 type IndustryType = 'sw' | 'valuation_variant' | 'corp_industry'
 
@@ -315,7 +353,31 @@ const rotationMeta = ref<{
   asof_date?: string
   generated_at?: string
   scoring_version?: string
+  run_id?: string
 }>({})
+
+type RotationRunSummary = {
+  run_id: string
+  created_at: string
+  asof_date: string
+}
+
+const rotationRunDialogVisible = ref(false)
+const rotationRunLoading = ref(false)
+const rotationRunList = ref<RotationRunSummary[]>([])
+const selectedRotationRunId = ref('')
+const rotationRunWindows = ref<number[]>([])
+const rotationRunPerformance = ref<{
+  topn_summary: Record<string, number | null>
+  benchmark_summary: Record<string, number | null>
+  alpha_summary: Record<string, number | null>
+  hit_ratio_summary: Record<string, number | null>
+}>({
+  topn_summary: {},
+  benchmark_summary: {},
+  alpha_summary: {},
+  hit_ratio_summary: {},
+})
 
 const metric = ref<'close' | 'pe' | 'pb'>('pe')
 const period = ref<'30D' | '60D' | '90D' | '1Y' | '3Y' | '5Y' | '10Y' | 'ALL'>('5Y')
@@ -514,6 +576,89 @@ function formatMetric(value: number | null | undefined) {
   if (typeof value !== 'number' || !Number.isFinite(value)) return '-'
   return value.toFixed(2)
 }
+
+function formatPercent(value: number | null | undefined) {
+  if (typeof value !== 'number' || !Number.isFinite(value)) return '-'
+  return `${(value * 100).toFixed(2)}%`
+}
+
+const rotationRunChartOption = computed(() => {
+  if (!rotationRunWindows.value.length) {
+    return null
+  }
+  const categories = rotationRunWindows.value.map((window) => `${window}D`)
+  const topn = rotationRunWindows.value.map((window) => rotationRunPerformance.value.topn_summary[String(window)] ?? null)
+  const benchmark = rotationRunWindows.value.map((window) => rotationRunPerformance.value.benchmark_summary[String(window)] ?? null)
+  const alpha = rotationRunWindows.value.map((window) => rotationRunPerformance.value.alpha_summary[String(window)] ?? null)
+  const hitRatio = rotationRunWindows.value.map((window) => rotationRunPerformance.value.hit_ratio_summary[String(window)] ?? null)
+
+  return {
+    tooltip: {
+      trigger: 'axis',
+      valueFormatter: (value: number) => formatPercent(Number(value)),
+    },
+    legend: {
+      data: ['TopN收益', '基准收益', '超额收益', '命中率'],
+    },
+    grid: {
+      top: 34,
+      left: 56,
+      right: 56,
+      bottom: 42,
+    },
+    xAxis: {
+      type: 'category',
+      data: categories,
+    },
+    yAxis: [
+      {
+        type: 'value',
+        name: '收益率',
+        axisLabel: {
+          formatter: (value: number) => `${(Number(value) * 100).toFixed(0)}%`,
+        },
+      },
+      {
+        type: 'value',
+        name: '命中率',
+        min: 0,
+        max: 1,
+        axisLabel: {
+          formatter: (value: number) => `${(Number(value) * 100).toFixed(0)}%`,
+        },
+      },
+    ],
+    series: [
+      {
+        name: 'TopN收益',
+        type: 'bar',
+        data: topn,
+        itemStyle: { color: '#2563eb' },
+      },
+      {
+        name: '基准收益',
+        type: 'bar',
+        data: benchmark,
+        itemStyle: { color: '#64748b' },
+      },
+      {
+        name: '超额收益',
+        type: 'bar',
+        data: alpha,
+        itemStyle: { color: '#f59e0b' },
+      },
+      {
+        name: '命中率',
+        type: 'line',
+        yAxisIndex: 1,
+        smooth: true,
+        data: hitRatio,
+        lineStyle: { width: 2, color: '#16a34a' },
+        itemStyle: { color: '#16a34a' },
+      },
+    ],
+  }
+})
 
 function noopToggleRecent() {
   // 对齐 StockChartFilter 的事件签名，弹窗中不需要额外动作。
@@ -716,6 +861,7 @@ async function fetchRotationList(useRecompute = false) {
         asof_date: String(recomputeResp?.data?.meta?.asof_date || ''),
         generated_at: String(recomputeResp?.data?.meta?.generated_at || ''),
         scoring_version: String(recomputeResp?.data?.meta?.scoring_version || ''),
+        run_id: String(recomputeResp?.data?.meta?.run_id || ''),
       }
       return
     }
@@ -743,6 +889,7 @@ async function fetchRotationList(useRecompute = false) {
       asof_date: String(resp?.data?.meta?.asof_date || ''),
       generated_at: String(resp?.data?.meta?.generated_at || ''),
       scoring_version: String(resp?.data?.meta?.scoring_version || ''),
+      run_id: String(resp?.data?.meta?.run_id || ''),
     }
   } finally {
     rotationLoading.value = false
@@ -755,6 +902,71 @@ function refreshRotationList() {
 
 function recomputeRotationList() {
   void fetchRotationList(true)
+}
+
+async function fetchRotationRunList() {
+  if (!baseURL) return
+  const resp = await axios.get(`${baseURL}/industry-universe/rotation/runs/`, {
+    params: { limit: 20 },
+  })
+  const rows = Array.isArray(resp?.data?.data) ? resp.data.data : []
+  rotationRunList.value = rows.map((row: any) => ({
+    run_id: String(row?.run_id || ''),
+    created_at: String(row?.created_at || ''),
+    asof_date: String(row?.asof_date || ''),
+  })).filter((row: RotationRunSummary) => Boolean(row.run_id))
+}
+
+async function fetchRotationRunDetail(runId: string) {
+  if (!baseURL || !runId) return
+  const resp = await axios.get(`${baseURL}/industry-universe/rotation/runs/${encodeURIComponent(runId)}/`, {
+    params: { windows: '5,20,60' },
+  })
+  const evaluation = resp?.data?.data?.evaluation || {}
+  const windowsRaw = Array.isArray(evaluation?.windows) ? evaluation.windows : []
+  const windows = windowsRaw
+    .map((item: any) => Number(item))
+    .filter((item: number) => Number.isInteger(item) && item > 0)
+
+  rotationRunWindows.value = windows
+  rotationRunPerformance.value = {
+    topn_summary: evaluation?.topn_summary || {},
+    benchmark_summary: evaluation?.benchmark_summary || {},
+    alpha_summary: evaluation?.alpha_summary || {},
+    hit_ratio_summary: evaluation?.hit_ratio_summary || {},
+  }
+}
+
+async function selectRotationRun(runId: string) {
+  const normalized = String(runId || '').trim()
+  if (!normalized) return
+  selectedRotationRunId.value = normalized
+  await fetchRotationRunDetail(normalized)
+}
+
+async function openRotationRunDialog() {
+  if (!baseURL) return
+  rotationRunDialogVisible.value = true
+  rotationRunLoading.value = true
+  try {
+    await fetchRotationRunList()
+    if (!rotationRunList.value.length) {
+      selectedRotationRunId.value = ''
+      rotationRunWindows.value = []
+      rotationRunPerformance.value = {
+        topn_summary: {},
+        benchmark_summary: {},
+        alpha_summary: {},
+        hit_ratio_summary: {},
+      }
+      return
+    }
+    const preferred = String(rotationMeta.value.run_id || '').trim()
+    const matched = preferred && rotationRunList.value.find((item) => item.run_id === preferred)
+    await selectRotationRun(matched?.run_id || rotationRunList.value[0].run_id)
+  } finally {
+    rotationRunLoading.value = false
+  }
 }
 
 function selectRotationIndustry(item: {
@@ -940,6 +1152,13 @@ onMounted(async () => {
   height: 548px;
 }
 
+.sw-rotation-actions-bottom {
+  margin-top: 10px;
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
 .sw-rotation-item {
   border: 1px solid #dbeafe;
   border-radius: 8px;
@@ -989,6 +1208,88 @@ onMounted(async () => {
   gap: 10px;
   font-size: 12px;
   color: #334155;
+}
+
+.sw-rotation-run-layout {
+  display: grid;
+  grid-template-columns: 320px minmax(0, 1fr);
+  gap: 12px;
+  min-height: 520px;
+}
+
+.sw-rotation-run-list {
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  background: #f8fafc;
+  padding: 8px;
+}
+
+.sw-rotation-run-list-title {
+  font-size: 13px;
+  color: #475569;
+  margin-bottom: 8px;
+}
+
+.sw-rotation-run-scroll {
+  height: 460px;
+}
+
+.sw-rotation-run-item {
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  background: #ffffff;
+  padding: 8px;
+  margin-bottom: 8px;
+  cursor: pointer;
+}
+
+.sw-rotation-run-item.active {
+  border-color: #2563eb;
+  background: #eff6ff;
+}
+
+.sw-rotation-run-id {
+  font-size: 12px;
+  color: #1e3a8a;
+  font-weight: 600;
+}
+
+.sw-rotation-run-meta {
+  margin-top: 4px;
+  font-size: 12px;
+  color: #64748b;
+}
+
+.sw-rotation-run-chart-wrap {
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  padding: 10px;
+  background: #ffffff;
+}
+
+.sw-rotation-run-headline {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  font-size: 12px;
+  color: #475569;
+  margin-bottom: 8px;
+}
+
+.sw-rotation-run-chart {
+  height: 460px;
+}
+
+@media (max-width: 960px) {
+  .sw-rotation-run-layout {
+    grid-template-columns: 1fr;
+  }
+  .sw-rotation-run-scroll {
+    height: 220px;
+  }
+  .sw-rotation-run-chart {
+    height: 320px;
+  }
 }
 
 .sw-industry-item {

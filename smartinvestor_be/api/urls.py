@@ -156,6 +156,16 @@ urlpatterns = [
         name="industry-universe-rotation-recompute",
     ),
     path(
+        "industry-universe/rotation/runs/",
+        getattr(views, "get_industry_universe_rotation_runs", views.get_sw_industry_options),
+        name="industry-universe-rotation-runs",
+    ),
+    path(
+        "industry-universe/rotation/runs/<str:run_id>/",
+        getattr(views, "get_industry_universe_rotation_run_detail", views.get_sw_industry_options),
+        name="industry-universe-rotation-run-detail",
+    ),
+    path(
         "stock-pick-valuation/weekly-downloads/",
         views.get_weekly_undervalued_downloads,
         name="weekly-undervalued-downloads",

@@ -1,4 +1,4 @@
-import datetime
+﻿import datetime
 import csv
 import hashlib
 import math
@@ -1628,13 +1628,13 @@ def _industry_prior_scores(industry_name):
         "ddm": 0.30,
     }
 
-    if any(k in name for k in ["银行", "保险", "证券", "多元金融"]):
+    if any(k in name for k in ["Θô╢Φíî", "Σ┐¥ΘÖ⌐", "Φ»üσê╕", "σñÜσàâΘçæΦ₧ì"]):
         priors.update({"pb": 0.90, "pe": 0.45, "ps": 0.20, "ddm": 0.40})
-    elif any(k in name for k in ["公用", "地产", "建材", "钢铁", "煤炭", "交通运输"]):
+    elif any(k in name for k in ["σà¼τö¿", "σ£░Σ║º", "σ╗║µ¥É", "ΘÆóΘôü", "τàñτé¡", "Σ║ñΘÇÜΦ┐ÉΦ╛ô"]):
         priors.update({"pb": 0.78, "pe": 0.55, "ps": 0.35, "fcff_dcf": 0.52})
-    elif any(k in name for k in ["半导体", "软件", "互联网", "传媒", "生物", "医药", "电子"]):
+    elif any(k in name for k in ["σìèσ»╝Σ╜ô", "Φ╜»Σ╗╢", "Σ║ÆΦüöτ╜æ", "Σ╝áσ¬Æ", "τöƒτë⌐", "σî╗Φì»", "τö╡σ¡É"]):
         priors.update({"ps": 0.86, "pe": 0.73, "peg": 0.68, "pb": 0.36})
-    elif any(k in name for k in ["食品", "饮料", "家电", "轻工", "纺织", "汽车", "机械"]):
+    elif any(k in name for k in ["Θúƒσôü", "ΘÑ«µûÖ", "σ«╢τö╡", "Φ╜╗σ╖Ñ", "τ║║τ╗ç", "µ▒╜Φ╜ª", "µ£║µó░"]):
         priors.update({"pe": 0.82, "pb": 0.60, "ps": 0.52, "peg": 0.56})
 
     return priors
@@ -1695,7 +1695,7 @@ def _build_recommendation_profile(ts_code, method_map, industry_context):
     confidence = int(max(35, min(95, 55 + (top_score - second_score) * 80 + len(available_rank) * 2)))
 
     reasons = []
-    industry_name = (industry_context or {}).get("industry_name") or "未知行业"
+    industry_name = (industry_context or {}).get("industry_name") or "µ£¬τƒÑΦíîΣ╕Ü"
     reasons.append(f"industry={industry_name}")
     reasons.append(f"available_methods={len(available_rank)}")
     if final_rank:
@@ -2034,7 +2034,7 @@ def _build_corporate_action_impact_payload(ts_code, current_trade_date, current_
             "cash_div_tax": _parse_optional_float(latest_event.get("cash_div_tax"), default=None),
             "div_proc": latest_event.get("div_proc"),
         },
-        "message": "当前估值下降主要来自除权后总股本扩大，同等股权价值被摊到更多股份，不宜直接解读为基本面恶化。",
+        "message": "σ╜ôσëìΣ╝░σÇ╝Σ╕ïΘÖìΣ╕╗Φªüµ¥ÑΦç¬ΘÖñµ¥âσÉÄµÇ╗Φéíµ£¼µë⌐σñº∩╝îσÉîτ¡ëΦéíµ¥âΣ╗╖σÇ╝Φó½µæèσê░µ¢┤σñÜΦéíΣ╗╜∩╝îΣ╕ìσ«£τ¢┤µÄÑΦºúΦ»╗Σ╕║σƒ║µ£¼Θ¥óµü╢σîûπÇé",
     }
 
 
@@ -3228,8 +3228,8 @@ def get_recent_financial_updates(request):
             report_filter = "ALL"
         elif report_filter_raw in {"Q1", "H1", "Q3", "FY"}:
             report_filter = report_filter_raw
-        elif report_filter_raw in {"快", "EXP", "EXPRESS"}:
-            report_filter = "快"
+        elif report_filter_raw in {"σ┐½", "EXP", "EXPRESS"}:
+            report_filter = "σ┐½"
         elif report_filter_raw in {"ANNUAL", "YEAR", "YEARLY"}:
             report_filter = "FY"
         else:
@@ -3257,7 +3257,7 @@ def get_recent_financial_updates(request):
             return normalized_code.startswith(scope)
 
         def _build_daily_sync_summary():
-            if report_filter == "快":
+            if report_filter == "σ┐½":
                 return {
                     "daily": [],
                     "expected_total": 0,
@@ -3266,7 +3266,7 @@ def get_recent_financial_updates(request):
                     "today_expected": 0,
                     "today_synced": 0,
                     "today_missing": 0,
-                    "note": "快报口径不统计 income 同步覆盖",
+                    "note": "σ┐½µèÑσÅúσ╛äΣ╕ìτ╗ƒΦ«í income σÉîµ¡ÑΦªåτ¢û",
                 }
 
             suffix_allow = report_suffix_map.get(report_filter, report_suffix_map["ALL"])
@@ -3449,7 +3449,7 @@ def get_recent_financial_updates(request):
 
             express_ann_date = _parse_date_like(row.get("express_ann_date"))
             if express_ann_date is not None:
-                candidates.append((express_ann_date, "快"))
+                candidates.append((express_ann_date, "σ┐½"))
 
             if latest_trade_date is not None:
                 candidates = [item for item in candidates if item[0] <= latest_trade_date]
@@ -4220,7 +4220,7 @@ def _resolve_report_type_from_end_date(report_end_date):
 
 def _recent_report_candidate_sort_key(candidate):
     ann_date, label = candidate
-    return (ann_date, 0 if str(label or "") == "快" else 1)
+    return (ann_date, 0 if str(label or "") == "σ┐½" else 1)
 
 
 def _build_latest_official_financial_ann_date_map(ts_codes, max_trade_date=None):
@@ -4303,7 +4303,7 @@ def _build_latest_financial_ann_date_map(ts_codes, market="CN", max_trade_date=N
                     express_ann_date=express_ann_date,
                 ),
             ),
-            (express_ann_date, "快"),
+            (express_ann_date, "σ┐½"),
         ]:
             if candidate is None:
                 continue
@@ -4326,10 +4326,10 @@ def _build_latest_financial_ann_date_map(ts_codes, market="CN", max_trade_date=N
 def _normalize_recent_report_label(*, report_type=None, profit_source=None, ann_date=None, express_ann_date=None):
     source_text = str(profit_source or "").strip().lower()
     if source_text.startswith("express"):
-        return "快"
+        return "σ┐½"
 
     if ann_date is not None and express_ann_date is not None and ann_date == express_ann_date:
-        return "快"
+        return "σ┐½"
 
     normalized_type = str(report_type or "").strip().upper()
     if not normalized_type:
@@ -4398,7 +4398,7 @@ def _attach_recent_financial_report_badge(
             if (
                 _parse_date_like(row.get("valuation_express_ann_date")) is not None
                 or _parse_date_like(row.get("express_ann_date")) is not None
-                or fallback_payload.get("label") == "快"
+                or fallback_payload.get("label") == "σ┐½"
             ):
                 official_override_codes.append(ts_code)
 
@@ -4461,9 +4461,9 @@ def _attach_recent_financial_report_badge(
                 )
             )
         if valuation_express_ann is not None:
-            candidates.append((valuation_express_ann, "快"))
+            candidates.append((valuation_express_ann, "σ┐½"))
         if base_express_ann is not None:
-            candidates.append((base_express_ann, "快"))
+            candidates.append((base_express_ann, "σ┐½"))
 
         fallback_payload = fallback_ann_map.get(ts_code) or {}
         fallback_ann = fallback_payload.get("ann_date")
@@ -4627,7 +4627,7 @@ def _attach_signal_window_returns(rows, trade_date_for_query, freq="D", signal_e
 
 def _pick_stocks_by_valuation_fast(request, trade_date, scope, freq="D", from_index=0, to_index=25):
     perf_t0 = time.perf_counter()
-    recommendation_desc = "行业推荐=按股票所属行业先验 + 估值方法可用性进行打分排序，优先返回当前股票有可用快照的方法，并给出置信度与推荐理由。"
+    recommendation_desc = "ΦíîΣ╕ÜµÄ¿ΦìÉ=µîëΦéíτÑ¿µëÇσ▒₧ΦíîΣ╕ÜσàêΘ¬î + Σ╝░σÇ╝µû╣µ│òσÅ»τö¿µÇºΦ┐¢ΦíîµëôσêåµÄÆσ║Å∩╝îΣ╝ÿσàêΦ┐öσ¢₧σ╜ôσëìΦéíτÑ¿µ£ëσÅ»τö¿σ┐½τàºτÜäµû╣µ│ò∩╝îσ╣╢τ╗Öσç║τ╜«Σ┐íσ║ªΣ╕ÄµÄ¿ΦìÉτÉåτö▒πÇé"
     normalized_freq = str(freq or "D").strip().upper()
     latest_trade_date = StockTradingHistory.objects.filter(
         freq=normalized_freq
@@ -4744,7 +4744,7 @@ def _pick_stocks_by_valuation_fast(request, trade_date, scope, freq="D", from_in
     sw_industry = str(sw_industry_raw).strip()
     picking_mode = _normalize_predictive_mode(picking_mode_raw)
     valuation_report_type_text = str(earnings_report_type_raw or "").strip().upper()
-    valuation_express_only = valuation_report_type_text in {"EXP", "EXPRESS", "快"}
+    valuation_express_only = valuation_report_type_text in {"EXP", "EXPRESS", "σ┐½"}
     earnings_report_type = _normalize_earnings_report_type_with_all(earnings_report_type_raw)
     valuation_profit_report_type = _normalize_valuation_profit_report_type(earnings_report_type)
     signal_action = _normalize_optional_choice(signal_action_raw, {"BUY", "HOLD", "SELL_PART", "SELL"})
@@ -4884,7 +4884,7 @@ def _pick_stocks_by_valuation_fast(request, trade_date, scope, freq="D", from_in
                     "sw_industry": sw_industry,
                     "strict_snapshot_only": True,
                     "picking_mode": picking_mode,
-                    "earnings_report_type": "快" if valuation_express_only else earnings_report_type,
+                    "earnings_report_type": "σ┐½" if valuation_express_only else earnings_report_type,
                     "signal_action": signal_action,
                     "risk_level": risk_level,
                     "min_signal_score": min_signal_score,
@@ -5703,12 +5703,20 @@ def _compute_quantile(values, quantile):
 
 SW_ROTATION_OUTPUT_SUBDIR = "output/sw_rotation"
 SW_ROTATION_LATEST_FILE = "sw_industry_rotation_latest.json"
+SW_ROTATION_RUNS_FILE = "sw_industry_rotation_runs.json"
+SW_ROTATION_RETURN_WINDOWS = (5, 20, 60)
 
 
 def _resolve_sw_rotation_snapshot_path():
     output_dir = Path(settings.BASE_DIR) / SW_ROTATION_OUTPUT_SUBDIR
     output_dir.mkdir(parents=True, exist_ok=True)
     return output_dir / SW_ROTATION_LATEST_FILE
+
+
+def _resolve_sw_rotation_runs_path():
+    output_dir = Path(settings.BASE_DIR) / SW_ROTATION_OUTPUT_SUBDIR
+    output_dir.mkdir(parents=True, exist_ok=True)
+    return output_dir / SW_ROTATION_RUNS_FILE
 
 
 def _read_sw_rotation_snapshot():
@@ -5729,6 +5737,240 @@ def _write_sw_rotation_snapshot(payload):
     normalized = payload if isinstance(payload, dict) else {}
     path.write_text(json.dumps(normalized, ensure_ascii=False, indent=2, sort_keys=True), encoding="utf-8")
     return path
+
+
+def _read_sw_rotation_runs_payload():
+    path = _resolve_sw_rotation_runs_path()
+    if not path.exists():
+        return {"runs": []}
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except Exception as exc:
+        logger.warning("read sw rotation runs failed: %s", exc)
+        return {"runs": []}
+    if not isinstance(payload, dict):
+        return {"runs": []}
+    runs = payload.get("runs")
+    if not isinstance(runs, list):
+        payload["runs"] = []
+    return payload
+
+
+def _write_sw_rotation_runs_payload(payload):
+    path = _resolve_sw_rotation_runs_path()
+    normalized = payload if isinstance(payload, dict) else {"runs": []}
+    if not isinstance(normalized.get("runs"), list):
+        normalized["runs"] = []
+    path.write_text(json.dumps(normalized, ensure_ascii=False, indent=2, sort_keys=True), encoding="utf-8")
+    return path
+
+
+def _new_sw_rotation_run_id():
+    seed = f"{datetime.datetime.now(datetime.timezone.utc).isoformat()}|{time.time_ns()}"
+    token = hashlib.md5(seed.encode("utf-8")).hexdigest()[:10]
+    return f"rot_{datetime.datetime.now(datetime.timezone.utc).strftime('%Y%m%d%H%M%S')}_{token}"
+
+
+def _build_sw_rotation_run(snapshot, market, top_n, limit_count):
+    normalized = snapshot if isinstance(snapshot, dict) else {}
+    top_candidates = normalized.get("top_candidates") if isinstance(normalized.get("top_candidates"), list) else []
+    all_candidates = normalized.get("all_candidates") if isinstance(normalized.get("all_candidates"), list) else []
+
+    def _compact_row(row, rank_idx=None):
+        item = row if isinstance(row, dict) else {}
+        metrics = item.get("metrics") if isinstance(item.get("metrics"), dict) else {}
+        return {
+            "rank": int(rank_idx) if isinstance(rank_idx, int) else None,
+            "industry_code": str(item.get("industry_code") or "").strip(),
+            "industry_name": str(item.get("industry_name") or "").strip(),
+            "regime": str(item.get("regime") or "").strip(),
+            "rotation_score": _as_float_or_none(item.get("rotation_score")),
+            "latest_trade_date": str(item.get("latest_trade_date") or "").strip(),
+            "entry_close": _as_float_or_none(item.get("entry_close") or metrics.get("latest_close")),
+            "score_breakdown": {
+                "valuation": _as_float_or_none((item.get("score_breakdown") or {}).get("valuation")),
+                "momentum": _as_float_or_none((item.get("score_breakdown") or {}).get("momentum")),
+                "risk": _as_float_or_none((item.get("score_breakdown") or {}).get("risk")),
+                "style": _as_float_or_none((item.get("score_breakdown") or {}).get("style")),
+            },
+        }
+
+    return {
+        "run_id": _new_sw_rotation_run_id(),
+        "created_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+        "market": str(market or "CN").strip().upper() or "CN",
+        "top_n": int(top_n or 10),
+        "limit_count": int(limit_count or 0),
+        "asof_date": str(normalized.get("asof_date") or "").strip(),
+        "generated_at": str(normalized.get("generated_at") or "").strip(),
+        "scoring_version": str(normalized.get("scoring_version") or "sw_rotation_v1").strip(),
+        "total_candidates": int(normalized.get("total_candidates") or 0),
+        "top_candidates": [_compact_row(row, idx + 1) for idx, row in enumerate(top_candidates)],
+        "all_candidates": [_compact_row(row) for row in all_candidates],
+    }
+
+
+def _append_sw_rotation_run(snapshot, market, top_n, limit_count):
+    payload = _read_sw_rotation_runs_payload()
+    runs = payload.get("runs") if isinstance(payload.get("runs"), list) else []
+    run_record = _build_sw_rotation_run(
+        snapshot=snapshot,
+        market=market,
+        top_n=top_n,
+        limit_count=limit_count,
+    )
+    runs.append(run_record)
+    payload["runs"] = runs
+    _write_sw_rotation_runs_payload(payload)
+    return run_record
+
+
+def _parse_rotation_windows(raw_windows):
+    if raw_windows is None:
+        return list(SW_ROTATION_RETURN_WINDOWS)
+    tokens = [item.strip() for item in str(raw_windows or "").split(",")]
+    values = []
+    for token in tokens:
+        if not token:
+            continue
+        try:
+            number = int(token)
+        except (TypeError, ValueError):
+            continue
+        if number > 0:
+            values.append(number)
+    return sorted(set(values))[:8] if values else list(SW_ROTATION_RETURN_WINDOWS)
+
+
+def _normalize_date_token(value):
+    text = str(value or "").strip()
+    if not text:
+        return ""
+    if len(text) == 8 and text.isdigit():
+        return f"{text[0:4]}-{text[4:6]}-{text[6:8]}"
+    return text[0:10]
+
+
+def _load_sw_close_rows(index_code, start_date, end_date):
+    code = str(index_code or "").strip()
+    if not code:
+        return []
+    pro = get_tushare_pro()
+    try:
+        df = pro.sw_daily(
+            ts_code=code,
+            start_date=start_date,
+            end_date=end_date,
+            fields="ts_code,trade_date,close",
+        )
+    except TypeError:
+        df = pro.sw_daily(ts_code=code, start_date=start_date, end_date=end_date)
+    if df is None or getattr(df, "empty", True):
+        return []
+    frame = df.fillna("").copy().sort_values("trade_date")
+    rows = []
+    for _, row in frame.iterrows():
+        close_value = _as_float_or_none(row.get("close"))
+        if close_value is None or close_value <= 0:
+            continue
+        date_text = _normalize_date_token(row.get("trade_date"))
+        if not date_text:
+            continue
+        rows.append({"trade_date": date_text, "close": float(close_value)})
+    return rows
+
+
+def _evaluate_rotation_run_payload(run_payload, windows):
+    run = run_payload if isinstance(run_payload, dict) else {}
+    asof_date = _normalize_date_token(run.get("asof_date"))
+    if not asof_date:
+        return {
+            "windows": windows,
+            "topn_summary": {},
+            "benchmark_summary": {},
+            "alpha_summary": {},
+            "hit_ratio_summary": {},
+            "details": [],
+            "computed_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+            "error": "missing_asof_date",
+        }
+
+    start_date = asof_date.replace("-", "")
+    end_date = datetime.date.today().strftime("%Y%m%d")
+
+    def _evaluate_rows(rows):
+        evaluated_rows = []
+        for row in rows:
+            item = row if isinstance(row, dict) else {}
+            code = str(item.get("industry_code") or "").strip()
+            if not code:
+                continue
+            try:
+                series = _load_sw_close_rows(code, start_date=start_date, end_date=end_date)
+            except Exception as exc:
+                logger.debug("rotation evaluation sw_daily failed %s: %s", code, exc)
+                series = []
+
+            date_list = [str(point.get("trade_date") or "") for point in series]
+            close_list = [_as_float_or_none(point.get("close")) for point in series]
+            returns = {str(window): None for window in windows}
+            base_idx = None
+            for idx, date_text in enumerate(date_list):
+                if date_text >= asof_date:
+                    base_idx = idx
+                    break
+            if base_idx is not None:
+                base_close = _as_float_or_none(close_list[base_idx])
+                for window in windows:
+                    target_idx = base_idx + int(window)
+                    if base_close is None or base_close <= 0 or target_idx >= len(close_list):
+                        continue
+                    target_close = _as_float_or_none(close_list[target_idx])
+                    if target_close is None or target_close <= 0:
+                        continue
+                    returns[str(window)] = round(float((target_close / base_close) - 1.0), 6)
+
+            evaluated_rows.append(
+                {
+                    "industry_code": code,
+                    "industry_name": str(item.get("industry_name") or "").strip(),
+                    "returns": returns,
+                }
+            )
+        return evaluated_rows
+
+    top_rows = _evaluate_rows(run.get("top_candidates") if isinstance(run.get("top_candidates"), list) else [])
+    benchmark_rows = _evaluate_rows(run.get("all_candidates") if isinstance(run.get("all_candidates"), list) else [])
+
+    def _avg_for_window(rows, window):
+        key = str(window)
+        values = [_as_float_or_none((row.get("returns") or {}).get(key)) for row in rows]
+        cleaned = [float(v) for v in values if v is not None]
+        return round(float(sum(cleaned) / len(cleaned)), 6) if cleaned else None
+
+    topn_summary = {}
+    benchmark_summary = {}
+    alpha_summary = {}
+    hit_ratio_summary = {}
+    for window in windows:
+        top_value = _avg_for_window(top_rows, window)
+        benchmark_value = _avg_for_window(benchmark_rows, window)
+        topn_summary[str(window)] = top_value
+        benchmark_summary[str(window)] = benchmark_value
+        alpha_summary[str(window)] = round(float(top_value - benchmark_value), 6) if top_value is not None and benchmark_value is not None else None
+        hit_values = [_as_float_or_none((row.get("returns") or {}).get(str(window))) for row in top_rows]
+        hit_cleaned = [float(v) for v in hit_values if v is not None]
+        hit_ratio_summary[str(window)] = round(float(sum(1 for v in hit_cleaned if v > 0) / len(hit_cleaned)), 6) if hit_cleaned else None
+
+    return {
+        "windows": windows,
+        "topn_summary": topn_summary,
+        "benchmark_summary": benchmark_summary,
+        "alpha_summary": alpha_summary,
+        "hit_ratio_summary": hit_ratio_summary,
+        "details": top_rows,
+        "computed_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+    }
 
 
 def _safe_pct_change(current_value, past_value):
@@ -5906,6 +6148,7 @@ def _compute_sw_rotation_candidates(market="CN", top_n=10, limit_count=None):
                 "industry_name": industry_name,
                 "regime": regime_value,
                 "rotation_score": round(float(rotation_score), 4),
+                "entry_close": round(float(latest_close), 4),
                 "score_breakdown": {
                     "valuation": round(float(_clamp_score_0_100(valuation_score)), 4),
                     "momentum": round(float(_clamp_score_0_100(momentum_score)), 4),
@@ -5913,6 +6156,7 @@ def _compute_sw_rotation_candidates(market="CN", top_n=10, limit_count=None):
                     "style": round(float(_clamp_score_0_100(style_score)), 4),
                 },
                 "metrics": {
+                    "latest_close": round(float(latest_close), 4),
                     "ret_1m": round(float(ret_1m), 6) if ret_1m is not None else None,
                     "ret_3m": round(float(ret_3m), 6) if ret_3m is not None else None,
                     "volatility": round(float(volatility), 6) if volatility is not None else None,
@@ -5961,6 +6205,50 @@ def get_industry_universe_rotation_latest(request):
         _write_sw_rotation_snapshot(snapshot)
 
     all_candidates = snapshot.get("all_candidates") if isinstance(snapshot.get("all_candidates"), list) else []
+
+    latest_run_id = ""
+    latest_run_record = None
+    fallback_candidates = []
+    fallback_meta = {}
+    runs_payload = _read_sw_rotation_runs_payload()
+    runs = runs_payload.get("runs") if isinstance(runs_payload.get("runs"), list) else []
+    if runs:
+        ordered_runs = sorted(
+            runs,
+            key=lambda row: str((row or {}).get("created_at") or ""),
+            reverse=True,
+        )
+        latest_run_record = ordered_runs[0] if isinstance(ordered_runs[0], dict) else None
+        latest_run_id = str((latest_run_record or {}).get("run_id") or "").strip()
+
+        for candidate_run in ordered_runs:
+            run_item = candidate_run if isinstance(candidate_run, dict) else {}
+            run_all = run_item.get("all_candidates") if isinstance(run_item.get("all_candidates"), list) else []
+            run_top = run_item.get("top_candidates") if isinstance(run_item.get("top_candidates"), list) else []
+            chosen = run_all if run_all else run_top
+            if chosen:
+                fallback_candidates = chosen
+                fallback_meta = {
+                    "asof_date": run_item.get("asof_date"),
+                    "generated_at": run_item.get("generated_at") or run_item.get("created_at"),
+                    "scoring_version": run_item.get("scoring_version") or "sw_rotation_v1",
+                    "run_id": str(run_item.get("run_id") or "").strip(),
+                }
+                break
+
+    # Snapshot may be stale or empty; fallback to latest run to keep UI usable.
+    if (not all_candidates) and fallback_candidates:
+        all_candidates = fallback_candidates
+        if fallback_meta.get("run_id"):
+            latest_run_id = str(fallback_meta.get("run_id") or "").strip()
+            snapshot = {
+                **snapshot,
+                "asof_date": fallback_meta.get("asof_date") or snapshot.get("asof_date"),
+                "generated_at": fallback_meta.get("generated_at") or snapshot.get("generated_at"),
+                "scoring_version": fallback_meta.get("scoring_version") or snapshot.get("scoring_version") or "sw_rotation_v1",
+                "total_candidates": len(fallback_candidates),
+            }
+
     top_candidates = sorted(
         all_candidates,
         key=lambda row: -float((row or {}).get("rotation_score") or 0.0),
@@ -5976,7 +6264,8 @@ def get_industry_universe_rotation_latest(request):
                 "asof_date": snapshot.get("asof_date"),
                 "generated_at": snapshot.get("generated_at"),
                 "scoring_version": snapshot.get("scoring_version") or "sw_rotation_v1",
-                "source": "snapshot",
+                "run_id": latest_run_id,
+                "source": "snapshot" if isinstance(snapshot.get("all_candidates"), list) and snapshot.get("all_candidates") else "snapshot_fallback_run",
             },
         }
     )
@@ -6004,6 +6293,12 @@ def recompute_industry_universe_rotation(request):
         limit_count=limit_count,
     )
     output_path = _write_sw_rotation_snapshot(snapshot)
+    run_record = _append_sw_rotation_run(
+        snapshot=snapshot,
+        market=market,
+        top_n=top_n,
+        limit_count=limit_count,
+    )
 
     return Response(
         {
@@ -6016,7 +6311,118 @@ def recompute_industry_universe_rotation(request):
                 "generated_at": snapshot.get("generated_at"),
                 "scoring_version": snapshot.get("scoring_version") or "sw_rotation_v1",
                 "output_path": str(output_path),
+                "runs_path": str(_resolve_sw_rotation_runs_path()),
                 "source": "recomputed",
+                "run_created": True,
+                "run_id": run_record.get("run_id"),
+            },
+        }
+    )
+
+
+@api_view(["GET"])
+def get_industry_universe_rotation_runs(request):
+    try:
+        limit = int(request.query_params.get("limit", "20") if hasattr(request, "query_params") else 20)
+    except (TypeError, ValueError):
+        limit = 20
+    try:
+        from_index = int(request.query_params.get("from_index", "0") if hasattr(request, "query_params") else 0)
+    except (TypeError, ValueError):
+        from_index = 0
+    limit = max(1, min(200, limit))
+    from_index = max(0, from_index)
+
+    payload = _read_sw_rotation_runs_payload()
+    runs = payload.get("runs") if isinstance(payload.get("runs"), list) else []
+    ordered = sorted(runs, key=lambda row: str((row or {}).get("created_at") or ""), reverse=True)
+    sliced = ordered[from_index:from_index + limit]
+
+    rows = []
+    for item in sliced:
+        row = item if isinstance(item, dict) else {}
+        cached_eval = row.get("last_evaluation") if isinstance(row.get("last_evaluation"), dict) else {}
+        top_candidates = row.get("top_candidates") if isinstance(row.get("top_candidates"), list) else []
+        rows.append(
+            {
+                "run_id": str(row.get("run_id") or "").strip(),
+                "created_at": str(row.get("created_at") or "").strip(),
+                "asof_date": str(row.get("asof_date") or "").strip(),
+                "market": str(row.get("market") or "").strip(),
+                "top_n": int(row.get("top_n") or len(top_candidates) or 0),
+                "scoring_version": str(row.get("scoring_version") or "").strip(),
+                "total_candidates": int(row.get("total_candidates") or 0),
+                "performance": {
+                    "topn_summary": cached_eval.get("topn_summary") or {},
+                    "benchmark_summary": cached_eval.get("benchmark_summary") or {},
+                    "alpha_summary": cached_eval.get("alpha_summary") or {},
+                    "hit_ratio_summary": cached_eval.get("hit_ratio_summary") or {},
+                },
+            }
+        )
+
+    return Response(
+        {
+            "data": rows,
+            "meta": {
+                "total": len(ordered),
+                "from_index": from_index,
+                "limit": limit,
+            },
+        }
+    )
+
+
+@api_view(["GET"])
+def get_industry_universe_rotation_run_detail(request, run_id):
+    normalized_run_id = str(run_id or "").strip()
+    windows = _parse_rotation_windows(request.query_params.get("windows") if hasattr(request, "query_params") else None)
+
+    payload = _read_sw_rotation_runs_payload()
+    runs = payload.get("runs") if isinstance(payload.get("runs"), list) else []
+    matched_index = None
+    matched_run = None
+    for idx, item in enumerate(runs):
+        row = item if isinstance(item, dict) else {}
+        if str(row.get("run_id") or "").strip() == normalized_run_id:
+            matched_index = idx
+            matched_run = row
+            break
+
+    if matched_run is None:
+        return Response({"error": f"rotation run not found: {normalized_run_id}"}, status=404)
+
+    evaluation = _evaluate_rotation_run_payload(matched_run, windows=windows)
+    matched_run["last_evaluation"] = {
+        "windows": windows,
+        "computed_at": evaluation.get("computed_at"),
+        "topn_summary": evaluation.get("topn_summary") or {},
+        "benchmark_summary": evaluation.get("benchmark_summary") or {},
+        "alpha_summary": evaluation.get("alpha_summary") or {},
+        "hit_ratio_summary": evaluation.get("hit_ratio_summary") or {},
+    }
+    if matched_index is not None:
+        runs[matched_index] = matched_run
+        payload["runs"] = runs
+        _write_sw_rotation_runs_payload(payload)
+
+    return Response(
+        {
+            "data": {
+                "run": {
+                    "run_id": str(matched_run.get("run_id") or "").strip(),
+                    "created_at": str(matched_run.get("created_at") or "").strip(),
+                    "asof_date": str(matched_run.get("asof_date") or "").strip(),
+                    "market": str(matched_run.get("market") or "").strip(),
+                    "top_n": int(matched_run.get("top_n") or 0),
+                    "scoring_version": str(matched_run.get("scoring_version") or "").strip(),
+                },
+                "top_candidates": matched_run.get("top_candidates") if isinstance(matched_run.get("top_candidates"), list) else [],
+                "evaluation": evaluation,
+            },
+            "meta": {
+                "run_id": normalized_run_id,
+                "windows": windows,
             },
         }
     )
@@ -6109,11 +6515,11 @@ def get_sw_industry_history(request, industry_code):
         cfg = ValuationConfig(Path(settings.BASE_DIR) / "static", market=market)
         _code, l3_entry = _resolve_sw_l3_entry(cfg, industry_code)
         if not l3_entry:
-            return Response({"error": f"SW行业不存在: {industry_code}"}, status=404)
+            return Response({"error": f"SWΦíîΣ╕ÜΣ╕ìσ¡ÿσ£¿: {industry_code}"}, status=404)
 
         index_code = str(l3_entry.get("index_code") or industry_code or "").strip()
         if not index_code:
-            return Response({"error": f"SW行业编码无效: {industry_code}"}, status=400)
+            return Response({"error": f"SWΦíîΣ╕Üτ╝ûτáüµùáµòê: {industry_code}"}, status=400)
 
         today = datetime.date.today()
         start_date = (today - lookback_delta).strftime("%Y%m%d") if lookback_delta is not None else "19900101"
@@ -6218,7 +6624,7 @@ def get_sw_industry_constituents(request, industry_code, from_index, to_index):
         cfg = ValuationConfig(Path(settings.BASE_DIR) / "static", market=market)
         _code, l3_entry = _resolve_sw_l3_entry(cfg, industry_code)
         if not l3_entry:
-            return Response({"error": f"SW行业不存在: {industry_code}"}, status=404)
+            return Response({"error": f"SWΦíîΣ╕ÜΣ╕ìσ¡ÿσ£¿: {industry_code}"}, status=404)
 
         index_code = str(l3_entry.get("index_code") or industry_code or "").strip()
         industry_code_raw = str(l3_entry.get("industry_code") or "").strip()
@@ -6542,9 +6948,9 @@ def get_industry_universe_types(request):
     return Response(
         {
             "data": [
-                {"industry_type": "sw", "label": "SW行业", "enabled": True},
-                {"industry_type": "valuation_variant", "label": "行业变体", "enabled": True},
-                {"industry_type": "corp_industry", "label": "基本信息行业", "enabled": True},
+                {"industry_type": "sw", "label": "SWΦíîΣ╕Ü", "enabled": True},
+                {"industry_type": "valuation_variant", "label": "ΦíîΣ╕ÜσÅÿΣ╜ô", "enabled": True},
+                {"industry_type": "corp_industry", "label": "σƒ║µ£¼Σ┐íµü»ΦíîΣ╕Ü", "enabled": True},
             ],
             "meta": {"total": 3},
         }
@@ -6675,7 +7081,7 @@ def get_industry_universe_list(request):
                     "industry_key": industry_name,
                     "display_name": industry_name,
                     "member_count": int(row.get("member_count") or 0),
-                    "extra_label": "基础行业",
+                    "extra_label": "σƒ║τíÇΦíîΣ╕Ü",
                 }
             )
         return Response({"data": data, "meta": {"industry_type": industry_type, "total": len(data), "market": market}})
@@ -6715,11 +7121,11 @@ def get_industry_universe_history(request):
             cfg = ValuationConfig(Path(settings.BASE_DIR) / "static", market=market)
             _code, l3_entry = _resolve_sw_l3_entry(cfg, industry_key)
             if not l3_entry:
-                return Response({"error": f"SW行业不存在: {industry_key}"}, status=404)
+                return Response({"error": f"SWΦíîΣ╕ÜΣ╕ìσ¡ÿσ£¿: {industry_key}"}, status=404)
 
             index_code = str(l3_entry.get("index_code") or industry_key or "").strip()
             if not index_code:
-                return Response({"error": f"SW行业编码无效: {industry_key}"}, status=400)
+                return Response({"error": f"SWΦíîΣ╕Üτ╝ûτáüµùáµòê: {industry_key}"}, status=400)
 
             today = datetime.date.today()
             start_date = (today - lookback_delta).strftime("%Y%m%d") if lookback_delta is not None else "19900101"
@@ -7113,7 +7519,7 @@ def mark_stock_as_hold(request, ts_code):
         if not user:
             return Response({"error": "Authentication required."}, status=401)
         corporation = Corporation.objects.filter(ts_code=ts_code).first()
-        # 默认将股票添加到自选股列表（如果不在的话）
+        # Θ╗ÿΦ«ñσ░åΦéíτÑ¿µ╖╗σèáσê░Φç¬ΘÇëΦéíσêùΦí¿∩╝êσªéµ₧£Σ╕ìσ£¿τÜäΦ»¥∩╝ë
         watchlist_entry, created = UserWatchlist.objects.get_or_create(
             user=user,
             ts_code=ts_code,
@@ -7395,7 +7801,7 @@ def get_tushare_data(request, ts_code, data_type):
         def _report_type_from_date(value):
             parsed = _parse_ymd(value)
             if parsed is None:
-                return "快"
+                return "σ┐½"
             month_day = (parsed.month, parsed.day)
             if month_day == (3, 31):
                 return "Q1"
@@ -7405,7 +7811,7 @@ def get_tushare_data(request, ts_code, data_type):
                 return "Q3"
             if month_day == (12, 31):
                 return "FY"
-            return "快"
+            return "σ┐½"
 
         start_date = _parse_ymd(request.query_params.get("start_date"))
         end_date = _parse_ymd(request.query_params.get("end_date"))
@@ -7426,8 +7832,8 @@ def get_tushare_data(request, ts_code, data_type):
             report_type_filter = "ALL"
         elif report_type_raw in {"Q1", "H1", "Q3", "FY"}:
             report_type_filter = report_type_raw
-        elif report_type_raw in {"快", "EXP", "EXPRESS"}:
-            report_type_filter = "快"
+        elif report_type_raw in {"σ┐½", "EXP", "EXPRESS"}:
+            report_type_filter = "σ┐½"
         else:
             report_type_filter = "ALL"
 
@@ -7735,7 +8141,7 @@ def get_tushare_data(request, ts_code, data_type):
             }
 
             for idx, row in enumerate(top_df.to_dict(orient="records"), start=1):
-                holder_name = row.get("holder_name") or f"股东{idx}"
+                holder_name = row.get("holder_name") or f"ΦéíΣ╕£{idx}"
                 hold_amount = row.get("hold_amount")
                 hold_ratio = row.get("hold_ratio")
                 amount_text = f"{float(hold_amount):,.2f}" if hold_amount is not None and pd.notnull(hold_amount) else "-"
@@ -7807,7 +8213,7 @@ def get_stock_valuation_methods(request, ts_code):
             or request.query_params.get("valuation_report_type")
         )
         valuation_report_type_text = str(valuation_report_type_raw or "").strip().upper()
-        express_only = valuation_report_type_text in {"EXP", "EXPRESS", "快"}
+        express_only = valuation_report_type_text in {"EXP", "EXPRESS", "σ┐½"}
         fusion_only = valuation_report_type_text == "FUSION"
         valuation_report_type = _normalize_valuation_profit_report_type(
             valuation_report_type_raw
@@ -8044,7 +8450,7 @@ def get_stock_valuation_methods(request, ts_code):
                 variant = meta.get("valuation_variant")
                 if variant not in data_by_variant:
                     continue
-                label = "默认估值"
+                label = "Θ╗ÿΦ«ñΣ╝░σÇ╝"
                 if variant != "default":
                     if meta.get("industry_name"):
                         label = str(meta.get("industry_name"))
@@ -8198,7 +8604,7 @@ def get_stock_valuation_methods(request, ts_code):
             valuation_variants = [
                 {
                     "valuation_variant": "default",
-                    "label": "默认估值",
+                    "label": "Θ╗ÿΦ«ñΣ╝░σÇ╝",
                     "industry_level": None,
                     "industry_code": None,
                     "industry_name": None,
@@ -8453,7 +8859,7 @@ def get_stock_valuation_methods(request, ts_code):
                 (variant_meta or {}).get("industry_name")
                 or ((variant_rows or [{}])[0] or {}).get("industry_name")
                 or (variant_meta or {}).get("label")
-                or "默认估值"
+                or "Θ╗ÿΦ«ñΣ╝░σÇ╝"
             )
             variant_industry_code = (
                 (variant_meta or {}).get("industry_code")
@@ -8535,9 +8941,9 @@ def _extract_band_pct_from_text(text, default_pct=0.1):
         return default_pct
 
     normalized = str(text)
-    if "严格" in normalized:
+    if "Σ╕Ñµá╝" in normalized:
         return 0.05
-    if "宽松" in normalized:
+    if "σ«╜µ¥╛" in normalized:
         return 0.15
 
     match = re.search(r"(\d{1,2})\s*%", normalized)
@@ -8680,11 +9086,11 @@ def _render_openclaw_advice_text(question, payload):
     conservative_gap_pct = summary.get("conservative_valuation_gap_pct")
 
     if composite_status == "under" and conservative_status in {"under", "fair"}:
-        stance = "当前偏低估，可分批关注。"
+        stance = "σ╜ôσëìσüÅΣ╜ÄΣ╝░∩╝îσÅ»σêåµë╣σà│µ│¿πÇé"
     elif composite_status == "over" and conservative_status in {"over", "fair"}:
-        stance = "当前偏高估，建议谨慎，等待更好安全边际。"
+        stance = "σ╜ôσëìσüÅΘ½ÿΣ╝░∩╝îσ╗║Φ««Φ░¿µàÄ∩╝îτ¡ëσ╛àµ¢┤σÑ╜σ«ëσà¿Φ╛╣ΘÖàπÇé"
     else:
-        stance = "当前估值大体中性，可结合趋势和仓位管理。"
+        stance = "σ╜ôσëìΣ╝░σÇ╝σñºΣ╜ôΣ╕¡µÇº∩╝îσÅ»τ╗ôσÉêΦ╢ïσè┐σÆîΣ╗ôΣ╜ìτ«íτÉåπÇé"
 
     def _fmt_num(value):
         if value is None:
@@ -8692,23 +9098,23 @@ def _render_openclaw_advice_text(question, payload):
         return f"{float(value):.2f}"
 
     advice = [
-        f"问题: {question or '估值建议'}",
-        f"标的: {payload.get('ts_code')} ({payload.get('freq')})",
-        f"现价: {_fmt_num(current_price)}",
+        f"Θù«Θóÿ: {question or 'Σ╝░σÇ╝σ╗║Φ««'}",
+        f"µáçτÜä: {payload.get('ts_code')} ({payload.get('freq')})",
+        f"τÄ░Σ╗╖: {_fmt_num(current_price)}",
         (
-            "组合估值: "
+            "τ╗äσÉêΣ╝░σÇ╝: "
             f"{_fmt_num(summary.get('composite_valuation_price'))} "
             f"({composite_status or '-'}, {_fmt_num(composite_gap_pct)}%)"
         ),
         (
-            "保守估值: "
+            "Σ┐¥σ«êΣ╝░σÇ╝: "
             f"{_fmt_num(summary.get('conservative_valuation_price'))} "
             f"({conservative_status or '-'}, {_fmt_num(conservative_gap_pct)}%)"
         ),
-        f"低估方法: {', '.join(under_methods) if under_methods else '-'}",
-        f"有效方法数: {len(valid_methods)}",
-        f"建议: {stance}",
-        "提示: 本建议仅基于历史与快照估值口径，不构成投资承诺。",
+        f"Σ╜ÄΣ╝░µû╣µ│ò: {', '.join(under_methods) if under_methods else '-'}",
+        f"µ£ëµòêµû╣µ│òµò░: {len(valid_methods)}",
+        f"σ╗║Φ««: {stance}",
+        "µÅÉτñ║: µ£¼σ╗║Φ««Σ╗àσƒ║Σ║ÄσÄåσÅ▓Σ╕Äσ┐½τàºΣ╝░σÇ╝σÅúσ╛ä∩╝îΣ╕ìµ₧äµêÉµèòΦ╡äµë┐Φ»║πÇé",
     ]
     return "\n".join(advice)
 
@@ -8716,7 +9122,7 @@ def _render_openclaw_advice_text(question, payload):
 def _forward_to_feishu(text):
     webhook = str(getattr(settings, "FEISHU_BOT_WEBHOOK", "") or "").strip()
     if not webhook:
-        return False, "FEISHU_BOT_WEBHOOK 未配置"
+        return False, "FEISHU_BOT_WEBHOOK µ£¬Θàìτ╜«"
 
     payload = {
         "msg_type": "text",
@@ -8754,80 +9160,80 @@ def _to_float_or_none(value):
 
 TRADITIONAL_TIER_SCHEMES = {
     "high_growth": {
-        "style_label": "高成长风格",
+        "style_label": "Θ½ÿµêÉΘò┐ΘúÄµá╝",
         "tiers": {
             "conservative": {
-                "label": "风控优先",
+                "label": "ΘúÄµÄºΣ╝ÿσàê",
                 "weights": {"pe": 0.20, "peg": 0.20, "ps": 0.15, "scarcity_overlay": 0.15, "sw_history": 0.10, "fcff_dcf": 0.10, "pb": 0.08, "ddm": 0.02},
                 "range_multiplier": (0.94, 1.04),
             },
             "balanced": {
-                "label": "平衡",
+                "label": "σ╣│Φíí",
                 "weights": {"pe": 0.28, "peg": 0.24, "ps": 0.16, "scarcity_overlay": 0.14, "sw_history": 0.08, "fcff_dcf": 0.06, "pb": 0.03, "ddm": 0.01},
                 "range_multiplier": (0.95, 1.08),
             },
             "aggressive": {
-                "label": "成长进攻",
+                "label": "µêÉΘò┐Φ┐¢µö╗",
                 "weights": {"pe": 0.35, "peg": 0.28, "ps": 0.16, "scarcity_overlay": 0.12, "sw_history": 0.06, "fcff_dcf": 0.02, "pb": 0.01, "ddm": 0.00},
                 "range_multiplier": (0.95, 1.15),
             },
         },
     },
     "stable_value": {
-        "style_label": "稳健价值风格",
+        "style_label": "τ¿│σüÑΣ╗╖σÇ╝ΘúÄµá╝",
         "tiers": {
             "conservative": {
-                "label": "风控优先",
+                "label": "ΘúÄµÄºΣ╝ÿσàê",
                 "weights": {"pb": 0.30, "fcff_dcf": 0.24, "pe": 0.16, "sw_history": 0.10, "ps": 0.08, "scarcity_overlay": 0.06, "peg": 0.04, "ddm": 0.02},
                 "range_multiplier": (0.96, 1.04),
             },
             "balanced": {
-                "label": "平衡",
+                "label": "σ╣│Φíí",
                 "weights": {"pb": 0.24, "fcff_dcf": 0.22, "pe": 0.20, "sw_history": 0.12, "ps": 0.10, "scarcity_overlay": 0.06, "peg": 0.04, "ddm": 0.02},
                 "range_multiplier": (0.95, 1.08),
             },
             "aggressive": {
-                "label": "成长进攻",
+                "label": "µêÉΘò┐Φ┐¢µö╗",
                 "weights": {"pb": 0.18, "fcff_dcf": 0.17, "pe": 0.28, "sw_history": 0.12, "ps": 0.12, "scarcity_overlay": 0.07, "peg": 0.04, "ddm": 0.02},
                 "range_multiplier": (0.94, 1.13),
             },
         },
     },
     "balanced": {
-        "style_label": "平衡风格",
+        "style_label": "σ╣│ΦííΘúÄµá╝",
         "tiers": {
             "conservative": {
-                "label": "风控优先",
+                "label": "ΘúÄµÄºΣ╝ÿσàê",
                 "weights": {"pe": 0.23, "peg": 0.18, "ps": 0.14, "scarcity_overlay": 0.12, "sw_history": 0.12, "fcff_dcf": 0.10, "pb": 0.09, "ddm": 0.02},
                 "range_multiplier": (0.95, 1.04),
             },
             "balanced": {
-                "label": "平衡",
+                "label": "σ╣│Φíí",
                 "weights": {"pe": 0.26, "peg": 0.20, "ps": 0.15, "scarcity_overlay": 0.12, "sw_history": 0.10, "fcff_dcf": 0.09, "pb": 0.06, "ddm": 0.02},
                 "range_multiplier": (0.95, 1.08),
             },
             "aggressive": {
-                "label": "成长进攻",
+                "label": "µêÉΘò┐Φ┐¢µö╗",
                 "weights": {"pe": 0.31, "peg": 0.24, "ps": 0.15, "scarcity_overlay": 0.11, "sw_history": 0.08, "fcff_dcf": 0.06, "pb": 0.04, "ddm": 0.01},
                 "range_multiplier": (0.95, 1.14),
             },
         },
     },
     "cyclical_resource": {
-        "style_label": "周期资源风格",
+        "style_label": "σæ¿µ£ƒΦ╡äµ║ÉΘúÄµá╝",
         "tiers": {
             "conservative": {
-                "label": "风控优先",
+                "label": "ΘúÄµÄºΣ╝ÿσàê",
                 "weights": {"sw_history": 0.22, "scarcity_overlay": 0.20, "fcff_dcf": 0.18, "pb": 0.16, "ps": 0.10, "pe": 0.08, "peg": 0.04, "ddm": 0.02},
                 "range_multiplier": (0.95, 1.04),
             },
             "balanced": {
-                "label": "平衡",
+                "label": "σ╣│Φíí",
                 "weights": {"sw_history": 0.24, "scarcity_overlay": 0.22, "fcff_dcf": 0.20, "ps": 0.14, "pb": 0.10, "pe": 0.06, "peg": 0.03, "ddm": 0.01},
                 "range_multiplier": (0.95, 1.08),
             },
             "aggressive": {
-                "label": "成长进攻",
+                "label": "µêÉΘò┐Φ┐¢µö╗",
                 "weights": {"sw_history": 0.27, "scarcity_overlay": 0.24, "fcff_dcf": 0.22, "ps": 0.17, "pb": 0.07, "pe": 0.02, "peg": 0.01, "ddm": 0.00},
                 "range_multiplier": (0.95, 1.14),
             },
@@ -8838,19 +9244,19 @@ TRADITIONAL_TIER_SCHEMES = {
 TRADITIONAL_INDUSTRY_SCHEME_OVERRIDES = [
     {
         "scheme_key": "cyclical_resource",
-        "keywords": ["煤", "油", "金属", "钢", "铜", "有色", "化工", "资源"],
+        "keywords": ["τàñ", "µ▓╣", "Θçæσ▒₧", "ΘÆó", "Θô£", "µ£ëΦë▓", "σîûσ╖Ñ", "Φ╡äµ║É"],
     }
 ]
 
 TRADITIONAL_STYLE_INDUSTRY_GROWTH_KEYWORDS = [
-    "仪器", "半导体", "软件", "医疗", "创新", "新能源", "算力", "通信", "生物",
-    "ai", "aigc", "llm", "大语言模型", "模型", "agent", "智能体", "推理", "云计算", "数据中心",
+    "Σ╗¬σÖ¿", "σìèσ»╝Σ╜ô", "Φ╜»Σ╗╢", "σî╗τûù", "σê¢µû░", "µû░Φâ╜µ║É", "τ«ùσè¢", "ΘÇÜΣ┐í", "τöƒτë⌐",
+    "ai", "aigc", "llm", "σñºΦ»¡Φ¿Çµ¿íσ₧ï", "µ¿íσ₧ï", "agent", "µÖ║Φâ╜Σ╜ô", "µÄ¿τÉå", "Σ║æΦ«íτ«ù", "µò░µì«Σ╕¡σ┐â",
 ]
 TRADITIONAL_STYLE_INDUSTRY_STABLE_KEYWORDS = [
-    "银行", "公用", "消费", "电力", "燃气", "保险", "白酒", "公路", "铁路", "港口", "水务", "运营商",
+    "Θô╢Φíî", "σà¼τö¿", "µ╢êΦ┤╣", "τö╡σè¢", "τçâµ░ö", "Σ┐¥ΘÖ⌐", "τÖ╜ΘàÆ", "σà¼Φ╖»", "ΘôüΦ╖»", "µ╕»σÅú", "µ░┤σèí", "Φ┐ÉΦÉÑσòå",
 ]
 TRADITIONAL_STYLE_INDUSTRY_CYCLICAL_KEYWORDS = [
-    "煤", "油", "石化", "化工", "钢", "有色", "铜", "铝", "建材", "地产", "航运", "资源", "周期",
+    "τàñ", "µ▓╣", "τƒ│σîû", "σîûσ╖Ñ", "ΘÆó", "µ£ëΦë▓", "Θô£", "Θô¥", "σ╗║µ¥É", "σ£░Σ║º", "Φê¬Φ┐É", "Φ╡äµ║É", "σæ¿µ£ƒ",
 ]
 
 # Phase A: industry-code-first regime mapping.
@@ -9492,7 +9898,7 @@ def _load_traditional_volatility_profile(ts_code, current_price=None, freq="D", 
                 volatility_bucket = "low"
             elif atr_ratio >= 0.06:
                 volatility_bucket = "high"
-        volatility_label = {"low": "低波动", "medium": "中波动", "high": "高波动"}.get(volatility_bucket, "中波动")
+        volatility_label = {"low": "Σ╜Äµ│óσè¿", "medium": "Σ╕¡µ│óσè¿", "high": "Θ½ÿµ│óσè¿"}.get(volatility_bucket, "Σ╕¡µ│óσè¿")
         return {
             "atr": round(atr_value, 4) if atr_value is not None else None,
             "atr_ratio": round(atr_ratio, 4) if atr_ratio is not None else None,
@@ -9509,22 +9915,22 @@ def _resolve_position_guidance(current_price, conservative_range, balanced_range
     cp = _to_float_or_none(current_price)
     style_key_normalized = str(style_key or "balanced").strip().lower()
     style_label = {
-        "high_growth": "高成长风格",
-        "stable_value": "稳健价值风格",
-        "balanced": "平衡风格",
-        "cyclical_resource": "周期资源风格",
-    }.get(style_key_normalized, "平衡风格")
+        "high_growth": "Θ½ÿµêÉΘò┐ΘúÄµá╝",
+        "stable_value": "τ¿│σüÑΣ╗╖σÇ╝ΘúÄµá╝",
+        "balanced": "σ╣│ΦííΘúÄµá╝",
+        "cyclical_resource": "σæ¿µ£ƒΦ╡äµ║ÉΘúÄµá╝",
+    }.get(style_key_normalized, "σ╣│ΦííΘúÄµá╝")
 
     volatility_bucket = str((volatility_profile or {}).get("volatility_bucket") or "medium").lower()
     if volatility_bucket not in {"low", "medium", "high"}:
         volatility_bucket = "medium"
-    volatility_label = (volatility_profile or {}).get("volatility_label") or {"low": "低波动", "medium": "中波动", "high": "高波动"}.get(volatility_bucket, "中波动")
+    volatility_label = (volatility_profile or {}).get("volatility_label") or {"low": "Σ╜Äµ│óσè¿", "medium": "Σ╕¡µ│óσè¿", "high": "Θ½ÿµ│óσè¿"}.get(volatility_bucket, "Σ╕¡µ│óσè¿")
 
     default_payload = {
         "suggested_position_range": "35%-55%",
-        "message": "位于平衡区间，维持中性仓位。",
+        "message": "Σ╜ìΣ║Äσ╣│Φííσî║Θù┤∩╝îτ╗┤µîüΣ╕¡µÇºΣ╗ôΣ╜ìπÇé",
         "state_key": "within_balanced",
-        "state_label": "平衡区间",
+        "state_label": "σ╣│Φííσî║Θù┤",
     }
     if cp is None or cp <= 0:
         payload = dict(default_payload)
@@ -9537,35 +9943,35 @@ def _resolve_position_guidance(current_price, conservative_range, balanced_range
         if c_low is not None and cp < c_low:
             payload = {
                 "suggested_position_range": "52%-68%" if volatility_bucket == "high" else "60%-75%",
-                "message": "低于保守区间下沿，建议分批加仓。",
+                "message": "Σ╜ÄΣ║ÄΣ┐¥σ«êσî║Θù┤Σ╕ïµ▓┐∩╝îσ╗║Φ««σêåµë╣σèáΣ╗ôπÇé",
                 "state_key": "below_conservative",
-                "state_label": "低估区",
+                "state_label": "Σ╜ÄΣ╝░σî║",
             }
         elif b_low is not None and cp < b_low:
             payload = {
                 "suggested_position_range": "40%-58%" if volatility_bucket == "high" else "45%-65%",
-                "message": "低于平衡区间下沿，建议温和加仓。",
+                "message": "Σ╜ÄΣ║Äσ╣│Φííσî║Θù┤Σ╕ïµ▓┐∩╝îσ╗║Φ««µ╕⌐σÆîσèáΣ╗ôπÇé",
                 "state_key": "below_balanced",
-                "state_label": "偏低区",
+                "state_label": "σüÅΣ╜Äσî║",
             }
         elif b_high is not None and cp <= b_high:
             payload = dict(default_payload)
         elif a_high is not None and cp <= a_high:
             payload = {
                 "suggested_position_range": "20%-35%" if volatility_bucket == "high" else "25%-40%",
-                "message": "位于进攻区间，建议控制仓位。",
+                "message": "Σ╜ìΣ║ÄΦ┐¢µö╗σî║Θù┤∩╝îσ╗║Φ««µÄºσê╢Σ╗ôΣ╜ìπÇé",
                 "state_key": "within_aggressive",
-                "state_label": "偏高区",
+                "state_label": "σüÅΘ½ÿσî║",
             }
         else:
             payload = {
                 "suggested_position_range": "12%-25%" if volatility_bucket == "high" else "15%-30%",
-                "message": "高于进攻区间上沿，建议防守降仓。",
+                "message": "Θ½ÿΣ║ÄΦ┐¢µö╗σî║Θù┤Σ╕èµ▓┐∩╝îσ╗║Φ««Θÿ▓σ«êΘÖìΣ╗ôπÇé",
                 "state_key": "above_aggressive",
-                "state_label": "高估区",
+                "state_label": "Θ½ÿΣ╝░σî║",
             }
 
-    summary = f"{style_label} | {volatility_label} | {payload['state_label']} | 仓位 {payload['suggested_position_range']}"
+    summary = f"{style_label} | {volatility_label} | {payload['state_label']} | Σ╗ôΣ╜ì {payload['suggested_position_range']}"
     payload.update({
         "style_key": style_key_normalized,
         "style_label": style_label,
@@ -10285,7 +10691,7 @@ def _normalize_earnings_report_type(value):
         "A": "FY",
         "EXP": "FUSION",
         "EXPRESS": "FUSION",
-        "快": "FUSION",
+        "σ┐½": "FUSION",
     }
     normalized = alias.get(text, text)
     if normalized in {"Q1", "H1", "Q3", "FY", "FUSION"}:
@@ -10516,9 +10922,9 @@ def _canonicalize_risk_level(value):
         "L": "LOW",
         "M": "MEDIUM",
         "H": "HIGH",
-        "低": "LOW",
-        "中": "MEDIUM",
-        "高": "HIGH",
+        "Σ╜Ä": "LOW",
+        "Σ╕¡": "MEDIUM",
+        "Θ½ÿ": "HIGH",
     }
     text = mapping.get(text, text)
     return text if text in {"LOW", "MEDIUM", "HIGH"} else ""
@@ -11555,7 +11961,7 @@ def get_earnings_signal(request, ts_code):
         return Response({"error": "ts_code is required."}, status=400)
     raw_report_type = str(request.GET.get("report_type") or "").strip()
     raw_report_type_upper = raw_report_type.upper()
-    express_like_request = raw_report_type_upper in {"快", "EXP", "EXPRESS"}
+    express_like_request = raw_report_type_upper in {"σ┐½", "EXP", "EXPRESS"}
     normalized_report_type = _normalize_earnings_report_type(raw_report_type)
     normalized_anchor_mode = _normalize_predict_anchor_mode(request.GET.get("anchor_mode"))
     normalized_financial_end_date = _parse_date_like(request.GET.get("financial_end_date"))
@@ -11820,7 +12226,7 @@ def openclaw_valuation_chat(request):
         ts_code_from_message = _extract_ts_code_from_text(message)
         ts_code = ts_code_from_message or provided_ts_code
         if not ts_code:
-            return Response({"error": "缺少 ts_code，请在问题里输入如 600519.SH 或传 ts_code 字段"}, status=400)
+            return Response({"error": "τ╝║σ░æ ts_code∩╝îΦ»╖σ£¿Θù«ΘóÿΘçîΦ╛ôσàÑσªé 600519.SH µêûΣ╝á ts_code σ¡ùµ«╡"}, status=400)
 
         valuation_payload = _get_latest_valuation_payload(
             ts_code=ts_code,
