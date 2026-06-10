@@ -24,9 +24,55 @@
             </template>
             <el-tabs v-model="industryTab" class="sw-industry-tabs">
               <el-tab-pane label="全部行业" name="all" />
+              <el-tab-pane label="行业轮动" name="rotation" />
               <el-tab-pane :label="`收藏行业 (${favoriteIndustryList.length})`" name="favorites" />
             </el-tabs>
-            <el-scrollbar class="sw-industry-list-scroll">
+            <div v-if="industryTab === 'rotation'" class="sw-rotation-panel" v-loading="rotationLoading">
+              <div class="sw-rotation-toolbar">
+                <el-input-number
+                  v-model="rotationTopN"
+                  size="small"
+                  :min="1"
+                  :max="50"
+                  :step="1"
+                  controls-position="right"
+                />
+                <el-button size="small" @click="refreshRotationList">刷新</el-button>
+                <el-button size="small" type="primary" plain @click="recomputeRotationList">立即重算</el-button>
+              </div>
+              <div class="sw-rotation-meta" v-if="rotationMeta.generated_at">
+                <span>快照 {{ rotationMeta.asof_date || '-' }}</span>
+                <span>生成 {{ rotationMeta.generated_at || '-' }}</span>
+                <span>版本 {{ rotationMeta.scoring_version || '-' }}</span>
+              </div>
+              <el-scrollbar class="sw-rotation-scroll">
+                <div
+                  v-for="(item, idx) in rotationRows"
+                  :key="`${item.industry_code}-${idx}`"
+                  class="sw-rotation-item"
+                  :class="{
+                    active: selectedIndustryType === 'sw' && selectedIndustryKey === item.industry_code,
+                  }"
+                  @click="selectRotationIndustry(item)"
+                >
+                  <div class="sw-rotation-head">
+                    <span class="sw-rotation-rank">#{{ idx + 1 }}</span>
+                    <span class="sw-rotation-name">{{ item.industry_name || item.industry_code }}</span>
+                  </div>
+                  <div class="sw-rotation-sub">{{ item.industry_code }} | {{ item.regime || '-' }}</div>
+                  <div class="sw-rotation-score">综合分 {{ formatMetric(item.rotation_score) }}</div>
+                  <div class="sw-rotation-breakdown">
+                    <span>估值 {{ formatMetric(item.score_breakdown?.valuation) }}</span>
+                    <span>动量 {{ formatMetric(item.score_breakdown?.momentum) }}</span>
+                    <span>风险 {{ formatMetric(item.score_breakdown?.risk) }}</span>
+                    <span>风格 {{ formatMetric(item.score_breakdown?.style) }}</span>
+                  </div>
+                </div>
+                <el-empty v-if="!rotationRows.length" description="暂无轮动候选" />
+              </el-scrollbar>
+            </div>
+
+            <el-scrollbar v-else class="sw-industry-list-scroll">
               <div
                 v-for="item in displayedIndustryList"
                 :key="`${item.industry_type}:${item.industry_key}`"
@@ -193,7 +239,7 @@
 <script setup lang="ts">
 import { computed, inject, onMounted, ref, watch } from 'vue'
 import axios from 'axios'
-import { ElButton, ElCard, ElCol, ElDialog, ElEmpty, ElInput, ElLink, ElMessage, ElOption, ElPagination, ElRadioButton, ElRadioGroup, ElRow, ElScrollbar, ElSelect, ElTable, ElTableColumn, ElTabPane, ElTabs, ElTag } from 'element-plus'
+import { ElButton, ElCard, ElCol, ElDialog, ElEmpty, ElInput, ElInputNumber, ElLink, ElMessage, ElOption, ElPagination, ElRadioButton, ElRadioGroup, ElRow, ElScrollbar, ElSelect, ElTable, ElTableColumn, ElTabPane, ElTabs, ElTag } from 'element-plus'
 import { use } from 'echarts/core'
 import { CanvasRenderer } from 'echarts/renderers'
 import { LineChart } from 'echarts/charts'
@@ -246,10 +292,30 @@ const industryTypeOptions: Array<{ value: IndustryType; label: string }> = [
 const selectedIndustryType = ref<IndustryType>('sw')
 const industryList = ref<IndustryItem[]>([])
 const industryKeyword = ref('')
-const industryTab = ref<'all' | 'favorites'>('all')
+const industryTab = ref<'all' | 'rotation' | 'favorites'>('all')
 const favoriteIndustryKeys = ref<string[]>([])
 const selectedIndustryKey = ref('')
 const selectedIndustryName = ref('')
+
+const rotationLoading = ref(false)
+const rotationTopN = ref(10)
+const rotationRows = ref<Array<{
+  industry_code: string
+  industry_name: string
+  regime: string
+  rotation_score: number | null
+  score_breakdown?: {
+    valuation?: number | null
+    momentum?: number | null
+    risk?: number | null
+    style?: number | null
+  }
+}>>([])
+const rotationMeta = ref<{
+  asof_date?: string
+  generated_at?: string
+  scoring_version?: string
+}>({})
 
 const metric = ref<'close' | 'pe' | 'pb'>('pe')
 const period = ref<'30D' | '60D' | '90D' | '1Y' | '3Y' | '5Y' | '10Y' | 'ALL'>('5Y')
@@ -623,6 +689,97 @@ async function fetchConstituents() {
   }
 }
 
+async function fetchRotationList(useRecompute = false) {
+  if (!baseURL) return
+  rotationLoading.value = true
+  try {
+    const topN = Math.max(1, Math.min(50, Number(rotationTopN.value || 10)))
+    if (useRecompute) {
+      const recomputeResp = await axios.post(`${baseURL}/industry-universe/rotation/recompute/`, {
+        market: 'CN',
+        top_n: topN,
+      })
+      const recomputeRows = Array.isArray(recomputeResp?.data?.data) ? recomputeResp.data.data : []
+      rotationRows.value = recomputeRows.map((row: any) => ({
+        industry_code: String(row?.industry_code || ''),
+        industry_name: String(row?.industry_name || ''),
+        regime: String(row?.regime || ''),
+        rotation_score: Number.isFinite(Number(row?.rotation_score)) ? Number(row.rotation_score) : null,
+        score_breakdown: {
+          valuation: Number.isFinite(Number(row?.score_breakdown?.valuation)) ? Number(row.score_breakdown.valuation) : null,
+          momentum: Number.isFinite(Number(row?.score_breakdown?.momentum)) ? Number(row.score_breakdown.momentum) : null,
+          risk: Number.isFinite(Number(row?.score_breakdown?.risk)) ? Number(row.score_breakdown.risk) : null,
+          style: Number.isFinite(Number(row?.score_breakdown?.style)) ? Number(row.score_breakdown.style) : null,
+        },
+      }))
+      rotationMeta.value = {
+        asof_date: String(recomputeResp?.data?.meta?.asof_date || ''),
+        generated_at: String(recomputeResp?.data?.meta?.generated_at || ''),
+        scoring_version: String(recomputeResp?.data?.meta?.scoring_version || ''),
+      }
+      return
+    }
+
+    const resp = await axios.get(`${baseURL}/industry-universe/rotation/latest/`, {
+      params: {
+        market: 'CN',
+        top_n: topN,
+      },
+    })
+    const rows = Array.isArray(resp?.data?.data) ? resp.data.data : []
+    rotationRows.value = rows.map((row: any) => ({
+      industry_code: String(row?.industry_code || ''),
+      industry_name: String(row?.industry_name || ''),
+      regime: String(row?.regime || ''),
+      rotation_score: Number.isFinite(Number(row?.rotation_score)) ? Number(row.rotation_score) : null,
+      score_breakdown: {
+        valuation: Number.isFinite(Number(row?.score_breakdown?.valuation)) ? Number(row.score_breakdown.valuation) : null,
+        momentum: Number.isFinite(Number(row?.score_breakdown?.momentum)) ? Number(row.score_breakdown.momentum) : null,
+        risk: Number.isFinite(Number(row?.score_breakdown?.risk)) ? Number(row.score_breakdown.risk) : null,
+        style: Number.isFinite(Number(row?.score_breakdown?.style)) ? Number(row.score_breakdown.style) : null,
+      },
+    }))
+    rotationMeta.value = {
+      asof_date: String(resp?.data?.meta?.asof_date || ''),
+      generated_at: String(resp?.data?.meta?.generated_at || ''),
+      scoring_version: String(resp?.data?.meta?.scoring_version || ''),
+    }
+  } finally {
+    rotationLoading.value = false
+  }
+}
+
+function refreshRotationList() {
+  void fetchRotationList(false)
+}
+
+function recomputeRotationList() {
+  void fetchRotationList(true)
+}
+
+function selectRotationIndustry(item: {
+  industry_code: string
+  industry_name: string
+}) {
+  const normalizedCode = String(item?.industry_code || '').trim()
+  if (!normalizedCode) return
+
+  const matched = industryList.value.find((row) => (
+    row.industry_type === 'sw' && String(row.industry_key || '').trim() === normalizedCode
+  ))
+  if (matched) {
+    selectIndustry(matched)
+    return
+  }
+
+  selectIndustry({
+    industry_type: 'sw',
+    industry_key: normalizedCode,
+    display_name: String(item?.industry_name || normalizedCode),
+    member_count: 0,
+  })
+}
+
 function selectIndustry(item: IndustryItem) {
   selectedIndustryType.value = item.industry_type
   selectedIndustryKey.value = String(item.industry_key || '').trim()
@@ -707,6 +864,12 @@ watch(selectedIndustryType, async () => {
   await fetchIndustryList()
 })
 
+watch(industryTab, async (tab) => {
+  if (tab === 'rotation') {
+    await fetchRotationList(false)
+  }
+})
+
 onMounted(async () => {
   try {
     loadFavoriteIndustryKeys()
@@ -748,6 +911,84 @@ onMounted(async () => {
 
 .sw-industry-list-scroll {
   height: 620px;
+}
+
+.sw-rotation-panel {
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  padding: 10px;
+  background: #f8fafc;
+}
+
+.sw-rotation-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.sw-rotation-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-bottom: 8px;
+  font-size: 12px;
+  color: #64748b;
+}
+
+.sw-rotation-scroll {
+  height: 548px;
+}
+
+.sw-rotation-item {
+  border: 1px solid #dbeafe;
+  border-radius: 8px;
+  padding: 8px;
+  margin-bottom: 8px;
+  background: #eff6ff;
+  cursor: pointer;
+}
+
+.sw-rotation-item.active {
+  border-color: #2563eb;
+  background: #dbeafe;
+}
+
+.sw-rotation-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.sw-rotation-rank {
+  font-weight: 700;
+  color: #1d4ed8;
+}
+
+.sw-rotation-name {
+  font-weight: 600;
+  color: #1e293b;
+}
+
+.sw-rotation-sub {
+  margin-top: 2px;
+  color: #475569;
+  font-size: 12px;
+}
+
+.sw-rotation-score {
+  margin-top: 6px;
+  font-size: 12px;
+  color: #0f172a;
+}
+
+.sw-rotation-breakdown {
+  margin-top: 4px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  font-size: 12px;
+  color: #334155;
 }
 
 .sw-industry-item {

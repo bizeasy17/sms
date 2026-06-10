@@ -5701,6 +5701,327 @@ def _compute_quantile(values, quantile):
     return float(cleaned[lower] * lower_weight + cleaned[upper] * upper_weight)
 
 
+SW_ROTATION_OUTPUT_SUBDIR = "output/sw_rotation"
+SW_ROTATION_LATEST_FILE = "sw_industry_rotation_latest.json"
+
+
+def _resolve_sw_rotation_snapshot_path():
+    output_dir = Path(settings.BASE_DIR) / SW_ROTATION_OUTPUT_SUBDIR
+    output_dir.mkdir(parents=True, exist_ok=True)
+    return output_dir / SW_ROTATION_LATEST_FILE
+
+
+def _read_sw_rotation_snapshot():
+    path = _resolve_sw_rotation_snapshot_path()
+    if not path.exists():
+        return None
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        if isinstance(payload, dict):
+            return payload
+    except Exception as exc:
+        logger.warning("read sw rotation snapshot failed: %s", exc)
+    return None
+
+
+def _write_sw_rotation_snapshot(payload):
+    path = _resolve_sw_rotation_snapshot_path()
+    normalized = payload if isinstance(payload, dict) else {}
+    path.write_text(json.dumps(normalized, ensure_ascii=False, indent=2, sort_keys=True), encoding="utf-8")
+    return path
+
+
+def _safe_pct_change(current_value, past_value):
+    current = _as_float_or_none(current_value)
+    past = _as_float_or_none(past_value)
+    if current is None or past is None or past <= 0:
+        return None
+    return (current / past) - 1.0
+
+
+def _clamp_score_0_100(value, default=50.0):
+    number = _as_float_or_none(value)
+    if number is None:
+        return float(default)
+    return float(max(0.0, min(100.0, number)))
+
+
+def _compute_sw_rotation_candidates(market="CN", top_n=10, limit_count=None):
+    cfg = ValuationConfig(Path(settings.BASE_DIR) / "static", market=market)
+    l3_items = (cfg.sw_mapping.get("levels", {}) or {}).get("L3", {})
+    if not isinstance(l3_items, dict):
+        l3_items = {}
+
+    industry_entries = []
+    for raw_code, entry in l3_items.items():
+        if not isinstance(entry, dict):
+            continue
+        index_code = str(entry.get("index_code") or raw_code or "").strip()
+        industry_name = str(entry.get("industry_name") or "").strip()
+        if not index_code or not industry_name:
+            continue
+        industry_entries.append(
+            {
+                "index_code": index_code,
+                "industry_name": industry_name,
+            }
+        )
+
+    corp_count_map = {
+        str(item.get("sw_l3_code") or "").strip(): int(item.get("count") or 0)
+        for item in (
+            Corporation.objects.exclude(sw_l3_code__isnull=True)
+            .exclude(sw_l3_code="")
+            .values("sw_l3_code")
+            .annotate(count=Count("id"))
+        )
+    }
+
+    if isinstance(limit_count, int) and limit_count > 0:
+        industry_entries = sorted(
+            industry_entries,
+            key=lambda item: corp_count_map.get(str(item.get("index_code") or "").strip(), 0),
+            reverse=True,
+        )[:limit_count]
+
+    pro = get_tushare_pro()
+    candidates = []
+    asof_date = datetime.date.today().strftime("%Y-%m-%d")
+
+    for item in industry_entries:
+        index_code = str(item.get("index_code") or "").strip()
+        industry_name = str(item.get("industry_name") or "").strip()
+        if not index_code:
+            continue
+        try:
+            df = pro.sw_daily(
+                ts_code=index_code,
+                start_date=(datetime.date.today() - datetime.timedelta(days=730)).strftime("%Y%m%d"),
+                end_date=datetime.date.today().strftime("%Y%m%d"),
+                fields="ts_code,trade_date,close,pe,pb",
+            )
+        except TypeError:
+            df = pro.sw_daily(
+                ts_code=index_code,
+                start_date=(datetime.date.today() - datetime.timedelta(days=730)).strftime("%Y%m%d"),
+                end_date=datetime.date.today().strftime("%Y%m%d"),
+            )
+        except Exception as exc:
+            logger.debug("sw rotation sw_daily failed for %s: %s", index_code, exc)
+            continue
+
+        if df is None or getattr(df, "empty", True):
+            continue
+
+        frame = df.fillna("").copy()
+        frame["trade_date"] = frame["trade_date"].astype(str)
+        frame = frame.sort_values("trade_date")
+
+        closes = []
+        pe_values = []
+        pb_values = []
+        for _, row in frame.iterrows():
+            close_value = _as_float_or_none(row.get("close"))
+            pe_value = _as_float_or_none(row.get("pe"))
+            pb_value = _as_float_or_none(row.get("pb"))
+            closes.append(close_value)
+            if pe_value is not None and pe_value > 0:
+                pe_values.append(pe_value)
+            if pb_value is not None and pb_value > 0:
+                pb_values.append(pb_value)
+
+        valid_closes = [v for v in closes if isinstance(v, (int, float)) and math.isfinite(v) and v > 0]
+        if len(valid_closes) < 65:
+            continue
+
+        latest_close = valid_closes[-1]
+        close_1m = valid_closes[-21] if len(valid_closes) >= 21 else None
+        close_3m = valid_closes[-63] if len(valid_closes) >= 63 else None
+        ret_1m = _safe_pct_change(latest_close, close_1m)
+        ret_3m = _safe_pct_change(latest_close, close_3m)
+
+        close_return_samples = []
+        for idx in range(1, len(valid_closes)):
+            prev_close = valid_closes[idx - 1]
+            current_close = valid_closes[idx]
+            if prev_close <= 0:
+                continue
+            close_return_samples.append((current_close / prev_close) - 1.0)
+        tail_samples = close_return_samples[-60:] if len(close_return_samples) > 60 else close_return_samples
+        volatility = None
+        if tail_samples:
+            mean_ret = sum(tail_samples) / len(tail_samples)
+            variance = sum((sample - mean_ret) ** 2 for sample in tail_samples) / len(tail_samples)
+            volatility = math.sqrt(variance) * math.sqrt(252.0)
+
+        latest_pe = pe_values[-1] if pe_values else None
+        latest_pb = pb_values[-1] if pb_values else None
+        pe_percentile = None
+        pb_percentile = None
+        if latest_pe is not None and pe_values:
+            less_equal_count = sum(1 for value in pe_values if value <= latest_pe)
+            pe_percentile = less_equal_count / len(pe_values)
+        if latest_pb is not None and pb_values:
+            less_equal_count = sum(1 for value in pb_values if value <= latest_pb)
+            pb_percentile = less_equal_count / len(pb_values)
+
+        valuation_percentiles = [p for p in [pe_percentile, pb_percentile] if p is not None]
+        valuation_score = 50.0
+        if valuation_percentiles:
+            valuation_score = (1.0 - (sum(valuation_percentiles) / len(valuation_percentiles))) * 100.0
+
+        momentum_raw = 0.0
+        if ret_1m is not None:
+            momentum_raw += ret_1m * 0.6
+        if ret_3m is not None:
+            momentum_raw += ret_3m * 0.4
+        momentum_score = _clamp_score_0_100(50.0 + momentum_raw * 200.0)
+
+        risk_score = _clamp_score_0_100(100.0 - ((volatility or 0.0) * 200.0))
+        regime_value, _regime_reason = _resolve_regime_by_industry_code(index_code, industry_name)
+        style_score_map = {
+            "high_growth": 70.0,
+            "balanced": 62.0,
+            "cyclical": 58.0,
+            "defensive": 66.0,
+            "none": 50.0,
+        }
+        style_score = _clamp_score_0_100(style_score_map.get(regime_value, 55.0), default=55.0)
+
+        rotation_score = (
+            _clamp_score_0_100(valuation_score) * 0.35
+            + _clamp_score_0_100(momentum_score) * 0.35
+            + _clamp_score_0_100(risk_score) * 0.20
+            + _clamp_score_0_100(style_score) * 0.10
+        )
+
+        latest_trade_date = str(frame.iloc[-1].get("trade_date") or "").strip()
+        if len(latest_trade_date) == 8 and latest_trade_date.isdigit():
+            latest_trade_date = f"{latest_trade_date[0:4]}-{latest_trade_date[4:6]}-{latest_trade_date[6:8]}"
+            asof_date = latest_trade_date
+
+        candidates.append(
+            {
+                "industry_code": index_code,
+                "industry_name": industry_name,
+                "regime": regime_value,
+                "rotation_score": round(float(rotation_score), 4),
+                "score_breakdown": {
+                    "valuation": round(float(_clamp_score_0_100(valuation_score)), 4),
+                    "momentum": round(float(_clamp_score_0_100(momentum_score)), 4),
+                    "risk": round(float(_clamp_score_0_100(risk_score)), 4),
+                    "style": round(float(_clamp_score_0_100(style_score)), 4),
+                },
+                "metrics": {
+                    "ret_1m": round(float(ret_1m), 6) if ret_1m is not None else None,
+                    "ret_3m": round(float(ret_3m), 6) if ret_3m is not None else None,
+                    "volatility": round(float(volatility), 6) if volatility is not None else None,
+                    "latest_pe": round(float(latest_pe), 4) if latest_pe is not None else None,
+                    "latest_pb": round(float(latest_pb), 4) if latest_pb is not None else None,
+                    "pe_percentile": round(float(pe_percentile), 6) if pe_percentile is not None else None,
+                    "pb_percentile": round(float(pb_percentile), 6) if pb_percentile is not None else None,
+                    "member_count": int(corp_count_map.get(index_code, 0)),
+                },
+                "latest_trade_date": latest_trade_date,
+            }
+        )
+
+    candidates = sorted(
+        candidates,
+        key=lambda row: (
+            -float(row.get("rotation_score") or 0.0),
+            -int((row.get("metrics") or {}).get("member_count") or 0),
+            str(row.get("industry_code") or ""),
+        ),
+    )
+    top_n = max(1, min(100, int(top_n or 10)))
+    return {
+        "asof_date": asof_date,
+        "scoring_version": "sw_rotation_v1",
+        "generated_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+        "total_candidates": len(candidates),
+        "top_n": top_n,
+        "top_candidates": candidates[:top_n],
+        "all_candidates": candidates,
+    }
+
+
+@api_view(["GET"])
+def get_industry_universe_rotation_latest(request):
+    market = str(request.query_params.get("market", "CN") if hasattr(request, "query_params") else "CN").strip().upper() or "CN"
+    try:
+        top_n = int(request.query_params.get("top_n", "10") if hasattr(request, "query_params") else 10)
+    except (TypeError, ValueError):
+        top_n = 10
+    top_n = max(1, min(100, top_n))
+
+    snapshot = _read_sw_rotation_snapshot()
+    if not isinstance(snapshot, dict) or not isinstance(snapshot.get("all_candidates"), list):
+        snapshot = _compute_sw_rotation_candidates(market=market, top_n=top_n, limit_count=120)
+        _write_sw_rotation_snapshot(snapshot)
+
+    all_candidates = snapshot.get("all_candidates") if isinstance(snapshot.get("all_candidates"), list) else []
+    top_candidates = sorted(
+        all_candidates,
+        key=lambda row: -float((row or {}).get("rotation_score") or 0.0),
+    )[:top_n]
+
+    return Response(
+        {
+            "data": top_candidates,
+            "meta": {
+                "market": market,
+                "top_n": top_n,
+                "total": len(all_candidates),
+                "asof_date": snapshot.get("asof_date"),
+                "generated_at": snapshot.get("generated_at"),
+                "scoring_version": snapshot.get("scoring_version") or "sw_rotation_v1",
+                "source": "snapshot",
+            },
+        }
+    )
+
+
+@api_view(["POST"])
+def recompute_industry_universe_rotation(request):
+    payload = request.data if isinstance(request.data, dict) else {}
+    market = str(payload.get("market") or "CN").strip().upper() or "CN"
+    try:
+        top_n = int(payload.get("top_n") or 10)
+    except (TypeError, ValueError):
+        top_n = 10
+    try:
+        limit_count = int(payload.get("limit_count") or 120)
+    except (TypeError, ValueError):
+        limit_count = 120
+
+    top_n = max(1, min(100, top_n))
+    limit_count = max(top_n, min(500, max(1, limit_count)))
+
+    snapshot = _compute_sw_rotation_candidates(
+        market=market,
+        top_n=top_n,
+        limit_count=limit_count,
+    )
+    output_path = _write_sw_rotation_snapshot(snapshot)
+
+    return Response(
+        {
+            "data": snapshot.get("top_candidates") or [],
+            "meta": {
+                "market": market,
+                "top_n": top_n,
+                "total": int(snapshot.get("total_candidates") or 0),
+                "asof_date": snapshot.get("asof_date"),
+                "generated_at": snapshot.get("generated_at"),
+                "scoring_version": snapshot.get("scoring_version") or "sw_rotation_v1",
+                "output_path": str(output_path),
+                "source": "recomputed",
+            },
+        }
+    )
+
+
 @api_view(["GET"])
 def get_sw_industry_list(request):
     market = str(request.query_params.get("market", "CN") if hasattr(request, "query_params") else "CN").strip().upper() or "CN"
