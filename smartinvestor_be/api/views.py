@@ -23,6 +23,7 @@ from django.conf import settings
 from django.core.cache import cache
 from django.db.models import Q, Max, Count
 from django.http import FileResponse, Http404
+from django.views.decorators.cache import never_cache
 from prediction.models import (
     StockCombinedFeature,
     StockPrediction,
@@ -6320,6 +6321,7 @@ def recompute_industry_universe_rotation(request):
     )
 
 
+@never_cache
 @api_view(["GET"])
 def get_industry_universe_rotation_runs(request):
     try:
@@ -6361,7 +6363,7 @@ def get_industry_universe_rotation_runs(request):
             }
         )
 
-    return Response(
+    response = Response(
         {
             "data": rows,
             "meta": {
@@ -6371,8 +6373,11 @@ def get_industry_universe_rotation_runs(request):
             },
         }
     )
+    response["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+    return response
 
 
+@never_cache
 @api_view(["GET"])
 def get_industry_universe_rotation_run_detail(request, run_id):
     normalized_run_id = str(run_id or "").strip()
@@ -6392,21 +6397,59 @@ def get_industry_universe_rotation_run_detail(request, run_id):
     if matched_run is None:
         return Response({"error": f"rotation run not found: {normalized_run_id}"}, status=404)
 
-    evaluation = _evaluate_rotation_run_payload(matched_run, windows=windows)
-    matched_run["last_evaluation"] = {
-        "windows": windows,
-        "computed_at": evaluation.get("computed_at"),
-        "topn_summary": evaluation.get("topn_summary") or {},
-        "benchmark_summary": evaluation.get("benchmark_summary") or {},
-        "alpha_summary": evaluation.get("alpha_summary") or {},
-        "hit_ratio_summary": evaluation.get("hit_ratio_summary") or {},
-    }
+    cached_last = matched_run.get("last_evaluation") if isinstance(matched_run.get("last_evaluation"), dict) else {}
+    cached_daily = matched_run.get("evaluation_daily") if isinstance(matched_run.get("evaluation_daily"), dict) else {}
+
+    cached_windows = cached_last.get("windows") if isinstance(cached_last.get("windows"), list) else []
+    cached_series = cached_daily.get("series") if isinstance(cached_daily.get("series"), list) else []
+    has_cached = bool(cached_last) and list(cached_windows) == list(windows) and bool(cached_series)
+
+    if has_cached:
+        evaluation = {
+            "windows": windows,
+            "topn_summary": cached_last.get("topn_summary") or {},
+            "benchmark_summary": cached_last.get("benchmark_summary") or {},
+            "alpha_summary": cached_last.get("alpha_summary") or {},
+            "hit_ratio_summary": cached_last.get("hit_ratio_summary") or {},
+            "computed_at": cached_last.get("computed_at") or cached_daily.get("computed_at"),
+            "daily_series": cached_series,
+            "source": "precomputed",
+        }
+    else:
+        try:
+            from prediction.management.commands.refresh_sw_rotation_run_evaluation_daily import _build_run_evaluation
+
+            evaluated = _build_run_evaluation(matched_run, windows=windows)
+            matched_run["last_evaluation"] = evaluated.get("last_evaluation") or {}
+            matched_run["evaluation_daily"] = evaluated.get("evaluation_daily") or {}
+            evaluation = {
+                "windows": windows,
+                "topn_summary": (evaluated.get("last_evaluation") or {}).get("topn_summary") or {},
+                "benchmark_summary": (evaluated.get("last_evaluation") or {}).get("benchmark_summary") or {},
+                "alpha_summary": (evaluated.get("last_evaluation") or {}).get("alpha_summary") or {},
+                "hit_ratio_summary": (evaluated.get("last_evaluation") or {}).get("hit_ratio_summary") or {},
+                "computed_at": (evaluated.get("last_evaluation") or {}).get("computed_at"),
+                "daily_series": (evaluated.get("evaluation_daily") or {}).get("series") if isinstance((evaluated.get("evaluation_daily") or {}).get("series"), list) else [],
+                "source": "realtime_backfill",
+            }
+        except Exception:
+            evaluation = _evaluate_rotation_run_payload(matched_run, windows=windows)
+            evaluation["daily_series"] = cached_series
+            evaluation["source"] = "realtime"
+            matched_run["last_evaluation"] = {
+                "windows": windows,
+                "computed_at": evaluation.get("computed_at"),
+                "topn_summary": evaluation.get("topn_summary") or {},
+                "benchmark_summary": evaluation.get("benchmark_summary") or {},
+                "alpha_summary": evaluation.get("alpha_summary") or {},
+                "hit_ratio_summary": evaluation.get("hit_ratio_summary") or {},
+            }
     if matched_index is not None:
         runs[matched_index] = matched_run
         payload["runs"] = runs
         _write_sw_rotation_runs_payload(payload)
 
-    return Response(
+    response = Response(
         {
             "data": {
                 "run": {
@@ -6424,6 +6467,43 @@ def get_industry_universe_rotation_run_detail(request, run_id):
                 "run_id": normalized_run_id,
                 "windows": windows,
             },
+        }
+    )
+    response["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+    return response
+
+
+@api_view(["DELETE"])
+def delete_industry_universe_rotation_run(request, run_id):
+    normalized_run_id = str(run_id or "").strip()
+    if not normalized_run_id:
+        return Response({"error": "missing run_id"}, status=400)
+
+    payload = _read_sw_rotation_runs_payload()
+    runs = payload.get("runs") if isinstance(payload.get("runs"), list) else []
+    next_runs = []
+    deleted = False
+    for item in runs:
+        row = item if isinstance(item, dict) else {}
+        current_run_id = str(row.get("run_id") or "").strip()
+        if current_run_id == normalized_run_id:
+            deleted = True
+            continue
+        next_runs.append(row)
+
+    if not deleted:
+        return Response({"error": f"rotation run not found: {normalized_run_id}"}, status=404)
+
+    payload["runs"] = next_runs
+    _write_sw_rotation_runs_payload(payload)
+
+    return Response(
+        {
+            "data": {
+                "run_id": normalized_run_id,
+                "deleted": True,
+                "remaining": len(next_runs),
+            }
         }
     )
 
@@ -9160,80 +9240,80 @@ def _to_float_or_none(value):
 
 TRADITIONAL_TIER_SCHEMES = {
     "high_growth": {
-        "style_label": "Θ½ÿµêÉΘò┐ΘúÄµá╝",
+        "style_label": "高成长风格",
         "tiers": {
             "conservative": {
-                "label": "ΘúÄµÄºΣ╝ÿσàê",
+                "label": "稳健配置",
                 "weights": {"pe": 0.20, "peg": 0.20, "ps": 0.15, "scarcity_overlay": 0.15, "sw_history": 0.10, "fcff_dcf": 0.10, "pb": 0.08, "ddm": 0.02},
                 "range_multiplier": (0.94, 1.04),
             },
             "balanced": {
-                "label": "σ╣│Φíí",
+                "label": "均衡配置",
                 "weights": {"pe": 0.28, "peg": 0.24, "ps": 0.16, "scarcity_overlay": 0.14, "sw_history": 0.08, "fcff_dcf": 0.06, "pb": 0.03, "ddm": 0.01},
                 "range_multiplier": (0.95, 1.08),
             },
             "aggressive": {
-                "label": "µêÉΘò┐Φ┐¢µö╗",
+                "label": "进攻配置",
                 "weights": {"pe": 0.35, "peg": 0.28, "ps": 0.16, "scarcity_overlay": 0.12, "sw_history": 0.06, "fcff_dcf": 0.02, "pb": 0.01, "ddm": 0.00},
                 "range_multiplier": (0.95, 1.15),
             },
         },
     },
     "stable_value": {
-        "style_label": "τ¿│σüÑΣ╗╖σÇ╝ΘúÄµá╝",
+        "style_label": "稳健价值风格",
         "tiers": {
             "conservative": {
-                "label": "ΘúÄµÄºΣ╝ÿσàê",
+                "label": "稳健配置",
                 "weights": {"pb": 0.30, "fcff_dcf": 0.24, "pe": 0.16, "sw_history": 0.10, "ps": 0.08, "scarcity_overlay": 0.06, "peg": 0.04, "ddm": 0.02},
                 "range_multiplier": (0.96, 1.04),
             },
             "balanced": {
-                "label": "σ╣│Φíí",
+                "label": "均衡配置",
                 "weights": {"pb": 0.24, "fcff_dcf": 0.22, "pe": 0.20, "sw_history": 0.12, "ps": 0.10, "scarcity_overlay": 0.06, "peg": 0.04, "ddm": 0.02},
                 "range_multiplier": (0.95, 1.08),
             },
             "aggressive": {
-                "label": "µêÉΘò┐Φ┐¢µö╗",
+                "label": "进攻配置",
                 "weights": {"pb": 0.18, "fcff_dcf": 0.17, "pe": 0.28, "sw_history": 0.12, "ps": 0.12, "scarcity_overlay": 0.07, "peg": 0.04, "ddm": 0.02},
                 "range_multiplier": (0.94, 1.13),
             },
         },
     },
     "balanced": {
-        "style_label": "σ╣│ΦííΘúÄµá╝",
+        "style_label": "均衡风格",
         "tiers": {
             "conservative": {
-                "label": "ΘúÄµÄºΣ╝ÿσàê",
+                "label": "稳健配置",
                 "weights": {"pe": 0.23, "peg": 0.18, "ps": 0.14, "scarcity_overlay": 0.12, "sw_history": 0.12, "fcff_dcf": 0.10, "pb": 0.09, "ddm": 0.02},
                 "range_multiplier": (0.95, 1.04),
             },
             "balanced": {
-                "label": "σ╣│Φíí",
+                "label": "均衡配置",
                 "weights": {"pe": 0.26, "peg": 0.20, "ps": 0.15, "scarcity_overlay": 0.12, "sw_history": 0.10, "fcff_dcf": 0.09, "pb": 0.06, "ddm": 0.02},
                 "range_multiplier": (0.95, 1.08),
             },
             "aggressive": {
-                "label": "µêÉΘò┐Φ┐¢µö╗",
+                "label": "进攻配置",
                 "weights": {"pe": 0.31, "peg": 0.24, "ps": 0.15, "scarcity_overlay": 0.11, "sw_history": 0.08, "fcff_dcf": 0.06, "pb": 0.04, "ddm": 0.01},
                 "range_multiplier": (0.95, 1.14),
             },
         },
     },
     "cyclical_resource": {
-        "style_label": "σæ¿µ£ƒΦ╡äµ║ÉΘúÄµá╝",
+        "style_label": "周期资源风格",
         "tiers": {
             "conservative": {
-                "label": "ΘúÄµÄºΣ╝ÿσàê",
+                "label": "稳健配置",
                 "weights": {"sw_history": 0.22, "scarcity_overlay": 0.20, "fcff_dcf": 0.18, "pb": 0.16, "ps": 0.10, "pe": 0.08, "peg": 0.04, "ddm": 0.02},
                 "range_multiplier": (0.95, 1.04),
             },
             "balanced": {
-                "label": "σ╣│Φíí",
+                "label": "均衡配置",
                 "weights": {"sw_history": 0.24, "scarcity_overlay": 0.22, "fcff_dcf": 0.20, "ps": 0.14, "pb": 0.10, "pe": 0.06, "peg": 0.03, "ddm": 0.01},
                 "range_multiplier": (0.95, 1.08),
             },
             "aggressive": {
-                "label": "µêÉΘò┐Φ┐¢µö╗",
+                "label": "进攻配置",
                 "weights": {"sw_history": 0.27, "scarcity_overlay": 0.24, "fcff_dcf": 0.22, "ps": 0.17, "pb": 0.07, "pe": 0.02, "peg": 0.01, "ddm": 0.00},
                 "range_multiplier": (0.95, 1.14),
             },
@@ -9244,19 +9324,19 @@ TRADITIONAL_TIER_SCHEMES = {
 TRADITIONAL_INDUSTRY_SCHEME_OVERRIDES = [
     {
         "scheme_key": "cyclical_resource",
-        "keywords": ["τàñ", "µ▓╣", "Θçæσ▒₧", "ΘÆó", "Θô£", "µ£ëΦë▓", "σîûσ╖Ñ", "Φ╡äµ║É"],
+        "keywords": ["煤", "炭", "有色金属", "钢铁", "石油", "基础化工", "建筑材料", "资源"],
     }
 ]
 
 TRADITIONAL_STYLE_INDUSTRY_GROWTH_KEYWORDS = [
-    "Σ╗¬σÖ¿", "σìèσ»╝Σ╜ô", "Φ╜»Σ╗╢", "σî╗τûù", "σê¢µû░", "µû░Φâ╜µ║É", "τ«ùσè¢", "ΘÇÜΣ┐í", "τöƒτë⌐",
-    "ai", "aigc", "llm", "σñºΦ»¡Φ¿Çµ¿íσ₧ï", "µ¿íσ₧ï", "agent", "µÖ║Φâ╜Σ╜ô", "µÄ¿τÉå", "Σ║æΦ«íτ«ù", "µò░µì«Σ╕¡σ┐â",
+    "半导体", "计算机", "通信", "电子", "新能源", "新能源设备", "军工", "医药", "高端制造",
+    "ai", "aigc", "llm", "人工智能", "算力", "agent", "新能源车", "机器人", "创新药", "自动驾驶",
 ]
 TRADITIONAL_STYLE_INDUSTRY_STABLE_KEYWORDS = [
-    "Θô╢Φíî", "σà¼τö¿", "µ╢êΦ┤╣", "τö╡σè¢", "τçâµ░ö", "Σ┐¥ΘÖ⌐", "τÖ╜ΘàÆ", "σà¼Φ╖»", "ΘôüΦ╖»", "µ╕»σÅú", "µ░┤σèí", "Φ┐ÉΦÉÑσòå",
+    "银行", "保险", "公用", "交运", "消费", "家电", "食品饮料", "公用事业", "电力", "港口", "水务", "运营商",
 ]
 TRADITIONAL_STYLE_INDUSTRY_CYCLICAL_KEYWORDS = [
-    "τàñ", "µ▓╣", "τƒ│σîû", "σîûσ╖Ñ", "ΘÆó", "µ£ëΦë▓", "Θô£", "Θô¥", "σ╗║µ¥É", "σ£░Σ║º", "Φê¬Φ┐É", "Φ╡äµ║É", "σæ¿µ£ƒ",
+    "煤", "炭", "油气", "建筑材料", "钢铁", "基础化工", "石油", "石化", "工程机械", "有色", "航运", "资源",
 ]
 
 # Phase A: industry-code-first regime mapping.
@@ -9898,7 +9978,7 @@ def _load_traditional_volatility_profile(ts_code, current_price=None, freq="D", 
                 volatility_bucket = "low"
             elif atr_ratio >= 0.06:
                 volatility_bucket = "high"
-        volatility_label = {"low": "Σ╜Äµ│óσè¿", "medium": "Σ╕¡µ│óσè¿", "high": "Θ½ÿµ│óσè¿"}.get(volatility_bucket, "Σ╕¡µ│óσè¿")
+        volatility_label = {"low": "低波动", "medium": "中波动", "high": "高波动"}.get(volatility_bucket, "中波动")
         return {
             "atr": round(atr_value, 4) if atr_value is not None else None,
             "atr_ratio": round(atr_ratio, 4) if atr_ratio is not None else None,
@@ -9915,22 +9995,22 @@ def _resolve_position_guidance(current_price, conservative_range, balanced_range
     cp = _to_float_or_none(current_price)
     style_key_normalized = str(style_key or "balanced").strip().lower()
     style_label = {
-        "high_growth": "Θ½ÿµêÉΘò┐ΘúÄµá╝",
-        "stable_value": "τ¿│σüÑΣ╗╖σÇ╝ΘúÄµá╝",
-        "balanced": "σ╣│ΦííΘúÄµá╝",
-        "cyclical_resource": "σæ¿µ£ƒΦ╡äµ║ÉΘúÄµá╝",
-    }.get(style_key_normalized, "σ╣│ΦííΘúÄµá╝")
+        "high_growth": "高成长风格",
+        "stable_value": "稳健价值风格",
+        "balanced": "均衡风格",
+        "cyclical_resource": "周期资源风格",
+    }.get(style_key_normalized, "均衡风格")
 
     volatility_bucket = str((volatility_profile or {}).get("volatility_bucket") or "medium").lower()
     if volatility_bucket not in {"low", "medium", "high"}:
         volatility_bucket = "medium"
-    volatility_label = (volatility_profile or {}).get("volatility_label") or {"low": "Σ╜Äµ│óσè¿", "medium": "Σ╕¡µ│óσè¿", "high": "Θ½ÿµ│óσè¿"}.get(volatility_bucket, "Σ╕¡µ│óσè¿")
+    volatility_label = (volatility_profile or {}).get("volatility_label") or {"low": "低波动", "medium": "中波动", "high": "高波动"}.get(volatility_bucket, "中波动")
 
     default_payload = {
         "suggested_position_range": "35%-55%",
-        "message": "Σ╜ìΣ║Äσ╣│Φííσî║Θù┤∩╝îτ╗┤µîüΣ╕¡µÇºΣ╗ôΣ╜ìπÇé",
+        "message": "处于平衡区间，建议维持中性仓位。",
         "state_key": "within_balanced",
-        "state_label": "σ╣│Φííσî║Θù┤",
+        "state_label": "平衡区间",
     }
     if cp is None or cp <= 0:
         payload = dict(default_payload)
@@ -9943,35 +10023,35 @@ def _resolve_position_guidance(current_price, conservative_range, balanced_range
         if c_low is not None and cp < c_low:
             payload = {
                 "suggested_position_range": "52%-68%" if volatility_bucket == "high" else "60%-75%",
-                "message": "Σ╜ÄΣ║ÄΣ┐¥σ«êσî║Θù┤Σ╕ïµ▓┐∩╝îσ╗║Φ««σêåµë╣σèáΣ╗ôπÇé",
+                "message": "低于稳健区下沿，建议分批增加仓位。",
                 "state_key": "below_conservative",
-                "state_label": "Σ╜ÄΣ╝░σî║",
+                "state_label": "低估区",
             }
         elif b_low is not None and cp < b_low:
             payload = {
                 "suggested_position_range": "40%-58%" if volatility_bucket == "high" else "45%-65%",
-                "message": "Σ╜ÄΣ║Äσ╣│Φííσî║Θù┤Σ╕ïµ▓┐∩╝îσ╗║Φ««µ╕⌐σÆîσèáΣ╗ôπÇé",
+                "message": "低于平衡区下沿，建议适度增加仓位。",
                 "state_key": "below_balanced",
-                "state_label": "σüÅΣ╜Äσî║",
+                "state_label": "偏低区",
             }
         elif b_high is not None and cp <= b_high:
             payload = dict(default_payload)
         elif a_high is not None and cp <= a_high:
             payload = {
                 "suggested_position_range": "20%-35%" if volatility_bucket == "high" else "25%-40%",
-                "message": "Σ╜ìΣ║ÄΦ┐¢µö╗σî║Θù┤∩╝îσ╗║Φ««µÄºσê╢Σ╗ôΣ╜ìπÇé",
+                "message": "处于偏高区间，建议逐步降仓。",
                 "state_key": "within_aggressive",
-                "state_label": "σüÅΘ½ÿσî║",
+                "state_label": "偏高区",
             }
         else:
             payload = {
                 "suggested_position_range": "12%-25%" if volatility_bucket == "high" else "15%-30%",
-                "message": "Θ½ÿΣ║ÄΦ┐¢µö╗σî║Θù┤Σ╕èµ▓┐∩╝îσ╗║Φ««Θÿ▓σ«êΘÖìΣ╗ôπÇé",
+                "message": "高于进攻区上沿，建议防守并降低仓位。",
                 "state_key": "above_aggressive",
-                "state_label": "Θ½ÿΣ╝░σî║",
+                "state_label": "高估区",
             }
 
-    summary = f"{style_label} | {volatility_label} | {payload['state_label']} | Σ╗ôΣ╜ì {payload['suggested_position_range']}"
+    summary = f"{style_label} | {volatility_label} | {payload['state_label']} | 建议 {payload['suggested_position_range']}"
     payload.update({
         "style_key": style_key_normalized,
         "style_label": style_label,
