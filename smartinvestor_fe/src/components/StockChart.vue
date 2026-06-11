@@ -40,6 +40,8 @@
                                     <el-radio-button label="60">60</el-radio-button>
                                     <el-radio-button label="200">1y</el-radio-button>
                                     <el-radio-button label="400">2y</el-radio-button>
+                                    <el-radio-button label="1000">5y</el-radio-button>
+                                    <el-radio-button label="2000">10y</el-radio-button>
                                 </el-radio-group>
 
                             </el-col>
@@ -651,6 +653,95 @@ function buildParsedStockChartData(jsonData) {
         tp2: tp_2,
         tradeDates: dates,
         indicData: indic
+    }
+}
+
+function getCalendarWindowYears(period) {
+    const value = String(period || '').trim()
+    if (value === '200') return 1
+    if (value === '400') return 2
+    if (value === '1000') return 5
+    if (value === '2000') return 10
+    return 0
+}
+
+function resolveTradingFetchCount(freq = 'D', period = 60) {
+    const normalizedFreq = String(freq || 'D').toUpperCase()
+    const raw = Number(period)
+    const periodCount = Number.isFinite(raw) ? Math.max(1, Math.floor(raw)) : 60
+    const years = getCalendarWindowYears(period)
+
+    if (!years) {
+        return periodCount
+    }
+
+    if (normalizedFreq === 'D') {
+        // Leave enough bars for 10Y window and MA calculations.
+        const byYears = years * 320
+        return Math.max(periodCount, byYears)
+    }
+    if (normalizedFreq === 'W') {
+        const byYears = years * 60
+        return Math.max(periodCount, byYears)
+    }
+    if (normalizedFreq === 'M') {
+        const byYears = years * 14
+        return Math.max(periodCount, byYears)
+    }
+    return periodCount
+}
+
+function clipParsedDataByCalendarWindow(parsedData, freq = 'D', period = 60) {
+    const years = getCalendarWindowYears(period)
+    const normalizedFreq = String(freq || 'D').toUpperCase()
+    if (!years || !Array.isArray(parsedData?.tradeDates) || parsedData.tradeDates.length === 0) {
+        return parsedData
+    }
+
+    const latestText = String(parsedData.tradeDates[parsedData.tradeDates.length - 1] || '')
+    const latestDate = new Date(`${latestText}T00:00:00`)
+    if (Number.isNaN(latestDate.getTime())) {
+        return parsedData
+    }
+    const cutoffDate = new Date(latestDate)
+    cutoffDate.setFullYear(cutoffDate.getFullYear() - years)
+
+    const keepIndexes = []
+    for (let i = 0; i < parsedData.tradeDates.length; i += 1) {
+        const dateText = String(parsedData.tradeDates[i] || '')
+        const dateObj = new Date(`${dateText}T00:00:00`)
+        if (!Number.isNaN(dateObj.getTime()) && dateObj >= cutoffDate) {
+            keepIndexes.push(i)
+        }
+    }
+
+    // If parsing failed unexpectedly, fallback to original payload.
+    if (!keepIndexes.length) {
+        return parsedData
+    }
+
+    const pick = (arr) => keepIndexes.map((idx) => arr[idx])
+    const indic = parsedData.indicData || {}
+    const nextIndic = {}
+    Object.keys(indic).forEach((key) => {
+        const values = Array.isArray(indic[key]) ? indic[key] : []
+        nextIndic[key] = pick(values)
+    })
+
+    return {
+        ...parsedData,
+        kdata: pick(parsedData.kdata || []),
+        vol: pick(parsedData.vol || []),
+        amount: pick(parsedData.amount || []),
+        close: pick(parsedData.close || []),
+        pctChg: pick(parsedData.pctChg || []),
+        sl1: pick(parsedData.sl1 || []),
+        sl2: pick(parsedData.sl2 || []),
+        tp1: pick(parsedData.tp1 || []),
+        tp2: pick(parsedData.tp2 || []),
+        tradeDates: pick(parsedData.tradeDates || []),
+        indicData: nextIndic,
+        windowMode: normalizedFreq,
     }
 }
 
@@ -1553,7 +1644,8 @@ async function fetchTradingHistory(stockCode = '', freq = 'D', adj = 'qfq', coun
     if (!normalizedStockCode || !baseURL) {
         return
     }
-    const cacheKey = getTradingHistoryCacheKey(normalizedStockCode, freq, adj, count)
+    const requestCount = resolveTradingFetchCount(freq, count)
+    const cacheKey = getTradingHistoryCacheKey(normalizedStockCode, freq, adj, requestCount)
     let renderTask = tradingHistoryRenderPending.get(cacheKey)
     if (!renderTask) {
         renderTask = (async () => {
@@ -1571,7 +1663,7 @@ async function fetchTradingHistory(stockCode = '', freq = 'D', adj = 'qfq', coun
                     if (!jsonData) {
                         let pendingRequest = tradingHistoryPending.get(cacheKey)
                         if (!pendingRequest) {
-                            const url = `${baseURL}/stocks/${normalizedStockCode}/trading-history/${freq}/${adj}/${count}/`
+                            const url = `${baseURL}/stocks/${normalizedStockCode}/trading-history/${freq}/${adj}/${requestCount}/`
                             pendingRequest = axios.get(url)
                                 .then(response => {
                                     tradingHistoryCache.set(cacheKey, response.data)
@@ -1585,6 +1677,7 @@ async function fetchTradingHistory(stockCode = '', freq = 'D', adj = 'qfq', coun
                         jsonData = await pendingRequest
                     }
                     parsedData = buildParsedStockChartData(jsonData)
+                    parsedData = clipParsedDataByCalendarWindow(parsedData, freq, count)
                     parsedTradingCache.set(cacheKey, parsedData)
                 }
                 if (!derivedData) {
@@ -1609,7 +1702,7 @@ async function fetchTradingHistory(stockCode = '', freq = 'D', adj = 'qfq', coun
                 stockStore.setPctChg(pctChg.value.length > 0 ? pctChg.value[pctChg.value.length - 1] : null)
 
                 loadLatestChipDistribution(stockCode)
-                prefetchTradingHistoryVariants(normalizedStockCode, adj, count, freq)
+                prefetchTradingHistoryVariants(normalizedStockCode, adj, requestCount, freq)
 
                 await nextTick()
                 bindTrendHoverSync()
