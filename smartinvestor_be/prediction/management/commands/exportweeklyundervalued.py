@@ -44,7 +44,7 @@ class Command(BaseCommand):
         parser.add_argument("--pick-strategy", type=str, default=None, help="快照选择策略（default/adaptive/conservative 等）；默认读 job 策略配置")
         parser.add_argument("--offset", type=int, default=0, help="股票起始偏移")
         parser.add_argument("--limit", type=int, help="股票数量上限")
-        parser.add_argument("--min-target-return-pct", type=float, default=None, help="预测清单最小目标收益率(%)，默认读 job 策略配置")
+        parser.add_argument("--min-target-return-pct", type=float, default=None, help="预测清单最小目标收益率(%%)，默认读 job 策略配置")
         parser.add_argument(
             "--min-signal-score",
             type=float,

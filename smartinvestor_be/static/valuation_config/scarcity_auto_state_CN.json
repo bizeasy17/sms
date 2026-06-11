@@ -20743,8 +20743,8 @@
       "pending_count": 0,
       "cooldown_until": null,
       "force_conservative_until": null,
-      "last_risk_score": 0.390468,
-      "last_date": "2026-06-03"
+      "last_risk_score": 0.447372,
+      "last_date": "2026-06-09"
     },
     "688816.SH": {
       "last_profile": "conservative",
@@ -46746,7 +46746,34 @@
       "force_conservative_until": null,
       "last_risk_score": 0.482329,
       "last_date": "2026-06-03"
+    },
+    "600193.SH": {
+      "last_profile": "conservative",
+      "pending_profile": null,
+      "pending_count": 0,
+      "cooldown_until": null,
+      "force_conservative_until": "2026-06-10",
+      "last_risk_score": 0.8,
+      "last_date": "2026-06-08"
+    },
+    "600608.SH": {
+      "last_profile": "conservative",
+      "pending_profile": null,
+      "pending_count": 0,
+      "cooldown_until": null,
+      "force_conservative_until": "2026-06-10",
+      "last_risk_score": 0.8,
+      "last_date": "2026-06-08"
+    },
+    "605081.SH": {
+      "last_profile": "conservative",
+      "pending_profile": null,
+      "pending_count": 0,
+      "cooldown_until": null,
+      "force_conservative_until": "2026-06-10",
+      "last_risk_score": 0.8,
+      "last_date": "2026-06-08"
     }
   },
-  "updated_at": "2026-06-03T15:55:50"
+  "updated_at": "2026-06-09T11:30:01"
 }
