@@ -248,10 +248,12 @@
               :key="item.run_id"
               class="sw-rotation-run-item"
               :class="{ active: selectedRotationRunId === item.run_id }"
-              @click="selectRotationRun(item.run_id)"
             >
-              <div class="sw-rotation-run-id">{{ item.run_id }}</div>
-              <div class="sw-rotation-run-meta">{{ item.asof_date || '-' }} | {{ item.created_at || '-' }}</div>
+              <div class="sw-rotation-run-row" @click="selectRotationRun(item.run_id)">
+                <div class="sw-rotation-run-id">{{ item.run_id }}</div>
+                <div class="sw-rotation-run-meta">{{ item.asof_date || '-' }} | {{ item.created_at || '-' }}</div>
+              </div>
+              <el-button size="small" text type="danger" @click.stop="deleteRotationRun(item.run_id)">删除</el-button>
             </div>
             <el-empty v-if="!rotationRunList.length" description="暂无run" />
           </el-scrollbar>
@@ -277,7 +279,7 @@
 <script setup lang="ts">
 import { computed, inject, onMounted, ref, watch } from 'vue'
 import axios from 'axios'
-import { ElButton, ElCard, ElCol, ElDialog, ElEmpty, ElInput, ElInputNumber, ElLink, ElMessage, ElOption, ElPagination, ElRadioButton, ElRadioGroup, ElRow, ElScrollbar, ElSelect, ElTable, ElTableColumn, ElTabPane, ElTabs, ElTag } from 'element-plus'
+import { ElButton, ElCard, ElCol, ElDialog, ElEmpty, ElInput, ElInputNumber, ElLink, ElMessage, ElMessageBox, ElOption, ElPagination, ElRadioButton, ElRadioGroup, ElRow, ElScrollbar, ElSelect, ElTable, ElTableColumn, ElTabPane, ElTabs, ElTag } from 'element-plus'
 import { use } from 'echarts/core'
 import { CanvasRenderer } from 'echarts/renderers'
 import { BarChart, LineChart } from 'echarts/charts'
@@ -378,6 +380,14 @@ const rotationRunPerformance = ref<{
   alpha_summary: {},
   hit_ratio_summary: {},
 })
+const rotationRunDailySeries = ref<Array<{
+  day_offset: number
+  trade_date: string
+  topn_return: number | null
+  benchmark_return: number | null
+  alpha_return: number | null
+  hit_ratio: number | null
+}>>([])
 
 const metric = ref<'close' | 'pe' | 'pb'>('pe')
 const period = ref<'30D' | '60D' | '90D' | '1Y' | '3Y' | '5Y' | '10Y' | 'ALL'>('5Y')
@@ -583,14 +593,14 @@ function formatPercent(value: number | null | undefined) {
 }
 
 const rotationRunChartOption = computed(() => {
-  if (!rotationRunWindows.value.length) {
+  if (!rotationRunDailySeries.value.length) {
     return null
   }
-  const categories = rotationRunWindows.value.map((window) => `${window}D`)
-  const topn = rotationRunWindows.value.map((window) => rotationRunPerformance.value.topn_summary[String(window)] ?? null)
-  const benchmark = rotationRunWindows.value.map((window) => rotationRunPerformance.value.benchmark_summary[String(window)] ?? null)
-  const alpha = rotationRunWindows.value.map((window) => rotationRunPerformance.value.alpha_summary[String(window)] ?? null)
-  const hitRatio = rotationRunWindows.value.map((window) => rotationRunPerformance.value.hit_ratio_summary[String(window)] ?? null)
+  const categories = rotationRunDailySeries.value.map((item) => item.trade_date || `${item.day_offset}D`)
+  const topn = rotationRunDailySeries.value.map((item) => item.topn_return)
+  const benchmark = rotationRunDailySeries.value.map((item) => item.benchmark_return)
+  const alpha = rotationRunDailySeries.value.map((item) => item.alpha_return)
+  const hitRatio = rotationRunDailySeries.value.map((item) => item.hit_ratio)
 
   return {
     tooltip: {
@@ -907,7 +917,7 @@ function recomputeRotationList() {
 async function fetchRotationRunList() {
   if (!baseURL) return
   const resp = await axios.get(`${baseURL}/industry-universe/rotation/runs/`, {
-    params: { limit: 20 },
+    params: { limit: 20, _ts: Date.now() },
   })
   const rows = Array.isArray(resp?.data?.data) ? resp.data.data : []
   rotationRunList.value = rows.map((row: any) => ({
@@ -920,7 +930,7 @@ async function fetchRotationRunList() {
 async function fetchRotationRunDetail(runId: string) {
   if (!baseURL || !runId) return
   const resp = await axios.get(`${baseURL}/industry-universe/rotation/runs/${encodeURIComponent(runId)}/`, {
-    params: { windows: '5,20,60' },
+    params: { windows: '5,20,60', _ts: Date.now() },
   })
   const evaluation = resp?.data?.data?.evaluation || {}
   const windowsRaw = Array.isArray(evaluation?.windows) ? evaluation.windows : []
@@ -935,6 +945,14 @@ async function fetchRotationRunDetail(runId: string) {
     alpha_summary: evaluation?.alpha_summary || {},
     hit_ratio_summary: evaluation?.hit_ratio_summary || {},
   }
+  rotationRunDailySeries.value = Array.isArray(evaluation?.daily_series) ? evaluation.daily_series.map((item: any) => ({
+    day_offset: Number(item?.day_offset || 0),
+    trade_date: String(item?.trade_date || ''),
+    topn_return: Number.isFinite(Number(item?.topn_return)) ? Number(item.topn_return) : null,
+    benchmark_return: Number.isFinite(Number(item?.benchmark_return)) ? Number(item.benchmark_return) : null,
+    alpha_return: Number.isFinite(Number(item?.alpha_return)) ? Number(item.alpha_return) : null,
+    hit_ratio: Number.isFinite(Number(item?.hit_ratio)) ? Number(item.hit_ratio) : null,
+  })) : []
 }
 
 async function selectRotationRun(runId: string) {
@@ -953,6 +971,7 @@ async function openRotationRunDialog() {
     if (!rotationRunList.value.length) {
       selectedRotationRunId.value = ''
       rotationRunWindows.value = []
+      rotationRunDailySeries.value = []
       rotationRunPerformance.value = {
         topn_summary: {},
         benchmark_summary: {},
@@ -967,6 +986,40 @@ async function openRotationRunDialog() {
   } finally {
     rotationRunLoading.value = false
   }
+}
+
+async function deleteRotationRun(runId: string) {
+  const normalized = String(runId || '').trim()
+  if (!normalized) return
+  try {
+    await ElMessageBox.confirm(`确认删除 run ${normalized}？`, '删除Run', {
+      type: 'warning',
+      confirmButtonText: '删除',
+      cancelButtonText: '取消',
+    })
+  } catch {
+    return
+  }
+
+  if (!baseURL) return
+  await axios.delete(`${baseURL}/industry-universe/rotation/runs/${encodeURIComponent(normalized)}/delete/`)
+  ElMessage.success('run 已删除')
+  await fetchRotationRunList()
+  if (!rotationRunList.value.length) {
+    rotationRunDailySeries.value = []
+    rotationRunPerformance.value = {
+      topn_summary: {},
+      benchmark_summary: {},
+      alpha_summary: {},
+      hit_ratio_summary: {},
+    }
+    selectedRotationRunId.value = ''
+    return
+  }
+
+  const nextSelected = rotationRunList.value.find((item) => item.run_id !== normalized) || rotationRunList.value[0]
+  if (!nextSelected) return
+  await selectRotationRun(nextSelected.run_id)
 }
 
 function selectRotationIndustry(item: {
@@ -1241,6 +1294,15 @@ onMounted(async () => {
   padding: 8px;
   margin-bottom: 8px;
   cursor: pointer;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.sw-rotation-run-row {
+  min-width: 0;
+  flex: 1;
 }
 
 .sw-rotation-run-item.active {

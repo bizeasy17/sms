@@ -166,6 +166,11 @@ urlpatterns = [
         name="industry-universe-rotation-run-detail",
     ),
     path(
+        "industry-universe/rotation/runs/<str:run_id>/delete/",
+        getattr(views, "delete_industry_universe_rotation_run", views.get_sw_industry_options),
+        name="industry-universe-rotation-run-delete",
+    ),
+    path(
         "stock-pick-valuation/weekly-downloads/",
         views.get_weekly_undervalued_downloads,
         name="weekly-undervalued-downloads",

@@ -72,6 +72,8 @@ if "%SHOULD_TRADITIONAL_FULL_REFRESH%"=="1" (
 )
 call :run_step "BE valuation risk prefill daily" "%UAT_ROOT%\smartinvestor_be" "%PYTHON_CMD% manage.py prefillvaluationrisk --market CN"
 if errorlevel 1 exit /b %ERRORLEVEL%
+call :run_step "BE sw rotation run daily evaluation" "%UAT_ROOT%\smartinvestor_be" "%PYTHON_CMD% manage.py refresh_sw_rotation_run_evaluation_daily --windows 5,20,60 --limit 200"
+if errorlevel 1 exit /b %ERRORLEVEL%
 @REM call :run_step "BE daily prediction" "%UAT_ROOT%\smartinvestor_be" "call %UAT_ROOT%\smartinvestor_be\daily_funda_prediction.bat"
 
 echo [INFO] daily pipeline completed at %DATE% %TIME% >> "%LOG_FILE%"
