@@ -202,6 +202,20 @@ def _load_indicator_profile(ts_code, report_end_date=None):
 class Command(BaseCommand):
     help = '预热/回刷估值风险快照，支持历史财报口径（如 2025Q1/2025H1）。'
 
+    def _safe_write(self, message, is_error=False):
+        stream = self.stderr if is_error else self.stdout
+        text = str(message)
+        try:
+            stream.write(text)
+        except UnicodeEncodeError:
+            encoding = (
+                getattr(getattr(stream, '_out', None), 'encoding', None)
+                or getattr(stream, 'encoding', None)
+                or 'utf-8'
+            )
+            safe_text = text.encode(encoding, errors='replace').decode(encoding, errors='replace')
+            stream.write(safe_text)
+
     def add_arguments(self, parser):
         parser.add_argument('--ts-code', type=str, help='单个股票代码，如 000001.SZ')
         parser.add_argument('--market', type=str, default='CN', help='市场代码，默认 CN')
@@ -249,7 +263,7 @@ class Command(BaseCommand):
                         code_filter.append(code)
             code_filter = sorted(set(code_filter))
             if not code_filter:
-                self.stdout.write(f'codes file empty, skip: {codes_file_text}')
+                self._safe_write(f'codes file empty, skip: {codes_file_text}')
                 return
 
         target_report_type = options.get('target_report_type')
@@ -313,7 +327,7 @@ class Command(BaseCommand):
         )
 
         if not rows:
-            self.stdout.write('no valuation rows matched for risk computation')
+            self._safe_write('no valuation rows matched for risk computation')
             return
 
         grouped = defaultdict(dict)
@@ -336,7 +350,7 @@ class Command(BaseCommand):
         keys = list(grouped.keys())
         keys = keys[offset: offset + limit if limit else None]
         if not keys:
-            self.stdout.write('no groups after offset/limit')
+            self._safe_write('no groups after offset/limit')
             return
 
         created = 0
@@ -347,7 +361,7 @@ class Command(BaseCommand):
         source_empty = 0
         pending_rows = []
 
-        self.stdout.write(
+        self._safe_write(
             f'start risk backfill: groups={len(keys)} market={market} source={snapshot_source} report_type={normalized_type or "AUTO"} report_end={forced_end_date or "AUTO"} dry_run={dry_run}'
         )
 
@@ -377,7 +391,7 @@ class Command(BaseCommand):
                 or idx % progress_interval == 0
             )
             if should_print_progress:
-                self.stdout.write(
+                self._safe_write(
                     f"[progress {idx}/{total_groups}] {ts_code_key} variant={valuation_variant} report={profit_report_type}/{profit_report_end_date} methods={len(method_rows)} indicator_source={indicator_source}"
                 )
 
@@ -402,7 +416,7 @@ class Command(BaseCommand):
             )
 
             if dry_run:
-                self.stdout.write(
+                self._safe_write(
                     f"[dry-run] {ts_code_key} {profit_report_type} {profit_report_end_date} {valuation_variant} risk={payload.get('risk_score')} level={payload.get('risk_level')}"
                 )
                 continue
@@ -607,9 +621,9 @@ class Command(BaseCommand):
                     ValuationRiskFactor.objects.bulk_create(factor_objects, batch_size=1000)
                     factor_written += len(factor_objects)
 
-        self.stdout.write(
+        self._safe_write(
             f'completed risk backfill: created={created} updated={updated} factors={factor_written} dry_run={dry_run}'
         )
-        self.stdout.write(
+        self._safe_write(
             f'indicator_source_stats: local={source_local} tushare={source_tushare} none={source_empty}'
         )

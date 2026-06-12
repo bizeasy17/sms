@@ -70,9 +70,9 @@ if "%SHOULD_TRADITIONAL_FULL_REFRESH%"=="1" (
   > "%TRADITIONAL_FULL_MARK_FILE%" echo %CUR_MONTH_KEY%
   echo [INFO] traditional monthly full refresh mark updated month=%CUR_MONTH_KEY% >> "%LOG_FILE%"
 )
-call :run_step "BE valuation risk prefill daily" "%UAT_ROOT%\smartinvestor_be" "%PYTHON_CMD% manage.py prefillvaluationrisk --market CN"
-if errorlevel 1 exit /b %ERRORLEVEL%
 call :run_step "BE sw rotation run daily evaluation" "%UAT_ROOT%\smartinvestor_be" "%PYTHON_CMD% manage.py refresh_sw_rotation_run_evaluation_daily --windows 5,20,60 --limit 200"
+if errorlevel 1 exit /b %ERRORLEVEL%
+call :run_step "BE valuation risk prefill daily" "%UAT_ROOT%\smartinvestor_be" "%PYTHON_CMD% manage.py prefillvaluationrisk --market CN"
 if errorlevel 1 exit /b %ERRORLEVEL%
 @REM call :run_step "BE daily prediction" "%UAT_ROOT%\smartinvestor_be" "call %UAT_ROOT%\smartinvestor_be\daily_funda_prediction.bat"
 
