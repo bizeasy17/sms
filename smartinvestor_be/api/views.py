@@ -1796,6 +1796,38 @@ def _build_valuation_summary_payload(current_price, rows, band_pct, price_key="v
     }
 
 
+def _hydrate_summary_gap_fields(summary_payload, *, current_price, rows, band_pct, ts_code=None, freq="D"):
+    """Backfill gap/anchor fields when persisted summary only contains prices."""
+    summary = dict(summary_payload or {})
+    if not summary:
+        return summary
+
+    computed = _build_valuation_summary_payload(
+        current_price,
+        rows,
+        band_pct,
+        ts_code=ts_code,
+        freq=freq,
+    )
+    if not computed:
+        return summary
+
+    for key in [
+        "anchor_trade_date",
+        "anchor_basis_price",
+        "composite_valuation_status",
+        "composite_valuation_gap_pct",
+        "composite_valuation_anchor_gap_pct",
+        "conservative_valuation_status",
+        "conservative_valuation_gap_pct",
+        "conservative_valuation_anchor_gap_pct",
+    ]:
+        if summary.get(key) is None:
+            summary[key] = computed.get(key)
+
+    return summary
+
+
 def _load_market_style_price_series(ts_code, freq="D", trade_date=None, lookback=130):
     if trade_date is None:
         return []
@@ -8812,6 +8844,14 @@ def get_stock_valuation_methods(request, ts_code):
                 current_price,
                 variant_rows,
                 band_pct,
+                ts_code=ts_code,
+                freq=freq,
+            )
+            base_summary_payload = _hydrate_summary_gap_fields(
+                base_summary_payload,
+                current_price=current_price,
+                rows=variant_rows,
+                band_pct=band_pct,
                 ts_code=ts_code,
                 freq=freq,
             )
