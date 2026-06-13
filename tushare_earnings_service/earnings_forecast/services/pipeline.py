@@ -28,6 +28,42 @@ from sqlalchemy import create_engine, text
 _SQL_IDENT_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 
 
+class LiveFeatureUnavailableError(ValueError):
+    """Raised when strict live-feature predict is requested but live features are unavailable."""
+
+    def __init__(
+        self,
+        *,
+        ts_code: str,
+        request_asof_date: str | None,
+        feature_data_source: str,
+        feature_trade_date: str | None = None,
+        live_feature_gap_days: int | None = None,
+        message: str | None = None,
+    ):
+        self.ts_code = str(ts_code or "").strip().upper()
+        self.request_asof_date = request_asof_date
+        self.feature_data_source = str(feature_data_source or "unknown").strip().lower() or "unknown"
+        self.feature_trade_date = feature_trade_date
+        self.live_feature_gap_days = live_feature_gap_days
+        self.code = "LIVE_FEATURE_UNAVAILABLE"
+        detail = f"ts_code={self.ts_code}, source={self.feature_data_source}"
+        super().__init__(message or f"live features unavailable: {detail}")
+
+    def to_payload(self) -> dict[str, Any]:
+        return {
+            "code": self.code,
+            "message": str(self),
+            "detail": {
+                "ts_code": self.ts_code,
+                "request_asof_date": self.request_asof_date,
+                "feature_data_source": self.feature_data_source,
+                "feature_trade_date": self.feature_trade_date,
+                "live_feature_gap_days": self.live_feature_gap_days,
+            },
+        }
+
+
 class EarningsForecastPipeline:
     DEFAULT_FINANCIAL_ENDPOINT_TABLES = {
         "income": "earnings_fin_income",
@@ -1701,6 +1737,66 @@ class EarningsForecastPipeline:
         self._financial_latest_snapshot_cache[cache_key] = frame.copy()
         return frame
 
+    def _resolve_financial_snapshot_for_report_type(
+        self,
+        ts_code: str,
+        report_type: str,
+        asof_date: datetime | pd.Timestamp | str | None = None,
+        requested_financial_end_date: str | None = None,
+    ) -> dict[str, Any] | None:
+        code = str(ts_code or "").strip()
+        rt = str(report_type or "").strip().upper()
+        if not code or rt not in {"Q1", "H1", "Q3", "FY"}:
+            return None
+
+        asof_ts = pd.to_datetime(asof_date, errors="coerce") if asof_date is not None else pd.NaT
+        financial_cache = self._load_financial_cache_for_ts_code(code)
+        snapshot = financial_cache.get("snapshot") if isinstance(financial_cache, dict) else None
+        if not isinstance(snapshot, pd.DataFrame) or snapshot.empty:
+            return None
+
+        panel = snapshot.copy()
+        if "ts_code" in panel.columns:
+            panel = panel[panel["ts_code"].astype(str) == code]
+        if panel.empty:
+            return None
+
+        if "report_type" not in panel.columns:
+            if "end_date" not in panel.columns:
+                return None
+            panel["report_type"] = panel["end_date"].apply(self._report_type_from_end_date)
+        panel["report_type"] = panel["report_type"].fillna("UNKNOWN").astype(str).str.upper()
+        panel = panel[panel["report_type"] == rt]
+        if panel.empty:
+            return None
+
+        ann_series = pd.to_datetime(panel.get("ann_date"), errors="coerce") if "ann_date" in panel.columns else pd.Series(pd.NaT, index=panel.index)
+        end_series = pd.to_datetime(panel.get("end_date"), errors="coerce") if "end_date" in panel.columns else pd.Series(pd.NaT, index=panel.index)
+        effective_ts = ann_series.fillna(end_series)
+        panel = panel.assign(_effective_date=effective_ts)
+        panel = panel.dropna(subset=["_effective_date"])
+        if panel.empty:
+            return None
+
+        if pd.notna(asof_ts):
+            panel = panel[panel["_effective_date"] <= pd.Timestamp(asof_ts)]
+        if panel.empty:
+            return None
+
+        parsed_end = pd.to_datetime(requested_financial_end_date, errors="coerce") if requested_financial_end_date else pd.NaT
+        if pd.notna(parsed_end) and "end_date" in panel.columns:
+            requested_end_token = pd.Timestamp(parsed_end).strftime("%Y-%m-%d")
+            end_tokens = pd.to_datetime(panel["end_date"], errors="coerce").dt.strftime("%Y-%m-%d")
+            exact = panel[end_tokens == requested_end_token]
+            if not exact.empty:
+                row = exact.sort_values("_effective_date", ascending=False).iloc[0].drop(labels=["_effective_date"], errors="ignore").to_dict()
+                row["resolved_from_requested_end_date"] = True
+                return row
+
+        row = panel.sort_values("_effective_date", ascending=False).iloc[0].drop(labels=["_effective_date"], errors="ignore").to_dict()
+        row["resolved_from_requested_end_date"] = False
+        return row
+
     @staticmethod
     def _build_features(
         trading: pd.DataFrame,
@@ -1776,10 +1872,16 @@ class EarningsForecastPipeline:
                     left = frame.copy()
                     left["ts_code"] = left["ts_code"].astype(str)
                     left["trade_date"] = pd.to_datetime(left["trade_date"], errors="coerce")
+                    left["trade_date"] = left["trade_date"].astype("datetime64[ns]")
                     left = left.dropna(subset=["trade_date"])
                     left = left.sort_values(["ts_code", "trade_date"], kind="mergesort")
 
                     right = s2.copy()
+                    right["ann_date"] = pd.to_datetime(right["ann_date"], errors="coerce")
+                    right["ann_date"] = right["ann_date"].astype("datetime64[ns]")
+                    if "end_date" in right.columns:
+                        right["end_date"] = pd.to_datetime(right["end_date"], errors="coerce")
+                        right["end_date"] = right["end_date"].astype("datetime64[ns]")
                     right = right.sort_values(["ts_code", "ann_date"], kind="mergesort")
                     frame = pd.merge_asof(
                         left,
@@ -2571,6 +2673,8 @@ class EarningsForecastPipeline:
         requested_financial_end_date: str | None = None,
         anchor_mode: str = "ann",
         asof_date: datetime | pd.Timestamp | str | None = None,
+        require_live_features: bool = False,
+        feature_source_preference: str | None = None,
     ) -> dict[str, Any]:
         output_cfg = self.config.get("output", {})
         code = str(ts_code).strip()
@@ -2590,10 +2694,15 @@ class EarningsForecastPipeline:
             if pd.notna(parsed_end_date):
                 requested_end_date = pd.Timestamp(parsed_end_date).strftime("%Y-%m-%d")
 
+        asof_ts = pd.to_datetime(asof_date, errors="coerce") if asof_date is not None else pd.NaT
+        request_asof_date = pd.Timestamp(asof_ts).strftime("%Y-%m-%d") if pd.notna(asof_ts) else None
+        source_preference = str(feature_source_preference or "").strip().lower()
+        strict_live_only = bool(require_live_features) or source_preference == "live_db_only"
+
         live_subset = self._build_live_predict_features(
             code,
-            requested_report_type=requested_report_type or None,
-            requested_financial_end_date=requested_end_date or None,
+            requested_report_type=None,
+            requested_financial_end_date=None,
             asof_date=asof_date,
         )
         latest_report_type = None
@@ -2669,6 +2778,12 @@ class EarningsForecastPipeline:
         data_source = "live_db"
         allow_dataset_fallback = bool(output_cfg.get("predict_allow_dataset_fallback", True))
         if live_subset is None or live_subset.empty:
+            if strict_live_only:
+                raise LiveFeatureUnavailableError(
+                    ts_code=code,
+                    request_asof_date=request_asof_date,
+                    feature_data_source="dataset_fallback",
+                )
             if not allow_dataset_fallback:
                 raise ValueError(f"live features unavailable for ts_code={code}")
             subset = self._load_predict_subset_from_dataset(
@@ -2684,6 +2799,75 @@ class EarningsForecastPipeline:
             # live subset is already built in ts_code/trade_date order
             subset = live_subset
             row = _select_anchor_row(subset)
+
+        if requested_report_type in {"Q1", "H1", "Q3", "FY"}:
+            resolved_snapshot = self._resolve_financial_snapshot_for_report_type(
+                ts_code=code,
+                report_type=requested_report_type,
+                asof_date=asof_date,
+                requested_financial_end_date=requested_end_date or None,
+            )
+            if resolved_snapshot is None and strict_live_only:
+                raise LiveFeatureUnavailableError(
+                    ts_code=code,
+                    request_asof_date=request_asof_date,
+                    feature_data_source=data_source,
+                    feature_trade_date=str(row["trade_date"].iloc[0]) if "trade_date" in row.columns else None,
+                    message=(
+                        "live features unavailable for selected report_type "
+                        f"{requested_report_type} under request-time constraints"
+                    ),
+                )
+            if resolved_snapshot is not None:
+                financial_fill_cols = [
+                    "report_type",
+                    "ann_date",
+                    "end_date",
+                    "fiscal_year",
+                    "revenue",
+                    "total_revenue",
+                    "operate_profit",
+                    "total_profit",
+                    "n_income",
+                    "n_income_attr_p",
+                    "basic_eps",
+                    "diluted_eps",
+                    "roe",
+                    "roe_dt",
+                    "roa",
+                    "q_dt_roe",
+                    "tr_yoy",
+                    "netprofit_yoy",
+                    "grossprofit_margin",
+                    "netprofit_margin",
+                    "debt_to_assets",
+                    "current_ratio",
+                    "quick_ratio",
+                    "cash_ratio",
+                    "assets_turn",
+                    "ocf_to_or",
+                    "total_assets",
+                    "total_liab",
+                    "total_hldr_eqy_exc_min_int",
+                    "money_cap",
+                    "accounts_receiv",
+                    "inventories",
+                    "st_borr",
+                    "lt_borr",
+                    "n_cashflow_act",
+                    "n_cashflow_inv_act",
+                    "n_cash_flows_fnc_act",
+                    "n_incr_cash_cash_equ",
+                ]
+                for col in financial_fill_cols:
+                    row[col] = resolved_snapshot.get(col)
+                row["report_type"] = str(requested_report_type).upper()
+                if "ann_date" in row.columns:
+                    row["ann_date"] = pd.to_datetime(row["ann_date"], errors="coerce")
+                if "end_date" in row.columns:
+                    row["end_date"] = pd.to_datetime(row["end_date"], errors="coerce")
+                if "fiscal_year" in row.columns:
+                    row["fiscal_year"] = pd.to_numeric(row["fiscal_year"], errors="coerce")
 
         feature_cols = list(bundle["feature_cols"])
         x = row.reindex(columns=feature_cols).copy()
@@ -2824,11 +3008,22 @@ class EarningsForecastPipeline:
         )
         market_overall_adjustment = ((quant_target.get("components") or {}).get("market_overall_adjustment") or {})
 
+        feature_trade_date_text = str(row["trade_date"].iloc[0]) if "trade_date" in row.columns else ""
+        feature_trade_ts = pd.to_datetime(feature_trade_date_text, errors="coerce") if feature_trade_date_text else pd.NaT
+        live_feature_compliant = data_source == "live_db"
+        live_feature_gap_days = None
+        if pd.notna(asof_ts) and pd.notna(feature_trade_ts):
+            live_feature_gap_days = int((pd.Timestamp(asof_ts).normalize() - pd.Timestamp(feature_trade_ts).normalize()).days)
+
         return {
             "ts_code": code,
             "trade_date": str(row["trade_date"].iloc[0]),
             "industry_name": industry_name,
             "feature_data_source": data_source,
+            "feature_trade_date": feature_trade_date_text or None,
+            "request_asof_date": request_asof_date,
+            "live_feature_compliant": live_feature_compliant,
+            "live_feature_gap_days": live_feature_gap_days,
             "financial_report_type": report_type,
             "financial_ann_date": ann_date,
             "financial_end_date": end_date,
@@ -2878,6 +3073,8 @@ class EarningsForecastPipeline:
         report_types: list[str] | None = None,
         anchor_mode: str = "ann",
         asof_date: datetime | pd.Timestamp | str | None = None,
+        require_live_features: bool = False,
+        feature_source_preference: str | None = None,
     ) -> dict[str, Any]:
         code = str(ts_code or "").strip().upper()
         if not code:
@@ -2917,6 +3114,8 @@ class EarningsForecastPipeline:
                     requested_report_type=rt,
                     anchor_mode=anchor_mode_normalized,
                     asof_date=asof_date,
+                    require_live_features=require_live_features,
+                    feature_source_preference=feature_source_preference,
                 )
 
                 ann_raw = result.get("financial_ann_date") or result.get("trade_date")
@@ -2952,6 +3151,8 @@ class EarningsForecastPipeline:
                     }
                 )
             except Exception as exc:
+                if require_live_features and isinstance(exc, LiveFeatureUnavailableError):
+                    raise
                 failures.append({"report_type": rt, "error": str(exc)})
 
         if not components:
@@ -3041,8 +3242,11 @@ class EarningsForecastPipeline:
                 fused_target_market_cap_high = fused_target_market_cap * (1.0 + band_pct)
 
         component_summaries = []
+        all_components_live = True
         for item in components:
             r = item["result"]
+            component_live_ok = bool(r.get("live_feature_compliant"))
+            all_components_live = all_components_live and component_live_ok
             component_summaries.append(
                 {
                     "report_type": item["report_type"],
@@ -3050,6 +3254,8 @@ class EarningsForecastPipeline:
                     "score": self._to_float_or_none(r.get("signal_score")),
                     "action": r.get("action"),
                     "risk_level": r.get("risk_level"),
+                    "feature_data_source": r.get("feature_data_source"),
+                    "live_feature_compliant": component_live_ok,
                     "model_version": r.get("model_version"),
                     "trade_date": r.get("trade_date"),
                     "financial_ann_date": r.get("financial_ann_date"),
@@ -3057,11 +3263,27 @@ class EarningsForecastPipeline:
                 }
             )
 
+        asof_ts = pd.to_datetime(asof_date, errors="coerce") if asof_date is not None else pd.NaT
+        request_asof_date = pd.Timestamp(asof_ts).strftime("%Y-%m-%d") if pd.notna(asof_ts) else None
+
+        if require_live_features and not all_components_live:
+            raise LiveFeatureUnavailableError(
+                ts_code=code,
+                request_asof_date=request_asof_date,
+                feature_data_source="fusion",
+                feature_trade_date=fused_trade_date,
+                message="live features unavailable for one or more fusion components",
+            )
+
         return {
             "ts_code": code,
             "trade_date": fused_trade_date,
             "industry_name": components[0]["result"].get("industry_name"),
             "feature_data_source": "fusion",
+            "feature_trade_date": fused_trade_date,
+            "request_asof_date": request_asof_date,
+            "live_feature_compliant": all_components_live,
+            "live_feature_gap_days": None,
             "financial_report_type": "FUSION",
             "financial_ann_date": "",
             "financial_end_date": "",
@@ -3585,16 +3807,23 @@ class EarningsForecastPipeline:
                 return pd.DataFrame()
 
         if requested_rt and "report_type" in cached_frame.columns:
-            frame = cached_frame[
+            frame_by_type = cached_frame[
                 cached_frame["report_type"].fillna("UNKNOWN").astype(str).str.upper() == requested_rt
             ]
+            frame = frame_by_type
 
             if requested_financial_end_date and "end_date" in frame.columns:
                 requested_end_date_ts = pd.to_datetime(requested_financial_end_date, errors="coerce")
                 if pd.notna(requested_end_date_ts):
                     requested_end_date_token = pd.Timestamp(requested_end_date_ts).strftime("%Y-%m-%d")
                     frame_end_dates = pd.to_datetime(frame["end_date"], errors="coerce").dt.strftime("%Y-%m-%d")
-                    frame = frame[frame_end_dates == requested_end_date_token]
+                    exact_frame = frame[frame_end_dates == requested_end_date_token]
+                    if not exact_frame.empty:
+                        frame = exact_frame
+                    else:
+                        # If requested period is not available under current asof context,
+                        # keep latest available rows under selected report_type.
+                        frame = frame_by_type
 
             # Same-day multi-report announcements (for example Q1 and FY both announced
             # on the same day) can cause the mixed merge_asof frame to retain only the

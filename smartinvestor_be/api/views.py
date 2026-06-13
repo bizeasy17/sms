@@ -10421,6 +10421,50 @@ def _calc_target_price_from_return_pct(current_price, return_pct):
     return round(current * (1.0 + pct / 100.0), 4)
 
 
+def _resolve_trade_anchor_on_or_after(ts_code, start_date, *, freq="D", upper_bound=None):
+    normalized_ts_code = str(ts_code or "").strip().upper()
+    normalized_start = _parse_date_like(start_date)
+    normalized_upper = _parse_date_like(upper_bound)
+    if not normalized_ts_code or normalized_start is None:
+        return None
+
+    qs = StockTradingHistory.objects.filter(
+        ts_code=normalized_ts_code,
+        freq=str(freq or "D").strip().upper() or "D",
+        trade_date__gte=normalized_start,
+    )
+    if normalized_upper is not None:
+        qs = qs.filter(trade_date__lte=normalized_upper)
+
+    row = qs.order_by("trade_date").values("trade_date").first()
+    if row:
+        return _parse_date_like(row.get("trade_date"))
+    return None
+
+
+def _resolve_predictive_anchor_trade_date(payload, *, latest_trade_date=None, anchor_mode="ann"):
+    normalized_payload = payload if isinstance(payload, dict) else {}
+    normalized_anchor_mode = _normalize_predict_anchor_mode(anchor_mode)
+    latest_date = _parse_date_like(latest_trade_date)
+    asof_date = _parse_date_like(normalized_payload.get("asof_date"))
+    if normalized_anchor_mode != "ann":
+        return asof_date or latest_date
+
+    ts_code = str(normalized_payload.get("ts_code") or "").strip().upper()
+    ann_date = _parse_date_like(normalized_payload.get("financial_ann_date"))
+    if ts_code and ann_date is not None:
+        aligned_trade_date = _resolve_trade_anchor_on_or_after(
+            ts_code,
+            ann_date,
+            freq="D",
+            upper_bound=latest_date,
+        )
+        if aligned_trade_date is not None:
+            return aligned_trade_date
+
+    return ann_date or asof_date or latest_date
+
+
 def _compute_predictive_reliability_weight(signal_score=None, stale_days=None):
     score = _to_float_or_none(signal_score)
     stale = _to_float_or_none(stale_days)
@@ -10640,7 +10684,7 @@ def _build_traditional_summary_optimized(
     return summary_opt
 
 
-def _build_earnings_dual_target_payload(earnings_payload, *, current_price=None, latest_trade_date=None):
+def _build_earnings_dual_target_payload(earnings_payload, *, current_price=None, latest_trade_date=None, anchor_mode="ann"):
     if not isinstance(earnings_payload, dict):
         return earnings_payload
 
@@ -10672,7 +10716,11 @@ def _build_earnings_dual_target_payload(earnings_payload, *, current_price=None,
     if ann_date is not None and anchor_date is not None:
         stale_days = max((anchor_date - ann_date).days, 0)
 
-    anchor_trade_date = _parse_date_like(payload.get("asof_date")) or _parse_date_like(latest_trade_date)
+    anchor_trade_date = _resolve_predictive_anchor_trade_date(
+        payload,
+        latest_trade_date=latest_trade_date,
+        anchor_mode=anchor_mode,
+    )
     anchor_close_price = None
     anchor_ts_code = str(payload.get("ts_code") or "").strip().upper()
     if anchor_ts_code and anchor_trade_date is not None:
@@ -11333,6 +11381,10 @@ def _map_earnings_result_to_be_data(ts_code, upstream_result):
         "model_version": model_version,
         "asof_date": upstream_result.get("trade_date"),
         "feature_data_source": upstream_result.get("feature_data_source"),
+        "feature_trade_date": upstream_result.get("feature_trade_date"),
+        "request_asof_date": upstream_result.get("request_asof_date"),
+        "live_feature_compliant": upstream_result.get("live_feature_compliant"),
+        "live_feature_gap_days": upstream_result.get("live_feature_gap_days"),
         "financial_end_date": upstream_result.get("financial_end_date"),
         "financial_fiscal_year": upstream_result.get("financial_fiscal_year"),
         "financial_ann_date": upstream_result.get("financial_ann_date"),
@@ -11402,6 +11454,9 @@ def _fetch_earnings_signal(
     serving_slot="",
     model_version="",
     anchor_mode="",
+    asof_date=None,
+    require_live_features=False,
+    feature_source_preference="",
 ):
     base_url = str(
         getattr(settings, "EARNINGS_SERVICE_BASE_URL", "http://127.0.0.1:8000")
@@ -11438,6 +11493,17 @@ def _fetch_earnings_signal(
     if normalized_source == "predict" and normalized_anchor_mode in {"ann", "live"}:
         query_payload["anchor_mode"] = normalized_anchor_mode
 
+    normalized_asof_date = _parse_date_like(asof_date)
+    if normalized_source == "predict" and normalized_asof_date is not None:
+        query_payload["asof_date"] = normalized_asof_date.strftime("%Y-%m-%d")
+
+    if normalized_source == "predict" and bool(require_live_features):
+        query_payload["require_live_features"] = "true"
+
+    normalized_feature_source_preference = str(feature_source_preference or "").strip().lower()
+    if normalized_source == "predict" and normalized_feature_source_preference:
+        query_payload["feature_source_preference"] = normalized_feature_source_preference
+
     normalized_financial_end_date = _parse_date_like(financial_end_date)
     if normalized_financial_end_date is not None:
         query_payload["financial_end_date"] = normalized_financial_end_date.strftime("%Y-%m-%d")
@@ -11461,6 +11527,27 @@ def _fetch_earnings_signal(
                 if not isinstance(result, dict):
                     raise ValueError("Invalid upstream response: missing result object")
                 return _map_earnings_result_to_be_data(ts_code, result)
+        except HTTPError as err:
+            last_error = err
+            if err.code == 422:
+                try:
+                    body = err.read().decode("utf-8", errors="replace")
+                    payload = json.loads(body) if body else {}
+                except Exception:
+                    payload = {}
+                code = str((payload or {}).get("code") or "").strip().upper()
+                if code == "LIVE_FEATURE_UNAVAILABLE":
+                    detail = (payload or {}).get("detail") or {}
+                    raise RuntimeError(
+                        json.dumps(
+                            {
+                                "code": code,
+                                "message": (payload or {}).get("message") or "live features unavailable",
+                                "detail": detail if isinstance(detail, dict) else {},
+                            },
+                            ensure_ascii=False,
+                        )
+                    )
         except (HTTPError, URLError, TimeoutError, ValueError, json.JSONDecodeError) as err:
             last_error = err
 
@@ -11739,6 +11826,9 @@ def _build_earnings_signal_view(
     serving_slot="",
     model_version="",
     anchor_mode="ann",
+    asof_date=None,
+    require_live_features=False,
+    feature_source_preference="",
 ):
     normalized_report_type = _normalize_earnings_report_type(report_type)
     normalized_anchor_mode = _normalize_predict_anchor_mode(anchor_mode)
@@ -11759,6 +11849,7 @@ def _build_earnings_signal_view(
         normalized_report_type in {"Q1", "H1", "Q3"}
         and resolved_financial_end_date is None
         and latest_trade_date is not None
+        and use_predict_path
     ):
         resolved_financial_end_date = _resolve_expected_end_date_for_report_type(
             normalized_report_type,
@@ -11768,6 +11859,7 @@ def _build_earnings_signal_view(
     if (
         normalized_report_type in {"Q1", "H1", "Q3", "FY"}
         and resolved_financial_end_date is None
+        and use_predict_path
     ):
         resolved_financial_end_date = _resolve_valuation_report_end_date_from_feature_panel(
             ts_code=ts_code,
@@ -11845,12 +11937,16 @@ def _build_earnings_signal_view(
             serving_slot=normalized_serving_slot,
             model_version=normalized_model_version,
             anchor_mode=normalized_anchor_mode,
+            asof_date=asof_date,
+            require_live_features=require_live_features,
+            feature_source_preference=feature_source_preference,
         )
 
     data = _build_earnings_dual_target_payload(
         data,
         current_price=latest_current_price,
         latest_trade_date=latest_trade_date,
+        anchor_mode=normalized_anchor_mode,
     )
     data["anchor_mode"] = normalized_anchor_mode
 
@@ -11912,7 +12008,10 @@ def get_earnings_signal_compare(request, ts_code):
     normalized_model_version = str(request.GET.get("model_version") or "").strip()
     latest_anchor_mode = _normalize_predict_anchor_mode(request.GET.get("anchor_mode_latest") or "live")
     report_anchor_mode = _normalize_predict_anchor_mode(request.GET.get("anchor_mode_report") or "ann")
-    effective_serving_slot = normalized_serving_slot if normalized_serving_slot in {"production", "candidate"} else "production"
+    requested_serving_slot = normalized_serving_slot if normalized_serving_slot in {"production", "candidate"} else ""
+    effective_predict_serving_slot = requested_serving_slot or "production"
+    request_date = datetime.date.today()
+    request_date_text = request_date.strftime("%Y-%m-%d")
 
     latest_trade_payload = (
         StockTradingHistory.objects.filter(ts_code=normalized_ts_code, freq="D")
@@ -11928,39 +12027,140 @@ def get_earnings_signal_compare(request, ts_code):
     compare_cache_key = (
         f"earnings_signal_compare:{normalized_ts_code}:{normalized_report_type or 'ALL'}:"
         f"{normalized_financial_end_date.strftime('%Y-%m-%d') if normalized_financial_end_date else 'latest'}:"
-        f"{effective_serving_slot or 'default'}:{normalized_model_version or 'default'}:{latest_anchor_mode}:{report_anchor_mode}"
+        f"{effective_predict_serving_slot or 'default'}:{normalized_model_version or 'default'}:{latest_anchor_mode}:{report_anchor_mode}:"
+        f"{request_date_text}:latest_realtime"
     )
     cache_ttl_seconds = int(getattr(settings, "EARNINGS_SIGNAL_CACHE_SECONDS", 1800) or 1800)
 
     try:
-        latest_view_result = _build_earnings_signal_view(
-            ts_code=normalized_ts_code,
-            report_type=normalized_report_type,
-            latest_trade_date=latest_trade_date,
-            latest_current_price=latest_current_price,
-            financial_end_date=None,
-            serving_slot=effective_serving_slot,
-            model_version=normalized_model_version,
-            anchor_mode=latest_anchor_mode,
-        )
-        report_anchor_result = _build_earnings_signal_view(
-            ts_code=normalized_ts_code,
-            report_type=normalized_report_type,
-            latest_trade_date=latest_trade_date,
-            latest_current_price=latest_current_price,
-            financial_end_date=normalized_financial_end_date,
-            serving_slot=effective_serving_slot,
-            model_version=normalized_model_version,
-            anchor_mode=report_anchor_mode,
+        # Latest view: always realtime predict with selected report-period financial input.
+        latest_snapshot_error = None
+        try:
+            latest_snapshot_result = _build_earnings_signal_view(
+                ts_code=normalized_ts_code,
+                report_type=normalized_report_type,
+                latest_trade_date=latest_trade_date,
+                latest_current_price=latest_current_price,
+                financial_end_date=normalized_financial_end_date,
+                serving_slot="",
+                model_version="",
+                anchor_mode="ann",
+            )
+            latest_snapshot_data = dict(latest_snapshot_result.get("data") or {})
+        except Exception as snapshot_err:
+            latest_snapshot_error = snapshot_err
+            latest_snapshot_data = _build_earnings_default_data(normalized_ts_code, normalized_report_type)
+
+        latest_snapshot_asof_date = _parse_date_like(latest_snapshot_data.get("asof_date"))
+        latest_snapshot_staleness_days = None
+        if latest_snapshot_asof_date is not None:
+            latest_snapshot_staleness_days = max(0, (request_date - latest_snapshot_asof_date).days)
+
+        resolved_latest_financial_end_date = (
+            normalized_financial_end_date
+            or _parse_date_like(latest_snapshot_data.get("financial_end_date"))
         )
 
-        latest_data = dict(latest_view_result.get("data") or {})
-        report_anchor_data = dict(report_anchor_result.get("data") or {})
+        latest_source_used = "predict_realtime"
+        latest_data = latest_snapshot_data
+
+        latest_predict_error = None
+        latest_feature_data_source = None
+        latest_live_feature_ok = False
+        try:
+            latest_predict_result = _build_earnings_signal_view(
+                ts_code=normalized_ts_code,
+                report_type=normalized_report_type,
+                latest_trade_date=latest_trade_date,
+                latest_current_price=latest_current_price,
+                financial_end_date=resolved_latest_financial_end_date,
+                serving_slot=effective_predict_serving_slot,
+                model_version=normalized_model_version,
+                anchor_mode="live",
+                asof_date=request_date,
+                require_live_features=True,
+                feature_source_preference="live_db_only",
+            )
+            latest_data = dict(latest_predict_result.get("data") or {})
+            latest_feature_data_source = str(latest_data.get("feature_data_source") or "").strip().lower() or None
+            latest_live_feature_ok = (
+                latest_feature_data_source in {"live", "live_db"}
+                or (
+                    latest_feature_data_source == "fusion"
+                    and bool(latest_data.get("live_feature_compliant"))
+                )
+            )
+            if not latest_live_feature_ok:
+                latest_source_used = "predict_non_live_rejected"
+                latest_data = _build_earnings_default_data(normalized_ts_code, normalized_report_type)
+                latest_data["degrade_reason"] = "latest_requires_live_feature_source"
+            else:
+                latest_source_used = "predict_realtime"
+        except Exception as predict_err:
+            latest_predict_error = predict_err
+            latest_source_used = "predict_realtime_rejected"
+            latest_data = _build_earnings_default_data(normalized_ts_code, normalized_report_type)
+            latest_data["degrade_reason"] = "latest_requires_live_feature_source"
+            err_text = str(predict_err or "")
+            try:
+                err_payload = json.loads(err_text)
+            except Exception:
+                err_payload = None
+            if isinstance(err_payload, dict) and str(err_payload.get("code") or "").strip().upper() == "LIVE_FEATURE_UNAVAILABLE":
+                latest_data["degrade_code"] = "LIVE_FEATURE_UNAVAILABLE"
+                latest_data["degrade_detail"] = err_payload.get("detail") if isinstance(err_payload.get("detail"), dict) else {}
+                latest_data["degrade_message"] = err_payload.get("message")
+            else:
+                latest_data["degrade_code"] = "UPSTREAM_ERROR"
+                latest_data["degrade_message"] = err_text
+
+        latest_data = _build_earnings_dual_target_payload(
+            latest_data,
+            current_price=latest_current_price,
+            latest_trade_date=latest_trade_date,
+            anchor_mode=latest_anchor_mode,
+        )
+        latest_data["anchor_mode"] = "live"
+        if latest_trade_date is not None:
+            latest_data["anchor_trade_date"] = latest_trade_date.strftime("%Y-%m-%d")
+
+        # Right card view: selected report-type latest available snapshot-only value.
+        report_anchor_error = None
+        report_source_used = "snapshot"
+        try:
+            report_anchor_result = _build_earnings_signal_view(
+                ts_code=normalized_ts_code,
+                report_type=normalized_report_type,
+                latest_trade_date=latest_trade_date,
+                latest_current_price=latest_current_price,
+                financial_end_date=None,
+                serving_slot="",
+                model_version="",
+                anchor_mode=report_anchor_mode,
+            )
+            report_anchor_data = dict(report_anchor_result.get("data") or {})
+        except Exception as report_err:
+            report_anchor_error = report_err
+            report_source_used = "snapshot_fallback_latest"
+            report_anchor_data = dict(latest_snapshot_data or {})
+            if not report_anchor_data:
+                report_source_used = "default"
+                report_anchor_data = _build_earnings_default_data(normalized_ts_code, normalized_report_type)
 
         latest_data["view_type"] = "latest"
         latest_data["view_label"] = "latest_predictive"
         report_anchor_data["view_type"] = "report_anchor"
-        report_anchor_data["view_label"] = "report_release_anchor"
+        report_anchor_data["view_label"] = "report_type_latest_snapshot"
+
+        # Fusion is temporarily aligned with report-anchor semantics.
+        # It does not enforce strict live-source gating for latest card.
+        if normalized_report_type == "FUSION":
+            latest_data = dict(report_anchor_data)
+            latest_data["view_type"] = "latest"
+            latest_data["view_label"] = "latest_predictive"
+            latest_source_used = "fusion_mirror_report_anchor"
+            latest_feature_data_source = str(latest_data.get("feature_data_source") or "").strip().lower() or None
+            latest_live_feature_ok = True
 
         response_data = {
             "ts_code": normalized_ts_code,
@@ -11969,9 +12169,22 @@ def get_earnings_signal_compare(request, ts_code):
             "report_anchor_view": report_anchor_data,
             "compare_summary": _build_earnings_compare_summary(latest_data, report_anchor_data),
             "compare_meta": {
-                "anchor_policy": "report_anchor_ann_next_trading_day",
+                "anchor_policy": "latest_request_time_and_report_type_latest_snapshot",
                 "fusion_policy": "strict_then_decay",
-                "effective_serving_slot": effective_serving_slot,
+                "latest_policy": "realtime_predict_with_selected_financial_period",
+                "report_policy": "snapshot_only_selected_report_type_latest",
+                "request_date": request_date_text,
+                "latest_source_used": latest_source_used,
+                "latest_feature_data_source": latest_feature_data_source,
+                "latest_live_feature_ok": latest_live_feature_ok,
+                "latest_snapshot_staleness_days": latest_snapshot_staleness_days,
+                "latest_snapshot_asof_date": (
+                    latest_snapshot_asof_date.strftime("%Y-%m-%d") if latest_snapshot_asof_date is not None else None
+                ),
+                "report_source_used": report_source_used,
+                "effective_serving_slot": effective_predict_serving_slot,
+                "latest_partial_degrade": bool(latest_snapshot_error or latest_predict_error or (not latest_live_feature_ok)),
+                "report_partial_degrade": bool(report_anchor_error),
             },
         }
         cache.set(compare_cache_key, response_data, timeout=cache_ttl_seconds)
@@ -12020,8 +12233,15 @@ def get_earnings_signal_compare(request, ts_code):
                         "confidence_hint": "stable",
                     },
                     "compare_meta": {
-                        "anchor_policy": "report_anchor_ann_next_trading_day",
+                        "anchor_policy": "latest_request_time_and_report_anchor_snapshot",
                         "fusion_policy": "strict_then_decay",
+                        "latest_policy": "snapshot_preferred_with_30d_predict_fallback",
+                        "report_policy": "snapshot_only_report_anchor_including_fusion",
+                        "request_date": request_date_text,
+                        "latest_source_used": "default",
+                        "latest_snapshot_staleness_days": None,
+                        "latest_snapshot_asof_date": None,
+                        "report_source_used": "default",
                     },
                 },
                 "degrade": {

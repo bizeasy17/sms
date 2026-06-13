@@ -12,7 +12,18 @@ from django.views.decorators.http import require_GET, require_POST
 from django.views.decorators.csrf import csrf_exempt
 
 from .models import EarningsBacktestRun, EarningsSignalSnapshot, EarningsSignalSnapshotHistory, FinancialIncomeRecord
-from .services import EarningsForecastPipeline, run_predictive_valuation_backtest
+from .services import EarningsForecastPipeline, LiveFeatureUnavailableError, run_predictive_valuation_backtest
+
+
+def _parse_bool(value, default=False):
+    text = str(value or "").strip().lower()
+    if not text:
+        return bool(default)
+    if text in {"1", "true", "yes", "y", "on"}:
+        return True
+    if text in {"0", "false", "no", "n", "off"}:
+        return False
+    return bool(default)
 
 
 def _resolve_config_path(request) -> Path:
@@ -959,29 +970,50 @@ def train_model(request):
 @csrf_exempt
 def predict_latest(request):
     try:
+        payload = {}
+        if request.body:
+            try:
+                payload = json.loads(request.body.decode("utf-8")) or {}
+            except Exception:
+                payload = {}
+
         ts_code = request.GET.get("ts_code") or request.POST.get("ts_code")
         report_type = str(request.GET.get("report_type") or request.POST.get("report_type") or "").strip().upper()
         financial_end_date = str(request.GET.get("financial_end_date") or request.POST.get("financial_end_date") or "").strip()
         serving_slot = str(request.GET.get("serving_slot") or request.POST.get("serving_slot") or "production").strip().lower()
         model_version = str(request.GET.get("model_version") or request.POST.get("model_version") or "").strip()
+        asof_date = str(request.GET.get("asof_date") or request.POST.get("asof_date") or "").strip()
+        feature_source_preference = str(
+            request.GET.get("feature_source_preference")
+            or request.POST.get("feature_source_preference")
+            or ""
+        ).strip().lower()
+        require_live_features = _parse_bool(
+            request.GET.get("require_live_features") or request.POST.get("require_live_features"),
+            default=False,
+        )
         anchor_mode = str(request.GET.get("anchor_mode") or request.POST.get("anchor_mode") or "ann").strip().lower()
         if anchor_mode in {"live", "live_latest", "latest"}:
             anchor_mode = "live_latest"
         else:
             anchor_mode = "ann"
-        if not ts_code and request.body:
-            payload = json.loads(request.body.decode("utf-8"))
-            ts_code = payload.get("ts_code")
-            report_type = str(payload.get("report_type") or report_type).strip().upper()
-            financial_end_date = str(payload.get("financial_end_date") or financial_end_date).strip()
-            serving_slot = str(payload.get("serving_slot") or serving_slot).strip().lower()
-            model_version = str(payload.get("model_version") or model_version).strip()
-            payload_anchor_mode = str(payload.get("anchor_mode") or "").strip().lower()
-            if payload_anchor_mode:
-                if payload_anchor_mode in {"live", "live_latest", "latest"}:
-                    anchor_mode = "live_latest"
-                else:
-                    anchor_mode = "ann"
+
+        ts_code = payload.get("ts_code") or ts_code
+        report_type = str(payload.get("report_type") or report_type).strip().upper()
+        financial_end_date = str(payload.get("financial_end_date") or financial_end_date).strip()
+        serving_slot = str(payload.get("serving_slot") or serving_slot).strip().lower()
+        model_version = str(payload.get("model_version") or model_version).strip()
+        asof_date = str(payload.get("asof_date") or asof_date).strip()
+        feature_source_preference = str(payload.get("feature_source_preference") or feature_source_preference).strip().lower()
+        if "require_live_features" in payload:
+            require_live_features = _parse_bool(payload.get("require_live_features"), default=require_live_features)
+        payload_anchor_mode = str(payload.get("anchor_mode") or "").strip().lower()
+        if payload_anchor_mode:
+            if payload_anchor_mode in {"live", "live_latest", "latest"}:
+                anchor_mode = "live_latest"
+            else:
+                anchor_mode = "ann"
+
         if not ts_code:
             return JsonResponse({"ok": False, "error": "ts_code is required"}, status=400)
 
@@ -1018,6 +1050,9 @@ def predict_latest(request):
                 model_version=model_version or None,
                 serving_slot=serving_slot,
                 anchor_mode=anchor_mode,
+                asof_date=asof_date or None,
+                require_live_features=require_live_features,
+                feature_source_preference=feature_source_preference or None,
             )
         else:
             result = pipeline.predict(
@@ -1027,8 +1062,14 @@ def predict_latest(request):
                 requested_report_type=report_type or None,
                 anchor_mode=anchor_mode,
                 requested_financial_end_date=financial_end_date or None,
+                asof_date=asof_date or None,
+                require_live_features=require_live_features,
+                feature_source_preference=feature_source_preference or None,
             )
         return JsonResponse({"ok": True, "result": result})
+    except LiveFeatureUnavailableError as exc:
+        payload = exc.to_payload()
+        return JsonResponse({"ok": False, **payload}, status=422)
     except Exception as exc:
         return JsonResponse({"ok": False, "error": str(exc)}, status=500)
 
