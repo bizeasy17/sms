@@ -17,13 +17,20 @@ if exist "%VENV_PYTHON%" set "PYTHON_CMD=%VENV_PYTHON%"
 if not defined CANDIDATE_POLICY set "CANDIDATE_POLICY=disclosure-only"
 set "REFRESH_POLICY=disclosure"
 if /I "%CANDIDATE_POLICY%"=="all" set "REFRESH_POLICY=all"
-set "COMMON_ARGS=--methods sw_history,pe,pb,ps,peg,fcff_dcf,ddm,scarcity_overlay --express-max-age-days 180 --profit-buckets both --request-interval 0.2 --refresh-policy %REFRESH_POLICY% --business-match-topn 3"
+if /I "%REFRESH_POLICY%"=="all" (
+	set "DEFAULT_REFRESH_REASON=regime_switch_manual"
+) else (
+	set "DEFAULT_REFRESH_REASON=disclosure_refresh"
+)
+if not defined REFRESH_REASON set "REFRESH_REASON=%DEFAULT_REFRESH_REASON%"
+set "REFRESH_RUN_ID=valsnap_%REFRESH_REASON%_%RUN_STAMP%"
+set "COMMON_ARGS=--methods sw_history,pe,pb,ps,peg,fcff_dcf,ddm,scarcity_overlay --express-max-age-days 180 --profit-buckets both --request-interval 0.2 --refresh-policy %REFRESH_POLICY% --refresh-run-id %REFRESH_RUN_ID% --business-match-topn 3"
 if defined PREFILL_EXTRA_ARGS set "COMMON_ARGS=%COMMON_ARGS% %PREFILL_EXTRA_ARGS%"
 set "CANDIDATE_ARGS=--methods sw_history,pe,pb,ps,peg,fcff_dcf,ddm,scarcity_overlay --express-max-age-days 180 --candidate-policy %CANDIDATE_POLICY% --output-file %CANDIDATE_FILE%"
 if defined CANDIDATE_EXTRA_ARGS set "CANDIDATE_ARGS=%CANDIDATE_ARGS% %CANDIDATE_EXTRA_ARGS%"
 set "FAILURES=0"
 
-call :log INFO "start earnings refresh base_dir=%BASE_DIR% python=%PYTHON_CMD% candidate_policy=%CANDIDATE_POLICY% refresh_policy=%REFRESH_POLICY%"
+call :log INFO "start earnings refresh base_dir=%BASE_DIR% python=%PYTHON_CMD% candidate_policy=%CANDIDATE_POLICY% refresh_policy=%REFRESH_POLICY% refresh_reason=%REFRESH_REASON% refresh_run_id=%REFRESH_RUN_ID%"
 if /I "%REFRESH_POLICY%"=="all" goto :run_full_scopes
 
 call :build_candidates

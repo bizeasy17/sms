@@ -1577,6 +1577,12 @@ class Command(BaseCommand):
             default=False,
             help="关闭基于指数估值分位的市场整体后处理系数（默认开启）",
         )
+        parser.add_argument(
+            "--refresh-run-id",
+            type=str,
+            default="",
+            help="可选刷新运行标识（建议包含触发原因），将写入历史表 backfill_run_id 便于追踪",
+        )
 
     def _resolve_trade_date(self, trade_date, freq):
         if trade_date:
@@ -1655,7 +1661,9 @@ class Command(BaseCommand):
             trade_date_obj = datetime.strptime(trade_date_obj, "%Y-%m-%d").date()
         is_backfill = trade_date_obj < date.today()
         backfill_history_only = bool(options.get("backfill_history_only", False))
-        history_run_id = datetime.now().strftime("valsnap_%Y%m%d_%H%M%S") if is_backfill else ""
+        refresh_run_id = str(options.get("refresh_run_id") or "").strip()
+        default_run_id = datetime.now().strftime("valsnap_%Y%m%d_%H%M%S") if is_backfill else ""
+        history_run_id = str(refresh_run_id or default_run_id)[:64]
         market = str(options.get("market", "CN")).strip().upper()
         dry_run = bool(options.get("dry_run", False))
         refresh = bool(options.get("refresh", False))
@@ -1840,6 +1848,7 @@ class Command(BaseCommand):
         )
         self.stdout.write(f"profit_buckets: {profit_buckets_mode}")
         self.stdout.write(f"backfill_history_only: {backfill_history_only}")
+        self.stdout.write(f"refresh_run_id: {history_run_id or '-'}")
         if needs_tushare_throttle:
             self.stdout.write(
                 self.style.WARNING(
