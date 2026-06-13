@@ -68,6 +68,16 @@ def _normalize_end_date_token(value: str | None) -> str:
     return ""
 
 
+def _parse_token_date(value: str | None) -> date | None:
+    normalized = _normalize_end_date_token(value)
+    if not normalized:
+        return None
+    try:
+        return datetime.strptime(normalized, "%Y-%m-%d").date()
+    except ValueError:
+        return None
+
+
 def _to_prev_year_end_date(value: str | None) -> str:
     normalized = _normalize_end_date_token(value)
     if not normalized:
@@ -260,29 +270,89 @@ def _history_to_payload(snapshot: EarningsSignalSnapshotHistory) -> dict:
     }
 
 
-def _select_payload_by_financial_end_date(ts_code: str, report_type: str, financial_end_date: str | None, snapshots: list[EarningsSignalSnapshot] | None = None, prev_year_income_sign_map: dict[tuple[str, str], bool | None] | None = None) -> dict | None:
+def _select_payload_by_financial_end_date(
+    ts_code: str,
+    report_type: str,
+    financial_end_date: str | None,
+    snapshots: list[EarningsSignalSnapshot] | None = None,
+    prev_year_income_sign_map: dict[tuple[str, str], bool | None] | None = None,
+    asof_date: str | None = None,
+) -> dict | None:
     target_end_date = _normalize_end_date_token(financial_end_date)
     if not target_end_date:
         return None
 
+    target_asof = _parse_token_date(asof_date)
+
+    matched_snapshots = []
     for snapshot in snapshots or []:
         raw_result = snapshot.raw_result or {}
         snapshot_end_date = _normalize_end_date_token(raw_result.get("financial_end_date") if isinstance(raw_result, dict) else None)
         if snapshot_end_date == target_end_date:
-            return _snapshot_to_payload(snapshot, prev_year_income_sign_map)
+            matched_snapshots.append(snapshot)
+
+    if matched_snapshots:
+        if target_asof is None:
+            return _snapshot_to_payload(matched_snapshots[0], prev_year_income_sign_map)
+
+        exact = next((s for s in matched_snapshots if s.asof_date == target_asof), None)
+        if exact is not None:
+            return _snapshot_to_payload(exact, prev_year_income_sign_map)
+
+        before = [s for s in matched_snapshots if s.asof_date is not None and s.asof_date <= target_asof]
+        if before:
+            before.sort(key=lambda s: (s.asof_date, s.updated_at or s.created_at), reverse=True)
+            return _snapshot_to_payload(before[0], prev_year_income_sign_map)
 
     history_qs = EarningsSignalSnapshotHistory.objects.filter(
         ts_code=str(ts_code or "").strip().upper(),
         report_type=str(report_type or "").strip().upper(),
-    ).order_by("-created_at")
+    )
 
-    history_row = history_qs.filter(
+    history_target_qs = history_qs.filter(
         financial_end_date__in=list(_normalize_end_date_candidates(target_end_date)),
-    ).first()
-    if history_row is not None:
-        return _history_to_payload(history_row)
+    )
 
-    for history_row in history_qs[:50]:
+    if target_asof is None:
+        history_row = history_target_qs.order_by("-created_at").first()
+        if history_row is not None:
+            return _history_to_payload(history_row)
+    else:
+        exact = history_target_qs.filter(asof_date=target_asof).order_by("-created_at").first()
+        if exact is not None:
+            return _history_to_payload(exact)
+
+        before = history_target_qs.filter(asof_date__isnull=False, asof_date__lte=target_asof).order_by("-asof_date", "-created_at").first()
+        if before is not None:
+            return _history_to_payload(before)
+
+        after = history_target_qs.filter(asof_date__isnull=False, asof_date__gte=target_asof).order_by("asof_date", "-created_at").first()
+        if after is not None:
+            return _history_to_payload(after)
+
+        history_row = history_target_qs.order_by("-created_at").first()
+        if history_row is not None:
+            return _history_to_payload(history_row)
+
+        # Compatibility fallback: many legacy rows do not persist financial_end_date.
+        # In that case, pin by report_type and choose nearest snapshot around asof_date.
+        history_fuzzy_qs = history_qs.filter(financial_end_date__in=["", None])
+        fuzzy_exact = history_fuzzy_qs.filter(asof_date=target_asof).order_by("-created_at").first()
+        if fuzzy_exact is not None:
+            return _history_to_payload(fuzzy_exact)
+
+        fuzzy_before = history_fuzzy_qs.filter(asof_date__isnull=False, asof_date__lte=target_asof).order_by("-asof_date", "-created_at").first()
+        fuzzy_after = history_fuzzy_qs.filter(asof_date__isnull=False, asof_date__gte=target_asof).order_by("asof_date", "-created_at").first()
+        if fuzzy_before is not None and fuzzy_after is not None:
+            before_gap = abs((target_asof - fuzzy_before.asof_date).days)
+            after_gap = abs((fuzzy_after.asof_date - target_asof).days)
+            return _history_to_payload(fuzzy_before if before_gap <= after_gap else fuzzy_after)
+        if fuzzy_before is not None:
+            return _history_to_payload(fuzzy_before)
+        if fuzzy_after is not None:
+            return _history_to_payload(fuzzy_after)
+
+    for history_row in history_qs.order_by("-created_at")[:50]:
         raw_result = history_row.raw_result or {}
         history_end_date = _normalize_end_date_token(
             (raw_result.get("financial_end_date") if isinstance(raw_result, dict) else None)
@@ -468,6 +538,7 @@ def signal_snapshot(request):
 
     report_type = str(request.GET.get("report_type") or "").strip().upper()
     financial_end_date = _normalize_end_date_token(request.GET.get("financial_end_date"))
+    asof_date = _normalize_end_date_token(request.GET.get("asof_date"))
     include_fusion = str(request.GET.get("include_fusion") or "").strip().lower() in {"1", "true", "yes"}
 
     query = EarningsSignalSnapshot.objects.filter(ts_code=ts_code)
@@ -499,6 +570,7 @@ def signal_snapshot(request):
             financial_end_date=financial_end_date,
             snapshots=all_snaps,
             prev_year_income_sign_map=prev_year_income_sign_map,
+            asof_date=asof_date,
         )
         if selected_payload is not None:
             payload = {"ok": True, "result": selected_payload}
@@ -1021,6 +1093,7 @@ def predict_latest(request):
             serving_slot = "production"
 
         normalized_financial_end_date = _normalize_end_date_token(financial_end_date)
+        normalized_asof_date = _normalize_end_date_token(asof_date)
         if report_type in {"Q1", "H1", "Q3", "FY"} and anchor_mode == "ann":
             snapshot_query = EarningsSignalSnapshot.objects.filter(ts_code=str(ts_code).strip().upper(), report_type=report_type)
             snapshots = list(snapshot_query.order_by("-updated_at"))
@@ -1034,6 +1107,7 @@ def predict_latest(request):
                     financial_end_date=normalized_financial_end_date,
                     snapshots=snapshots,
                     prev_year_income_sign_map=prev_year_income_sign_map,
+                    asof_date=normalized_asof_date,
                 )
 
             if selected_payload is None and snapshots:

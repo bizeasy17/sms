@@ -10914,10 +10914,19 @@ def _resolve_expected_end_date_for_report_type(report_type, anchor_trade_date=No
 
 
 def _resolve_valuation_report_end_date_from_feature_panel(ts_code, report_type, asof_date=None):
+    resolved_end_date, _resolved_ann_date = _resolve_valuation_report_meta_from_feature_panel(
+        ts_code=ts_code,
+        report_type=report_type,
+        asof_date=asof_date,
+    )
+    return resolved_end_date
+
+
+def _resolve_valuation_report_meta_from_feature_panel(ts_code, report_type, asof_date=None):
     normalized_ts_code = str(ts_code or "").strip().upper()
     panel_report_type = _map_valuation_report_type_to_panel_type(report_type)
     if not normalized_ts_code or panel_report_type not in {"Q1", "H1", "Q3", "FY"}:
-        return None
+        return None, None
 
     # Resolve target period from formal income statements only. Feature panel may
     # expose future period keys populated by forecast/express signals.
@@ -10929,7 +10938,7 @@ def _resolve_valuation_report_end_date_from_feature_panel(ts_code, report_type, 
     }
     report_suffix = suffix_map.get(panel_report_type)
     if not report_suffix:
-        return None
+        return None, None
 
     params = [normalized_ts_code, report_suffix]
     sql = """
@@ -10947,10 +10956,10 @@ def _resolve_valuation_report_end_date_from_feature_panel(ts_code, report_type, 
     try:
         df = query_local_financial_df(sql, params)
     except Exception:
-        return None
+        return None, None
     if df is None or df.empty:
-        return None
-    return _parse_date_like(df.iloc[0].get("end_date"))
+        return None, None
+    return _parse_date_like(df.iloc[0].get("end_date")), _parse_date_like(df.iloc[0].get("ann_date"))
 
 
 def _resolve_valuation_report_end_date_from_snapshot_latest(
@@ -11494,7 +11503,7 @@ def _fetch_earnings_signal(
         query_payload["anchor_mode"] = normalized_anchor_mode
 
     normalized_asof_date = _parse_date_like(asof_date)
-    if normalized_source == "predict" and normalized_asof_date is not None:
+    if normalized_asof_date is not None:
         query_payload["asof_date"] = normalized_asof_date.strftime("%Y-%m-%d")
 
     if normalized_source == "predict" and bool(require_live_features):
@@ -12124,19 +12133,29 @@ def get_earnings_signal_compare(request, ts_code):
         if latest_trade_date is not None:
             latest_data["anchor_trade_date"] = latest_trade_date.strftime("%Y-%m-%d")
 
-        # Right card view: selected report-type latest available snapshot-only value.
+        # Right card view: report-type disclosure-anchored snapshot (non-latest).
         report_anchor_error = None
         report_source_used = "snapshot"
+        report_anchor_financial_end_date = None
+        report_anchor_asof_date = None
+        if normalized_report_type in {"Q1", "H1", "Q3", "FY"}:
+            report_anchor_financial_end_date, report_anchor_asof_date = _resolve_valuation_report_meta_from_feature_panel(
+                ts_code=normalized_ts_code,
+                report_type=normalized_report_type,
+                asof_date=latest_trade_date,
+            )
+
         try:
             report_anchor_result = _build_earnings_signal_view(
                 ts_code=normalized_ts_code,
                 report_type=normalized_report_type,
                 latest_trade_date=latest_trade_date,
                 latest_current_price=latest_current_price,
-                financial_end_date=None,
+                financial_end_date=report_anchor_financial_end_date,
                 serving_slot="",
                 model_version="",
                 anchor_mode=report_anchor_mode,
+                asof_date=report_anchor_asof_date,
             )
             report_anchor_data = dict(report_anchor_result.get("data") or {})
         except Exception as report_err:
@@ -12150,7 +12169,7 @@ def get_earnings_signal_compare(request, ts_code):
         latest_data["view_type"] = "latest"
         latest_data["view_label"] = "latest_predictive"
         report_anchor_data["view_type"] = "report_anchor"
-        report_anchor_data["view_label"] = "report_type_latest_snapshot"
+        report_anchor_data["view_label"] = "report_type_release_anchor_snapshot"
 
         # Fusion is temporarily aligned with report-anchor semantics.
         # It does not enforce strict live-source gating for latest card.
@@ -12169,10 +12188,10 @@ def get_earnings_signal_compare(request, ts_code):
             "report_anchor_view": report_anchor_data,
             "compare_summary": _build_earnings_compare_summary(latest_data, report_anchor_data),
             "compare_meta": {
-                "anchor_policy": "latest_request_time_and_report_type_latest_snapshot",
+                "anchor_policy": "latest_request_time_and_report_type_release_anchor_snapshot",
                 "fusion_policy": "strict_then_decay",
                 "latest_policy": "realtime_predict_with_selected_financial_period",
-                "report_policy": "snapshot_only_selected_report_type_latest",
+                "report_policy": "snapshot_only_selected_report_type_release_anchor",
                 "request_date": request_date_text,
                 "latest_source_used": latest_source_used,
                 "latest_feature_data_source": latest_feature_data_source,
@@ -12182,6 +12201,16 @@ def get_earnings_signal_compare(request, ts_code):
                     latest_snapshot_asof_date.strftime("%Y-%m-%d") if latest_snapshot_asof_date is not None else None
                 ),
                 "report_source_used": report_source_used,
+                "report_anchor_financial_end_date": (
+                    report_anchor_financial_end_date.strftime("%Y-%m-%d")
+                    if _parse_date_like(report_anchor_financial_end_date) is not None
+                    else None
+                ),
+                "report_anchor_asof_date": (
+                    report_anchor_asof_date.strftime("%Y-%m-%d")
+                    if _parse_date_like(report_anchor_asof_date) is not None
+                    else None
+                ),
                 "effective_serving_slot": effective_predict_serving_slot,
                 "latest_partial_degrade": bool(latest_snapshot_error or latest_predict_error or (not latest_live_feature_ok)),
                 "report_partial_degrade": bool(report_anchor_error),

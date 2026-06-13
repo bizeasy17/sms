@@ -392,7 +392,7 @@
               <el-col :span="12">
                 <div class="valuation-side-card valuation-side-card-secondary">
                   <div style="display: flex; align-items: center; justify-content: space-between;">
-                    <strong>{{ selectedEarningsReportType }} 发布时点估值</strong>
+                    <strong>{{ selectedEarningsReportType }} 口径发布时点快照估值</strong>
                     <el-tag size="small" effect="light"
                       :type="earningsActionTagType(predictiveReportAnchorView?.action)">{{
                         earningsActionLabel(predictiveReportAnchorView?.action) }}</el-tag>
@@ -424,6 +424,12 @@
                 </div>
               </el-col>
             </el-row>
+            <div style="margin-bottom: 8px; color: #94a3b8; font-size: 11px; line-height: 1.6;">
+              <div>提示：左侧最新估值按请求时点实时计算，输入为所选口径财报数据 + 最新交易/基本面特征；当前来源 {{ predictiveLatestSourceLabel }}。</div>
+              <div v-if="predictiveLatestLiveFeatureRejected" style="color: #b45309;">提示：上游未返回实时特征（feature_data_source={{ predictiveLatestFeatureSourceText }}），左侧实时口径已拒绝该结果。</div>
+              <div>提示：右侧卡片固定取所选口径对应报告期发布时点（公告日锚定）的入库快照，不实时计算；当前来源 {{ predictiveReportSourceLabel }}。</div>
+              <div v-if="predictiveReportSnapshotMissing" style="color: #b45309;">提示：当前所选口径暂无可用入库快照，右侧卡片为空。</div>
+            </div>
             <div style="margin-bottom: 8px; color: #475569; font-size: 12px;">
               <span>分数变化 {{ formatGap(predictiveCompareSummary?.score_delta) }}</span>
               <span style="margin-left: 10px;">目标价变化 {{ formatGap(predictiveCompareSummary?.target_price_delta_pct)
@@ -899,6 +905,16 @@ type PredictiveComparePayload = {
   compare_meta?: {
     anchor_policy?: string
     fusion_policy?: string
+    latest_policy?: string
+    report_policy?: string
+    request_date?: string
+    latest_source_used?: string
+    latest_feature_data_source?: string
+    latest_live_feature_ok?: boolean
+    report_source_used?: string
+    latest_snapshot_staleness_days?: number | null
+    latest_partial_degrade?: boolean
+    report_partial_degrade?: boolean
   } | null
 }
 
@@ -2252,10 +2268,6 @@ const predictiveContextLabel = computed(() => {
 })
 
 const predictiveLatestView = computed<EarningsSignal | null>(() => {
-  const anchorMode = String(selectedPredictAnchorMode.value || '').trim().toLowerCase()
-  if (anchorMode === 'ann') {
-    return earningsSignal.value
-  }
   const latestRaw = predictiveCompare.value?.latest_view
   if (latestRaw && typeof latestRaw === 'object') {
     return buildEarningsSignalModel(
@@ -2268,10 +2280,6 @@ const predictiveLatestView = computed<EarningsSignal | null>(() => {
 })
 
 const predictiveReportAnchorView = computed<EarningsSignal | null>(() => {
-  const anchorMode = String(selectedPredictAnchorMode.value || '').trim().toLowerCase()
-  if (anchorMode === 'ann') {
-    return earningsSignal.value
-  }
   const anchorRaw = predictiveCompare.value?.report_anchor_view
   if (anchorRaw && typeof anchorRaw === 'object') {
     return buildEarningsSignalModel(
@@ -2294,6 +2302,53 @@ const predictiveCompareSummary = computed<PredictiveCompareSummary | null>(() =>
     }
   }
   return null
+})
+
+const predictiveLatestSourceLabel = computed(() => {
+  const source = String(predictiveCompare.value?.compare_meta?.latest_source_used || '').trim().toLowerCase()
+  if (source === 'predict_realtime') return '实时计算'
+  if (source === 'snapshot_fallback') return '快照回退'
+  if (source === 'predict_non_live_rejected') return '非实时特征(已拒绝)'
+  if (source === 'predict') return '实时计算'
+  if (source === 'snapshot') return '入库快照'
+  if (source === 'default') return '降级默认'
+  return '未知'
+})
+
+const predictiveLatestLiveFeatureRejected = computed(() => {
+  const meta = predictiveCompare.value?.compare_meta
+  const source = String(meta?.latest_source_used || '').trim().toLowerCase()
+  return source === 'predict_non_live_rejected' || meta?.latest_live_feature_ok === false
+})
+
+const predictiveLatestFeatureSourceText = computed(() => {
+  const source = String(predictiveCompare.value?.compare_meta?.latest_feature_data_source || '').trim()
+  return source || '-'
+})
+
+const predictiveReportSourceLabel = computed(() => {
+  const source = String(predictiveCompare.value?.compare_meta?.report_source_used || '').trim().toLowerCase()
+  if (source === 'snapshot') return '入库快照'
+  if (source === 'default') return '降级默认'
+  return '未知'
+})
+
+const predictiveLatestStalenessLabel = computed(() => {
+  const staleDays = toNullableNumber(predictiveCompare.value?.compare_meta?.latest_snapshot_staleness_days)
+  if (staleDays === null) return '-'
+  return `${Math.max(0, Math.round(staleDays))}天`
+})
+
+const predictiveReportSnapshotMissing = computed(() => {
+  const partialDegrade = Boolean(predictiveCompare.value?.compare_meta?.report_partial_degrade)
+  const report = predictiveReportAnchorView.value
+  const hasValue = report && (
+    report.signal_score !== null
+    || report.target_price !== null
+    || report.target_price_raw !== null
+    || Boolean(report.asof_date)
+  )
+  return partialDegrade && !hasValue
 })
 
 function resolvePredictiveCoreTargetPrice(signal: EarningsSignal | null | undefined) {
@@ -2399,19 +2454,23 @@ const predictiveTieredTemplate = computed<PredictiveTieredTemplate | null>(() =>
     balanced: buildTier(balancedTarget, 0.95, 1.08),
     aggressive: buildTier(aggressiveTarget, 0.95, 1.15),
   }
+  const conservativeLower = tiers.conservative.rangeLower ?? cp
+  const balancedLower = tiers.balanced.rangeLower ?? cp
+  const aggressiveUpper = tiers.aggressive.rangeUpper ?? cp
+  const balancedUpper = tiers.balanced.rangeUpper ?? cp
 
   let positionRange = '35%-55%'
   let positionMessage = '位于平衡区间，维持中性仓位。'
-  if (cp < tiers.conservative.rangeLower) {
+  if (cp < conservativeLower) {
     positionRange = styleKey === 'high_confidence' ? '65%-80%' : '55%-70%'
     positionMessage = '低于风控区间下沿，可分批提高仓位。'
-  } else if (cp < tiers.balanced.rangeLower) {
+  } else if (cp < balancedLower) {
     positionRange = styleKey === 'low_confidence' ? '40%-55%' : '45%-65%'
     positionMessage = '低于平衡区间，可逐步加仓。'
-  } else if (cp > tiers.aggressive.rangeUpper) {
+  } else if (cp > aggressiveUpper) {
     positionRange = styleKey === 'high_confidence' ? '20%-35%' : '15%-30%'
     positionMessage = '高于进攻区间上沿，建议偏防守仓位。'
-  } else if (cp > tiers.balanced.rangeUpper) {
+  } else if (cp > balancedUpper) {
     positionRange = '25%-40%'
     positionMessage = '处于偏高区间，可逐步降低仓位。'
   }
