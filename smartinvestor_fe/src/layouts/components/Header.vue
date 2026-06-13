@@ -127,6 +127,19 @@
                         {{ item.label }}
                     </el-radio-button>
                 </el-radio-group>
+                <el-radio-group
+                    v-model="headerMarketQuantileDialogStyle"
+                    size="small"
+                    :disabled="headerMarketQuantileDialogMarket === 'shanghai'"
+                >
+                    <el-radio-button
+                        v-for="item in HEADER_MARKET_STYLE_OPTIONS"
+                        :key="item.key"
+                        :label="item.key"
+                    >
+                        {{ item.label }}
+                    </el-radio-button>
+                </el-radio-group>
                 <el-radio-group v-model="headerMarketQuantileDialogPeriod" size="small">
                     <el-radio-button
                         v-for="item in HEADER_MARKET_PERIOD_OPTIONS"
@@ -190,6 +203,7 @@ const searchHistory = ref<CorporationSuggestion[]>([])
 const headerMarketQuantileDialogVisible = ref(false)
 const headerMarketQuantileDialogMarket = ref<'market' | 'shanghai'>('market')
 const headerMarketQuantileDialogMetric = ref<'pe' | 'pe_ttm' | 'pb'>('pe')
+const headerMarketQuantileDialogStyle = ref<'overall' | 'defensive' | 'balanced' | 'aggressive'>('overall')
 const headerMarketQuantileDialogPeriod = ref<'30D' | '60D' | '90D' | '1Y' | '3Y' | '5Y' | '10Y' | 'ALL'>('5Y')
 
 const HEADER_MARKET_METRIC_OPTIONS = [
@@ -200,19 +214,63 @@ const HEADER_MARKET_METRIC_OPTIONS = [
 
 type MarketMetricKey = 'pe' | 'pe_ttm' | 'pb'
 type MarketMetricSourceRow = { trade_date: string; pe: number | null; pe_ttm: number | null; pb: number | null }
+type MarketIndexKey = 'sh' | 'sz' | 'hs300' | 'sse50' | 'csi500' | 'sme' | 'cyb'
+type MarketStyleKey = 'overall' | 'defensive' | 'balanced' | 'aggressive'
+
+const HEADER_MARKET_STYLE_OPTIONS: Array<{ key: MarketStyleKey; label: string }> = [
+    { key: 'overall', label: '综合' },
+    { key: 'defensive', label: '防御' },
+    { key: 'balanced', label: '平衡' },
+    { key: 'aggressive', label: '进攻' },
+]
 
 const HEADER_INDEX_DEFS = [
     { key: 'sh', label: '上证', tsCode: '000001.SH' },
     { key: 'sz', label: '深成指', tsCode: '399001.SZ' },
     { key: 'hs300', label: '沪深300', tsCode: '399300.SZ' },
+    { key: 'sse50', label: '上证50', tsCode: '000016.SH' },
+    { key: 'csi500', label: '中证500', tsCode: '000905.SH' },
+    { key: 'sme', label: '中小板指', tsCode: '399005.SZ' },
     { key: 'cyb', label: '创指', tsCode: '399006.SZ' },
-] as const
+] as const satisfies ReadonlyArray<{ key: MarketIndexKey; label: string; tsCode: string }>
 
-const HEADER_COMPOSITE_WEIGHTS: Record<'sh' | 'sz' | 'hs300' | 'cyb', number> = {
-    sh: 0.30,
-    sz: 0.30,
-    hs300: 0.25,
-    cyb: 0.15,
+const HEADER_COMPOSITE_STYLE_WEIGHTS: Record<MarketStyleKey, Record<MarketIndexKey, number>> = {
+    overall: {
+        sh: 0.18,
+        sz: 0.16,
+        hs300: 0.20,
+        sse50: 0.14,
+        csi500: 0.14,
+        sme: 0.08,
+        cyb: 0.10,
+    },
+    defensive: {
+        sh: 0.24,
+        sz: 0.12,
+        hs300: 0.26,
+        sse50: 0.20,
+        csi500: 0.10,
+        sme: 0.03,
+        cyb: 0.05,
+    },
+    balanced: {
+        sh: 0.18,
+        sz: 0.16,
+        hs300: 0.20,
+        sse50: 0.16,
+        csi500: 0.15,
+        sme: 0.06,
+        cyb: 0.09,
+    },
+    aggressive: {
+        sh: 0.10,
+        sz: 0.18,
+        hs300: 0.14,
+        sse50: 0.08,
+        csi500: 0.18,
+        sme: 0.12,
+        cyb: 0.20,
+    },
 }
 
 const headerIndexHistoryMap = ref<Record<string, MarketMetricSourceRow[]>>({})
@@ -259,19 +317,31 @@ function getIndexRows(indexKey: string, metricKey: MarketMetricKey): MarketHisto
         .filter((item): item is MarketHistoryRow => Boolean(item.trade_date) && Number.isFinite(item.value))
 }
 
-function buildCompositeRows(metricKey: MarketMetricKey): MarketHistoryRow[] {
-    const shRows = getIndexRows('sh', metricKey)
-    const szRows = getIndexRows('sz', metricKey)
-    const hsRows = getIndexRows('hs300', metricKey)
-    const cybRows = getIndexRows('cyb', metricKey)
-    if (!shRows.length || !szRows.length || !hsRows.length || !cybRows.length) {
+function buildCompositeRows(metricKey: MarketMetricKey, styleKey: MarketStyleKey): MarketHistoryRow[] {
+    const styleWeights = HEADER_COMPOSITE_STYLE_WEIGHTS[styleKey] || HEADER_COMPOSITE_STYLE_WEIGHTS.overall
+    const indexKeys = Object.keys(styleWeights) as MarketIndexKey[]
+    if (!indexKeys.length) {
         return []
     }
-    const dateSet = new Set(shRows.map((item) => item.trade_date))
+
+    const rowsByIndex: Record<MarketIndexKey, MarketHistoryRow[]> = {
+        sh: getIndexRows('sh', metricKey),
+        sz: getIndexRows('sz', metricKey),
+        hs300: getIndexRows('hs300', metricKey),
+        sse50: getIndexRows('sse50', metricKey),
+        csi500: getIndexRows('csi500', metricKey),
+        sme: getIndexRows('sme', metricKey),
+        cyb: getIndexRows('cyb', metricKey),
+    }
+
+    if (indexKeys.some((key) => !rowsByIndex[key].length)) {
+        return []
+    }
+
+    const seedKey = indexKeys[0]
+    const dateSet = new Set(rowsByIndex[seedKey].map((item) => item.trade_date))
     for (const date of Array.from(dateSet)) {
-        if (!szRows.some((item) => item.trade_date === date)
-            || !hsRows.some((item) => item.trade_date === date)
-            || !cybRows.some((item) => item.trade_date === date)) {
+        if (indexKeys.some((key) => !rowsByIndex[key].some((item) => item.trade_date === date))) {
             dateSet.delete(date)
         }
     }
@@ -286,37 +356,30 @@ function buildCompositeRows(metricKey: MarketMetricKey): MarketHistoryRow[] {
         }
         return output
     }
-    const shMap = mapByDate(shRows)
-    const szMap = mapByDate(szRows)
-    const hsMap = mapByDate(hsRows)
-    const cybMap = mapByDate(cybRows)
+    const mapByIndex: Record<MarketIndexKey, Map<string, number>> = {
+        sh: mapByDate(rowsByIndex.sh),
+        sz: mapByDate(rowsByIndex.sz),
+        hs300: mapByDate(rowsByIndex.hs300),
+        sse50: mapByDate(rowsByIndex.sse50),
+        csi500: mapByDate(rowsByIndex.csi500),
+        sme: mapByDate(rowsByIndex.sme),
+        cyb: mapByDate(rowsByIndex.cyb),
+    }
 
-    const weightSh = Number(HEADER_COMPOSITE_WEIGHTS.sh) || 0
-    const weightSz = Number(HEADER_COMPOSITE_WEIGHTS.sz) || 0
-    const weightHs = Number(HEADER_COMPOSITE_WEIGHTS.hs300) || 0
-    const weightCyb = Number(HEADER_COMPOSITE_WEIGHTS.cyb) || 0
-    const weightTotal = weightSh + weightSz + weightHs + weightCyb
+    const weightTotal = indexKeys.reduce((acc, key) => acc + (Number(styleWeights[key]) || 0), 0)
     if (!(weightTotal > 0)) {
         return []
     }
 
     return sharedDates.map((date) => {
-        const rawSh = Number(shMap.get(date) || 0)
-        const rawSz = Number(szMap.get(date) || 0)
-        const rawHs = Number(hsMap.get(date) || 0)
-        const rawCyb = Number(cybMap.get(date) || 0)
+        let weightedSum = 0
+        for (const key of indexKeys) {
+            const rawValue = Number(mapByIndex[key].get(date) || 0)
+            const weightValue = Number(styleWeights[key]) || 0
+            weightedSum += rawValue * weightValue
+        }
 
-        const weightedValues = [
-            rawSh * weightSh,
-            rawSz * weightSz,
-            rawHs * weightHs,
-            rawCyb * weightCyb,
-        ]
-        const arithmeticMeanOfWeighted = weightedValues.reduce((acc, item) => acc + item, 0) / weightedValues.length
-        const averageWeight = weightTotal / weightedValues.length
-        const composite = averageWeight > 0
-            ? (arithmeticMeanOfWeighted / averageWeight)
-            : 0
+        const composite = weightedSum / weightTotal
 
         return {
             trade_date: date,
@@ -356,8 +419,14 @@ const headerMarketQuantileDialogPeriodLabel = computed(() => (
     HEADER_MARKET_PERIOD_OPTIONS.find((item) => item.key === headerMarketQuantileDialogPeriod.value)?.label || String(headerMarketQuantileDialogPeriod.value)
 ))
 
+const headerMarketQuantileDialogStyleLabel = computed(() => (
+    HEADER_MARKET_STYLE_OPTIONS.find((item) => item.key === headerMarketQuantileDialogStyle.value)?.label || '综合'
+))
+
 const headerMarketQuantileDialogMarketLabel = computed(() => (
-    headerMarketQuantileDialogMarket.value === 'shanghai' ? '上证指数' : '综合指数'
+    headerMarketQuantileDialogMarket.value === 'shanghai'
+        ? '上证指数'
+        : `${headerMarketQuantileDialogStyleLabel.value}综合指数`
 ))
 
 const headerMarketQuantileDialogAsOfText = computed(() => {
@@ -447,9 +516,16 @@ function buildSummaryRow(key: string, label: string, rows: MarketHistoryRow[]): 
     }
 }
 
-const marketCompositeRows = computed(() => buildCompositeRows(headerMarketQuantileDialogMetric.value as MarketMetricKey))
+const marketCompositeRows = computed(() => buildCompositeRows(
+    headerMarketQuantileDialogMetric.value as MarketMetricKey,
+    headerMarketQuantileDialogStyle.value,
+))
 
-const marketCompositeSummary = computed(() => buildSummaryRow('market', '综合指数', marketCompositeRows.value))
+const marketCompositeSummary = computed(() => buildSummaryRow(
+    'market',
+    `${headerMarketQuantileDialogStyleLabel.value}综合指数`,
+    marketCompositeRows.value,
+))
 const shanghaiSummary = computed(() => buildSummaryRow('sh', '上证', getIndexRows('sh', headerMarketQuantileDialogMetric.value as MarketMetricKey)))
 
 const marketOverallMetricRows = computed(() => {
@@ -535,7 +611,7 @@ const headerMarketQuantileChartOption = computed(() => {
         },
         legend: {
             top: 0,
-            data: [headerMarketQuantileDialogMarket.value === 'shanghai' ? '上证' : '综合指数'],
+            data: [headerMarketQuantileDialogMarket.value === 'shanghai' ? '上证' : `${headerMarketQuantileDialogStyleLabel.value}综合指数`],
         },
         grid: {
             left: 54,
@@ -576,7 +652,7 @@ const headerMarketQuantileChartOption = computed(() => {
                     },
                 }]
                 : [{
-                    name: '综合指数',
+                    name: `${headerMarketQuantileDialogStyleLabel.value}综合指数`,
                     type: 'line',
                     smooth: false,
                     symbol: 'none',
