@@ -23,14 +23,16 @@ if /I "%REFRESH_POLICY%"=="all" (
 	set "DEFAULT_REFRESH_REASON=disclosure_refresh"
 )
 if not defined REFRESH_REASON set "REFRESH_REASON=%DEFAULT_REFRESH_REASON%"
-set "REFRESH_RUN_ID=valsnap_%REFRESH_REASON%_%RUN_STAMP%"
-set "COMMON_ARGS=--methods sw_history,pe,pb,ps,peg,fcff_dcf,ddm,scarcity_overlay --express-max-age-days 180 --profit-buckets both --request-interval 0.2 --refresh-policy %REFRESH_POLICY% --refresh-run-id %REFRESH_RUN_ID% --business-match-topn 3"
+for /f "delims=" %%i in ('powershell -NoProfile -Command "$v='%REFRESH_REASON%'; if ([string]::IsNullOrWhiteSpace($v)) { $v='refresh' }; ($v -replace '[^0-9A-Za-z._-]', '_')"') do set "REFRESH_REASON_SAFE=%%i"
+if not defined REFRESH_REASON_SAFE set "REFRESH_REASON_SAFE=refresh"
+set "REFRESH_RUN_ID=valsnap_%REFRESH_REASON_SAFE%_%RUN_STAMP%"
+set "COMMON_ARGS=--methods sw_history,pe,pb,ps,peg,fcff_dcf,ddm,scarcity_overlay --express-max-age-days 180 --profit-buckets both --request-interval 0.2 --refresh-policy "%REFRESH_POLICY%" --refresh-run-id "%REFRESH_RUN_ID%" --business-match-topn 3"
 if defined PREFILL_EXTRA_ARGS set "COMMON_ARGS=%COMMON_ARGS% %PREFILL_EXTRA_ARGS%"
 set "CANDIDATE_ARGS=--methods sw_history,pe,pb,ps,peg,fcff_dcf,ddm,scarcity_overlay --express-max-age-days 180 --candidate-policy %CANDIDATE_POLICY% --output-file %CANDIDATE_FILE%"
 if defined CANDIDATE_EXTRA_ARGS set "CANDIDATE_ARGS=%CANDIDATE_ARGS% %CANDIDATE_EXTRA_ARGS%"
 set "FAILURES=0"
 
-call :log INFO "start earnings refresh base_dir=%BASE_DIR% python=%PYTHON_CMD% candidate_policy=%CANDIDATE_POLICY% refresh_policy=%REFRESH_POLICY% refresh_reason=%REFRESH_REASON% refresh_run_id=%REFRESH_RUN_ID%"
+call :log INFO "start earnings refresh base_dir=%BASE_DIR% python=%PYTHON_CMD% candidate_policy=%CANDIDATE_POLICY% refresh_policy=%REFRESH_POLICY% refresh_reason_safe=%REFRESH_REASON_SAFE% refresh_run_id=%REFRESH_RUN_ID%"
 if /I "%REFRESH_POLICY%"=="all" goto :run_full_scopes
 
 call :build_candidates
@@ -98,6 +100,10 @@ goto :eof
 
 :maybe_run_scope
 set "SCOPE=%~1"
+if not exist "%CANDIDATE_FILE%" (
+	call :log INFO "scope=%SCOPE% skipped candidate file missing candidate_file=%CANDIDATE_FILE%"
+	goto :eof
+)
 powershell -NoProfile -Command "if (Select-String -Path '%CANDIDATE_FILE%' -Pattern '^%SCOPE%' -Quiet) { exit 0 } else { exit 1 }"
 if not errorlevel 1 (
 	call :run_scope %SCOPE%
