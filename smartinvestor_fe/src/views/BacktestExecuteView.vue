@@ -915,7 +915,7 @@ const saveWeeklyStrategyDialogVisible = ref(false)
 const savingWeeklyStrategy = ref(false)
 const weeklyStrategyCompareHint = ref('')
 const loadingWeeklyStrategyDialog = ref(false)
-const selectedSourceRunId = ref<number | null>(null)
+const selectedSourceRunId = ref<number | undefined>(undefined)
 const favoriteRunSourceOptions = ref<Array<Record<string, any>>>([])
 const savedStyleStrategies = ref<Record<string, any>>({})
 const weeklyStrategyForm = reactive({
@@ -1441,7 +1441,7 @@ async function loadWeeklyStrategyDialogContext() {
     } else if (options.length) {
       selectedSourceRunId.value = Number(options[0].run_id)
     } else {
-      selectedSourceRunId.value = null
+      selectedSourceRunId.value = undefined
     }
   } catch {
     favoriteRunSourceOptions.value = []

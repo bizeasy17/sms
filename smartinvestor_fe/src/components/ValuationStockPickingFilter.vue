@@ -337,6 +337,19 @@ function firstOfMulti(raw: unknown, fallback: string): string {
     return values.length ? values[0] : fallback;
 }
 
+function parseNumberOrNull(raw: unknown): number | null {
+    const value = Number(raw);
+    return Number.isFinite(value) ? value : null;
+}
+
+function parseBooleanFromQuery(raw: unknown, fallback: boolean): boolean {
+    const normalized = String(raw ?? "").trim().toLowerCase();
+    if (!normalized) return fallback;
+    if (["1", "true", "yes", "y", "on"].includes(normalized)) return true;
+    if (["0", "false", "no", "n", "off"].includes(normalized)) return false;
+    return fallback;
+}
+
 function getCellDateKey(cell: any): string {
     if (!cell || cell.type !== "normal") {
         return "";

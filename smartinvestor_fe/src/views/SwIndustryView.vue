@@ -981,7 +981,9 @@ async function openRotationRunDialog() {
       return
     }
     const preferred = String(rotationMeta.value.run_id || '').trim()
-    const matched = preferred && rotationRunList.value.find((item) => item.run_id === preferred)
+    const matched = preferred
+      ? rotationRunList.value.find((item) => item.run_id === preferred)
+      : undefined
     await selectRotationRun(matched?.run_id || rotationRunList.value[0].run_id)
   } finally {
     rotationRunLoading.value = false

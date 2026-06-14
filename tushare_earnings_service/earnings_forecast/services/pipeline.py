@@ -521,6 +521,27 @@ class EarningsForecastPipeline:
         frame["close"] = pd.to_numeric(frame["close"], errors="coerce")
         frame = frame.dropna(subset=["trade_date", "close"]).sort_values("trade_date")
 
+        if bool(cfg.get("use_tushare_fallback", True)) and pd.notna(asof_ts) and not frame.empty:
+            stale_local_fallback_days = max(1, int(cfg.get("local_stale_fallback_days", 5) or 5))
+            latest_local_trade_date = pd.Timestamp(frame["trade_date"].iloc[-1]).normalize()
+            asof_local_trade_date = pd.Timestamp(asof_ts).normalize()
+            if asof_local_trade_date - latest_local_trade_date > pd.Timedelta(days=stale_local_fallback_days):
+                trading, fallback_source = self._load_index_trading_from_tushare(
+                    ts_code=benchmark_code,
+                    asof_trade_date=asof_trade_date,
+                    lookback_days=int(cfg.get("fallback_lookback_days", 360)),
+                    asset=str(cfg.get("benchmark_asset") or "I"),
+                )
+                regime_source = f"stale_local_mirror:{fallback_source}"
+                if trading is None or trading.empty or "trade_date" not in trading.columns or "close" not in trading.columns:
+                    result = {"regime": "BALANCE", "source": regime_source, "benchmark_ts_code": benchmark_code}
+                    self._market_regime_cache[cache_key] = dict(result)
+                    return result
+                frame = trading[["trade_date", "close"]].copy()
+                frame["trade_date"] = pd.to_datetime(frame["trade_date"], errors="coerce")
+                frame["close"] = pd.to_numeric(frame["close"], errors="coerce")
+                frame = frame.dropna(subset=["trade_date", "close"]).sort_values("trade_date")
+
         asof = pd.to_datetime(asof_trade_date, errors="coerce") if asof_trade_date is not None else None
         if pd.notna(asof):
             frame = frame[frame["trade_date"] <= asof]

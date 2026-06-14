@@ -868,7 +868,7 @@ function actionTagType(action: any) {
     if (normalized === "SELL_PART") return "warning";
     if (normalized === "SELL" || normalized === "S") return "success";
     if (normalized === "HOLD" || normalized === "H") return "info";
-    return "";
+    return undefined;
 }
 
 function actionLabel(action: any) {
@@ -888,7 +888,7 @@ function riskTagType(risk: any) {
     if (normalized === "LOW" || normalized === "L") return "danger";
     if (normalized === "MEDIUM" || normalized === "M") return "warning";
     if (normalized === "HIGH" || normalized === "H") return "success";
-    return "";
+    return undefined;
 }
 
 function traditionalRiskTagType(risk: any) {
@@ -896,7 +896,7 @@ function traditionalRiskTagType(risk: any) {
     if (normalized === "LOW" || normalized === "L") return "success";
     if (normalized === "MEDIUM" || normalized === "M") return "warning";
     if (normalized === "HIGH" || normalized === "H") return "danger";
-    return "";
+    return undefined;
 }
 
 function riskLabel(risk: any) {

@@ -18,6 +18,16 @@ from datastore.utils.remote_utils import (
 class Command(BaseCommand):
     help = "Fetch stock and fundamental data from ETL database via API endpoint"
 
+    @staticmethod
+    def _is_no_unpulled_404(err, url):
+        response = getattr(err, "response", None)
+        return (
+            isinstance(err, requests.HTTPError)
+            and response is not None
+            and response.status_code == 404
+            and "all-not-pulled" in str(url or "")
+        )
+
     def add_arguments(self, parser):
         parser.add_argument("--tscode", type=str, help="Stock TS code")
         parser.add_argument("--freq", type=str, help="Frequency (e.g., daily, weekly)")
@@ -90,6 +100,11 @@ class Command(BaseCommand):
                             f"Failed to update pull status for {label} data.\n"
                         )
                 except requests.RequestException as e:
+                    if self._is_no_unpulled_404(e, url):
+                        self.stdout.write(
+                            f"No unpulled {label} data from ETL, skip batch pull.\n"
+                        )
+                        continue
                     self.stderr.write(f"Failed to batch fetch {label} data: {e}\n")
         else:
             corporations = (
