@@ -991,6 +991,28 @@ function emptySummary(): ValuationSummary {
   }
 }
 
+function normalizeVariantTabs(rawList: ValuationVariantTab[]): ValuationVariantTab[] {
+  return (Array.isArray(rawList) ? rawList : []).map((item) => {
+    const variant = String(item?.valuation_variant || '').trim() || 'default'
+    const rawLabel = String(item?.label || '').trim()
+    const industryName = String(item?.industry_name || '').trim()
+    const hasGarbledChars = rawLabel.includes('�')
+
+    let label = rawLabel
+    if (variant === 'default') {
+      label = '默认估值'
+    } else if (!label || hasGarbledChars) {
+      label = industryName || variant
+    }
+
+    return {
+      ...item,
+      valuation_variant: variant,
+      label,
+    }
+  })
+}
+
 function resolveSummary(raw: any): ValuationSummary {
   return {
     anchor_trade_date: raw?.anchor_trade_date ?? null,
@@ -2667,9 +2689,11 @@ async function fetchValuationRows(includePredictive = true) {
       }
       programmaticReportTypeSync.value = false
     }
-    const variantList = Array.isArray(res.data?.valuation_variants)
-      ? (res.data.valuation_variants as ValuationVariantTab[])
-      : []
+    const variantList = normalizeVariantTabs(
+      Array.isArray(res.data?.valuation_variants)
+        ? (res.data.valuation_variants as ValuationVariantTab[])
+        : []
+    )
     const variantPayload =
       res.data?.data_by_variant && typeof res.data.data_by_variant === 'object'
         ? (res.data.data_by_variant as Record<string, ValuationMethodRow[]>)
