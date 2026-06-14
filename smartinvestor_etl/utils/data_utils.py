@@ -17,6 +17,158 @@ from datetime import date
 import pandas as pd
 
 
+ADJ_PRICE_FIELDS = ["open", "high", "low", "close", "pre_close"]
+
+
+def _normalize_date_text(value):
+    if value in (None, ""):
+        return None
+    if isinstance(value, datetime):
+        return value.strftime("%Y%m%d")
+    if isinstance(value, date):
+        return value.strftime("%Y%m%d")
+    text = str(value).strip()
+    if not text:
+        return None
+    if "-" in text:
+        return datetime.strptime(text, "%Y-%m-%d").strftime("%Y%m%d")
+    return text
+
+
+def _fetch_daily_and_adj_factor(pro, ts_code=None, trade_date=None, start_date=None, end_date=None):
+    daily_kwargs = {}
+    adj_kwargs = {}
+    if ts_code:
+        daily_kwargs["ts_code"] = ts_code
+        adj_kwargs["ts_code"] = ts_code
+    if trade_date:
+        trade_date_text = _normalize_date_text(trade_date)
+        daily_kwargs["trade_date"] = trade_date_text
+        adj_kwargs["trade_date"] = trade_date_text
+    else:
+        start_date_text = _normalize_date_text(start_date)
+        end_date_text = _normalize_date_text(end_date)
+        if start_date_text:
+            daily_kwargs["start_date"] = start_date_text
+            adj_kwargs["start_date"] = start_date_text
+        if end_date_text:
+            daily_kwargs["end_date"] = end_date_text
+            adj_kwargs["end_date"] = end_date_text
+
+    daily_df = pro.daily(**daily_kwargs)
+    adj_df = pro.adj_factor(**adj_kwargs)
+    if daily_df is None or daily_df.empty:
+        return pd.DataFrame()
+
+    daily_df = daily_df.copy()
+    daily_df["trade_date"] = daily_df["trade_date"].astype(str)
+
+    if adj_df is None or adj_df.empty:
+        merged = daily_df
+        merged["adj_factor"] = None
+        return merged
+
+    adj_df = adj_df[["ts_code", "trade_date", "adj_factor"]].copy()
+    adj_df["trade_date"] = adj_df["trade_date"].astype(str)
+    return daily_df.merge(adj_df, on=["ts_code", "trade_date"], how="left")
+
+
+def _apply_adj_factor_prices(frame):
+    if frame is None or frame.empty:
+        return pd.DataFrame()
+
+    df = frame.copy()
+    for field in ADJ_PRICE_FIELDS + ["change", "pct_chg", "vol", "amount", "adj_factor"]:
+        if field in df.columns:
+            df[field] = pd.to_numeric(df[field], errors="coerce")
+
+    df = df.sort_values(["ts_code", "trade_date"])
+
+    def _transform(group):
+        out = group.copy()
+        factors = pd.to_numeric(out.get("adj_factor"), errors="coerce")
+        first_factor = factors.dropna().iloc[0] if factors.notna().any() else None
+        latest_factor = factors.dropna().iloc[-1] if factors.notna().any() else None
+
+        if first_factor not in (None, 0):
+            ratio_hfq = factors / float(first_factor)
+        else:
+            ratio_hfq = pd.Series(index=out.index, dtype="float64")
+
+        if latest_factor not in (None, 0):
+            ratio_qfq = factors / float(latest_factor)
+        else:
+            ratio_qfq = pd.Series(index=out.index, dtype="float64")
+
+        for field in ADJ_PRICE_FIELDS:
+            values = pd.to_numeric(out.get(field), errors="coerce")
+            out[f"{field}_hfq"] = values * ratio_hfq
+            out[f"{field}_qfq"] = values * ratio_qfq
+
+        out["change_hfq"] = out["close_hfq"] - out["pre_close_hfq"]
+        out["change_qfq"] = out["close_qfq"] - out["pre_close_qfq"]
+        out["pct_change_hfq"] = (out["change_hfq"] / out["pre_close_hfq"] * 100).replace([float("inf"), float("-inf")], pd.NA)
+        out["pct_change_qfq"] = (out["change_qfq"] / out["pre_close_qfq"] * 100).replace([float("inf"), float("-inf")], pd.NA)
+        return out
+
+    df = df.groupby("ts_code", group_keys=False).apply(_transform)
+    if "pct_chg" in df.columns:
+        df["pct_change"] = pd.to_numeric(df["pct_chg"], errors="coerce")
+
+    for field in [
+        "open_hfq", "high_hfq", "low_hfq", "close_hfq", "pre_close_hfq",
+        "open_qfq", "high_qfq", "low_qfq", "close_qfq", "pre_close_qfq",
+        "change_hfq", "change_qfq", "pct_change_hfq", "pct_change_qfq",
+    ]:
+        if field in df.columns:
+            df[field] = df[field].round(4)
+
+    return df
+
+
+def _process_trade_record(record):
+    trade_date_val = record.get("trade_date")
+    if isinstance(trade_date_val, str) and len(trade_date_val) == 8:
+        record["trade_date"] = (
+            f"{trade_date_val[:4]}-{trade_date_val[4:6]}-{trade_date_val[6:]}"
+        )
+    for field in [
+        "close_hfq",
+        "pre_close_hfq",
+        "close_qfq",
+        "pre_close_qfq",
+    ]:
+        if record.get(field) != record.get(field):  # NaN check
+            record[field] = None
+    record["change_hfq"] = (
+        (record["close_hfq"] or 0) - (record["pre_close_hfq"] or 0)
+        if record["close_hfq"] is not None and record["pre_close_hfq"] is not None
+        else None
+    )
+    record["change_qfq"] = (
+        (record["close_qfq"] or 0) - (record["pre_close_qfq"] or 0)
+        if record["close_qfq"] is not None and record["pre_close_qfq"] is not None
+        else None
+    )
+    record["pct_change_hfq"] = (
+        round(record["change_hfq"] / record["pre_close_hfq"] * 100, 2)
+        if record.get("pre_close_hfq") not in (0, None)
+        and record.get("change_hfq") is not None
+        else 0
+    )
+    record["pct_change_qfq"] = (
+        round(record["change_qfq"] / record["pre_close_qfq"] * 100, 2)
+        if record.get("pre_close_qfq") not in (0, None)
+        and record.get("change_qfq") is not None
+        else 0
+    )
+    # Replace any remaining NaN values with None
+    for key in record:
+        if record[key] != record[key]:
+            record[key] = None
+    return record
+
+
 def fetch_and_store_daily_trading_history(
     ts_code,
     freq="D",
@@ -36,55 +188,14 @@ def fetch_and_store_daily_trading_history(
     end_date = end_date or date.today()
     pro = ts.pro_api()
 
-    def process_trade_record(record):
-        trade_date_val = record.get("trade_date")
-        if isinstance(trade_date_val, str) and len(trade_date_val) == 8:
-            record["trade_date"] = (
-                f"{trade_date_val[:4]}-{trade_date_val[4:6]}-{trade_date_val[6:]}"
-            )
-        for field in [
-            "close_hfq",
-            "pre_close_hfq",
-            "close_qfq",
-            "pre_close_qfq",
-        ]:
-            if record.get(field) != record.get(field):  # NaN check
-                record[field] = None
-        record["change_hfq"] = (
-            (record["close_hfq"] or 0) - (record["pre_close_hfq"] or 0)
-            if record["close_hfq"] is not None and record["pre_close_hfq"] is not None
-            else None
-        )
-        record["change_qfq"] = (
-            (record["close_qfq"] or 0) - (record["pre_close_qfq"] or 0)
-            if record["close_qfq"] is not None and record["pre_close_qfq"] is not None
-            else None
-        )
-        record["pct_change_hfq"] = (
-            round(record["change_hfq"] / record["pre_close_hfq"] * 100, 2)
-            if record.get("pre_close_hfq") not in (0, None)
-            and record.get("change_hfq") is not None
-            else 0
-        )
-        record["pct_change_qfq"] = (
-            round(record["change_qfq"] / record["pre_close_qfq"] * 100, 2)
-            if record.get("pre_close_qfq") not in (0, None)
-            and record.get("change_qfq") is not None
-            else 0
-        )
-        # Replace any remaining NaN values with None
-        for k in record:
-            if record[k] != record[k]:
-                record[k] = None
-        return record
-
     # Determine corporations to process
     if ts_code:
         corporations = [Corporation.objects.get(ts_code=ts_code)]
     elif trade_date:
         # Fetch all corporations for the specific trade_date in one API call
         try:
-            df = pro.stk_factor(trade_date=trade_date)
+            df = _fetch_daily_and_adj_factor(pro=pro, trade_date=trade_date)
+            df = _apply_adj_factor_prices(df)
             if df is not None and not df.empty:
                 records = df.to_dict(orient="records")
                 ts_codes = [r["ts_code"] for r in records]
@@ -96,7 +207,7 @@ def fetch_and_store_daily_trading_history(
                     StockTradingHistory(
                         corporation=corp_map.get(r["ts_code"]),
                         freq=freq,
-                        **process_trade_record(r),
+                        **_process_trade_record(r),
                     )
                     for r in records
                     if corp_map.get(r["ts_code"])
@@ -166,18 +277,20 @@ def fetch_and_store_daily_trading_history(
                 if isinstance(end_date, (datetime, date))
                 else str(end_date)
             )
-            df = pro.stk_factor(
+            df = _fetch_daily_and_adj_factor(
+                pro=pro,
                 ts_code=corp.ts_code,
                 start_date=start_date_str,
                 end_date=end_date_str,
             )
+            df = _apply_adj_factor_prices(df)
             if df is not None and not df.empty:
                 records = df.to_dict(orient="records")
                 objs = [
                     StockTradingHistory(
                         corporation=corp,
                         freq=freq,
-                        **process_trade_record(record),
+                        **_process_trade_record(record),
                     )
                     for record in records
                 ]
@@ -197,6 +310,86 @@ def fetch_and_store_daily_trading_history(
             AttributeError,
         ) as e:
             print(f"Error fetching or saving data for {corp.ts_code}: {e}")
+
+
+def rebuild_trading_history_by_adj_factor(
+    ts_code=None,
+    start_date=None,
+    end_date=None,
+    resume=None,
+    mark_unpulled=True,
+):
+    """Full rebuild trading history qfq/hfq fields using daily + adj_factor."""
+    pro = ts.pro_api()
+    end_date = end_date or date.today()
+    if isinstance(end_date, str):
+        end_date = datetime.strptime(_normalize_date_text(end_date), "%Y%m%d").date()
+
+    if ts_code:
+        corporations = [Corporation.objects.get(ts_code=ts_code)]
+    else:
+        corporations = list(Corporation.objects.all().order_by("ts_code"))
+        if resume:
+            try:
+                idx = next(i for i, c in enumerate(corporations) if c.ts_code == resume)
+                corporations = corporations[idx:]
+            except StopIteration:
+                pass
+
+    total_rows = 0
+    total_corps = 0
+    for corp in corporations:
+        try:
+            range_start = start_date or corp.list_date
+            if isinstance(range_start, str):
+                if "-" in range_start:
+                    range_start = datetime.strptime(range_start, "%Y-%m-%d").date()
+                else:
+                    range_start = datetime.strptime(range_start, "%Y%m%d").date()
+            if isinstance(range_start, datetime):
+                range_start = range_start.date()
+
+            if range_start > end_date:
+                continue
+
+            frame = _fetch_daily_and_adj_factor(
+                pro=pro,
+                ts_code=corp.ts_code,
+                start_date=range_start,
+                end_date=end_date,
+            )
+            frame = _apply_adj_factor_prices(frame)
+            if frame is None or frame.empty:
+                continue
+
+            frame = frame.sort_values("trade_date")
+            saved_rows = 0
+            for record in frame.to_dict(orient="records"):
+                payload = _process_trade_record(record)
+                trade_date_text = str(payload.get("trade_date") or "")
+                defaults = {
+                    **payload,
+                    "corporation": corp,
+                    "freq": "D",
+                }
+                if mark_unpulled:
+                    defaults["is_pulled_by_client"] = False
+                StockTradingHistory.objects.update_or_create(
+                    ts_code=corp.ts_code,
+                    trade_date=trade_date_text,
+                    freq="D",
+                    defaults=defaults,
+                )
+                saved_rows += 1
+
+            total_rows += saved_rows
+            total_corps += 1
+            print(f"{corp.ts_code} adj_factor rebuild complete. total rows: {saved_rows}")
+            sleep(0.5)
+        except (ValueError, KeyError, TypeError, ValidationError, ConnectionError, AttributeError) as e:
+            print(f"Error rebuilding adj_factor data for {corp.ts_code}: {e}")
+
+    return {"corporations": total_corps, "rows": total_rows}
 
 
 def clean_record_nan_to_none(record):

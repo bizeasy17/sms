@@ -11,23 +11,16 @@
                                 <div style="display: flex; align-items: center; gap: 8px;">
                                     <el-link
                                         :href="stockStore.website.startsWith('http') ? stockStore.website : 'https://' + stockStore.website"
-                                        target="_blank" type="primary" style="font-size: 12px;">{{ stockStore.name + ' | ' +
+                                        target="_blank" type="primary" style="font-size: 12px;">{{ stockStore.name + ' |
+                                        ' +
                                         stockStore.tsCode }}
                                     </el-link>
-                                    <el-check-tag
-                                        v-if="displayEmbed"
-                                        :checked="isInWatchlist"
-                                        @change="toggleWatchlistStatus"
-                                        type="danger"
-                                    >
+                                    <el-check-tag v-if="displayEmbed" :checked="isInWatchlist"
+                                        @change="toggleWatchlistStatus" type="danger">
                                         <el-text size="small">自</el-text>
                                     </el-check-tag>
-                                    <el-check-tag
-                                        v-if="displayEmbed"
-                                        :checked="isHolding"
-                                        @change="toggleHoldingStatus"
-                                        type="primary"
-                                    >
+                                    <el-check-tag v-if="displayEmbed" :checked="isHolding" @change="toggleHoldingStatus"
+                                        type="primary">
                                         <el-text size="small">持</el-text>
                                     </el-check-tag>
                                 </div>
@@ -96,59 +89,57 @@
                 </div>
                 <div v-if="shouldRenderBottom" class="fundamental-section">
                     <slot name="bottom">
-                    <el-row :gutter="20" style="margin-top: 16px;">
-                        <el-col :span="12">
-                            <el-card shadow="always">
-                                <v-chart ref="peChartRef" :option="chartPeOption" style="height:200px;" />
-                            </el-card>
-                        </el-col>
-                        <el-col :span="12">
-                            <el-card shadow="always">
-                                <v-chart ref="peTTMChartRef" :option="chartPeTTMOption"
-                                    style="height:200px;" />
-                            </el-card>
-                        </el-col>
-                    </el-row>
-                    <el-row :gutter="20" style="margin-top: 16px;">
-                        <el-col :span="12">
-                            <el-card shadow="always">
-                                <v-chart ref="psChartRef" :option="chartPsOption" style="height:200px;" />
-                            </el-card>
-                        </el-col>
-                        <el-col :span="12">
-                            <el-card shadow="always">
-                                <v-chart ref="psTTMChartRef" :option="chartPsTTMOption"
-                                    style="height:200px;" />
-                            </el-card>
-                        </el-col>
-                    </el-row>
-                    <el-row :gutter="20" style="margin-top: 16px;">
-                        <el-col :span="12">
-                            <el-card shadow="always">
-                                <v-chart ref="pbChartRef" :option="chartPbOption" style="height:200px;" />
-                            </el-card>
-                        </el-col>
-                        <el-col :span="12">
-                            <el-card shadow="always">
-                                <v-chart ref="volRatioChartRef" :option="chartVolRatioOption"
-                                    style="height:200px;" />
-                            </el-card>
-                        </el-col>
-                    </el-row>
-                    <el-row :gutter="20" style="margin-top: 16px;">
-                        <el-col :span="12">
-                            <el-card shadow="always">
-                                <v-chart ref="turnoverChartRef" :option="chartTurnoverOption"
-                                    style="height:200px;" />
-                            </el-card>
-                        </el-col>
-                        <el-col :span="12">
-                            <el-card shadow="always">
-                                <v-chart ref="turnoverFChartRef" :option="chartTurnoverFOption"
-                                    style="height:200px;" />
-                            </el-card>
-                        </el-col>
-                    </el-row>
+                        <el-row :gutter="20" style="margin-top: 16px;">
+                            <el-col :span="12">
+                                <el-card shadow="always">
+                                    <v-chart ref="peChartRef" :option="chartPeOption" style="height:200px;" />
+                                </el-card>
+                            </el-col>
+                            <el-col :span="12">
+                                <el-card shadow="always">
+                                    <v-chart ref="peTTMChartRef" :option="chartPeTTMOption" style="height:200px;" />
+                                </el-card>
+                            </el-col>
+                        </el-row>
+                        <el-row :gutter="20" style="margin-top: 16px;">
+                            <el-col :span="12">
+                                <el-card shadow="always">
+                                    <v-chart ref="psChartRef" :option="chartPsOption" style="height:200px;" />
+                                </el-card>
+                            </el-col>
+                            <el-col :span="12">
+                                <el-card shadow="always">
+                                    <v-chart ref="psTTMChartRef" :option="chartPsTTMOption" style="height:200px;" />
+                                </el-card>
+                            </el-col>
+                        </el-row>
+                        <el-row :gutter="20" style="margin-top: 16px;">
+                            <el-col :span="12">
+                                <el-card shadow="always">
+                                    <v-chart ref="pbChartRef" :option="chartPbOption" style="height:200px;" />
+                                </el-card>
+                            </el-col>
+                            <el-col :span="12">
+                                <el-card shadow="always">
+                                    <v-chart ref="volRatioChartRef" :option="chartVolRatioOption"
+                                        style="height:200px;" />
+                                </el-card>
+                            </el-col>
+                        </el-row>
+                        <el-row :gutter="20" style="margin-top: 16px;">
+                            <el-col :span="12">
+                                <el-card shadow="always">
+                                    <v-chart ref="turnoverChartRef" :option="chartTurnoverOption"
+                                        style="height:200px;" />
+                                </el-card>
+                            </el-col>
+                            <el-col :span="12">
+                                <el-card shadow="always">
+                                    <v-chart ref="turnoverFChartRef" :option="chartTurnoverFOption"
+                                        style="height:200px;" />
+                                </el-card>
+                            </el-col>
+                        </el-row>
                     </slot>
                 </div>
             </el-col>
@@ -197,6 +188,9 @@ function toCanonicalTsCode(code) {
 function buildTsCodeCandidates(code) {
     const normalized = String(code || '').trim().toUpperCase();
     const base = normalized.split('.')[0];
+    if (normalized.includes('.')) {
+        return normalized ? [normalized] : [];
+    }
     const candidateSet = new Set();
     if (normalized) candidateSet.add(normalized);
     if (base) candidateSet.add(base);
@@ -448,6 +442,7 @@ const tradingHistoryPending = new Map()
 const parsedTradingCache = new Map()
 const derivedTradingCache = new Map()
 const tradingHistoryRenderPending = new Map()
+const latestTradingRenderKey = ref('')
 const tradingHistoryPrefetched = new Set()
 const topBottomCache = new Map()
 const topBottomPending = new Map()
@@ -692,10 +687,42 @@ function resolveTradingFetchCount(freq = 'D', period = 60) {
 }
 
 function clipParsedDataByCalendarWindow(parsedData, freq = 'D', period = 60) {
+    const raw = Number(period)
+    const periodCount = Number.isFinite(raw) ? Math.max(1, Math.floor(raw)) : 60
     const years = getCalendarWindowYears(period)
     const normalizedFreq = String(freq || 'D').toUpperCase()
-    if (!years || !Array.isArray(parsedData?.tradeDates) || parsedData.tradeDates.length === 0) {
+    if (!Array.isArray(parsedData?.tradeDates) || parsedData.tradeDates.length === 0) {
         return parsedData
+    }
+
+    // Non-calendar presets (30/60) should always render exact latest N bars.
+    if (!years) {
+        if (parsedData.tradeDates.length <= periodCount) {
+            return parsedData
+        }
+        const start = parsedData.tradeDates.length - periodCount
+        const pick = (arr) => arr.slice(start)
+        const indic = parsedData.indicData || {}
+        const nextIndic = {}
+        Object.keys(indic).forEach((key) => {
+            const values = Array.isArray(indic[key]) ? indic[key] : []
+            nextIndic[key] = pick(values)
+        })
+        return {
+            ...parsedData,
+            kdata: pick(parsedData.kdata || []),
+            vol: pick(parsedData.vol || []),
+            amount: pick(parsedData.amount || []),
+            close: pick(parsedData.close || []),
+            pctChg: pick(parsedData.pctChg || []),
+            sl1: pick(parsedData.sl1 || []),
+            sl2: pick(parsedData.sl2 || []),
+            tp1: pick(parsedData.tp1 || []),
+            tp2: pick(parsedData.tp2 || []),
+            tradeDates: pick(parsedData.tradeDates || []),
+            indicData: nextIndic,
+            windowMode: normalizedFreq,
+        }
     }
 
     const latestText = String(parsedData.tradeDates[parsedData.tradeDates.length - 1] || '')
@@ -1646,6 +1673,7 @@ async function fetchTradingHistory(stockCode = '', freq = 'D', adj = 'qfq', coun
     }
     const requestCount = resolveTradingFetchCount(freq, count)
     const cacheKey = getTradingHistoryCacheKey(normalizedStockCode, freq, adj, requestCount)
+    latestTradingRenderKey.value = cacheKey
     let renderTask = tradingHistoryRenderPending.get(cacheKey)
     if (!renderTask) {
         renderTask = (async () => {
@@ -1683,6 +1711,11 @@ async function fetchTradingHistory(stockCode = '', freq = 'D', adj = 'qfq', coun
                 if (!derivedData) {
                     derivedData = buildDerivedTradingChartData(parsedData)
                     derivedTradingCache.set(cacheKey, derivedData)
+                }
+
+                // Guard against async stale update when user switches period/freq quickly.
+                if (latestTradingRenderKey.value !== cacheKey) {
+                    return
                 }
 
                 applyParsedStockChartData(parsedData)
@@ -1980,11 +2013,13 @@ watch(
         period: stockChartFilterStore.period,
         adj: adjPriceOption.value
     }),
-    (newVal) => {
+    (newVal, oldVal) => {
         if (!String(newVal.ts_code || '').trim()) {
             return
         }
-        fetchStockStatus(newVal.ts_code)
+        if (newVal.ts_code !== oldVal?.ts_code) {
+            fetchStockStatus(newVal.ts_code)
+        }
         fetchTradingHistory(newVal.ts_code, newVal.freq, newVal.adj, newVal.period)
         if (shouldRenderBottom.value) {
             fetchFundamentalHistory(newVal.ts_code, newVal.freq, newVal.period)
