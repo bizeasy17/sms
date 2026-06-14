@@ -11,9 +11,7 @@
                                 <div style="display: flex; align-items: center; gap: 8px;">
                                     <el-link
                                         :href="stockStore.website.startsWith('http') ? stockStore.website : 'https://' + stockStore.website"
-                                        target="_blank" type="primary" style="font-size: 12px;">{{ stockStore.name + ' |
-                                        ' +
-                                        stockStore.tsCode }}
+                                        target="_blank" type="primary" style="font-size: 12px;">{{ stockStore.name + ' | ' + stockStore.tsCode }}
                                     </el-link>
                                     <el-check-tag v-if="displayEmbed" :checked="isInWatchlist"
                                         @change="toggleWatchlistStatus" type="danger">

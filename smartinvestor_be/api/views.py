@@ -2067,7 +2067,7 @@ def _build_corporate_action_impact_payload(ts_code, current_trade_date, current_
             "cash_div_tax": _parse_optional_float(latest_event.get("cash_div_tax"), default=None),
             "div_proc": latest_event.get("div_proc"),
         },
-        "message": "σ╜ôσëìΣ╝░σÇ╝Σ╕ïΘÖìΣ╕╗Φªüµ¥ÑΦç¬ΘÖñµ¥âσÉÄµÇ╗Φéíµ£¼µë⌐σñº∩╝îσÉîτ¡ëΦéíµ¥âΣ╗╖σÇ╝Φó½µæèσê░µ¢┤σñÜΦéíΣ╗╜∩╝îΣ╕ìσ«£τ¢┤µÄÑΦºúΦ»╗Σ╕║σƒ║µ£¼Θ¥óµü╢σîûπÇé",
+        "message": "检测到除权摊薄影响：当前总股本相较估值快照基准股本已显著增加。为避免除权导致的估值失真，系统已提供按最新股本归一化的估值参考。",
     }
 
 
