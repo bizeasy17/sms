@@ -438,6 +438,24 @@ const historyMeta = ref<{
   latest_trade_date: '',
 })
 
+const INDUSTRY_HISTORY_CACHE_TTL_MS = 5 * 60 * 1000
+const industryHistoryMemoryCache = new Map<
+  string,
+  {
+    data: IndustryHistoryRow[]
+    meta: {
+      q10: number | null
+      q50: number | null
+      q90: number | null
+      latest_value: number | null
+      latest_trade_date: string
+    }
+    cachedAt: number
+  }
+>()
+let industryHistoryAbortController: AbortController | null = null
+let industryHistoryRequestToken = 0
+
 const constituents = ref<SwConstituentRow[]>([])
 const constituentsLoading = ref(false)
 const constituentKeyword = ref('')
@@ -617,6 +635,34 @@ const historyChartOption = computed(() => {
 function formatMetric(value: number | null | undefined) {
   if (typeof value !== 'number' || !Number.isFinite(value)) return '-'
   return value.toFixed(2)
+}
+
+function buildIndustryHistoryCacheKey() {
+  if (!selectedIndustryKey.value) return ''
+  return [
+    selectedIndustryType.value,
+    selectedIndustryKey.value,
+    metric.value,
+    period.value,
+  ].join('|')
+}
+
+function applyIndustryHistoryPayload(payload: any) {
+  historyRows.value = (Array.isArray(payload?.data) ? payload.data : [])
+    .map((row: any) => ({
+      trade_date: String(row?.trade_date || ''),
+      value: Number.isFinite(Number(row?.value)) ? Number(row?.value) : null,
+    }))
+    .filter((row: IndustryHistoryRow) => Boolean(row.trade_date))
+
+  const meta = payload?.meta || {}
+  historyMeta.value = {
+    q10: Number.isFinite(Number(meta.q10)) ? Number(meta.q10) : null,
+    q50: Number.isFinite(Number(meta.q50)) ? Number(meta.q50) : null,
+    q90: Number.isFinite(Number(meta.q90)) ? Number(meta.q90) : null,
+    latest_value: Number.isFinite(Number(meta.latest_value)) ? Number(meta.latest_value) : null,
+    latest_trade_date: String(meta.latest_trade_date || ''),
+  }
 }
 
 function formatPercent(value: number | null | undefined) {
@@ -820,28 +866,51 @@ async function fetchIndustryHistory() {
     historyRows.value = []
     return
   }
-  const resp = await axios.get(`${baseURL}/industry-universe/history/`, {
-    params: {
-      industry_type: selectedIndustryType.value,
-      industry_key: selectedIndustryKey.value,
-      metric: metric.value,
-      period: period.value,
-    },
-  })
-  historyRows.value = (Array.isArray(resp?.data?.data) ? resp.data.data : [])
-    .map((row: any) => ({
-      trade_date: String(row?.trade_date || ''),
-      value: Number.isFinite(Number(row?.value)) ? Number(row?.value) : null,
-    }))
-    .filter((row: IndustryHistoryRow) => Boolean(row.trade_date))
+  const cacheKey = buildIndustryHistoryCacheKey()
+  const now = Date.now()
+  if (cacheKey) {
+    const cached = industryHistoryMemoryCache.get(cacheKey)
+    if (cached && now - cached.cachedAt <= INDUSTRY_HISTORY_CACHE_TTL_MS) {
+      applyIndustryHistoryPayload({ data: cached.data, meta: cached.meta })
+    }
+  }
 
-  const meta = resp?.data?.meta || {}
-  historyMeta.value = {
-    q10: Number.isFinite(Number(meta.q10)) ? Number(meta.q10) : null,
-    q50: Number.isFinite(Number(meta.q50)) ? Number(meta.q50) : null,
-    q90: Number.isFinite(Number(meta.q90)) ? Number(meta.q90) : null,
-    latest_value: Number.isFinite(Number(meta.latest_value)) ? Number(meta.latest_value) : null,
-    latest_trade_date: String(meta.latest_trade_date || ''),
+  industryHistoryRequestToken += 1
+  const requestToken = industryHistoryRequestToken
+  if (industryHistoryAbortController) {
+    industryHistoryAbortController.abort()
+  }
+  industryHistoryAbortController = new AbortController()
+
+  try {
+    const resp = await axios.get(`${baseURL}/industry-universe/history/`, {
+      params: {
+        industry_type: selectedIndustryType.value,
+        industry_key: selectedIndustryKey.value,
+        metric: metric.value,
+        period: period.value,
+      },
+      signal: industryHistoryAbortController.signal,
+    })
+
+    if (requestToken !== industryHistoryRequestToken) {
+      return
+    }
+
+    applyIndustryHistoryPayload(resp?.data || {})
+
+    if (cacheKey) {
+      industryHistoryMemoryCache.set(cacheKey, {
+        data: [...historyRows.value],
+        meta: { ...historyMeta.value },
+        cachedAt: Date.now(),
+      })
+    }
+  } catch (error: any) {
+    if (axios.isCancel?.(error) || error?.code === 'ERR_CANCELED') {
+      return
+    }
+    throw error
   }
 }
 
@@ -1096,8 +1165,14 @@ function selectRotationIndustry(item: {
 }
 
 function selectIndustry(item: IndustryItem) {
-  selectedIndustryType.value = item.industry_type
-  selectedIndustryKey.value = String(item.industry_key || '').trim()
+  const nextType = item.industry_type
+  const nextKey = String(item.industry_key || '').trim()
+  if (selectedIndustryType.value === nextType && selectedIndustryKey.value === nextKey) {
+    return
+  }
+
+  selectedIndustryType.value = nextType
+  selectedIndustryKey.value = nextKey
   selectedIndustryName.value = item.display_name || ''
   currentPage.value = 1
   void fetchIndustryHistory()

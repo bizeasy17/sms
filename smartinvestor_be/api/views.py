@@ -5740,6 +5740,9 @@ SW_ROTATION_RUNS_FILE = "sw_industry_rotation_runs.json"
 SW_ROTATION_RETURN_WINDOWS = (5, 20, 60)
 THS_INDUSTRY_OUTPUT_SUBDIR = "output/industry_universe"
 THS_INDUSTRY_SNAPSHOT_FILE = "ths_industry_index_snapshot.json"
+THS_INDUSTRY_HISTORY_CACHE_TTL_SECONDS = int(
+    getattr(settings, "THS_INDUSTRY_HISTORY_CACHE_TTL_SECONDS", 600) or 600
+)
 THS_INDEX_TYPE_LABEL_MAP = {
     "N": "概念指数",
     "I": "行业指数",
@@ -6257,12 +6260,16 @@ def _compute_generic_rotation_candidates(industry_type="ths", market="CN", top_n
             industry_name = str(item.get("industry_name") or "").strip()
             member_count = int(item.get("member_count") or 0)
 
+            if member_count <= 0:
+                continue
+
             latest_close = None
             latest_trade_date = ""
             ret_1m = None
             ret_3m = None
             volatility = None
             max_drawdown = None
+            close_series = []
 
             if pro is not None:
                 frame = _fetch_ths_daily_frame(pro, industry_code, start_date, end_date)
@@ -6270,7 +6277,6 @@ def _compute_generic_rotation_candidates(industry_type="ths", market="CN", top_n
                     work = frame.fillna("").copy()
                     work["trade_date"] = work["trade_date"].astype(str)
                     work = work.sort_values("trade_date")
-                    close_series = []
                     for _, row in work.iterrows():
                         close_value = _as_float_or_none(row.get("close"))
                         if close_value is None or close_value <= 0:
@@ -6302,6 +6308,9 @@ def _compute_generic_rotation_candidates(industry_type="ths", market="CN", top_n
 
                     if len(close_series) >= 2:
                         max_drawdown = _compute_max_drawdown(close_series[-252:] if len(close_series) > 252 else close_series)
+
+            if not close_series:
+                continue
 
             momentum_raw = _blend_optional([(0.6, ret_1m), (0.4, ret_3m)])
             risk_raw = _blend_optional([(0.7, volatility), (0.3, max_drawdown)])
@@ -8355,7 +8364,7 @@ def get_industry_universe_history(request):
                         "latest_trade_date": None,
                     },
                 }
-                cache.set(cache_key, payload, timeout=120)
+                cache.set(cache_key, payload, timeout=THS_INDUSTRY_HISTORY_CACHE_TTL_SECONDS)
                 return Response(payload)
 
             frame = df.fillna("").copy()
@@ -8443,7 +8452,7 @@ def get_industry_universe_history(request):
                         **history_meta,
                     },
                 }
-                cache.set(cache_key, payload, timeout=120)
+                cache.set(cache_key, payload, timeout=THS_INDUSTRY_HISTORY_CACHE_TTL_SECONDS)
                 return Response(payload)
 
             frame = ths_df.fillna("").copy()
@@ -8509,7 +8518,7 @@ def get_industry_universe_history(request):
                     "count": len(rows),
                 },
             }
-            cache.set(cache_key, payload, timeout=120)
+            cache.set(cache_key, payload, timeout=THS_INDUSTRY_HISTORY_CACHE_TTL_SECONDS)
             return Response(payload)
 
         qs, industry_name = _resolve_corporation_queryset_by_industry_universe(
