@@ -1,5 +1,5 @@
 from datetime import date
-from django.core.management.base import BaseCommand
+from django.core.management.base import BaseCommand, CommandError
 
 from utils.data_utils import (
     fetch_and_store_cyq_data,
@@ -125,5 +125,4 @@ class Command(BaseCommand):
                     )
                 )
         except (ValueError, IOError) as e:
-            self.stderr.write(self.style.ERROR(f"Error processing {ts_code}: {e}"))
-            return
+            raise CommandError(f"Error processing trading download: {e}") from e

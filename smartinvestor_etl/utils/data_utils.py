@@ -20,6 +20,11 @@ import pandas as pd
 ADJ_PRICE_FIELDS = ["open", "high", "low", "close", "pre_close"]
 
 
+def _missing_required_columns(frame, required_columns):
+    columns = set(frame.columns) if frame is not None else set()
+    return [column for column in required_columns if column not in columns]
+
+
 def _normalize_date_text(value):
     if value in (None, ""):
         return None
@@ -60,11 +65,32 @@ def _fetch_daily_and_adj_factor(pro, ts_code=None, trade_date=None, start_date=N
     if daily_df is None or daily_df.empty:
         return pd.DataFrame()
 
+    missing_daily_columns = _missing_required_columns(daily_df, ["ts_code", "trade_date"])
+    if missing_daily_columns:
+        raise ValueError(
+            "daily payload missing required columns "
+            f"{missing_daily_columns}; columns={list(daily_df.columns)}; "
+            f"request={daily_kwargs}"
+        )
+
     daily_df = daily_df.copy()
     daily_df["trade_date"] = daily_df["trade_date"].astype(str)
 
     if adj_df is None or adj_df.empty:
         merged = daily_df
+        merged["adj_factor"] = None
+        return merged
+
+    missing_adj_columns = _missing_required_columns(
+        adj_df, ["ts_code", "trade_date", "adj_factor"]
+    )
+    if missing_adj_columns:
+        print(
+            "[WARN] adj_factor payload missing required columns "
+            f"{missing_adj_columns}; columns={list(adj_df.columns)}; "
+            f"request={adj_kwargs}; fallback=daily_only"
+        )
+        merged = daily_df.copy()
         merged["adj_factor"] = None
         return merged
 
@@ -86,6 +112,8 @@ def _apply_adj_factor_prices(frame):
 
     def _transform(group):
         out = group.copy()
+        if "ts_code" not in out.columns:
+            out["ts_code"] = group.name
         factors = pd.to_numeric(out.get("adj_factor"), errors="coerce")
         first_factor = factors.dropna().iloc[0] if factors.notna().any() else None
         latest_factor = factors.dropna().iloc[-1] if factors.notna().any() else None
@@ -127,6 +155,9 @@ def _apply_adj_factor_prices(frame):
 
 
 def _process_trade_record(record):
+    pct_chg = record.pop("pct_chg", None)
+    if "pct_change" not in record:
+        record["pct_change"] = pct_chg
     trade_date_val = record.get("trade_date")
     if isinstance(trade_date_val, str) and len(trade_date_val) == 8:
         record["trade_date"] = (
@@ -224,7 +255,9 @@ def fetch_and_store_daily_trading_history(
             else:
                 print(f"No data returned for trade_date {trade_date}.")
         except (ConnectionError, AttributeError, KeyError, ValueError) as e:
-            print(f"Error fetching or saving data for trade_date {trade_date}: {e}")
+            raise ValueError(
+                f"Error fetching or saving data for trade_date {trade_date}: {e}"
+            ) from e
         return
     else:
         corporations = list(Corporation.objects.all())
