@@ -6200,6 +6200,190 @@ def _compute_generic_rotation_candidates(industry_type="ths", market="CN", top_n
             if key and name:
                 entries.append({"industry_code": key, "industry_name": name, "member_count": max(0, count)})
 
+        if isinstance(limit_count, int) and limit_count > 0:
+            entries = entries[:limit_count]
+
+        today = datetime.date.today()
+        start_date = (today - datetime.timedelta(days=730)).strftime("%Y%m%d")
+        end_date = today.strftime("%Y%m%d")
+
+        def _compute_max_drawdown(close_series):
+            peak = None
+            max_drawdown = 0.0
+            for value in close_series:
+                close_value = _as_float_or_none(value)
+                if close_value is None or close_value <= 0:
+                    continue
+                if peak is None or close_value > peak:
+                    peak = close_value
+                if peak is None or peak <= 0:
+                    continue
+                drawdown = (peak - close_value) / peak
+                if drawdown > max_drawdown:
+                    max_drawdown = drawdown
+            return float(max_drawdown)
+
+        def _blend_optional(weighted_values):
+            valid = [(float(weight), float(value)) for weight, value in weighted_values if value is not None]
+            if not valid:
+                return None
+            total_weight = sum(weight for weight, _ in valid)
+            if total_weight <= 0:
+                return None
+            return sum(weight * value for weight, value in valid) / total_weight
+
+        def _scale_to_score(value, value_pool, invert=False, default=50.0):
+            number = _as_float_or_none(value)
+            if number is None:
+                return float(default)
+            cleaned_pool = [
+                float(item)
+                for item in value_pool
+                if isinstance(item, (int, float)) and math.isfinite(item)
+            ]
+            if not cleaned_pool:
+                return float(default)
+            min_value = min(cleaned_pool)
+            max_value = max(cleaned_pool)
+            if max_value - min_value <= 1e-12:
+                return 50.0
+            ratio = (number - min_value) / (max_value - min_value)
+            score = (1.0 - ratio) * 100.0 if invert else ratio * 100.0
+            return _clamp_score_0_100(score, default=default)
+
+        raw_rows = []
+        for item in entries:
+            industry_code = str(item.get("industry_code") or "").strip().upper()
+            industry_name = str(item.get("industry_name") or "").strip()
+            member_count = int(item.get("member_count") or 0)
+
+            latest_close = None
+            latest_trade_date = ""
+            ret_1m = None
+            ret_3m = None
+            volatility = None
+            max_drawdown = None
+
+            if pro is not None:
+                frame = _fetch_ths_daily_frame(pro, industry_code, start_date, end_date)
+                if frame is not None and not getattr(frame, "empty", True) and "trade_date" in frame.columns:
+                    work = frame.fillna("").copy()
+                    work["trade_date"] = work["trade_date"].astype(str)
+                    work = work.sort_values("trade_date")
+                    close_series = []
+                    for _, row in work.iterrows():
+                        close_value = _as_float_or_none(row.get("close"))
+                        if close_value is None or close_value <= 0:
+                            continue
+                        close_series.append(float(close_value))
+
+                    if close_series:
+                        latest_close = close_series[-1]
+                        latest_trade_date = _to_trade_date_text(work.iloc[-1].get("trade_date"))
+
+                    if len(close_series) >= 21:
+                        ret_1m = _safe_pct_change(close_series[-1], close_series[-21])
+                    if len(close_series) >= 63:
+                        ret_3m = _safe_pct_change(close_series[-1], close_series[-63])
+
+                    if len(close_series) >= 2:
+                        daily_returns = []
+                        for idx in range(1, len(close_series)):
+                            prev_close = close_series[idx - 1]
+                            current_close = close_series[idx]
+                            if prev_close <= 0:
+                                continue
+                            daily_returns.append((current_close / prev_close) - 1.0)
+                        tail_returns = daily_returns[-60:] if len(daily_returns) > 60 else daily_returns
+                        if tail_returns:
+                            mean_ret = sum(tail_returns) / len(tail_returns)
+                            variance = sum((sample - mean_ret) ** 2 for sample in tail_returns) / len(tail_returns)
+                            volatility = math.sqrt(variance) * math.sqrt(252.0)
+
+                    if len(close_series) >= 2:
+                        max_drawdown = _compute_max_drawdown(close_series[-252:] if len(close_series) > 252 else close_series)
+
+            momentum_raw = _blend_optional([(0.6, ret_1m), (0.4, ret_3m)])
+            risk_raw = _blend_optional([(0.7, volatility), (0.3, max_drawdown)])
+
+            raw_rows.append(
+                {
+                    "industry_code": industry_code,
+                    "industry_name": industry_name,
+                    "member_count": max(0, member_count),
+                    "latest_close": latest_close,
+                    "latest_trade_date": latest_trade_date or today.strftime("%Y-%m-%d"),
+                    "ret_1m": ret_1m,
+                    "ret_3m": ret_3m,
+                    "volatility": volatility,
+                    "max_drawdown": max_drawdown,
+                    "momentum_raw": momentum_raw,
+                    "risk_raw": risk_raw,
+                }
+            )
+
+        momentum_pool = [row.get("momentum_raw") for row in raw_rows if row.get("momentum_raw") is not None]
+        risk_pool = [row.get("risk_raw") for row in raw_rows if row.get("risk_raw") is not None]
+        breadth_pool = [row.get("member_count") for row in raw_rows]
+
+        candidates = []
+        for row in raw_rows:
+            momentum_score = _scale_to_score(row.get("momentum_raw"), momentum_pool, invert=False, default=50.0)
+            risk_score = _scale_to_score(row.get("risk_raw"), risk_pool, invert=True, default=50.0)
+            breadth_score = _scale_to_score(row.get("member_count"), breadth_pool, invert=False, default=50.0)
+            rotation_score = (
+                _clamp_score_0_100(momentum_score) * 0.55
+                + _clamp_score_0_100(risk_score) * 0.35
+                + _clamp_score_0_100(breadth_score) * 0.10
+            )
+
+            candidates.append(
+                {
+                    "industry_code": str(row.get("industry_code") or "").strip(),
+                    "industry_name": str(row.get("industry_name") or "").strip(),
+                    "regime": "none",
+                    "rotation_score": round(float(rotation_score), 4),
+                    "entry_close": round(float(row.get("latest_close")), 4) if row.get("latest_close") is not None else None,
+                    "score_breakdown": {
+                        "valuation": None,
+                        "momentum": round(float(_clamp_score_0_100(momentum_score)), 4),
+                        "risk": round(float(_clamp_score_0_100(risk_score)), 4),
+                        "style": round(float(_clamp_score_0_100(breadth_score)), 4),
+                    },
+                    "metrics": {
+                        "latest_close": round(float(row.get("latest_close")), 4) if row.get("latest_close") is not None else None,
+                        "ret_1m": round(float(row.get("ret_1m")), 6) if row.get("ret_1m") is not None else None,
+                        "ret_3m": round(float(row.get("ret_3m")), 6) if row.get("ret_3m") is not None else None,
+                        "volatility": round(float(row.get("volatility")), 6) if row.get("volatility") is not None else None,
+                        "max_drawdown": round(float(row.get("max_drawdown")), 6) if row.get("max_drawdown") is not None else None,
+                        "member_count": int(row.get("member_count") or 0),
+                    },
+                    "latest_trade_date": str(row.get("latest_trade_date") or today.strftime("%Y-%m-%d")),
+                }
+            )
+
+        candidates = sorted(
+            candidates,
+            key=lambda item: (
+                -float(item.get("rotation_score") or 0.0),
+                -int((item.get("metrics") or {}).get("member_count") or 0),
+                str(item.get("industry_code") or ""),
+            ),
+        )
+        top_n = max(1, min(100, int(top_n or 10)))
+        asof_candidates = [str(item.get("latest_trade_date") or "").strip() for item in candidates if str(item.get("latest_trade_date") or "").strip()]
+        asof_date = max(asof_candidates) if asof_candidates else today.strftime("%Y-%m-%d")
+        return {
+            "industry_type": "ths",
+            "asof_date": asof_date,
+            "scoring_version": "ths_rotation_v2_close_only",
+            "generated_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+            "total_candidates": len(candidates),
+            "top_n": top_n,
+            "top_candidates": candidates[:top_n],
+            "all_candidates": candidates,
+        }
+
     elif normalized_type == "valuation_variant":
         persisted_qs = IndustryVariantCache.objects.filter(market=market).order_by("-member_count", "variant_key")
         if persisted_qs.exists():

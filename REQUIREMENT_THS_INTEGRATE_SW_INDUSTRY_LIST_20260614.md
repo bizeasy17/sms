@@ -150,6 +150,37 @@ THS行业总量较大，若将全部THS类型（N/I/R/S/ST/TH/BB）混合计算�
 - THS + `ALL` 时，返回全THS口径结果。
 - SW/行业变体/基本信息行业现有行为不受影响。
 
+## 13. THS轮动 close-only v2（新增，已确认）
+### 13.1 背景
+- THS轮动当前启发式分数中存在“按列表顺序给分”的成分，业务意义不足。
+- 同时 THS 日指标在多数场景下仅能稳定使用 `close`，不适合继续依赖 PE/PB 估值分位。
+
+### 13.2 目标
+- THS轮动改为仅基于价格序列（close）驱动，不再使用“列表顺序分”。
+- 保留 THS `ths_index_type` 分组能力，不同类型继续隔离计算。
+- 接口字段结构保持兼容，前端无需新增字段映射。
+
+### 13.3 评分口径（THS专用）
+- 动量分（momentum）：基于 close 计算 20/60 日收益组合。
+- 风险分（risk）：基于 close 计算近 60 日波动率与最大回撤组合，风险越低得分越高。
+- 广度分（breadth）：使用 member_count 的标准化得分（小权重）。
+- 估值分（valuation）：THS场景下固定为 null，不参与总分。
+
+### 13.4 权重（THS专用）
+- `rotation_score = 0.55 * momentum + 0.35 * risk + 0.10 * breadth`
+- valuation 权重为 0，不纳入总分。
+
+### 13.5 兼容策略
+- `score_breakdown` 保持原字段键名：`valuation/momentum/risk/style`。
+- 其中 `style` 承载 breadth 分值（兼容旧前端显示位），`valuation` 返回 null。
+- `metrics` 中新增/保留 close 派生指标（ret_1m、ret_3m、volatility、max_drawdown、member_count）。
+
+### 13.6 验收标准（新增）
+- THS轮动结果不再受快照列表顺序影响。
+- 同一 `ths_index_type` 下，轮动结果由 close 序列与 member_count 决定。
+- `industry_type=ths` 且不同 `ths_index_type` 请求时，结果集合仍按类型隔离。
+- SW轮动逻辑与结果口径保持不变。
+
 ## 9. 待确认事项
 1. 服务归属是否确认由smartinvestor_be独立实现（smartinvestor_fe默认不改）？
 2. 是否允许后续补充THS与SW行业的映射对照表，以提高成分映射覆盖率？
