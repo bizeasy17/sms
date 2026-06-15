@@ -14,6 +14,19 @@
                     :value="item.value"
                   />
                 </el-select>
+                <el-select
+                  v-if="selectedIndustryType === 'ths'"
+                  v-model="selectedThsIndexType"
+                  size="small"
+                  class="sw-ths-index-type-select"
+                >
+                  <el-option
+                    v-for="item in thsIndexTypeOptions"
+                    :key="item.value"
+                    :label="item.label"
+                    :value="item.value"
+                  />
+                </el-select>
                 <el-input
                   v-model="industryKeyword"
                   size="small"
@@ -291,15 +304,19 @@ import { useStockTradeStore } from '../stores/stockTradeStore'
 
 use([CanvasRenderer, LineChart, BarChart, TooltipComponent, GridComponent, DataZoomComponent, LegendComponent, MarkLineComponent])
 
-type IndustryType = 'sw' | 'valuation_variant' | 'corp_industry'
+type IndustryType = 'sw' | 'ths' | 'valuation_variant' | 'corp_industry'
 
 type IndustryItem = {
   industry_type: IndustryType
   industry_key: string
   display_name: string
   member_count: number
+  index_type?: string
+  index_type_label?: string
   extra_label?: string
 }
+
+type ThsIndexTypeFilter = 'ALL' | 'N' | 'I' | 'R' | 'S' | 'ST' | 'TH' | 'BB'
 
 type IndustryHistoryRow = {
   trade_date: string
@@ -325,11 +342,24 @@ const LEGACY_FAVORITE_SW_KEY = 'sw_industry_favorite_codes'
 
 const industryTypeOptions: Array<{ value: IndustryType; label: string }> = [
   { value: 'sw', label: 'SW行业' },
+  { value: 'ths', label: 'THS行业' },
   { value: 'valuation_variant', label: '行业变体' },
   { value: 'corp_industry', label: '基本信息行业' },
 ]
 
+const thsIndexTypeOptions: Array<{ value: ThsIndexTypeFilter; label: string }> = [
+  { value: 'ALL', label: '全部类型' },
+  { value: 'N', label: 'N 概念指数' },
+  { value: 'I', label: 'I 行业指数' },
+  { value: 'R', label: 'R 地域指数' },
+  { value: 'S', label: 'S 特色指数' },
+  { value: 'ST', label: 'ST 风格指数' },
+  { value: 'TH', label: 'TH 主题指数' },
+  { value: 'BB', label: 'BB 宽基指数' },
+]
+
 const selectedIndustryType = ref<IndustryType>('sw')
+const selectedThsIndexType = ref<ThsIndexTypeFilter>('ALL')
 const industryList = ref<IndustryItem[]>([])
 const industryKeyword = ref('')
 const industryTab = ref<'all' | 'rotation' | 'favorites'>('all')
@@ -438,6 +468,8 @@ function normalizeFavoriteIndustryKeys(rawList: any[]): string[] {
       if (!keyText) continue
       const type: IndustryType = typeText === 'valuation_variant'
         ? 'valuation_variant'
+        : typeText === 'ths'
+          ? 'ths'
         : typeText === 'corp_industry'
           ? 'corp_industry'
           : 'sw'
@@ -740,11 +772,15 @@ function syncDialogStock(row: SwConstituentRow) {
 
 async function fetchIndustryList() {
   if (!baseURL) return
+  const params: Record<string, string> = {
+    industry_type: selectedIndustryType.value,
+    keyword: industryKeyword.value.trim(),
+  }
+  if (selectedIndustryType.value === 'ths' && selectedThsIndexType.value !== 'ALL') {
+    params.ths_index_type = selectedThsIndexType.value
+  }
   const resp = await axios.get(`${baseURL}/industry-universe/list/`, {
-    params: {
-      industry_type: selectedIndustryType.value,
-      keyword: industryKeyword.value.trim(),
-    },
+    params,
   })
   const rows = Array.isArray(resp?.data?.data) ? resp.data.data : []
   industryList.value = rows
@@ -753,6 +789,8 @@ async function fetchIndustryList() {
       industry_key: String(row?.industry_key || ''),
       display_name: String(row?.display_name || ''),
       member_count: Number(row?.member_count || 0),
+      index_type: String(row?.index_type || ''),
+      index_type_label: String(row?.index_type_label || ''),
       extra_label: String(row?.extra_label || ''),
     }))
     .filter((row: IndustryItem) => Boolean(row.industry_key) && Boolean(row.display_name))
@@ -849,9 +887,12 @@ async function fetchRotationList(useRecompute = false) {
   rotationLoading.value = true
   try {
     const topN = Math.max(1, Math.min(50, Number(rotationTopN.value || 10)))
+    const thsIndexType = selectedIndustryType.value === 'ths' ? selectedThsIndexType.value : 'ALL'
     if (useRecompute) {
       const recomputeResp = await axios.post(`${baseURL}/industry-universe/rotation/recompute/`, {
         market: 'CN',
+        industry_type: selectedIndustryType.value,
+        ths_index_type: thsIndexType,
         top_n: topN,
       })
       const recomputeRows = Array.isArray(recomputeResp?.data?.data) ? recomputeResp.data.data : []
@@ -879,6 +920,8 @@ async function fetchRotationList(useRecompute = false) {
     const resp = await axios.get(`${baseURL}/industry-universe/rotation/latest/`, {
       params: {
         market: 'CN',
+        industry_type: selectedIndustryType.value,
+        ths_index_type: thsIndexType,
         top_n: topN,
       },
     })
@@ -916,8 +959,9 @@ function recomputeRotationList() {
 
 async function fetchRotationRunList() {
   if (!baseURL) return
+  const thsIndexType = selectedIndustryType.value === 'ths' ? selectedThsIndexType.value : 'ALL'
   const resp = await axios.get(`${baseURL}/industry-universe/rotation/runs/`, {
-    params: { limit: 20, _ts: Date.now() },
+    params: { industry_type: selectedIndustryType.value, ths_index_type: thsIndexType, limit: 20, _ts: Date.now() },
   })
   const rows = Array.isArray(resp?.data?.data) ? resp.data.data : []
   rotationRunList.value = rows.map((row: any) => ({
@@ -929,8 +973,9 @@ async function fetchRotationRunList() {
 
 async function fetchRotationRunDetail(runId: string) {
   if (!baseURL || !runId) return
+  const thsIndexType = selectedIndustryType.value === 'ths' ? selectedThsIndexType.value : 'ALL'
   const resp = await axios.get(`${baseURL}/industry-universe/rotation/runs/${encodeURIComponent(runId)}/`, {
-    params: { windows: '5,20,60', _ts: Date.now() },
+    params: { industry_type: selectedIndustryType.value, ths_index_type: thsIndexType, windows: '5,20,60', _ts: Date.now() },
   })
   const evaluation = resp?.data?.data?.evaluation || {}
   const windowsRaw = Array.isArray(evaluation?.windows) ? evaluation.windows : []
@@ -1004,7 +1049,10 @@ async function deleteRotationRun(runId: string) {
   }
 
   if (!baseURL) return
-  await axios.delete(`${baseURL}/industry-universe/rotation/runs/${encodeURIComponent(normalized)}/delete/`)
+  const thsIndexType = selectedIndustryType.value === 'ths' ? selectedThsIndexType.value : 'ALL'
+  await axios.delete(`${baseURL}/industry-universe/rotation/runs/${encodeURIComponent(normalized)}/delete/`, {
+    params: { industry_type: selectedIndustryType.value, ths_index_type: thsIndexType },
+  })
   ElMessage.success('run 已删除')
   await fetchRotationRunList()
   if (!rotationRunList.value.length) {
@@ -1032,7 +1080,7 @@ function selectRotationIndustry(item: {
   if (!normalizedCode) return
 
   const matched = industryList.value.find((row) => (
-    row.industry_type === 'sw' && String(row.industry_key || '').trim() === normalizedCode
+    row.industry_type === selectedIndustryType.value && String(row.industry_key || '').trim() === normalizedCode
   ))
   if (matched) {
     selectIndustry(matched)
@@ -1040,7 +1088,7 @@ function selectRotationIndustry(item: {
   }
 
   selectIndustry({
-    industry_type: 'sw',
+    industry_type: selectedIndustryType.value,
     industry_key: normalizedCode,
     display_name: String(item?.industry_name || normalizedCode),
     member_count: 0,
@@ -1125,10 +1173,25 @@ watch([constituentMarket], () => {
 
 watch(selectedIndustryType, async () => {
   metric.value = 'pe'
+  selectedThsIndexType.value = selectedIndustryType.value === 'ths' ? 'N' : 'ALL'
   selectedIndustryKey.value = ''
   selectedIndustryName.value = ''
   currentPage.value = 1
   await fetchIndustryList()
+  if (industryTab.value === 'rotation') {
+    await fetchRotationList(false)
+  }
+})
+
+watch(selectedThsIndexType, async () => {
+  if (selectedIndustryType.value !== 'ths') return
+  selectedIndustryKey.value = ''
+  selectedIndustryName.value = ''
+  currentPage.value = 1
+  await fetchIndustryList()
+  if (industryTab.value === 'rotation') {
+    await fetchRotationList(false)
+  }
 })
 
 watch(industryTab, async (tab) => {
@@ -1170,6 +1233,10 @@ onMounted(async () => {
 
 .sw-industry-type-select {
   width: 144px;
+}
+
+.sw-ths-index-type-select {
+  width: 156px;
 }
 
 .sw-industry-tabs {

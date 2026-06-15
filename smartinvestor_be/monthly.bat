@@ -29,6 +29,13 @@ if errorlevel 1 (
 )
 echo Hello, Valuation Remote Cache Sync Completed!
 
+"%PYTHON_CMD%" manage.py refresh_ths_industry_snapshot --strict
+if errorlevel 1 (
+	echo [ERROR] refresh_ths_industry_snapshot failed.
+	exit /b 1
+)
+echo Hello, THS industry snapshot (member_count) refresh Completed!
+
 @REM python manage.py predict --freq=M
 @REM echo Hello, Predict dataset Completed!
 

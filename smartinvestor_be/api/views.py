@@ -5738,6 +5738,17 @@ SW_ROTATION_OUTPUT_SUBDIR = "output/sw_rotation"
 SW_ROTATION_LATEST_FILE = "sw_industry_rotation_latest.json"
 SW_ROTATION_RUNS_FILE = "sw_industry_rotation_runs.json"
 SW_ROTATION_RETURN_WINDOWS = (5, 20, 60)
+THS_INDUSTRY_OUTPUT_SUBDIR = "output/industry_universe"
+THS_INDUSTRY_SNAPSHOT_FILE = "ths_industry_index_snapshot.json"
+THS_INDEX_TYPE_LABEL_MAP = {
+    "N": "概念指数",
+    "I": "行业指数",
+    "R": "地域指数",
+    "S": "特色指数",
+    "ST": "风格指数",
+    "TH": "主题指数",
+    "BB": "宽基指数",
+}
 
 
 def _resolve_sw_rotation_snapshot_path():
@@ -5752,8 +5763,310 @@ def _resolve_sw_rotation_runs_path():
     return output_dir / SW_ROTATION_RUNS_FILE
 
 
-def _read_sw_rotation_snapshot():
-    path = _resolve_sw_rotation_snapshot_path()
+def _normalize_rotation_ths_index_type(value):
+    token = str(value or "ALL").strip().upper() or "ALL"
+    if token == "ALL":
+        return "ALL"
+    normalized = _normalize_ths_index_type(token)
+    return normalized if normalized else "ALL"
+
+
+def _rotation_file_suffix(industry_type, ths_index_type="ALL"):
+    normalized = _normalize_industry_universe_type(industry_type)
+    if normalized == "sw":
+        return ""
+    if normalized == "ths":
+        ths_token = _normalize_rotation_ths_index_type(ths_index_type).lower()
+        return f"_{normalized}_{ths_token}"
+    return f"_{normalized}"
+
+
+def _resolve_rotation_snapshot_path(industry_type="sw", ths_index_type="ALL"):
+    output_dir = Path(settings.BASE_DIR) / SW_ROTATION_OUTPUT_SUBDIR
+    output_dir.mkdir(parents=True, exist_ok=True)
+    suffix = _rotation_file_suffix(industry_type, ths_index_type)
+    if not suffix:
+        return output_dir / SW_ROTATION_LATEST_FILE
+    return output_dir / f"sw_industry_rotation_latest{suffix}.json"
+
+
+def _resolve_rotation_runs_path(industry_type="sw", ths_index_type="ALL"):
+    output_dir = Path(settings.BASE_DIR) / SW_ROTATION_OUTPUT_SUBDIR
+    output_dir.mkdir(parents=True, exist_ok=True)
+    suffix = _rotation_file_suffix(industry_type, ths_index_type)
+    if not suffix:
+        return output_dir / SW_ROTATION_RUNS_FILE
+    return output_dir / f"sw_industry_rotation_runs{suffix}.json"
+
+
+def _resolve_ths_industry_snapshot_path():
+    output_dir = Path(settings.BASE_DIR) / THS_INDUSTRY_OUTPUT_SUBDIR
+    output_dir.mkdir(parents=True, exist_ok=True)
+    return output_dir / THS_INDUSTRY_SNAPSHOT_FILE
+
+
+def _read_ths_index_snapshot():
+    path = _resolve_ths_industry_snapshot_path()
+    if not path.exists():
+        return []
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return []
+
+    rows = payload.get("data") if isinstance(payload, dict) else payload
+    if not isinstance(rows, list):
+        return []
+
+    normalized = []
+    for item in rows:
+        if not isinstance(item, dict):
+            continue
+        industry_key = str(item.get("industry_key") or "").strip().upper()
+        display_name = str(item.get("display_name") or "").strip()
+        index_type = _normalize_ths_index_type(item.get("index_type"))
+        index_type_label = str(item.get("index_type_label") or _get_ths_index_type_label(index_type)).strip()
+        member_count = item.get("member_count", 0)
+        member_stocks_raw = item.get("member_stocks") if isinstance(item.get("member_stocks"), list) else []
+        member_stocks = []
+        for stock in member_stocks_raw:
+            if not isinstance(stock, dict):
+                continue
+            ts_code = _normalize_ts_code(stock.get("ts_code"))
+            name = str(stock.get("name") or "").strip()
+            if not ts_code:
+                continue
+            member_stocks.append({"ts_code": ts_code, "name": name})
+
+        if member_stocks and not member_count:
+            member_count = len(member_stocks)
+        try:
+            member_count = int(member_count)
+        except (TypeError, ValueError):
+            member_count = 0
+        if not industry_key or not display_name:
+            continue
+        normalized.append(
+            {
+                "industry_key": industry_key,
+                "display_name": display_name,
+                "index_type": index_type,
+                "index_type_label": index_type_label,
+                "member_count": max(0, member_count),
+                "member_stocks": member_stocks,
+            }
+        )
+    return normalized
+
+
+def _write_ths_index_snapshot(rows):
+    path = _resolve_ths_industry_snapshot_path()
+    serializable_rows = []
+    for item in rows:
+        if not isinstance(item, dict):
+            continue
+        industry_key = str(item.get("industry_key") or "").strip().upper()
+        display_name = str(item.get("display_name") or "").strip()
+        index_type = _normalize_ths_index_type(item.get("index_type"))
+        index_type_label = str(item.get("index_type_label") or _get_ths_index_type_label(index_type)).strip()
+        member_count = item.get("member_count", 0)
+        member_stocks_raw = item.get("member_stocks") if isinstance(item.get("member_stocks"), list) else []
+        member_stocks = []
+        for stock in member_stocks_raw:
+            if not isinstance(stock, dict):
+                continue
+            ts_code = _normalize_ts_code(stock.get("ts_code"))
+            name = str(stock.get("name") or "").strip()
+            if not ts_code:
+                continue
+            member_stocks.append({"ts_code": ts_code, "name": name})
+
+        if member_stocks and not member_count:
+            member_count = len(member_stocks)
+        try:
+            member_count = int(member_count)
+        except (TypeError, ValueError):
+            member_count = 0
+        if not industry_key or not display_name:
+            continue
+        serializable_rows.append(
+            {
+                "industry_key": industry_key,
+                "display_name": display_name,
+                "index_type": index_type,
+                "index_type_label": index_type_label,
+                "member_count": max(0, member_count),
+                "member_stocks": member_stocks,
+            }
+        )
+
+    payload = {
+        "generated_at": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        "total": len(serializable_rows),
+        "data": serializable_rows,
+    }
+    path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
+def _load_ths_index_rows(pro=None, prefer_local=True):
+    existing_snapshot_map = {
+        str(item.get("industry_key") or "").strip().upper(): item
+        for item in _read_ths_index_snapshot()
+        if isinstance(item, dict)
+    }
+
+    if prefer_local:
+        local_rows = _read_ths_index_snapshot()
+        if local_rows:
+            if pro is not None:
+                needs_index_type_refresh = any(
+                    not _normalize_ths_index_type(item.get("index_type"))
+                    for item in local_rows
+                    if isinstance(item, dict)
+                )
+                if needs_index_type_refresh:
+                    live_rows = _fetch_ths_index_rows(pro)
+                    if live_rows:
+                        live_type_map = {
+                            str(item.get("industry_key") or "").strip().upper(): {
+                                "index_type": _normalize_ths_index_type(item.get("index_type")),
+                                "index_type_label": str(item.get("index_type_label") or "").strip(),
+                            }
+                            for item in live_rows
+                            if isinstance(item, dict)
+                        }
+                        merged_rows = []
+                        changed = False
+                        for item in local_rows:
+                            if not isinstance(item, dict):
+                                continue
+                            industry_key = str(item.get("industry_key") or "").strip().upper()
+                            live_meta = live_type_map.get(industry_key) or {}
+                            index_type = _normalize_ths_index_type(item.get("index_type") or live_meta.get("index_type"))
+                            index_type_label = str(
+                                item.get("index_type_label")
+                                or live_meta.get("index_type_label")
+                                or _get_ths_index_type_label(index_type)
+                            ).strip()
+                            merged_item = dict(item)
+                            merged_item["index_type"] = index_type
+                            merged_item["index_type_label"] = index_type_label
+                            if index_type != str(item.get("index_type") or "").strip().upper():
+                                changed = True
+                            if index_type_label != str(item.get("index_type_label") or "").strip():
+                                changed = True
+                            merged_rows.append(merged_item)
+                        if merged_rows:
+                            local_rows = merged_rows
+                            if changed:
+                                try:
+                                    _write_ths_index_snapshot(local_rows)
+                                except Exception:
+                                    pass
+            return local_rows
+
+    live_rows = _fetch_ths_index_rows(pro) if pro is not None else []
+    if live_rows and pro is not None:
+        enriched_rows = []
+        for item in live_rows:
+            industry_key = str(item.get("industry_key") or "").strip().upper()
+            display_name = str(item.get("display_name") or "").strip()
+            index_type = _normalize_ths_index_type(item.get("index_type"))
+            if not industry_key or not display_name:
+                continue
+            previous_entry = existing_snapshot_map.get(industry_key) or {}
+            fetched_member_stocks = _fetch_ths_member_rows(pro, industry_key)
+            if fetched_member_stocks:
+                member_stocks = fetched_member_stocks
+                member_count = len(fetched_member_stocks)
+            else:
+                member_stocks = previous_entry.get("member_stocks") if isinstance(previous_entry.get("member_stocks"), list) else []
+                try:
+                    member_count = int(previous_entry.get("member_count", 0))
+                except (TypeError, ValueError):
+                    member_count = len(member_stocks)
+            enriched_rows.append(
+                {
+                    "industry_key": industry_key,
+                    "display_name": display_name,
+                    "index_type": index_type,
+                    "index_type_label": _get_ths_index_type_label(index_type),
+                    "member_count": max(0, member_count),
+                    "member_stocks": member_stocks,
+                }
+            )
+        live_rows = enriched_rows
+    if live_rows:
+        try:
+            _write_ths_index_snapshot(live_rows)
+        except Exception:
+            pass
+        return live_rows
+
+    if not prefer_local:
+        return _read_ths_index_snapshot()
+    return []
+
+
+def _upsert_ths_snapshot_entry(industry_key, display_name=None, member_stocks=None, member_count=None, index_type=None):
+    token = str(industry_key or "").strip().upper()
+    if not token:
+        return
+
+    rows = _read_ths_index_snapshot()
+    updated = False
+    normalized_member_stocks = []
+    if isinstance(member_stocks, list):
+        for item in member_stocks:
+            if not isinstance(item, dict):
+                continue
+            ts_code = _normalize_ts_code(item.get("ts_code"))
+            name = str(item.get("name") or "").strip()
+            if not ts_code:
+                continue
+            normalized_member_stocks.append({"ts_code": ts_code, "name": name})
+
+    for item in rows:
+        if not isinstance(item, dict):
+            continue
+        if str(item.get("industry_key") or "").strip().upper() != token:
+            continue
+        if display_name:
+            item["display_name"] = str(display_name).strip()
+        normalized_index_type = _normalize_ths_index_type(index_type)
+        if normalized_index_type:
+            item["index_type"] = normalized_index_type
+            item["index_type_label"] = _get_ths_index_type_label(normalized_index_type)
+        if member_stocks is not None:
+            item["member_stocks"] = normalized_member_stocks
+        if member_count is not None:
+            try:
+                item["member_count"] = max(0, int(member_count))
+            except (TypeError, ValueError):
+                item["member_count"] = len(normalized_member_stocks)
+        elif member_stocks is not None:
+            item["member_count"] = len(normalized_member_stocks)
+        updated = True
+        break
+
+    if not updated:
+        normalized_index_type = _normalize_ths_index_type(index_type)
+        rows.append(
+            {
+                "industry_key": token,
+                "display_name": str(display_name or token).strip(),
+                "index_type": normalized_index_type,
+                "index_type_label": _get_ths_index_type_label(normalized_index_type),
+                "member_count": int(member_count) if member_count is not None else len(normalized_member_stocks),
+                "member_stocks": normalized_member_stocks,
+            }
+        )
+
+    _write_ths_index_snapshot(rows)
+
+
+def _read_sw_rotation_snapshot(industry_type="sw", ths_index_type="ALL"):
+    path = _resolve_rotation_snapshot_path(industry_type, ths_index_type)
     if not path.exists():
         return None
     try:
@@ -5765,15 +6078,15 @@ def _read_sw_rotation_snapshot():
     return None
 
 
-def _write_sw_rotation_snapshot(payload):
-    path = _resolve_sw_rotation_snapshot_path()
+def _write_sw_rotation_snapshot(payload, industry_type="sw", ths_index_type="ALL"):
+    path = _resolve_rotation_snapshot_path(industry_type, ths_index_type)
     normalized = payload if isinstance(payload, dict) else {}
     path.write_text(json.dumps(normalized, ensure_ascii=False, indent=2, sort_keys=True), encoding="utf-8")
     return path
 
 
-def _read_sw_rotation_runs_payload():
-    path = _resolve_sw_rotation_runs_path()
+def _read_sw_rotation_runs_payload(industry_type="sw", ths_index_type="ALL"):
+    path = _resolve_rotation_runs_path(industry_type, ths_index_type)
     if not path.exists():
         return {"runs": []}
     try:
@@ -5789,8 +6102,8 @@ def _read_sw_rotation_runs_payload():
     return payload
 
 
-def _write_sw_rotation_runs_payload(payload):
-    path = _resolve_sw_rotation_runs_path()
+def _write_sw_rotation_runs_payload(payload, industry_type="sw", ths_index_type="ALL"):
+    path = _resolve_rotation_runs_path(industry_type, ths_index_type)
     normalized = payload if isinstance(payload, dict) else {"runs": []}
     if not isinstance(normalized.get("runs"), list):
         normalized["runs"] = []
@@ -5804,7 +6117,7 @@ def _new_sw_rotation_run_id():
     return f"rot_{datetime.datetime.now(datetime.timezone.utc).strftime('%Y%m%d%H%M%S')}_{token}"
 
 
-def _build_sw_rotation_run(snapshot, market, top_n, limit_count):
+def _build_sw_rotation_run(snapshot, market, top_n, limit_count, industry_type="sw", ths_index_type="ALL"):
     normalized = snapshot if isinstance(snapshot, dict) else {}
     top_candidates = normalized.get("top_candidates") if isinstance(normalized.get("top_candidates"), list) else []
     all_candidates = normalized.get("all_candidates") if isinstance(normalized.get("all_candidates"), list) else []
@@ -5831,6 +6144,8 @@ def _build_sw_rotation_run(snapshot, market, top_n, limit_count):
     return {
         "run_id": _new_sw_rotation_run_id(),
         "created_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+        "industry_type": _normalize_industry_universe_type(industry_type),
+        "ths_index_type": _normalize_rotation_ths_index_type(ths_index_type),
         "market": str(market or "CN").strip().upper() or "CN",
         "top_n": int(top_n or 10),
         "limit_count": int(limit_count or 0),
@@ -5843,19 +6158,145 @@ def _build_sw_rotation_run(snapshot, market, top_n, limit_count):
     }
 
 
-def _append_sw_rotation_run(snapshot, market, top_n, limit_count):
-    payload = _read_sw_rotation_runs_payload()
+def _append_sw_rotation_run(snapshot, market, top_n, limit_count, industry_type="sw", ths_index_type="ALL"):
+    payload = _read_sw_rotation_runs_payload(industry_type, ths_index_type)
     runs = payload.get("runs") if isinstance(payload.get("runs"), list) else []
     run_record = _build_sw_rotation_run(
         snapshot=snapshot,
         market=market,
         top_n=top_n,
         limit_count=limit_count,
+        industry_type=industry_type,
+        ths_index_type=ths_index_type,
     )
     runs.append(run_record)
     payload["runs"] = runs
-    _write_sw_rotation_runs_payload(payload)
+    _write_sw_rotation_runs_payload(payload, industry_type, ths_index_type)
     return run_record
+
+
+def _compute_generic_rotation_candidates(industry_type="ths", market="CN", top_n=10, limit_count=None, ths_index_type="ALL"):
+    normalized_type = _normalize_industry_universe_type(industry_type)
+    entries = []
+
+    if normalized_type == "ths":
+        normalized_ths_index_type = _normalize_rotation_ths_index_type(ths_index_type)
+        try:
+            pro = get_tushare_pro()
+        except Exception:
+            pro = None
+        for row in _load_ths_index_rows(pro=pro, prefer_local=True):
+            if not isinstance(row, dict):
+                continue
+            key = str(row.get("industry_key") or "").strip().upper()
+            name = str(row.get("display_name") or "").strip()
+            row_index_type = _normalize_ths_index_type(row.get("index_type"))
+            try:
+                count = int(row.get("member_count") or 0)
+            except (TypeError, ValueError):
+                count = 0
+            if normalized_ths_index_type != "ALL" and row_index_type != normalized_ths_index_type:
+                continue
+            if key and name:
+                entries.append({"industry_code": key, "industry_name": name, "member_count": max(0, count)})
+
+    elif normalized_type == "valuation_variant":
+        persisted_qs = IndustryVariantCache.objects.filter(market=market).order_by("-member_count", "variant_key")
+        if persisted_qs.exists():
+            for row in persisted_qs.values("variant_key", "display_name", "member_count"):
+                key = str(row.get("variant_key") or "").strip()
+                name = str(row.get("display_name") or key).strip()
+                count = int(row.get("member_count") or 0)
+                if key and name:
+                    entries.append({"industry_code": key, "industry_name": name, "member_count": max(0, count)})
+        else:
+            variant_qs = (
+                StockValuationSnapshotLatest.objects.filter(market=market)
+                .exclude(valuation_variant__isnull=True)
+                .exclude(valuation_variant="")
+                .values("valuation_variant", "industry_name")
+                .annotate(member_count=Count("ts_code", distinct=True))
+                .order_by("-member_count", "valuation_variant")
+            )
+            for row in variant_qs:
+                key = str(row.get("valuation_variant") or "").strip()
+                name = str(row.get("industry_name") or key).strip()
+                count = int(row.get("member_count") or 0)
+                if key and name:
+                    entries.append({"industry_code": key, "industry_name": name, "member_count": max(0, count)})
+
+    else:
+        corp_qs = (
+            Corporation.objects.filter(list_status="L")
+            .exclude(industry__isnull=True)
+            .exclude(industry__name__isnull=True)
+            .exclude(industry__name="")
+            .values("industry__name")
+            .annotate(member_count=Count("id"))
+            .order_by("-member_count", "industry__name")
+        )
+        for row in corp_qs:
+            name = str(row.get("industry__name") or "").strip()
+            count = int(row.get("member_count") or 0)
+            if name:
+                entries.append({"industry_code": name, "industry_name": name, "member_count": max(0, count)})
+
+    if isinstance(limit_count, int) and limit_count > 0:
+        entries = entries[:limit_count]
+
+    total = len(entries)
+    candidates = []
+    for idx, item in enumerate(entries):
+        member_count = int(item.get("member_count") or 0)
+        rank_score = 100.0 if total <= 1 else max(0.0, 100.0 - (idx * 100.0 / (total - 1)))
+        size_score = _clamp_score_0_100(member_count / 50.0)
+        rotation_score = round(float(rank_score * 0.7 + size_score * 0.3), 4)
+        candidates.append(
+            {
+                "industry_code": str(item.get("industry_code") or "").strip(),
+                "industry_name": str(item.get("industry_name") or "").strip(),
+                "regime": "none",
+                "rotation_score": rotation_score,
+                "entry_close": None,
+                "score_breakdown": {
+                    "valuation": round(float(size_score), 4),
+                    "momentum": round(float(rank_score), 4),
+                    "risk": 50.0,
+                    "style": 50.0,
+                },
+                "metrics": {
+                    "member_count": member_count,
+                },
+                "latest_trade_date": datetime.date.today().strftime("%Y-%m-%d"),
+            }
+        )
+
+    top_n = max(1, min(100, int(top_n or 10)))
+    return {
+        "industry_type": normalized_type,
+        "asof_date": datetime.date.today().strftime("%Y-%m-%d"),
+        "scoring_version": f"{normalized_type}_rotation_v1_heuristic",
+        "generated_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+        "total_candidates": len(candidates),
+        "top_n": top_n,
+        "top_candidates": candidates[:top_n],
+        "all_candidates": candidates,
+    }
+
+
+def _compute_industry_rotation_candidates(industry_type="sw", market="CN", top_n=10, limit_count=None, ths_index_type="ALL"):
+    normalized_type = _normalize_industry_universe_type(industry_type)
+    if normalized_type == "sw":
+        payload = _compute_sw_rotation_candidates(market=market, top_n=top_n, limit_count=limit_count)
+        payload["industry_type"] = "sw"
+        return payload
+    return _compute_generic_rotation_candidates(
+        industry_type=normalized_type,
+        market=market,
+        top_n=top_n,
+        limit_count=limit_count,
+        ths_index_type=ths_index_type,
+    )
 
 
 def _parse_rotation_windows(raw_windows):
@@ -6226,16 +6667,30 @@ def _compute_sw_rotation_candidates(market="CN", top_n=10, limit_count=None):
 @api_view(["GET"])
 def get_industry_universe_rotation_latest(request):
     market = str(request.query_params.get("market", "CN") if hasattr(request, "query_params") else "CN").strip().upper() or "CN"
+    industry_type = _normalize_industry_universe_type(
+        request.query_params.get("industry_type", "sw") if hasattr(request, "query_params") else "sw"
+    )
+    ths_index_type = _normalize_rotation_ths_index_type(
+        request.query_params.get("ths_index_type", "ALL") if hasattr(request, "query_params") else "ALL"
+    )
+    if industry_type != "ths":
+        ths_index_type = "ALL"
     try:
         top_n = int(request.query_params.get("top_n", "10") if hasattr(request, "query_params") else 10)
     except (TypeError, ValueError):
         top_n = 10
     top_n = max(1, min(100, top_n))
 
-    snapshot = _read_sw_rotation_snapshot()
+    snapshot = _read_sw_rotation_snapshot(industry_type, ths_index_type)
     if not isinstance(snapshot, dict) or not isinstance(snapshot.get("all_candidates"), list):
-        snapshot = _compute_sw_rotation_candidates(market=market, top_n=top_n, limit_count=120)
-        _write_sw_rotation_snapshot(snapshot)
+        snapshot = _compute_industry_rotation_candidates(
+            industry_type=industry_type,
+            market=market,
+            top_n=top_n,
+            limit_count=120,
+            ths_index_type=ths_index_type,
+        )
+        _write_sw_rotation_snapshot(snapshot, industry_type, ths_index_type)
 
     all_candidates = snapshot.get("all_candidates") if isinstance(snapshot.get("all_candidates"), list) else []
 
@@ -6243,7 +6698,7 @@ def get_industry_universe_rotation_latest(request):
     latest_run_record = None
     fallback_candidates = []
     fallback_meta = {}
-    runs_payload = _read_sw_rotation_runs_payload()
+    runs_payload = _read_sw_rotation_runs_payload(industry_type, ths_index_type)
     runs = runs_payload.get("runs") if isinstance(runs_payload.get("runs"), list) else []
     if runs:
         ordered_runs = sorted(
@@ -6292,6 +6747,8 @@ def get_industry_universe_rotation_latest(request):
             "data": top_candidates,
             "meta": {
                 "market": market,
+                "industry_type": industry_type,
+                "ths_index_type": ths_index_type,
                 "top_n": top_n,
                 "total": len(all_candidates),
                 "asof_date": snapshot.get("asof_date"),
@@ -6308,6 +6765,10 @@ def get_industry_universe_rotation_latest(request):
 def recompute_industry_universe_rotation(request):
     payload = request.data if isinstance(request.data, dict) else {}
     market = str(payload.get("market") or "CN").strip().upper() or "CN"
+    industry_type = _normalize_industry_universe_type(payload.get("industry_type") or "sw")
+    ths_index_type = _normalize_rotation_ths_index_type(payload.get("ths_index_type") or "ALL")
+    if industry_type != "ths":
+        ths_index_type = "ALL"
     try:
         top_n = int(payload.get("top_n") or 10)
     except (TypeError, ValueError):
@@ -6320,17 +6781,21 @@ def recompute_industry_universe_rotation(request):
     top_n = max(1, min(100, top_n))
     limit_count = max(top_n, min(500, max(1, limit_count)))
 
-    snapshot = _compute_sw_rotation_candidates(
+    snapshot = _compute_industry_rotation_candidates(
+        industry_type=industry_type,
         market=market,
         top_n=top_n,
         limit_count=limit_count,
+        ths_index_type=ths_index_type,
     )
-    output_path = _write_sw_rotation_snapshot(snapshot)
+    output_path = _write_sw_rotation_snapshot(snapshot, industry_type, ths_index_type)
     run_record = _append_sw_rotation_run(
         snapshot=snapshot,
         market=market,
         top_n=top_n,
         limit_count=limit_count,
+        industry_type=industry_type,
+        ths_index_type=ths_index_type,
     )
 
     return Response(
@@ -6338,13 +6803,15 @@ def recompute_industry_universe_rotation(request):
             "data": snapshot.get("top_candidates") or [],
             "meta": {
                 "market": market,
+                "industry_type": industry_type,
+                "ths_index_type": ths_index_type,
                 "top_n": top_n,
                 "total": int(snapshot.get("total_candidates") or 0),
                 "asof_date": snapshot.get("asof_date"),
                 "generated_at": snapshot.get("generated_at"),
                 "scoring_version": snapshot.get("scoring_version") or "sw_rotation_v1",
                 "output_path": str(output_path),
-                "runs_path": str(_resolve_sw_rotation_runs_path()),
+                "runs_path": str(_resolve_rotation_runs_path(industry_type, ths_index_type)),
                 "source": "recomputed",
                 "run_created": True,
                 "run_id": run_record.get("run_id"),
@@ -6356,6 +6823,14 @@ def recompute_industry_universe_rotation(request):
 @never_cache
 @api_view(["GET"])
 def get_industry_universe_rotation_runs(request):
+    industry_type = _normalize_industry_universe_type(
+        request.query_params.get("industry_type", "sw") if hasattr(request, "query_params") else "sw"
+    )
+    ths_index_type = _normalize_rotation_ths_index_type(
+        request.query_params.get("ths_index_type", "ALL") if hasattr(request, "query_params") else "ALL"
+    )
+    if industry_type != "ths":
+        ths_index_type = "ALL"
     try:
         limit = int(request.query_params.get("limit", "20") if hasattr(request, "query_params") else 20)
     except (TypeError, ValueError):
@@ -6367,7 +6842,7 @@ def get_industry_universe_rotation_runs(request):
     limit = max(1, min(200, limit))
     from_index = max(0, from_index)
 
-    payload = _read_sw_rotation_runs_payload()
+    payload = _read_sw_rotation_runs_payload(industry_type, ths_index_type)
     runs = payload.get("runs") if isinstance(payload.get("runs"), list) else []
     ordered = sorted(runs, key=lambda row: str((row or {}).get("created_at") or ""), reverse=True)
     sliced = ordered[from_index:from_index + limit]
@@ -6382,6 +6857,8 @@ def get_industry_universe_rotation_runs(request):
                 "run_id": str(row.get("run_id") or "").strip(),
                 "created_at": str(row.get("created_at") or "").strip(),
                 "asof_date": str(row.get("asof_date") or "").strip(),
+                "industry_type": str(row.get("industry_type") or industry_type).strip() or industry_type,
+                "ths_index_type": str(row.get("ths_index_type") or ths_index_type).strip().upper() or ths_index_type,
                 "market": str(row.get("market") or "").strip(),
                 "top_n": int(row.get("top_n") or len(top_candidates) or 0),
                 "scoring_version": str(row.get("scoring_version") or "").strip(),
@@ -6400,6 +6877,8 @@ def get_industry_universe_rotation_runs(request):
             "data": rows,
             "meta": {
                 "total": len(ordered),
+                "industry_type": industry_type,
+                "ths_index_type": ths_index_type,
                 "from_index": from_index,
                 "limit": limit,
             },
@@ -6413,9 +6892,17 @@ def get_industry_universe_rotation_runs(request):
 @api_view(["GET"])
 def get_industry_universe_rotation_run_detail(request, run_id):
     normalized_run_id = str(run_id or "").strip()
+    industry_type = _normalize_industry_universe_type(
+        request.query_params.get("industry_type", "sw") if hasattr(request, "query_params") else "sw"
+    )
+    ths_index_type = _normalize_rotation_ths_index_type(
+        request.query_params.get("ths_index_type", "ALL") if hasattr(request, "query_params") else "ALL"
+    )
+    if industry_type != "ths":
+        ths_index_type = "ALL"
     windows = _parse_rotation_windows(request.query_params.get("windows") if hasattr(request, "query_params") else None)
 
-    payload = _read_sw_rotation_runs_payload()
+    payload = _read_sw_rotation_runs_payload(industry_type, ths_index_type)
     runs = payload.get("runs") if isinstance(payload.get("runs"), list) else []
     matched_index = None
     matched_run = None
@@ -6448,38 +6935,51 @@ def get_industry_universe_rotation_run_detail(request, run_id):
             "source": "precomputed",
         }
     else:
-        try:
-            from prediction.management.commands.refresh_sw_rotation_run_evaluation_daily import _build_run_evaluation
+        run_industry_type = _normalize_industry_universe_type(matched_run.get("industry_type") or industry_type)
+        if run_industry_type == "sw":
+            try:
+                from prediction.management.commands.refresh_sw_rotation_run_evaluation_daily import _build_run_evaluation
 
-            evaluated = _build_run_evaluation(matched_run, windows=windows)
-            matched_run["last_evaluation"] = evaluated.get("last_evaluation") or {}
-            matched_run["evaluation_daily"] = evaluated.get("evaluation_daily") or {}
+                evaluated = _build_run_evaluation(matched_run, windows=windows)
+                matched_run["last_evaluation"] = evaluated.get("last_evaluation") or {}
+                matched_run["evaluation_daily"] = evaluated.get("evaluation_daily") or {}
+                evaluation = {
+                    "windows": windows,
+                    "topn_summary": (evaluated.get("last_evaluation") or {}).get("topn_summary") or {},
+                    "benchmark_summary": (evaluated.get("last_evaluation") or {}).get("benchmark_summary") or {},
+                    "alpha_summary": (evaluated.get("last_evaluation") or {}).get("alpha_summary") or {},
+                    "hit_ratio_summary": (evaluated.get("last_evaluation") or {}).get("hit_ratio_summary") or {},
+                    "computed_at": (evaluated.get("last_evaluation") or {}).get("computed_at"),
+                    "daily_series": (evaluated.get("evaluation_daily") or {}).get("series") if isinstance((evaluated.get("evaluation_daily") or {}).get("series"), list) else [],
+                    "source": "realtime_backfill",
+                }
+            except Exception:
+                evaluation = _evaluate_rotation_run_payload(matched_run, windows=windows)
+                evaluation["daily_series"] = cached_series
+                evaluation["source"] = "realtime"
+                matched_run["last_evaluation"] = {
+                    "windows": windows,
+                    "computed_at": evaluation.get("computed_at"),
+                    "topn_summary": evaluation.get("topn_summary") or {},
+                    "benchmark_summary": evaluation.get("benchmark_summary") or {},
+                    "alpha_summary": evaluation.get("alpha_summary") or {},
+                    "hit_ratio_summary": evaluation.get("hit_ratio_summary") or {},
+                }
+        else:
             evaluation = {
                 "windows": windows,
-                "topn_summary": (evaluated.get("last_evaluation") or {}).get("topn_summary") or {},
-                "benchmark_summary": (evaluated.get("last_evaluation") or {}).get("benchmark_summary") or {},
-                "alpha_summary": (evaluated.get("last_evaluation") or {}).get("alpha_summary") or {},
-                "hit_ratio_summary": (evaluated.get("last_evaluation") or {}).get("hit_ratio_summary") or {},
-                "computed_at": (evaluated.get("last_evaluation") or {}).get("computed_at"),
-                "daily_series": (evaluated.get("evaluation_daily") or {}).get("series") if isinstance((evaluated.get("evaluation_daily") or {}).get("series"), list) else [],
-                "source": "realtime_backfill",
-            }
-        except Exception:
-            evaluation = _evaluate_rotation_run_payload(matched_run, windows=windows)
-            evaluation["daily_series"] = cached_series
-            evaluation["source"] = "realtime"
-            matched_run["last_evaluation"] = {
-                "windows": windows,
-                "computed_at": evaluation.get("computed_at"),
-                "topn_summary": evaluation.get("topn_summary") or {},
-                "benchmark_summary": evaluation.get("benchmark_summary") or {},
-                "alpha_summary": evaluation.get("alpha_summary") or {},
-                "hit_ratio_summary": evaluation.get("hit_ratio_summary") or {},
+                "topn_summary": {},
+                "benchmark_summary": {},
+                "alpha_summary": {},
+                "hit_ratio_summary": {},
+                "computed_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+                "daily_series": [],
+                "source": "not_supported_for_type",
             }
     if matched_index is not None:
         runs[matched_index] = matched_run
         payload["runs"] = runs
-        _write_sw_rotation_runs_payload(payload)
+        _write_sw_rotation_runs_payload(payload, industry_type, ths_index_type)
 
     response = Response(
         {
@@ -6488,6 +6988,8 @@ def get_industry_universe_rotation_run_detail(request, run_id):
                     "run_id": str(matched_run.get("run_id") or "").strip(),
                     "created_at": str(matched_run.get("created_at") or "").strip(),
                     "asof_date": str(matched_run.get("asof_date") or "").strip(),
+                    "industry_type": str(matched_run.get("industry_type") or industry_type).strip() or industry_type,
+                    "ths_index_type": str(matched_run.get("ths_index_type") or ths_index_type).strip().upper() or ths_index_type,
                     "market": str(matched_run.get("market") or "").strip(),
                     "top_n": int(matched_run.get("top_n") or 0),
                     "scoring_version": str(matched_run.get("scoring_version") or "").strip(),
@@ -6497,6 +6999,8 @@ def get_industry_universe_rotation_run_detail(request, run_id):
             },
             "meta": {
                 "run_id": normalized_run_id,
+                "industry_type": industry_type,
+                "ths_index_type": ths_index_type,
                 "windows": windows,
             },
         }
@@ -6508,10 +7012,18 @@ def get_industry_universe_rotation_run_detail(request, run_id):
 @api_view(["DELETE"])
 def delete_industry_universe_rotation_run(request, run_id):
     normalized_run_id = str(run_id or "").strip()
+    industry_type = _normalize_industry_universe_type(
+        request.query_params.get("industry_type", "sw") if hasattr(request, "query_params") else "sw"
+    )
+    ths_index_type = _normalize_rotation_ths_index_type(
+        request.query_params.get("ths_index_type", "ALL") if hasattr(request, "query_params") else "ALL"
+    )
+    if industry_type != "ths":
+        ths_index_type = "ALL"
     if not normalized_run_id:
         return Response({"error": "missing run_id"}, status=400)
 
-    payload = _read_sw_rotation_runs_payload()
+    payload = _read_sw_rotation_runs_payload(industry_type, ths_index_type)
     runs = payload.get("runs") if isinstance(payload.get("runs"), list) else []
     next_runs = []
     deleted = False
@@ -6527,7 +7039,7 @@ def delete_industry_universe_rotation_run(request, run_id):
         return Response({"error": f"rotation run not found: {normalized_run_id}"}, status=404)
 
     payload["runs"] = next_runs
-    _write_sw_rotation_runs_payload(payload)
+    _write_sw_rotation_runs_payload(payload, industry_type, ths_index_type)
 
     return Response(
         {
@@ -6837,9 +7349,243 @@ def get_sw_industry_constituents(request, industry_code, from_index, to_index):
 
 def _normalize_industry_universe_type(value):
     normalized = str(value or "sw").strip().lower() or "sw"
-    if normalized in {"sw", "valuation_variant", "corp_industry"}:
+    if normalized in {"sw", "ths", "valuation_variant", "corp_industry"}:
         return normalized
     return "sw"
+
+
+def _to_trade_date_text(raw_value):
+    trade_date_raw = str(raw_value or "").strip()
+    if len(trade_date_raw) == 8 and trade_date_raw.isdigit():
+        return f"{trade_date_raw[0:4]}-{trade_date_raw[4:6]}-{trade_date_raw[6:8]}"
+    return trade_date_raw
+
+
+def _pick_first_positive_metric(row, field_candidates):
+    for field_name in field_candidates:
+        value = _as_float_or_none(row.get(field_name))
+        if value is not None and value > 0:
+            return float(value)
+    return None
+
+
+def _normalize_ths_index_type(value):
+    token = str(value or "").strip().upper()
+    if token in THS_INDEX_TYPE_LABEL_MAP:
+        return token
+    return ""
+
+
+def _get_ths_index_type_label(index_type):
+    token = _normalize_ths_index_type(index_type)
+    return str(THS_INDEX_TYPE_LABEL_MAP.get(token) or "")
+
+
+def _fetch_ths_index_rows(pro):
+    if pro is None or not hasattr(pro, "ths_index"):
+        return []
+
+    frame = None
+    for call_kwargs in (
+        {"fields": "ts_code,name,type"},
+        {"fields": "ts_code,name"},
+        {},
+    ):
+        try:
+            frame = pro.ths_index(**call_kwargs)
+            break
+        except TypeError:
+            continue
+        except Exception:
+            frame = None
+            break
+
+    if frame is None or getattr(frame, "empty", True):
+        return []
+    rows = []
+    for _, row in frame.fillna("").iterrows():
+        index_code = str(row.get("ts_code") or "").strip().upper()
+        display_name = str(row.get("name") or "").strip()
+        index_type = _normalize_ths_index_type(row.get("type") or row.get("index_type"))
+        if not index_code or not display_name:
+            continue
+        rows.append(
+            {
+                "industry_key": index_code,
+                "display_name": display_name,
+                "index_type": index_type,
+                "index_type_label": _get_ths_index_type_label(index_type),
+            }
+        )
+    return rows
+
+
+def _normalize_ts_code(raw_code):
+    text = str(raw_code or "").strip().upper()
+    if not text:
+        return ""
+    if "." in text:
+        return text
+    if text.startswith(("6", "9")):
+        return f"{text}.SH"
+    if text.startswith(("0", "3")):
+        return f"{text}.SZ"
+    if text.startswith(("4", "8")):
+        return f"{text}.BJ"
+    return text
+
+
+def _extract_ths_member_code(row):
+    # Different tushare client versions may expose different member code columns.
+    for field_name in ("con_code", "code", "symbol", "member_code"):
+        normalized = _normalize_ts_code(row.get(field_name))
+        if normalized and "." in normalized:
+            return normalized
+
+    # Fallback: some payloads only provide ts_code; ignore THS index code (*.TI).
+    ts_value = _normalize_ts_code(row.get("ts_code"))
+    if ts_value and "." in ts_value and not ts_value.endswith(".TI"):
+        return ts_value
+    return ""
+
+
+def _extract_ths_member_name(row):
+    for field_name in ("name", "con_name", "stock_name", "security_name"):
+        text = str(row.get(field_name) or "").strip()
+        if text:
+            return text
+    return ""
+
+
+def _fetch_ths_member_rows(pro, industry_key):
+    key = str(industry_key or "").strip().upper()
+    if not key or pro is None or not hasattr(pro, "ths_member"):
+        return []
+
+    candidates = [key]
+    if key.endswith(".TI"):
+        candidates.append(key.split(".", 1)[0])
+    elif "." not in key:
+        candidates.append(f"{key}.TI")
+
+    for candidate in candidates:
+        frame = None
+        for call_kwargs in (
+            {"ts_code": candidate, "fields": "ts_code,con_code,code,symbol,name,con_name,stock_name"},
+            {"ts_code": candidate},
+        ):
+            try:
+                frame = pro.ths_member(**call_kwargs)
+                break
+            except TypeError:
+                continue
+            except Exception:
+                frame = None
+                break
+
+        if frame is None or getattr(frame, "empty", True):
+            continue
+
+        items = []
+        for _, row in frame.fillna("").iterrows():
+            ts_code = _extract_ths_member_code(row)
+            if not ts_code:
+                continue
+            items.append({"ts_code": ts_code, "name": _extract_ths_member_name(row)})
+
+        dedup_map = {}
+        for item in items:
+            code = str(item.get("ts_code") or "").strip().upper()
+            if not code:
+                continue
+            existing = dedup_map.get(code)
+            if existing is None:
+                dedup_map[code] = {"ts_code": code, "name": str(item.get("name") or "").strip()}
+                continue
+            if not existing.get("name"):
+                existing["name"] = str(item.get("name") or "").strip()
+
+        deduped = sorted(dedup_map.values(), key=lambda item: str(item.get("ts_code") or ""))
+        if deduped:
+            return deduped
+    return []
+
+
+def _fetch_ths_member_codes(pro, industry_key):
+    rows = _fetch_ths_member_rows(pro, industry_key)
+    return [str(item.get("ts_code") or "").strip().upper() for item in rows if str(item.get("ts_code") or "").strip()]
+
+
+def _get_ths_member_count(pro, industry_key):
+    normalized_key = str(industry_key or "").strip().upper()
+    if not normalized_key:
+        return 0
+    cache_key = f"ths_member_count:{normalized_key}"
+    cached = cache.get(cache_key)
+    if isinstance(cached, int):
+        return max(0, cached)
+    count = len(_fetch_ths_member_rows(pro, normalized_key))
+    cache.set(cache_key, int(count), timeout=900)
+    return int(count)
+
+
+def _get_ths_snapshot_entry(industry_key):
+    token = str(industry_key or "").strip().upper()
+    if not token:
+        return None
+    for item in _read_ths_index_snapshot():
+        if str(item.get("industry_key") or "").strip().upper() == token:
+            return item if isinstance(item, dict) else None
+    return None
+
+
+def _get_ths_snapshot_member_rows(industry_key):
+    entry = _get_ths_snapshot_entry(industry_key)
+    rows = entry.get("member_stocks") if isinstance(entry, dict) and isinstance(entry.get("member_stocks"), list) else []
+    normalized_rows = []
+    for item in rows:
+        if not isinstance(item, dict):
+            continue
+        ts_code = _normalize_ts_code(item.get("ts_code"))
+        name = str(item.get("name") or "").strip()
+        if not ts_code:
+            continue
+        normalized_rows.append({"ts_code": ts_code, "name": name})
+    return normalized_rows
+
+
+def _fetch_ths_daily_frame(pro, industry_code, start_date, end_date):
+    if pro is None or not hasattr(pro, "ths_daily"):
+        return None
+
+    for call_kwargs in (
+        {
+            "ts_code": industry_code,
+            "start_date": start_date,
+            "end_date": end_date,
+            "fields": "ts_code,trade_date,close,pe_ttm,pb_mrq,pe,pb",
+        },
+        {
+            "ts_code": industry_code,
+            "start_date": start_date,
+            "end_date": end_date,
+            "fields": "ts_code,trade_date,close",
+        },
+        {
+            "ts_code": industry_code,
+            "start_date": start_date,
+            "end_date": end_date,
+        },
+    ):
+        try:
+            frame = pro.ths_daily(**call_kwargs)
+            if frame is not None:
+                return frame
+        except TypeError:
+            continue
+        except Exception:
+            continue
+    return None
 
 
 def _apply_constituent_market_filter(qs, market_filter):
@@ -6892,6 +7638,36 @@ def _resolve_corporation_queryset_by_industry_universe(industry_type, industry_k
         if not ts_codes:
             return Corporation.objects.none(), display_name
         return Corporation.objects.filter(list_status="L", ts_code__in=ts_codes), display_name
+
+    if normalized_type == "ths":
+        token = str(industry_key or "").strip().upper()
+        if not token:
+            return Corporation.objects.none(), ""
+
+        display_name = token
+        try:
+            pro = get_tushare_pro()
+            for item in _load_ths_index_rows(pro=pro, prefer_local=True):
+                if str(item.get("industry_key") or "").strip().upper() == token:
+                    display_name = str(item.get("display_name") or token)
+                    break
+            snapshot_rows = _get_ths_snapshot_member_rows(token)
+            member_codes = [str(row.get("ts_code") or "").strip().upper() for row in snapshot_rows if str(row.get("ts_code") or "").strip()]
+            if not member_codes:
+                member_codes = _fetch_ths_member_codes(pro, token)
+        except Exception:
+            member_codes = []
+
+        if not member_codes:
+            fuzzy_name = str(display_name or "").strip()
+            if fuzzy_name:
+                fallback_qs = Corporation.objects.filter(list_status="L").filter(
+                    Q(sw_l3_name=fuzzy_name) | Q(industry__name=fuzzy_name)
+                )
+                if fallback_qs.exists():
+                    return fallback_qs, display_name
+            return Corporation.objects.none(), display_name
+        return Corporation.objects.filter(list_status="L", ts_code__in=member_codes), display_name
 
     industry_name = token
     return Corporation.objects.filter(list_status="L", industry__name=industry_name), industry_name
@@ -7060,11 +7836,12 @@ def get_industry_universe_types(request):
     return Response(
         {
             "data": [
-                {"industry_type": "sw", "label": "SWΦíîΣ╕Ü", "enabled": True},
-                {"industry_type": "valuation_variant", "label": "ΦíîΣ╕ÜσÅÿΣ╜ô", "enabled": True},
-                {"industry_type": "corp_industry", "label": "σƒ║µ£¼Σ┐íµü»ΦíîΣ╕Ü", "enabled": True},
+                {"industry_type": "sw", "label": "SW行业", "enabled": True},
+                {"industry_type": "ths", "label": "THS行业", "enabled": True},
+                {"industry_type": "valuation_variant", "label": "行业变体", "enabled": True},
+                {"industry_type": "corp_industry", "label": "基本信息行业", "enabled": True},
             ],
-            "meta": {"total": 3},
+            "meta": {"total": 4},
         }
     )
 
@@ -7077,6 +7854,9 @@ def get_industry_universe_list(request):
         request.query_params.get("industry_type", "sw") if hasattr(request, "query_params") else "sw"
     )
     keyword = str(request.query_params.get("keyword", "") if hasattr(request, "query_params") else "").strip().lower()
+    ths_index_type = _normalize_ths_index_type(
+        request.query_params.get("ths_index_type", "") if hasattr(request, "query_params") else ""
+    )
 
     try:
         if industry_type == "sw":
@@ -7116,6 +7896,122 @@ def get_industry_universe_list(request):
                     }
                 )
             return Response({"data": data, "meta": {"industry_type": industry_type, "total": len(data), "market": market, "level": level}})
+
+        if industry_type == "ths":
+            try:
+                pro = get_tushare_pro()
+                ths_rows = _load_ths_index_rows(pro=pro, prefer_local=True)
+            except Exception:
+                pro = None
+                ths_rows = _load_ths_index_rows(pro=None, prefer_local=True)
+
+            if pro is not None and ths_rows:
+                needs_snapshot_refresh = any(
+                    (
+                        "member_count" not in row
+                        or "member_stocks" not in row
+                        or not _normalize_ths_index_type(row.get("index_type"))
+                    )
+                    for row in ths_rows
+                    if isinstance(row, dict)
+                )
+                if needs_snapshot_refresh:
+                    refreshed_rows = []
+                    for row in ths_rows:
+                        if not isinstance(row, dict):
+                            continue
+                        industry_key = str(row.get("industry_key") or "").strip().upper()
+                        display_name = str(row.get("display_name") or "").strip()
+                        if not industry_key or not display_name:
+                            continue
+                        fetched_member_stocks = _fetch_ths_member_rows(pro, industry_key)
+                        previous_member_stocks = row.get("member_stocks") if isinstance(row.get("member_stocks"), list) else []
+                        if fetched_member_stocks:
+                            member_stocks = fetched_member_stocks
+                            member_count = len(fetched_member_stocks)
+                        else:
+                            member_stocks = previous_member_stocks
+                            try:
+                                member_count = int(row.get("member_count", 0))
+                            except (TypeError, ValueError):
+                                member_count = len(member_stocks)
+                        refreshed_rows.append(
+                            {
+                                "industry_key": industry_key,
+                                "display_name": display_name,
+                                "index_type": _normalize_ths_index_type(row.get("index_type")),
+                                "index_type_label": str(
+                                    row.get("index_type_label") or _get_ths_index_type_label(row.get("index_type"))
+                                ).strip(),
+                                "member_count": max(0, member_count),
+                                "member_stocks": member_stocks,
+                            }
+                        )
+                    if refreshed_rows:
+                        ths_rows = refreshed_rows
+                        try:
+                            _write_ths_index_snapshot(ths_rows)
+                        except Exception:
+                            pass
+
+            member_count_map = {}
+            try:
+                Corporation._meta.get_field("ths_code")
+                member_count_map = {
+                    str(item.get("ths_code") or "").strip().upper(): int(item.get("count") or 0)
+                    for item in (
+                        Corporation.objects.exclude(ths_code__isnull=True)
+                        .exclude(ths_code="")
+                        .values("ths_code")
+                        .annotate(count=Count("id"))
+                    )
+                }
+            except Exception:
+                member_count_map = {}
+            data = []
+            for row in ths_rows:
+                industry_key = str(row.get("industry_key") or "").strip().upper()
+                display_name = str(row.get("display_name") or "").strip()
+                index_type = _normalize_ths_index_type(row.get("index_type"))
+                index_type_label = str(row.get("index_type_label") or _get_ths_index_type_label(index_type)).strip()
+                snapshot_member_count = row.get("member_count")
+                try:
+                    snapshot_member_count = int(snapshot_member_count)
+                except (TypeError, ValueError):
+                    snapshot_member_count = None
+                if not industry_key or not display_name:
+                    continue
+                if ths_index_type and index_type != ths_index_type:
+                    continue
+                if keyword and keyword not in industry_key.lower() and keyword not in display_name.lower():
+                    continue
+                data.append(
+                    {
+                        "industry_type": "ths",
+                        "industry_key": industry_key,
+                        "display_name": display_name,
+                        "index_type": index_type,
+                        "index_type_label": index_type_label,
+                        "member_count": int(
+                            member_count_map.get(
+                                industry_key,
+                                snapshot_member_count if snapshot_member_count is not None else _get_ths_member_count(pro, industry_key),
+                            )
+                        ),
+                        "extra_label": f"THS {index_type_label}".strip(),
+                    }
+                )
+            return Response(
+                {
+                    "data": data,
+                    "meta": {
+                        "industry_type": industry_type,
+                        "total": len(data),
+                        "market": market,
+                        "ths_index_type": ths_index_type or "ALL",
+                    },
+                }
+            )
 
         if industry_type == "valuation_variant":
             data = []
@@ -7322,6 +8218,116 @@ def get_industry_universe_history(request):
             cache.set(cache_key, payload, timeout=120)
             return Response(payload)
 
+        if industry_type == "ths":
+            industry_code = str(industry_key or "").strip().upper()
+            industry_name = industry_code
+            today = datetime.date.today()
+            start_date = (today - lookback_delta).strftime("%Y%m%d") if lookback_delta is not None else "19900101"
+            end_date = today.strftime("%Y%m%d")
+            cache_key = f"ths_history:universe:{market}:{industry_code}:{period}:{metric}"
+            cached_payload = cache.get(cache_key)
+            if cached_payload:
+                return Response(cached_payload)
+
+            pro = get_tushare_pro()
+            for item in _load_ths_index_rows(pro=pro, prefer_local=True):
+                if str(item.get("industry_key") or "").strip().upper() == industry_code:
+                    industry_name = str(item.get("display_name") or industry_code)
+                    break
+            ths_df = _fetch_ths_daily_frame(pro, industry_code, start_date, end_date)
+
+            if ths_df is None or getattr(ths_df, "empty", True):
+                snapshot_rows = _get_ths_snapshot_member_rows(industry_code)
+                member_codes = [str(row.get("ts_code") or "").strip().upper() for row in snapshot_rows if str(row.get("ts_code") or "").strip()]
+                if not member_codes:
+                    member_codes = _fetch_ths_member_codes(pro, industry_code)
+                rows, history_meta = _build_industry_universe_median_history(
+                    member_codes,
+                    period_delta=lookback_delta,
+                    metric=metric,
+                )
+                payload = {
+                    "data": rows,
+                    "meta": {
+                        "industry_type": "ths",
+                        "industry_key": industry_key,
+                        "industry_code": industry_code,
+                        "industry_name": industry_name,
+                        "metric": metric,
+                        "period": period,
+                        "source": "member_median",
+                        **history_meta,
+                    },
+                }
+                cache.set(cache_key, payload, timeout=120)
+                return Response(payload)
+
+            frame = ths_df.fillna("").copy()
+            if "trade_date" not in frame.columns:
+                snapshot_rows = _get_ths_snapshot_member_rows(industry_code)
+                member_codes = [str(row.get("ts_code") or "").strip().upper() for row in snapshot_rows if str(row.get("ts_code") or "").strip()]
+                if not member_codes:
+                    member_codes = _fetch_ths_member_codes(pro, industry_code)
+                rows, history_meta = _build_industry_universe_median_history(
+                    member_codes,
+                    period_delta=lookback_delta,
+                    metric=metric,
+                )
+                payload = {
+                    "data": rows,
+                    "meta": {
+                        "industry_type": "ths",
+                        "industry_key": industry_key,
+                        "industry_code": industry_code,
+                        "industry_name": industry_name,
+                        "metric": metric,
+                        "period": period,
+                        "source": "member_median",
+                        **history_meta,
+                    },
+                }
+                cache.set(cache_key, payload, timeout=120)
+                return Response(payload)
+
+            frame["trade_date"] = frame["trade_date"].astype(str)
+            frame = frame.sort_values("trade_date")
+            metric_fields = {
+                "close": ("close",),
+                "pe": ("pe_ttm", "pe"),
+                "pb": ("pb_mrq", "pb"),
+            }
+
+            values = []
+            rows = []
+            for _, row in frame.iterrows():
+                trade_date_text = _to_trade_date_text(row.get("trade_date"))
+                value = _pick_first_positive_metric(row, metric_fields.get(metric, (metric,)))
+                if value is None:
+                    continue
+                rows.append({"trade_date": trade_date_text, "value": round(value, 4)})
+                values.append(value)
+
+            latest_row = rows[-1] if rows else None
+            payload = {
+                "data": rows,
+                "meta": {
+                    "industry_type": "ths",
+                    "industry_key": industry_key,
+                    "industry_code": industry_code,
+                    "industry_name": industry_name,
+                    "metric": metric,
+                    "period": period,
+                    "q10": round(_compute_quantile(values, 0.1), 4) if values else None,
+                    "q50": round(_compute_quantile(values, 0.5), 4) if values else None,
+                    "q90": round(_compute_quantile(values, 0.9), 4) if values else None,
+                    "latest_value": latest_row.get("value") if latest_row else None,
+                    "latest_trade_date": latest_row.get("trade_date") if latest_row else None,
+                    "count": len(rows),
+                },
+            }
+            cache.set(cache_key, payload, timeout=120)
+            return Response(payload)
+
         qs, industry_name = _resolve_corporation_queryset_by_industry_universe(
             industry_type,
             industry_key,
@@ -7411,6 +8417,102 @@ def get_industry_universe_constituents(request):
             from_index + 1,
             int(request.query_params.get("to_index", str(from_index + 30)) if hasattr(request, "query_params") else from_index + 30),
         )
+
+        if industry_type == "ths":
+            snapshot_rows = _get_ths_snapshot_member_rows(industry_key)
+            if not snapshot_rows:
+                try:
+                    pro = get_tushare_pro()
+                    fetched_rows = _fetch_ths_member_rows(pro, industry_key)
+                    if fetched_rows:
+                        snapshot_entry = _get_ths_snapshot_entry(industry_key) or {}
+                        _upsert_ths_snapshot_entry(
+                            industry_key=industry_key,
+                            display_name=str(snapshot_entry.get("display_name") or industry_key),
+                            member_stocks=fetched_rows,
+                            member_count=len(fetched_rows),
+                        )
+                        snapshot_rows = fetched_rows
+                except Exception:
+                    snapshot_rows = snapshot_rows or []
+            if snapshot_rows:
+                filtered_rows = []
+                keyword_lower = str(keyword or "").strip().lower()
+                for item in snapshot_rows:
+                    ts_code = str(item.get("ts_code") or "").strip().upper()
+                    name = str(item.get("name") or "").strip()
+                    if not ts_code:
+                        continue
+                    base_code = ts_code.split(".", 1)[0] if "." in ts_code else ts_code
+
+                    if market_filter in {"SH", "SSE"} and not base_code.startswith("6"):
+                        continue
+                    if market_filter in {"SZ", "SZSE"} and not base_code.startswith(("0", "3")):
+                        continue
+                    if market_filter in {"CYB", "GEM"} and not base_code.startswith("3"):
+                        continue
+                    if market_filter in {"STAR", "KCB"} and not base_code.startswith("688"):
+                        continue
+
+                    if keyword_lower and keyword_lower not in ts_code.lower() and keyword_lower not in name.lower():
+                        continue
+                    filtered_rows.append({"ts_code": ts_code, "name": name})
+
+                total_count = len(filtered_rows)
+                selected_rows = filtered_rows[from_index:to_index]
+                ts_codes = [str(item.get("ts_code") or "").strip().upper() for item in selected_rows if str(item.get("ts_code") or "").strip()]
+
+                user = request.user if request.user.is_authenticated else User.get_admin_user()
+                watchlist_map = _build_watchlist_map(user, ts_codes)
+                basic_info_map = _build_basic_info_map(ts_codes)
+                corp_map = {
+                    str(corp.ts_code or "").strip().upper(): corp
+                    for corp in Corporation.objects.filter(ts_code__in=ts_codes)
+                }
+
+                entry = _get_ths_snapshot_entry(industry_key) or {}
+                industry_name = str(entry.get("display_name") or industry_key)
+
+                rows = []
+                for item in selected_rows:
+                    ts_code_value = str(item.get("ts_code") or "").strip().upper()
+                    if not ts_code_value:
+                        continue
+                    corp = corp_map.get(ts_code_value)
+                    watch_info = watchlist_map.get(ts_code_value) or {
+                        "in_watchlist": False,
+                        "hold_position": False,
+                        "observe_only": False,
+                    }
+                    rows.append(
+                        {
+                            "ts_code": ts_code_value,
+                            "name": str(item.get("name") or (str(getattr(corp, "name", "") or ""))),
+                            "industry_name": industry_name,
+                            "website": str(getattr(corp, "website", "") or ""),
+                            "basic_info": basic_info_map.get(ts_code_value) or {"website": "", "main_business": ""},
+                            "in_watchlist": watch_info["in_watchlist"],
+                            "hold_position": watch_info["hold_position"],
+                            "observe_only": watch_info["observe_only"],
+                        }
+                    )
+
+                return Response(
+                    {
+                        "data": rows,
+                        "meta": {
+                            "industry_type": "ths",
+                            "industry_key": industry_key,
+                            "industry_name": industry_name,
+                            "total": total_count,
+                            "from_index": from_index,
+                            "to_index": to_index,
+                            "market": market_filter,
+                            "keyword": keyword,
+                            "source": "snapshot_members",
+                        },
+                    }
+                )
 
         qs, industry_name = _resolve_corporation_queryset_by_industry_universe(
             industry_type,
