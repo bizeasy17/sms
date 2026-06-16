@@ -24,9 +24,47 @@
             </template>
             <el-tabs v-model="industryTab" class="sw-industry-tabs">
               <el-tab-pane label="全部行业" name="all" />
+              <el-tab-pane v-if="selectedIndustryType === 'ths'" label="资金流评分" name="moneyflow" />
               <el-tab-pane :label="`收藏行业 (${favoriteIndustryList.length})`" name="favorites" />
             </el-tabs>
-            <el-scrollbar class="sw-industry-list-scroll">
+            <div v-if="industryTab === 'moneyflow'" class="sw-moneyflow-panel" v-loading="moneyflowLoading">
+              <div class="sw-moneyflow-toolbar">
+                <el-input-number
+                  v-model="moneyflowTopN"
+                  size="small"
+                  :min="1"
+                  :max="50"
+                  :step="1"
+                  controls-position="right"
+                />
+                <el-button size="small" @click="refreshMoneyflowList">刷新</el-button>
+              </div>
+              <div class="sw-moneyflow-meta" v-if="moneyflowMeta.generated_at">
+                <span>快照 {{ moneyflowMeta.asof_date || '-' }}</span>
+                <span>生成 {{ moneyflowMeta.generated_at || '-' }}</span>
+                <span>版本 {{ moneyflowMeta.scoring_version || '-' }}</span>
+                <span>类型 {{ moneyflowMeta.ths_index_type || 'N' }}</span>
+              </div>
+              <el-scrollbar class="sw-industry-list-scroll">
+                <div
+                  v-for="(item, idx) in moneyflowRows"
+                  :key="`${item.industry_code}-${idx}`"
+                  class="sw-moneyflow-item"
+                  :class="{ active: selectedIndustryType === 'ths' && selectedIndustryKey === item.industry_code }"
+                  @click="selectMoneyflowIndustry(item)"
+                >
+                  <div class="sw-moneyflow-head">
+                    <span class="sw-moneyflow-rank">#{{ item.rank || idx + 1 }}</span>
+                    <span class="sw-moneyflow-name">{{ item.industry_name || item.industry_code }}</span>
+                  </div>
+                  <div class="sw-moneyflow-sub">{{ item.industry_code }} | {{ item.index_type_label || item.index_type || '-' }}</div>
+                  <div class="sw-moneyflow-score">综合分 {{ formatMetric(item.score_total) }}</div>
+                </div>
+                <el-empty v-if="!moneyflowRows.length" description="暂无资金流评分候选" />
+              </el-scrollbar>
+            </div>
+
+            <el-scrollbar v-else class="sw-industry-list-scroll">
               <div
                 v-for="item in displayedIndustryList"
                 :key="`${item.industry_type}:${item.industry_key}`"
@@ -193,7 +231,7 @@
 <script setup lang="ts">
 import { computed, inject, onMounted, ref, watch } from 'vue'
 import axios from 'axios'
-import { ElButton, ElCard, ElCol, ElDialog, ElEmpty, ElInput, ElLink, ElMessage, ElOption, ElPagination, ElRadioButton, ElRadioGroup, ElRow, ElScrollbar, ElSelect, ElTable, ElTableColumn, ElTabPane, ElTabs, ElTag } from 'element-plus'
+import { ElButton, ElCard, ElCol, ElDialog, ElEmpty, ElInput, ElInputNumber, ElLink, ElMessage, ElOption, ElPagination, ElRadioButton, ElRadioGroup, ElRow, ElScrollbar, ElSelect, ElTable, ElTableColumn, ElTabPane, ElTabs, ElTag } from 'element-plus'
 import { use } from 'echarts/core'
 import { CanvasRenderer } from 'echarts/renderers'
 import { LineChart } from 'echarts/charts'
@@ -205,7 +243,7 @@ import { useStockTradeStore } from '../stores/stockTradeStore'
 
 use([CanvasRenderer, LineChart, TooltipComponent, GridComponent, DataZoomComponent, LegendComponent, MarkLineComponent])
 
-type IndustryType = 'sw' | 'valuation_variant' | 'corp_industry'
+type IndustryType = 'sw' | 'ths' | 'valuation_variant' | 'corp_industry'
 
 type IndustryItem = {
   industry_type: IndustryType
@@ -239,6 +277,7 @@ const LEGACY_FAVORITE_SW_KEY = 'sw_industry_favorite_codes'
 
 const industryTypeOptions: Array<{ value: IndustryType; label: string }> = [
   { value: 'sw', label: 'SW行业' },
+  { value: 'ths', label: 'THS行业' },
   { value: 'valuation_variant', label: '行业变体' },
   { value: 'corp_industry', label: '基本信息行业' },
 ]
@@ -246,10 +285,27 @@ const industryTypeOptions: Array<{ value: IndustryType; label: string }> = [
 const selectedIndustryType = ref<IndustryType>('sw')
 const industryList = ref<IndustryItem[]>([])
 const industryKeyword = ref('')
-const industryTab = ref<'all' | 'favorites'>('all')
+const industryTab = ref<'all' | 'moneyflow' | 'favorites'>('all')
 const favoriteIndustryKeys = ref<string[]>([])
 const selectedIndustryKey = ref('')
 const selectedIndustryName = ref('')
+
+const moneyflowLoading = ref(false)
+const moneyflowTopN = ref(20)
+const moneyflowRows = ref<Array<{
+  rank?: number | null
+  industry_code: string
+  industry_name: string
+  index_type?: string
+  index_type_label?: string
+  score_total: number | null
+}>>([])
+const moneyflowMeta = ref<{
+  asof_date?: string
+  generated_at?: string
+  scoring_version?: string
+  ths_index_type?: string
+}>({})
 
 const metric = ref<'close' | 'pe' | 'pb'>('pe')
 const period = ref<'30D' | '60D' | '90D' | '1Y' | '3Y' | '5Y' | '10Y' | 'ALL'>('5Y')
@@ -300,6 +356,8 @@ function normalizeFavoriteIndustryKeys(rawList: any[]): string[] {
       if (!keyText) continue
       const type: IndustryType = typeText === 'valuation_variant'
         ? 'valuation_variant'
+        : typeText === 'ths'
+          ? 'ths'
         : typeText === 'corp_industry'
           ? 'corp_industry'
           : 'sw'
@@ -556,6 +614,56 @@ async function fetchIndustryList() {
   }
 }
 
+async function fetchMoneyflowList() {
+  if (!baseURL || selectedIndustryType.value !== 'ths') {
+    moneyflowRows.value = []
+    moneyflowMeta.value = {}
+    return
+  }
+  moneyflowLoading.value = true
+  try {
+    const topN = Math.max(1, Math.min(50, Number(moneyflowTopN.value || 20)))
+    const resp = await axios.get(`${baseURL}/industry-universe/moneyflow/latest/`, {
+      params: {
+        market: 'CN',
+        industry_type: 'ths',
+        ths_index_type: 'N',
+        top_n: topN,
+      },
+    })
+    const rows = Array.isArray(resp?.data?.data) ? resp.data.data : []
+    moneyflowRows.value = rows.map((row: any) => ({
+      rank: Number.isFinite(Number(row?.rank)) ? Number(row.rank) : null,
+      industry_code: String(row?.industry_code || ''),
+      industry_name: String(row?.industry_name || ''),
+      index_type: String(row?.index_type || ''),
+      index_type_label: String(row?.index_type_label || ''),
+      score_total: Number.isFinite(Number(row?.score_total)) ? Number(row.score_total) : null,
+    })).filter((row: any) => Boolean(row.industry_code))
+    moneyflowMeta.value = {
+      asof_date: String(resp?.data?.meta?.asof_date || ''),
+      generated_at: String(resp?.data?.meta?.generated_at || ''),
+      scoring_version: String(resp?.data?.meta?.scoring_version || ''),
+      ths_index_type: String(resp?.data?.meta?.ths_index_type || 'N'),
+    }
+  } finally {
+    moneyflowLoading.value = false
+  }
+}
+
+function refreshMoneyflowList() {
+  void fetchMoneyflowList()
+}
+
+function selectMoneyflowIndustry(item: { industry_code: string; industry_name: string }) {
+  selectedIndustryType.value = 'ths'
+  selectedIndustryKey.value = String(item?.industry_code || '').trim()
+  selectedIndustryName.value = String(item?.industry_name || item?.industry_code || '').trim()
+  currentPage.value = 1
+  void fetchIndustryHistory()
+  void fetchConstituents()
+}
+
 async function fetchIndustryHistory() {
   if (!baseURL || !selectedIndustryKey.value) {
     historyRows.value = []
@@ -699,12 +807,26 @@ watch([constituentMarket], () => {
   reloadConstituents()
 })
 
+watch(industryTab, () => {
+  if (industryTab.value === 'moneyflow' && selectedIndustryType.value === 'ths') {
+    void fetchMoneyflowList()
+  }
+})
+
 watch(selectedIndustryType, async () => {
+  if (selectedIndustryType.value !== 'ths' && industryTab.value === 'moneyflow') {
+    industryTab.value = 'all'
+  }
   metric.value = 'pe'
   selectedIndustryKey.value = ''
   selectedIndustryName.value = ''
+  moneyflowRows.value = []
+  moneyflowMeta.value = {}
   currentPage.value = 1
   await fetchIndustryList()
+  if (selectedIndustryType.value === 'ths' && industryTab.value === 'moneyflow') {
+    await fetchMoneyflowList()
+  }
 })
 
 onMounted(async () => {
@@ -744,6 +866,75 @@ onMounted(async () => {
 
 .sw-industry-tabs {
   margin-top: -8px;
+}
+
+.sw-moneyflow-panel {
+  padding-top: 6px;
+}
+
+.sw-moneyflow-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.sw-moneyflow-meta {
+  margin-bottom: 8px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  color: #64748b;
+  font-size: 12px;
+}
+
+.sw-moneyflow-item {
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  padding: 10px;
+  margin-bottom: 8px;
+  cursor: pointer;
+  transition: all 0.18s ease;
+}
+
+.sw-moneyflow-item:hover {
+  border-color: #93c5fd;
+  background: #eff6ff;
+}
+
+.sw-moneyflow-item.active {
+  border-color: #2563eb;
+  background: #dbeafe;
+}
+
+.sw-moneyflow-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+
+.sw-moneyflow-rank {
+  font-size: 12px;
+  color: #2563eb;
+  font-weight: 600;
+}
+
+.sw-moneyflow-name {
+  font-weight: 600;
+  color: #1f2937;
+}
+
+.sw-moneyflow-sub {
+  font-size: 12px;
+  color: #6b7280;
+}
+
+.sw-moneyflow-score {
+  margin-top: 4px;
+  font-size: 12px;
+  color: #334155;
 }
 
 .sw-industry-list-scroll {
