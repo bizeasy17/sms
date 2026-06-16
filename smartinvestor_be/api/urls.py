@@ -146,6 +146,11 @@ urlpatterns = [
         name="industry-universe-constituents",
     ),
     path(
+        "industry-universe/moneyflow/latest/",
+        getattr(views, "get_industry_universe_moneyflow_latest", views.get_sw_industry_options),
+        name="industry-universe-moneyflow-latest",
+    ),
+    path(
         "stock-pick-valuation/weekly-downloads/",
         views.get_weekly_undervalued_downloads,
         name="weekly-undervalued-downloads",

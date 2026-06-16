@@ -2,6 +2,7 @@ import datetime
 import csv
 import hashlib
 import math
+from collections import defaultdict
 import pandas as pd
 from pathlib import Path
 import json
@@ -30,6 +31,7 @@ from prediction.models import (
 from valuation.models import (
     StockValuationSnapshot,
     StockValuationSnapshotLatest,
+    StockValuationVariantSummaryLatest,
     IndustryVariantCache,
     IndustryVariantMetricDaily,
 )
@@ -64,6 +66,600 @@ WEEKLY_UNDERVALUED_FILE_PREFIX = {
 
 WEEKLY_UNDERVALUED_JOB_CONFIG_FILE = "job_strategy_config.json"
 WEEKLY_STRATEGY_STYLE_KEYS = ("CONSERVATIVE", "BALANCED", "AGGRESSIVE")
+
+THS_INDUSTRY_OUTPUT_SUBDIR = "output/industry_universe"
+THS_MONEYFLOW_DAILY_FILE = "ths_moneyflow_daily.json"
+THS_MONEYFLOW_SCORE_LATEST_FILE = "ths_moneyflow_score_latest.json"
+THS_MONEYFLOW_TOPN_DEFAULT = int(getattr(settings, "THS_MONEYFLOW_TOPN_DEFAULT", 20) or 20)
+THS_MONEYFLOW_LOOKBACK_DAYS = int(getattr(settings, "THS_MONEYFLOW_LOOKBACK_DAYS", 30) or 30)
+THS_MONEYFLOW_SCORE_WEIGHT_MONEYFLOW = 0.50
+THS_MONEYFLOW_SCORE_WEIGHT_POSITION = 0.30
+THS_MONEYFLOW_SCORE_WEIGHT_VOLATILITY = 0.20
+
+THS_INDEX_TYPE_LABEL_MAP = {
+    "N": "概念指数",
+    "I": "行业指数",
+    "R": "地域指数",
+    "S": "特色指数",
+    "ST": "风格指数",
+    "TH": "主题指数",
+    "BB": "宽基指数",
+}
+
+
+def _normalize_ths_index_type(value):
+    token = str(value or "").strip().upper()
+    if token in THS_INDEX_TYPE_LABEL_MAP:
+        return token
+    return ""
+
+
+def _get_ths_index_type_label(index_type):
+    token = _normalize_ths_index_type(index_type)
+    return str(THS_INDEX_TYPE_LABEL_MAP.get(token) or "")
+
+
+def _normalize_rotation_ths_index_type(value):
+    token = str(value or "N").strip().upper() or "N"
+    normalized = _normalize_ths_index_type(token)
+    return normalized if normalized else "N"
+
+
+def _normalize_moneyflow_trade_date(value):
+    text = str(value or "").strip()
+    if not text:
+        return ""
+    if len(text) == 8 and text.isdigit():
+        return f"{text[0:4]}-{text[4:6]}-{text[6:8]}"
+    if len(text) >= 10 and text[4] == "-":
+        return text[:10]
+    return ""
+
+
+def _normalize_ths_industry_code(value):
+    token = str(value or "").strip().upper()
+    if not token:
+        return ""
+    if "." not in token:
+        token = f"{token}.TI"
+    return token
+
+
+def _resolve_ths_moneyflow_daily_path():
+    output_dir = Path(settings.BASE_DIR) / THS_INDUSTRY_OUTPUT_SUBDIR
+    output_dir.mkdir(parents=True, exist_ok=True)
+    return output_dir / THS_MONEYFLOW_DAILY_FILE
+
+
+def _resolve_ths_moneyflow_score_latest_path():
+    output_dir = Path(settings.BASE_DIR) / THS_INDUSTRY_OUTPUT_SUBDIR
+    output_dir.mkdir(parents=True, exist_ok=True)
+    return output_dir / THS_MONEYFLOW_SCORE_LATEST_FILE
+
+
+def _read_ths_moneyflow_daily_payload():
+    path = _resolve_ths_moneyflow_daily_path()
+    if not path.exists():
+        return {"rows": []}
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return {"rows": []}
+    if not isinstance(payload, dict):
+        return {"rows": []}
+    rows = payload.get("rows")
+    if not isinstance(rows, list):
+        payload["rows"] = []
+    return payload
+
+
+def _write_ths_moneyflow_daily_payload(payload):
+    path = _resolve_ths_moneyflow_daily_path()
+    normalized = payload if isinstance(payload, dict) else {"rows": []}
+    rows = normalized.get("rows") if isinstance(normalized.get("rows"), list) else []
+    serializable = []
+    for row in rows:
+        item = row if isinstance(row, dict) else {}
+        trade_date = _normalize_moneyflow_trade_date(item.get("trade_date"))
+        industry_code = _normalize_ths_industry_code(item.get("industry_code"))
+        if not trade_date or not industry_code:
+            continue
+        index_type = _normalize_ths_index_type(item.get("index_type"))
+        serializable.append(
+            {
+                "trade_date": trade_date,
+                "industry_code": industry_code,
+                "industry_name": str(item.get("industry_name") or "").strip(),
+                "index_type": index_type,
+                "index_type_label": str(item.get("index_type_label") or _get_ths_index_type_label(index_type)).strip(),
+                "net_amount": _as_float_or_none(item.get("net_amount")),
+                "net_pct": _as_float_or_none(item.get("net_pct")),
+                "updated_at": str(item.get("updated_at") or "").strip(),
+            }
+        )
+    serializable = sorted(serializable, key=lambda item: (str(item.get("trade_date") or ""), str(item.get("industry_code") or "")))
+    normalized["rows"] = serializable
+    normalized["updated_at"] = datetime.datetime.now(datetime.timezone.utc).isoformat()
+    path.write_text(json.dumps(normalized, ensure_ascii=False, indent=2, sort_keys=True), encoding="utf-8")
+    return path
+
+
+def _read_ths_moneyflow_score_latest_payload():
+    path = _resolve_ths_moneyflow_score_latest_path()
+    if not path.exists():
+        return None
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return None
+    return payload if isinstance(payload, dict) else None
+
+
+def _write_ths_moneyflow_score_latest_payload(payload):
+    path = _resolve_ths_moneyflow_score_latest_path()
+    normalized = payload if isinstance(payload, dict) else {}
+    path.write_text(json.dumps(normalized, ensure_ascii=False, indent=2, sort_keys=True), encoding="utf-8")
+    return path
+
+
+def _fetch_ths_daily_frame(pro, industry_code, start_date, end_date):
+    if pro is None or not hasattr(pro, "ths_daily"):
+        return None
+    for call_kwargs in (
+        {
+            "ts_code": industry_code,
+            "start_date": start_date,
+            "end_date": end_date,
+            "fields": "ts_code,trade_date,close",
+        },
+        {
+            "ts_code": industry_code,
+            "start_date": start_date,
+            "end_date": end_date,
+        },
+    ):
+        try:
+            frame = pro.ths_daily(**call_kwargs)
+            if frame is not None:
+                return frame
+        except TypeError:
+            continue
+        except Exception:
+            continue
+    return None
+
+
+def _load_ths_index_rows(pro=None):
+    if pro is None:
+        return []
+    frame = None
+    for call_kwargs in (
+        {"fields": "ts_code,name,type"},
+        {"fields": "ts_code,name"},
+        {},
+    ):
+        try:
+            frame = pro.ths_index(**call_kwargs)
+            break
+        except TypeError:
+            continue
+        except Exception:
+            frame = None
+            break
+    if frame is None or getattr(frame, "empty", True):
+        return []
+    rows = []
+    for _, row in frame.fillna("").iterrows():
+        industry_key = _normalize_ths_industry_code(row.get("ts_code") or row.get("industry_key"))
+        display_name = str(row.get("name") or row.get("display_name") or "").strip()
+        index_type = _normalize_ths_index_type(row.get("type") or row.get("index_type"))
+        if not industry_key or not display_name:
+            continue
+        rows.append(
+            {
+                "industry_key": industry_key,
+                "display_name": display_name,
+                "index_type": index_type,
+                "index_type_label": _get_ths_index_type_label(index_type),
+            }
+        )
+    return rows
+
+
+def _fetch_ths_moneyflow_cnt_frame(pro, trade_date_text):
+    if pro is None or not hasattr(pro, "moneyflow_cnt_ths"):
+        return None
+    token = str(trade_date_text or "").replace("-", "")
+    if len(token) != 8 or not token.isdigit():
+        return None
+    for call_kwargs in (
+        {
+            "trade_date": token,
+            "fields": "trade_date,ts_code,name,net_amount,net_pct,net_amount_rate,net_mf_amount,net_mf_rate",
+        },
+        {"trade_date": token},
+    ):
+        try:
+            frame = pro.moneyflow_cnt_ths(**call_kwargs)
+            if frame is not None:
+                return frame
+        except TypeError:
+            continue
+        except Exception:
+            continue
+    return None
+
+
+def _upsert_ths_moneyflow_daily_rows(incoming_rows):
+    payload = _read_ths_moneyflow_daily_payload()
+    rows = payload.get("rows") if isinstance(payload.get("rows"), list) else []
+    row_map = {}
+    for row in rows:
+        item = row if isinstance(row, dict) else {}
+        trade_date = _normalize_moneyflow_trade_date(item.get("trade_date"))
+        industry_code = _normalize_ths_industry_code(item.get("industry_code"))
+        if not trade_date or not industry_code:
+            continue
+        row_map[(trade_date, industry_code)] = {
+            "trade_date": trade_date,
+            "industry_code": industry_code,
+            "industry_name": str(item.get("industry_name") or "").strip(),
+            "index_type": _normalize_ths_index_type(item.get("index_type")),
+            "index_type_label": str(item.get("index_type_label") or "").strip(),
+            "net_amount": _as_float_or_none(item.get("net_amount")),
+            "net_pct": _as_float_or_none(item.get("net_pct")),
+            "updated_at": str(item.get("updated_at") or "").strip(),
+        }
+
+    upsert_count = 0
+    for row in incoming_rows:
+        item = row if isinstance(row, dict) else {}
+        trade_date = _normalize_moneyflow_trade_date(item.get("trade_date"))
+        industry_code = _normalize_ths_industry_code(item.get("industry_code"))
+        if not trade_date or not industry_code:
+            continue
+        index_type = _normalize_ths_index_type(item.get("index_type"))
+        row_map[(trade_date, industry_code)] = {
+            "trade_date": trade_date,
+            "industry_code": industry_code,
+            "industry_name": str(item.get("industry_name") or "").strip(),
+            "index_type": index_type,
+            "index_type_label": str(item.get("index_type_label") or _get_ths_index_type_label(index_type)).strip(),
+            "net_amount": _as_float_or_none(item.get("net_amount")),
+            "net_pct": _as_float_or_none(item.get("net_pct")),
+            "updated_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+        }
+        upsert_count += 1
+
+    payload["rows"] = list(row_map.values())
+    output_path = _write_ths_moneyflow_daily_payload(payload)
+    return {
+        "upsert_count": upsert_count,
+        "total_rows": len(payload.get("rows") or []),
+        "output_path": str(output_path),
+    }
+
+
+def _sync_ths_moneyflow_daily(lookback_days=7):
+    try:
+        pro = get_tushare_pro()
+    except Exception as exc:
+        raise RuntimeError(f"init tushare pro failed: {exc}") from exc
+
+    rows_to_upsert = []
+    fetched_dates = []
+    checked_days = max(1, int(lookback_days or 1))
+    today = datetime.date.today()
+
+    ths_index_rows = _load_ths_index_rows(pro=pro)
+    ths_type_map = {
+        _normalize_ths_industry_code(item.get("industry_key")): {
+            "display_name": str(item.get("display_name") or "").strip(),
+            "index_type": _normalize_ths_index_type(item.get("index_type")),
+        }
+        for item in ths_index_rows
+        if isinstance(item, dict)
+    }
+
+    for offset in range(checked_days):
+        trade_date = (today - datetime.timedelta(days=offset)).strftime("%Y-%m-%d")
+        frame = _fetch_ths_moneyflow_cnt_frame(pro, trade_date)
+        if frame is None or getattr(frame, "empty", True):
+            continue
+
+        fetched_dates.append(trade_date)
+        for _, row in frame.fillna("").iterrows():
+            industry_code = _normalize_ths_industry_code(row.get("ts_code") or row.get("industry_code") or row.get("code"))
+            if not industry_code:
+                continue
+            index_meta = ths_type_map.get(industry_code) or {}
+            index_type = _normalize_ths_index_type(index_meta.get("index_type") or row.get("type") or row.get("index_type"))
+            industry_name = (
+                str(row.get("name") or row.get("industry_name") or row.get("index_name") or index_meta.get("display_name") or "").strip()
+                or industry_code
+            )
+            resolved_trade_date = _normalize_moneyflow_trade_date(row.get("trade_date")) or trade_date
+
+            rows_to_upsert.append(
+                {
+                    "trade_date": resolved_trade_date,
+                    "industry_code": industry_code,
+                    "industry_name": industry_name,
+                    "index_type": index_type,
+                    "index_type_label": _get_ths_index_type_label(index_type),
+                    "net_amount": _as_float_or_none(
+                        row.get("net_amount")
+                        or row.get("net_mf_amount")
+                        or row.get("net_buy_amount")
+                        or row.get("buy_amount")
+                    ),
+                    "net_pct": _as_float_or_none(
+                        row.get("net_pct")
+                        or row.get("net_amount_rate")
+                        or row.get("net_mf_rate")
+                    ),
+                }
+            )
+
+    upsert_result = _upsert_ths_moneyflow_daily_rows(rows_to_upsert)
+    return {
+        "checked_days": checked_days,
+        "fetched_dates": sorted(set(fetched_dates)),
+        "fetched_rows": len(rows_to_upsert),
+        **upsert_result,
+    }
+
+
+def _compute_and_write_ths_moneyflow_score_snapshot(top_n=None, lookback_days=None, ths_index_type="N"):
+    try:
+        pro = get_tushare_pro()
+    except Exception as exc:
+        raise RuntimeError(f"init tushare pro failed: {exc}") from exc
+
+    top_n_value = max(1, min(100, int(top_n or THS_MONEYFLOW_TOPN_DEFAULT)))
+    lookback = max(5, min(180, int(lookback_days or THS_MONEYFLOW_LOOKBACK_DAYS)))
+    requested_type = _normalize_rotation_ths_index_type(ths_index_type)
+
+    daily_payload = _read_ths_moneyflow_daily_payload()
+    daily_rows = daily_payload.get("rows") if isinstance(daily_payload.get("rows"), list) else []
+    if not daily_rows:
+        raise RuntimeError("ths moneyflow daily dataset is empty")
+
+    by_code_rows = defaultdict(list)
+    by_code_name = {}
+    by_code_type = {}
+    available_trade_dates = set()
+    for row in daily_rows:
+        item = row if isinstance(row, dict) else {}
+        trade_date = _normalize_moneyflow_trade_date(item.get("trade_date"))
+        industry_code = _normalize_ths_industry_code(item.get("industry_code"))
+        if not trade_date or not industry_code:
+            continue
+        net_amount = _as_float_or_none(item.get("net_amount"))
+        if net_amount is None:
+            continue
+        index_type = _normalize_ths_index_type(item.get("index_type"))
+        by_code_rows[industry_code].append({"trade_date": trade_date, "net_amount": float(net_amount)})
+        by_code_name[industry_code] = str(item.get("industry_name") or by_code_name.get(industry_code) or industry_code).strip()
+        by_code_type[industry_code] = index_type or by_code_type.get(industry_code, "")
+        available_trade_dates.add(trade_date)
+
+    if not by_code_rows:
+        raise RuntimeError("ths moneyflow daily dataset has no valid rows")
+
+    asof_date = max(available_trade_dates) if available_trade_dates else datetime.date.today().strftime("%Y-%m-%d")
+    end_date = asof_date.replace("-", "")
+    start_date = (datetime.datetime.strptime(asof_date, "%Y-%m-%d").date() - datetime.timedelta(days=180)).strftime("%Y%m%d")
+
+    ths_index_rows = _load_ths_index_rows(pro=pro)
+    for item in ths_index_rows:
+        if not isinstance(item, dict):
+            continue
+        code = _normalize_ths_industry_code(item.get("industry_key"))
+        if not code:
+            continue
+        by_code_type[code] = _normalize_ths_index_type(item.get("index_type")) or by_code_type.get(code, "")
+        if code not in by_code_name or not by_code_name.get(code):
+            by_code_name[code] = str(item.get("display_name") or code).strip()
+
+    price_metric_cache = {}
+    for industry_code in by_code_rows.keys():
+        frame = _fetch_ths_daily_frame(pro, industry_code, start_date, end_date)
+        close_series = []
+        if frame is not None and not getattr(frame, "empty", True) and "trade_date" in frame.columns:
+            work = frame.fillna("").copy()
+            work["trade_date"] = work["trade_date"].astype(str)
+            work = work.sort_values("trade_date")
+            for _, row in work.iterrows():
+                close_value = _as_float_or_none(row.get("close"))
+                if close_value is None or close_value <= 0:
+                    continue
+                close_series.append(float(close_value))
+
+        position_value = None
+        volatility_value = None
+        if close_series:
+            close_tail = close_series[-60:] if len(close_series) > 60 else close_series
+            low_value = min(close_tail) if close_tail else None
+            high_value = max(close_tail) if close_tail else None
+            latest_close = close_tail[-1] if close_tail else None
+            if low_value is not None and high_value is not None and latest_close is not None and high_value > low_value:
+                position_value = (latest_close - low_value) / (high_value - low_value)
+
+            daily_returns = []
+            for idx in range(1, len(close_series)):
+                prev_close = close_series[idx - 1]
+                current_close = close_series[idx]
+                if prev_close <= 0:
+                    continue
+                daily_returns.append((current_close / prev_close) - 1.0)
+            tail_returns = daily_returns[-30:] if len(daily_returns) > 30 else daily_returns
+            if tail_returns:
+                mean_ret = sum(tail_returns) / len(tail_returns)
+                variance = sum((sample - mean_ret) ** 2 for sample in tail_returns) / len(tail_returns)
+                volatility_value = math.sqrt(variance) * math.sqrt(252.0)
+
+        price_metric_cache[industry_code] = {
+            "position": _as_float_or_none(position_value),
+            "volatility": _as_float_or_none(volatility_value),
+        }
+
+    def _to_score(value, pool, invert=False, default=50.0):
+        number = _as_float_or_none(value)
+        if number is None:
+            return float(default)
+        cleaned = [float(item) for item in pool if isinstance(item, (int, float)) and math.isfinite(item)]
+        if not cleaned:
+            return float(default)
+        minimum = min(cleaned)
+        maximum = max(cleaned)
+        if maximum - minimum <= 1e-12:
+            return 50.0
+        ratio = (float(number) - minimum) / (maximum - minimum)
+        score = (1.0 - ratio) * 100.0 if invert else ratio * 100.0
+        return max(0.0, min(100.0, float(score)))
+
+    candidates_by_type = defaultdict(list)
+    for industry_code, rows in by_code_rows.items():
+        current_type = _normalize_ths_index_type(by_code_type.get(industry_code))
+        if current_type != requested_type:
+            continue
+        ordered_rows = sorted(rows, key=lambda item: str(item.get("trade_date") or ""))
+        tail_rows = ordered_rows[-lookback:] if len(ordered_rows) > lookback else ordered_rows
+        moneyflow_30d = sum(float(item.get("net_amount") or 0.0) for item in tail_rows)
+        metric_item = price_metric_cache.get(industry_code) or {}
+        candidates_by_type[current_type].append(
+            {
+                "industry_code": industry_code,
+                "industry_name": str(by_code_name.get(industry_code) or industry_code).strip(),
+                "index_type": current_type,
+                "index_type_label": _get_ths_index_type_label(current_type),
+                "moneyflow_30d": float(moneyflow_30d),
+                "position": _as_float_or_none(metric_item.get("position")),
+                "volatility": _as_float_or_none(metric_item.get("volatility")),
+            }
+        )
+
+    snapshots = {}
+    for index_type, rows in candidates_by_type.items():
+        moneyflow_pool = [item.get("moneyflow_30d") for item in rows]
+        position_pool = [item.get("position") for item in rows if item.get("position") is not None]
+        volatility_pool = [item.get("volatility") for item in rows if item.get("volatility") is not None]
+
+        scored_rows = []
+        for item in rows:
+            moneyflow_score = _to_score(item.get("moneyflow_30d"), moneyflow_pool, invert=False, default=50.0)
+            position_score = _to_score(item.get("position"), position_pool, invert=False, default=50.0)
+            volatility_score = _to_score(item.get("volatility"), volatility_pool, invert=True, default=50.0)
+            score_total = (
+                moneyflow_score * THS_MONEYFLOW_SCORE_WEIGHT_MONEYFLOW
+                + position_score * THS_MONEYFLOW_SCORE_WEIGHT_POSITION
+                + volatility_score * THS_MONEYFLOW_SCORE_WEIGHT_VOLATILITY
+            )
+            scored_rows.append(
+                {
+                    "industry_code": str(item.get("industry_code") or "").strip(),
+                    "industry_name": str(item.get("industry_name") or "").strip(),
+                    "index_type": index_type,
+                    "index_type_label": _get_ths_index_type_label(index_type),
+                    "score_total": round(float(score_total), 4),
+                    "score_breakdown": {
+                        "moneyflow_30d": round(float(moneyflow_score), 4),
+                        "position": round(float(position_score), 4),
+                        "volatility": round(float(volatility_score), 4),
+                    },
+                    "metrics": {
+                        "moneyflow_30d": round(float(item.get("moneyflow_30d") or 0.0), 4),
+                        "position": round(float(item.get("position")), 6) if item.get("position") is not None else None,
+                        "volatility": round(float(item.get("volatility")), 6) if item.get("volatility") is not None else None,
+                    },
+                }
+            )
+
+        scored_rows = sorted(scored_rows, key=lambda row: (-float(row.get("score_total") or 0.0), str(row.get("industry_code") or "")))
+        for rank_idx, row in enumerate(scored_rows, start=1):
+            row["rank"] = rank_idx
+
+        snapshots[index_type] = {
+            "ths_index_type": index_type,
+            "ths_index_type_label": _get_ths_index_type_label(index_type),
+            "total_candidates": len(scored_rows),
+            "top_n": top_n_value,
+            "data": scored_rows,
+        }
+
+    payload = {
+        "generated_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+        "asof_date": asof_date,
+        "scoring_version": "ths_moneyflow_v1",
+        "top_n_default": top_n_value,
+        "lookback_days": lookback,
+        "weights": {
+            "moneyflow_30d": THS_MONEYFLOW_SCORE_WEIGHT_MONEYFLOW,
+            "position": THS_MONEYFLOW_SCORE_WEIGHT_POSITION,
+            "volatility": THS_MONEYFLOW_SCORE_WEIGHT_VOLATILITY,
+        },
+        "snapshots": snapshots,
+    }
+    output_path = _write_ths_moneyflow_score_latest_payload(payload)
+    return payload, output_path
+
+
+@api_view(["GET"])
+def get_industry_universe_moneyflow_latest(request):
+    market = str(request.query_params.get("market", "CN") if hasattr(request, "query_params") else "CN").strip().upper() or "CN"
+    industry_type = _normalize_industry_universe_type(
+        request.query_params.get("industry_type", "ths") if hasattr(request, "query_params") else "ths"
+    )
+    requested_ths_index_type = _normalize_rotation_ths_index_type(
+        request.query_params.get("ths_index_type", "N") if hasattr(request, "query_params") else "N"
+    )
+    ths_index_type = "N"
+    if industry_type != "ths":
+        return Response({"error": "moneyflow ranking only supports THS industry_type"}, status=400)
+
+    try:
+        top_n = int(request.query_params.get("top_n", THS_MONEYFLOW_TOPN_DEFAULT) if hasattr(request, "query_params") else THS_MONEYFLOW_TOPN_DEFAULT)
+    except (TypeError, ValueError):
+        top_n = THS_MONEYFLOW_TOPN_DEFAULT
+    top_n = max(1, min(100, top_n))
+
+    snapshot = _read_ths_moneyflow_score_latest_payload()
+    if not isinstance(snapshot, dict):
+        snapshot, _path = _compute_and_write_ths_moneyflow_score_snapshot(
+            top_n=top_n,
+            lookback_days=THS_MONEYFLOW_LOOKBACK_DAYS,
+            ths_index_type="N",
+        )
+
+    snapshots = snapshot.get("snapshots") if isinstance(snapshot.get("snapshots"), dict) else {}
+    rows = []
+    total_candidates = 0
+    chosen = snapshots.get(ths_index_type)
+    if isinstance(chosen, dict):
+        data_rows = chosen.get("data") if isinstance(chosen.get("data"), list) else []
+        total_candidates = len(data_rows)
+        rows = [dict(row if isinstance(row, dict) else {}) for row in data_rows]
+
+    return Response(
+        {
+            "data": rows[:top_n],
+            "meta": {
+                "market": market,
+                "industry_type": "ths",
+                "ths_index_type": ths_index_type,
+                "requested_ths_index_type": requested_ths_index_type,
+                "top_n": top_n,
+                "total_candidates": total_candidates,
+                "asof_date": str(snapshot.get("asof_date") or ""),
+                "generated_at": str(snapshot.get("generated_at") or ""),
+                "scoring_version": str(snapshot.get("scoring_version") or "ths_moneyflow_v1"),
+                "lookback_days": int(snapshot.get("lookback_days") or THS_MONEYFLOW_LOOKBACK_DAYS),
+                "weights": snapshot.get("weights") if isinstance(snapshot.get("weights"), dict) else {},
+                "source": "snapshot",
+            },
+        }
+    )
 
 
 def _normalize_weekly_strategy_style(value, default_style="BALANCED"):
@@ -500,6 +1096,9 @@ MAX_VALUATION_CANDIDATES_IN_RESPONSE = int(getattr(settings, "MAX_VALUATION_CAND
 LIVE_VALUATION_RISK_USE_PERSISTED_FIRST = bool(
     getattr(settings, "LIVE_VALUATION_RISK_USE_PERSISTED_FIRST", True)
 )
+LIVE_VALUATION_SUMMARY_USE_PERSISTED_FIRST = bool(
+    getattr(settings, "LIVE_VALUATION_SUMMARY_USE_PERSISTED_FIRST", True)
+)
 PREDICTIVE_UNDERVALUED_MIN_SIGNAL_SCORE_DEFAULT = float(
     getattr(settings, "PREDICTIVE_UNDERVALUED_MIN_SIGNAL_SCORE_DEFAULT", 100) or 100
 )
@@ -642,6 +1241,59 @@ def _load_persisted_valuation_risk_payload(
         "status": snapshot.status,
         "metadata": snapshot.metadata or {},
         "factors": factor_rows,
+    }
+
+
+def _load_persisted_variant_summary_payload(
+    *,
+    ts_code,
+    market,
+    valuation_variant,
+    trade_date=None,
+    profit_report_type=None,
+    profit_report_end_date=None,
+):
+    qs = StockValuationVariantSummaryLatest.objects.filter(
+        ts_code=ts_code,
+        market=market,
+        valuation_variant=valuation_variant or "default",
+    )
+
+    normalized_report_type = str(profit_report_type or "").strip().upper()
+    if normalized_report_type == "FY":
+        normalized_report_type = "ANNUAL"
+    if normalized_report_type:
+        qs = qs.filter(profit_report_type=normalized_report_type)
+
+    report_end_dt = _parse_date_like(profit_report_end_date)
+    if report_end_dt is not None:
+        qs = qs.filter(profit_report_end_date=report_end_dt)
+
+    snapshot = None
+    if trade_date is not None:
+        trade_dt = _parse_date_like(trade_date)
+        if trade_dt is not None:
+            snapshot = qs.filter(latest_trade_date=trade_dt).order_by("-updated_at").first()
+    if snapshot is None:
+        snapshot = qs.order_by("-latest_trade_date", "-updated_at").first()
+    if snapshot is None:
+        return None
+
+    return {
+        "composite_valuation_price": float(snapshot.composite_valuation_price)
+        if snapshot.composite_valuation_price is not None
+        else None,
+        "conservative_valuation_price": float(snapshot.conservative_valuation_price)
+        if snapshot.conservative_valuation_price is not None
+        else None,
+        "undervalue_score": float(snapshot.undervalue_score) if snapshot.undervalue_score is not None else None,
+        "buy_candidate": bool(snapshot.buy_candidate),
+        "buy_candidate_reason": snapshot.buy_candidate_reason or "",
+        "buy_candidate_rule_version": snapshot.buy_candidate_rule_version or "",
+        "valuation_valid_methods": list(snapshot.valuation_valid_methods or []),
+        "valuation_under_methods": list(snapshot.valuation_under_methods or []),
+        "valuation_core_methods": list(snapshot.valuation_core_methods or []),
+        "summary_source": "persisted_variant_summary_latest",
     }
 
 
@@ -5503,7 +6155,7 @@ def get_sw_industry_constituents(request, industry_code, from_index, to_index):
 
 def _normalize_industry_universe_type(value):
     normalized = str(value or "sw").strip().lower() or "sw"
-    if normalized in {"sw", "valuation_variant", "corp_industry"}:
+    if normalized in {"sw", "ths", "valuation_variant", "corp_industry"}:
         return normalized
     return "sw"
 
@@ -5727,10 +6379,11 @@ def get_industry_universe_types(request):
         {
             "data": [
                 {"industry_type": "sw", "label": "SW行业", "enabled": True},
+                {"industry_type": "ths", "label": "THS行业", "enabled": True},
                 {"industry_type": "valuation_variant", "label": "行业变体", "enabled": True},
                 {"industry_type": "corp_industry", "label": "基本信息行业", "enabled": True},
             ],
-            "meta": {"total": 3},
+            "meta": {"total": 4},
         }
     )
 
@@ -7473,6 +8126,7 @@ def get_stock_valuation_methods(request, ts_code):
         market_style_by_variant = {}
         market_style_by_variant_normalized = {}
         for variant, variant_rows in data_by_variant.items():
+            anchor_row = (variant_rows or [{}])[0] if variant_rows else {}
             market_style_payload = _build_market_style_payload_for_variant(
                 variant=variant,
                 variant_rows=variant_rows,
@@ -7495,8 +8149,25 @@ def get_stock_valuation_methods(request, ts_code):
             )
             market_style_by_variant[variant] = market_style_payload
             market_style_by_variant_normalized[variant] = market_style_payload_normalized
+            persisted_summary_payload = None
+            if LIVE_VALUATION_SUMMARY_USE_PERSISTED_FIRST:
+                persisted_summary_payload = _load_persisted_variant_summary_payload(
+                    ts_code=ts_code,
+                    market=market,
+                    valuation_variant=variant,
+                    trade_date=anchor_row.get("latest_trade_date") or current_trade_date,
+                    profit_report_type=anchor_row.get("profit_report_type") or valuation_report_type,
+                    profit_report_end_date=anchor_row.get("profit_report_end_date"),
+                )
+            base_summary_payload = persisted_summary_payload or _build_valuation_summary_payload(
+                current_price,
+                variant_rows,
+                band_pct,
+                ts_code=ts_code,
+                freq=freq,
+            )
             summary_by_variant[variant] = _merge_summary_with_market_style(
-                _build_valuation_summary_payload(current_price, variant_rows, band_pct, ts_code=ts_code, freq=freq),
+                base_summary_payload,
                 market_style_payload,
             )
             summary_by_variant_normalized[variant] = _merge_summary_with_market_style(
