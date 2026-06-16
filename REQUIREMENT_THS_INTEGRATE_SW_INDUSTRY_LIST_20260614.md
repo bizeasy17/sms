@@ -174,10 +174,12 @@ THS行业总量较大，若将全部THS类型（N/I/R/S/ST/TH/BB）混合计算�
 - `score_breakdown` 保持原字段键名：`valuation/momentum/risk/style`。
 - 其中 `style` 承载 breadth 分值（兼容旧前端显示位），`valuation` 返回 null。
 - `metrics` 中新增/保留 close 派生指标（ret_1m、ret_3m、volatility、max_drawdown、member_count）。
+- THS 候选入池前新增硬过滤：`member_count > 0` 且 `ths_daily` 可返回有效 close 序列；不满足条件的板块不参与轮动排序。
 
 ### 13.6 验收标准（新增）
 - THS轮动结果不再受快照列表顺序影响。
 - 同一 `ths_index_type` 下，轮动结果由 close 序列与 member_count 决定。
+- `member_count=0` 或无有效 THS 日线的板块，不应出现在 THS 轮动榜单中。
 - `industry_type=ths` 且不同 `ths_index_type` 请求时，结果集合仍按类型隔离。
 - SW轮动逻辑与结果口径保持不变。
 

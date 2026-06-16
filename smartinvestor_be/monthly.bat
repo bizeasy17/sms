@@ -36,6 +36,13 @@ if errorlevel 1 (
 )
 echo Hello, THS industry snapshot (member_count) refresh Completed!
 
+"%PYTHON_CMD%" manage.py refresh_ths_moneyflow_score_monthly --top-n 20 --lookback-days 30 --ths-index-type N
+if errorlevel 1 (
+	echo [ERROR] refresh_ths_moneyflow_score_monthly failed.
+	exit /b 1
+)
+echo Hello, THS moneyflow score monthly refresh Completed!
+
 @REM python manage.py predict --freq=M
 @REM echo Hello, Predict dataset Completed!
 

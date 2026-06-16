@@ -151,6 +151,11 @@ urlpatterns = [
         name="industry-universe-rotation-latest",
     ),
     path(
+        "industry-universe/moneyflow/latest/",
+        getattr(views, "get_industry_universe_moneyflow_latest", views.get_sw_industry_options),
+        name="industry-universe-moneyflow-latest",
+    ),
+    path(
         "industry-universe/rotation/recompute/",
         getattr(views, "recompute_industry_universe_rotation", views.get_sw_industry_options),
         name="industry-universe-rotation-recompute",

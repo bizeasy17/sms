@@ -19,6 +19,8 @@ call :run_step "BE traditional valuation monthly full refresh" :step_be_traditio
 if errorlevel 1 exit /b %ERRORLEVEL%
 call :run_step "Earnings predictive valuation monthly full refresh" :step_earnings_predictive_monthly_full
 if errorlevel 1 exit /b %ERRORLEVEL%
+call :run_step "BE THS moneyflow monthly score" :step_be_ths_moneyflow_monthly_score
+if errorlevel 1 exit /b %ERRORLEVEL%
 
 echo [INFO] monthly pipeline completed at %DATE% %TIME% >> "%LOG_FILE%"
 echo monthly pipeline completed. log=%LOG_FILE%
@@ -55,3 +57,12 @@ exit /b %ERRORLEVEL%
 :step_etl_monthly_resample
 call "%UAT_ROOT%\smartinvestor_etl\monthly.bat"
 exit /b %ERRORLEVEL%
+
+:step_be_ths_moneyflow_monthly_score
+set "PYTHON_CMD=C:\Users\HANJ29\Development\code\JIUCAI_DEV\.venv\Scripts\python.exe"
+if not exist "%PYTHON_CMD%" set "PYTHON_CMD=python"
+pushd "%UAT_ROOT%\smartinvestor_be"
+"%PYTHON_CMD%" manage.py refresh_ths_moneyflow_score_monthly --top-n 20 --lookback-days 30 --ths-index-type N
+set "ERR=%ERRORLEVEL%"
+popd
+exit /b %ERR%

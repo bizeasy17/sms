@@ -38,6 +38,7 @@
             <el-tabs v-model="industryTab" class="sw-industry-tabs">
               <el-tab-pane label="全部行业" name="all" />
               <el-tab-pane label="行业轮动" name="rotation" />
+              <el-tab-pane v-if="selectedIndustryType === 'ths'" label="资金流评分" name="moneyflow" />
               <el-tab-pane :label="`收藏行业 (${favoriteIndustryList.length})`" name="favorites" />
             </el-tabs>
             <div v-if="industryTab === 'rotation'" class="sw-rotation-panel" v-loading="rotationLoading">
@@ -87,6 +88,48 @@
                 <el-button size="small" type="primary" plain @click="recomputeRotationList">立即重算</el-button>
                 <el-button size="small" type="success" plain @click="openRotationRunDialog">查看topN表现</el-button>
               </div>
+            </div>
+
+            <div v-else-if="industryTab === 'moneyflow'" class="sw-moneyflow-panel" v-loading="moneyflowLoading">
+              <div class="sw-rotation-toolbar">
+                <el-input-number
+                  v-model="moneyflowTopN"
+                  size="small"
+                  :min="1"
+                  :max="50"
+                  :step="1"
+                  controls-position="right"
+                />
+                <el-button size="small" @click="refreshMoneyflowList">刷新</el-button>
+              </div>
+              <div class="sw-rotation-meta" v-if="moneyflowMeta.generated_at">
+                <span>快照 {{ moneyflowMeta.asof_date || '-' }}</span>
+                <span>生成 {{ moneyflowMeta.generated_at || '-' }}</span>
+                <span>版本 {{ moneyflowMeta.scoring_version || '-' }}</span>
+                <span>类型 {{ moneyflowMeta.ths_index_type || selectedThsIndexType }}</span>
+              </div>
+              <el-scrollbar class="sw-rotation-scroll">
+                <div
+                  v-for="(item, idx) in moneyflowRows"
+                  :key="`${item.industry_code}-${idx}`"
+                  class="sw-moneyflow-item"
+                  :class="{ active: selectedIndustryType === 'ths' && selectedIndustryKey === item.industry_code }"
+                  @click="selectMoneyflowIndustry(item)"
+                >
+                  <div class="sw-rotation-head">
+                    <span class="sw-rotation-rank">#{{ item.rank || idx + 1 }}</span>
+                    <span class="sw-rotation-name">{{ item.industry_name || item.industry_code }}</span>
+                  </div>
+                  <div class="sw-rotation-sub">{{ item.industry_code }} | {{ item.index_type_label || item.index_type || '-' }}</div>
+                  <div class="sw-rotation-score">综合分 {{ formatMetric(item.score_total) }}</div>
+                  <div class="sw-rotation-breakdown">
+                    <span>资金流 {{ formatMetric(item.score_breakdown?.moneyflow_30d) }}</span>
+                    <span>位置 {{ formatMetric(item.score_breakdown?.position) }}</span>
+                    <span>波动 {{ formatMetric(item.score_breakdown?.volatility) }}</span>
+                  </div>
+                </div>
+                <el-empty v-if="!moneyflowRows.length" description="暂无资金流评分候选" />
+              </el-scrollbar>
             </div>
 
             <el-scrollbar v-else class="sw-industry-list-scroll">
@@ -362,7 +405,7 @@ const selectedIndustryType = ref<IndustryType>('sw')
 const selectedThsIndexType = ref<ThsIndexTypeFilter>('ALL')
 const industryList = ref<IndustryItem[]>([])
 const industryKeyword = ref('')
-const industryTab = ref<'all' | 'rotation' | 'favorites'>('all')
+const industryTab = ref<'all' | 'rotation' | 'moneyflow' | 'favorites'>('all')
 const favoriteIndustryKeys = ref<string[]>([])
 const selectedIndustryKey = ref('')
 const selectedIndustryName = ref('')
@@ -386,6 +429,28 @@ const rotationMeta = ref<{
   generated_at?: string
   scoring_version?: string
   run_id?: string
+}>({})
+
+const moneyflowLoading = ref(false)
+const moneyflowTopN = ref(20)
+const moneyflowRows = ref<Array<{
+  rank?: number | null
+  industry_code: string
+  industry_name: string
+  index_type?: string
+  index_type_label?: string
+  score_total: number | null
+  score_breakdown?: {
+    moneyflow_30d?: number | null
+    position?: number | null
+    volatility?: number | null
+  }
+}>>([])
+const moneyflowMeta = ref<{
+  asof_date?: string
+  generated_at?: string
+  scoring_version?: string
+  ths_index_type?: string
 }>({})
 
 type RotationRunSummary = {
@@ -1164,6 +1229,75 @@ function selectRotationIndustry(item: {
   })
 }
 
+async function fetchMoneyflowList() {
+  if (!baseURL || selectedIndustryType.value !== 'ths') {
+    moneyflowRows.value = []
+    moneyflowMeta.value = {}
+    return
+  }
+  moneyflowLoading.value = true
+  try {
+    const topN = Math.max(1, Math.min(50, Number(moneyflowTopN.value || 20)))
+    const resp = await axios.get(`${baseURL}/industry-universe/moneyflow/latest/`, {
+      params: {
+        market: 'CN',
+        industry_type: 'ths',
+        ths_index_type: 'N',
+        top_n: topN,
+      },
+    })
+    const rows = Array.isArray(resp?.data?.data) ? resp.data.data : []
+    moneyflowRows.value = rows.map((row: any) => ({
+      rank: Number.isFinite(Number(row?.rank)) ? Number(row.rank) : null,
+      industry_code: String(row?.industry_code || ''),
+      industry_name: String(row?.industry_name || ''),
+      index_type: String(row?.index_type || ''),
+      index_type_label: String(row?.index_type_label || ''),
+      score_total: Number.isFinite(Number(row?.score_total)) ? Number(row.score_total) : null,
+      score_breakdown: {
+        moneyflow_30d: Number.isFinite(Number(row?.score_breakdown?.moneyflow_30d)) ? Number(row.score_breakdown.moneyflow_30d) : null,
+        position: Number.isFinite(Number(row?.score_breakdown?.position)) ? Number(row.score_breakdown.position) : null,
+        volatility: Number.isFinite(Number(row?.score_breakdown?.volatility)) ? Number(row.score_breakdown.volatility) : null,
+      },
+    }))
+    moneyflowMeta.value = {
+      asof_date: String(resp?.data?.meta?.asof_date || ''),
+      generated_at: String(resp?.data?.meta?.generated_at || ''),
+      scoring_version: String(resp?.data?.meta?.scoring_version || ''),
+      ths_index_type: String(resp?.data?.meta?.ths_index_type || 'N'),
+    }
+  } finally {
+    moneyflowLoading.value = false
+  }
+}
+
+function refreshMoneyflowList() {
+  void fetchMoneyflowList()
+}
+
+function selectMoneyflowIndustry(item: {
+  industry_code: string
+  industry_name: string
+}) {
+  const normalizedCode = String(item?.industry_code || '').trim()
+  if (!normalizedCode) return
+
+  const matched = industryList.value.find((row) => (
+    row.industry_type === 'ths' && String(row.industry_key || '').trim() === normalizedCode
+  ))
+  if (matched) {
+    selectIndustry(matched)
+    return
+  }
+
+  selectIndustry({
+    industry_type: 'ths',
+    industry_key: normalizedCode,
+    display_name: String(item?.industry_name || normalizedCode),
+    member_count: 0,
+  })
+}
+
 function selectIndustry(item: IndustryItem) {
   const nextType = item.industry_type
   const nextKey = String(item.industry_key || '').trim()
@@ -1248,6 +1382,9 @@ watch([constituentMarket], () => {
 
 watch(selectedIndustryType, async () => {
   metric.value = 'pe'
+  if (selectedIndustryType.value !== 'ths' && industryTab.value === 'moneyflow') {
+    industryTab.value = 'all'
+  }
   selectedThsIndexType.value = selectedIndustryType.value === 'ths' ? 'N' : 'ALL'
   selectedIndustryKey.value = ''
   selectedIndustryName.value = ''
@@ -1255,6 +1392,8 @@ watch(selectedIndustryType, async () => {
   await fetchIndustryList()
   if (industryTab.value === 'rotation') {
     await fetchRotationList(false)
+  } else if (industryTab.value === 'moneyflow' && selectedIndustryType.value === 'ths') {
+    await fetchMoneyflowList()
   }
 })
 
@@ -1266,12 +1405,21 @@ watch(selectedThsIndexType, async () => {
   await fetchIndustryList()
   if (industryTab.value === 'rotation') {
     await fetchRotationList(false)
+  } else if (industryTab.value === 'moneyflow') {
+    await fetchMoneyflowList()
   }
 })
 
 watch(industryTab, async (tab) => {
   if (tab === 'rotation') {
     await fetchRotationList(false)
+  }
+  if (tab === 'moneyflow') {
+    if (selectedIndustryType.value !== 'ths') {
+      industryTab.value = 'all'
+      return
+    }
+    await fetchMoneyflowList()
   }
 })
 
@@ -1329,6 +1477,13 @@ onMounted(async () => {
   background: #f8fafc;
 }
 
+.sw-moneyflow-panel {
+  border: 1px solid #d1fae5;
+  border-radius: 8px;
+  padding: 10px;
+  background: #f0fdf4;
+}
+
 .sw-rotation-toolbar {
   display: flex;
   align-items: center;
@@ -1368,6 +1523,20 @@ onMounted(async () => {
 .sw-rotation-item.active {
   border-color: #2563eb;
   background: #dbeafe;
+}
+
+.sw-moneyflow-item {
+  border: 1px solid #a7f3d0;
+  border-radius: 8px;
+  padding: 8px;
+  margin-bottom: 8px;
+  background: #dcfce7;
+  cursor: pointer;
+}
+
+.sw-moneyflow-item.active {
+  border-color: #059669;
+  background: #bbf7d0;
 }
 
 .sw-rotation-head {
