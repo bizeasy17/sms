@@ -5751,6 +5751,13 @@ THS_MONEYFLOW_LOOKBACK_DAYS = int(getattr(settings, "THS_MONEYFLOW_LOOKBACK_DAYS
 THS_MONEYFLOW_SCORE_WEIGHT_MONEYFLOW = 0.50
 THS_MONEYFLOW_SCORE_WEIGHT_POSITION = 0.30
 THS_MONEYFLOW_SCORE_WEIGHT_VOLATILITY = 0.20
+THS_MONEYFLOW_ACCUMULATION_BONUS_MAP = {
+    "NONE": 0.0,
+    "EARLY": 2.0,
+    "SUSTAINING": 5.0,
+    "STRONG": 8.0,
+}
+THS_MONEYFLOW_ACCUMULATION_RULE_VERSION = "v1_10_30_60"
 THS_INDEX_TYPE_LABEL_MAP = {
     "N": "概念指数",
     "I": "行业指数",
@@ -6088,6 +6095,7 @@ def _compute_and_write_ths_moneyflow_score_snapshot(top_n=None, lookback_days=No
     by_code_rows = defaultdict(list)
     by_code_name = {}
     by_code_type = {}
+    by_code_member_count = {}
     available_trade_dates = set()
     for row in daily_rows:
         item = row if isinstance(row, dict) else {}
@@ -6121,6 +6129,10 @@ def _compute_and_write_ths_moneyflow_score_snapshot(top_n=None, lookback_days=No
         by_code_type[code] = _normalize_ths_index_type(item.get("index_type")) or by_code_type.get(code, "")
         if code not in by_code_name or not by_code_name.get(code):
             by_code_name[code] = str(item.get("display_name") or code).strip()
+        try:
+            by_code_member_count[code] = int(item.get("member_count") or 0)
+        except (TypeError, ValueError):
+            by_code_member_count[code] = 0
 
     price_metric_cache = {}
     for industry_code in by_code_rows.keys():
@@ -6179,6 +6191,30 @@ def _compute_and_write_ths_moneyflow_score_snapshot(top_n=None, lookback_days=No
         score = (1.0 - ratio) * 100.0 if invert else ratio * 100.0
         return _clamp_score_0_100(score, default=default)
 
+    def _sum_last(values, window_size):
+        tail = values[-window_size:] if len(values) > window_size else values
+        return float(sum(tail))
+
+    def _count_positive_last(values, window_size):
+        tail = values[-window_size:] if len(values) > window_size else values
+        return int(sum(1 for value in tail if float(value) > 0.0))
+
+    def _linear_slope(series):
+        if not series or len(series) < 2:
+            return 0.0
+        length = len(series)
+        x_mean = (length - 1) / 2.0
+        y_mean = sum(series) / length
+        numerator = 0.0
+        denominator = 0.0
+        for idx, value in enumerate(series):
+            dx = float(idx) - x_mean
+            numerator += dx * (float(value) - y_mean)
+            denominator += dx * dx
+        if denominator <= 1e-12:
+            return 0.0
+        return float(numerator / denominator)
+
     candidates_by_type = defaultdict(list)
     for industry_code, rows in by_code_rows.items():
         current_type = _normalize_ths_index_type(by_code_type.get(industry_code))
@@ -6186,9 +6222,51 @@ def _compute_and_write_ths_moneyflow_score_snapshot(top_n=None, lookback_days=No
             continue
         if not current_type:
             continue
+        member_count = by_code_member_count.get(industry_code)
+        if member_count is None:
+            member_count = _get_ths_member_count(pro, industry_code)
+        try:
+            member_count = int(member_count or 0)
+        except (TypeError, ValueError):
+            member_count = 0
+        if member_count <= 0:
+            continue
         ordered_rows = sorted(rows, key=lambda item: str(item.get("trade_date") or ""))
+        net_amount_series = [float(item.get("net_amount") or 0.0) for item in ordered_rows]
         tail_rows = ordered_rows[-lookback:] if len(ordered_rows) > lookback else ordered_rows
         moneyflow_30d = sum(float(item.get("net_amount") or 0.0) for item in tail_rows)
+
+        mf_10_sum = _sum_last(net_amount_series, 10)
+        mf_30_sum = _sum_last(net_amount_series, 30)
+        mf_60_tail = net_amount_series[-60:] if len(net_amount_series) > 60 else net_amount_series
+        mf_60_sum = float(sum(mf_60_tail))
+        mf_10_pos_days = _count_positive_last(net_amount_series, 10)
+        mf_30_pos_days = _count_positive_last(net_amount_series, 30)
+
+        cumulative_60 = []
+        running_sum = 0.0
+        for value in mf_60_tail:
+            running_sum += float(value)
+            cumulative_60.append(running_sum)
+        mf_60_slope = _linear_slope(cumulative_60)
+
+        start_signal = (mf_10_sum > 0.0) and (mf_10_pos_days >= 6)
+        sustain_signal = (mf_30_sum > 0.0) and (mf_30_pos_days >= 16) and (mf_30_sum >= mf_10_sum * 1.2)
+        trend_signal = (mf_60_sum > 0.0) and (mf_60_slope > 0.0)
+
+        accumulation_level = "NONE"
+        if start_signal and not sustain_signal:
+            accumulation_level = "EARLY"
+        elif sustain_signal and not trend_signal:
+            accumulation_level = "SUSTAINING"
+        elif sustain_signal and trend_signal:
+            accumulation_level = "STRONG"
+
+        if current_type != "N":
+            accumulation_level = "NONE"
+
+        accumulation_bonus = float(THS_MONEYFLOW_ACCUMULATION_BONUS_MAP.get(accumulation_level, 0.0))
+
         metric_item = price_metric_cache.get(industry_code) or {}
         candidates_by_type[current_type].append(
             {
@@ -6196,9 +6274,25 @@ def _compute_and_write_ths_moneyflow_score_snapshot(top_n=None, lookback_days=No
                 "industry_name": str(by_code_name.get(industry_code) or industry_code).strip(),
                 "index_type": current_type,
                 "index_type_label": _get_ths_index_type_label(current_type),
+                "member_count": member_count,
                 "moneyflow_30d": float(moneyflow_30d),
                 "position": _as_float_or_none(metric_item.get("position")),
                 "volatility": _as_float_or_none(metric_item.get("volatility")),
+                "accumulation_level": accumulation_level,
+                "accumulation_bonus": accumulation_bonus,
+                "accumulation_signals": {
+                    "start_signal": bool(start_signal),
+                    "sustain_signal": bool(sustain_signal),
+                    "trend_signal": bool(trend_signal),
+                },
+                "accumulation_metrics": {
+                    "mf_10_sum": round(float(mf_10_sum), 4),
+                    "mf_30_sum": round(float(mf_30_sum), 4),
+                    "mf_60_sum": round(float(mf_60_sum), 4),
+                    "mf_10_pos_days": int(mf_10_pos_days),
+                    "mf_30_pos_days": int(mf_30_pos_days),
+                    "mf_60_slope": round(float(mf_60_slope), 6),
+                },
             }
         )
 
@@ -6215,11 +6309,13 @@ def _compute_and_write_ths_moneyflow_score_snapshot(top_n=None, lookback_days=No
             moneyflow_score = _to_score(item.get("moneyflow_30d"), moneyflow_pool, invert=False, default=50.0)
             position_score = _to_score(item.get("position"), position_pool, invert=False, default=50.0)
             volatility_score = _to_score(item.get("volatility"), volatility_pool, invert=True, default=50.0)
-            score_total = (
+            score_total_v1 = (
                 _clamp_score_0_100(moneyflow_score) * THS_MONEYFLOW_SCORE_WEIGHT_MONEYFLOW
                 + _clamp_score_0_100(position_score) * THS_MONEYFLOW_SCORE_WEIGHT_POSITION
                 + _clamp_score_0_100(volatility_score) * THS_MONEYFLOW_SCORE_WEIGHT_VOLATILITY
             )
+            accumulation_bonus = float(item.get("accumulation_bonus") or 0.0)
+            score_total_v2 = _clamp_score_0_100(float(score_total_v1) + accumulation_bonus, default=0.0)
 
             scored_rows.append(
                 {
@@ -6227,7 +6323,10 @@ def _compute_and_write_ths_moneyflow_score_snapshot(top_n=None, lookback_days=No
                     "industry_name": str(item.get("industry_name") or "").strip(),
                     "index_type": index_type,
                     "index_type_label": _get_ths_index_type_label(index_type),
-                    "score_total": round(float(score_total), 4),
+                    "member_count": int(item.get("member_count") or 0),
+                    "score_total": round(float(score_total_v2), 4),
+                    "score_total_v1": round(float(score_total_v1), 4),
+                    "score_total_v2": round(float(score_total_v2), 4),
                     "score_breakdown": {
                         "moneyflow_30d": round(float(_clamp_score_0_100(moneyflow_score)), 4),
                         "position": round(float(_clamp_score_0_100(position_score)), 4),
@@ -6238,6 +6337,10 @@ def _compute_and_write_ths_moneyflow_score_snapshot(top_n=None, lookback_days=No
                         "position": round(float(item.get("position")), 6) if item.get("position") is not None else None,
                         "volatility": round(float(item.get("volatility")), 6) if item.get("volatility") is not None else None,
                     },
+                    "accumulation_level": str(item.get("accumulation_level") or "NONE"),
+                    "accumulation_bonus": round(float(accumulation_bonus), 4),
+                    "accumulation_signals": item.get("accumulation_signals") if isinstance(item.get("accumulation_signals"), dict) else {},
+                    "accumulation_metrics": item.get("accumulation_metrics") if isinstance(item.get("accumulation_metrics"), dict) else {},
                 }
             )
 
@@ -6262,7 +6365,8 @@ def _compute_and_write_ths_moneyflow_score_snapshot(top_n=None, lookback_days=No
     payload = {
         "generated_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
         "asof_date": asof_date,
-        "scoring_version": "ths_moneyflow_v1",
+        "scoring_version": "ths_moneyflow_v2",
+        "accumulation_rule_version": THS_MONEYFLOW_ACCUMULATION_RULE_VERSION,
         "top_n_default": top_n_value,
         "lookback_days": lookback,
         "weights": {
@@ -6270,6 +6374,7 @@ def _compute_and_write_ths_moneyflow_score_snapshot(top_n=None, lookback_days=No
             "position": THS_MONEYFLOW_SCORE_WEIGHT_POSITION,
             "volatility": THS_MONEYFLOW_SCORE_WEIGHT_VOLATILITY,
         },
+        "accumulation_bonus_map": THS_MONEYFLOW_ACCUMULATION_BONUS_MAP,
         "snapshots": snapshots,
     }
     output_path = _write_ths_moneyflow_score_latest_payload(payload)
@@ -7458,8 +7563,13 @@ def get_industry_universe_moneyflow_latest(request):
     chosen = snapshots.get(ths_index_type)
     if isinstance(chosen, dict):
         data_rows = chosen.get("data") if isinstance(chosen.get("data"), list) else []
-        total_candidates = len(data_rows)
-        rows = [dict(row if isinstance(row, dict) else {}) for row in data_rows]
+        filtered_rows = [
+            row
+            for row in data_rows
+            if int((row or {}).get("member_count") or 0) > 0
+        ]
+        total_candidates = len(filtered_rows)
+        rows = [dict(row if isinstance(row, dict) else {}) for row in filtered_rows]
 
     return Response(
         {
@@ -7473,7 +7583,8 @@ def get_industry_universe_moneyflow_latest(request):
                 "total_candidates": total_candidates,
                 "asof_date": str(snapshot.get("asof_date") or ""),
                 "generated_at": str(snapshot.get("generated_at") or ""),
-                "scoring_version": str(snapshot.get("scoring_version") or "ths_moneyflow_v1"),
+                "scoring_version": str(snapshot.get("scoring_version") or "ths_moneyflow_v2"),
+                "accumulation_rule_version": str(snapshot.get("accumulation_rule_version") or ""),
                 "lookback_days": int(snapshot.get("lookback_days") or THS_MONEYFLOW_LOOKBACK_DAYS),
                 "weights": snapshot.get("weights") if isinstance(snapshot.get("weights"), dict) else {},
                 "source": "snapshot",

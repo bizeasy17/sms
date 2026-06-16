@@ -166,3 +166,52 @@
 3. TopN 默认值是否确认 20？
 4. 月度任务是否固定放在现有 `monthly.bat` 中执行？
 5. 是否需要同时提供 run 历史查询接口（还是先只做 latest）？
+
+## 15. V2 同步补充（2026-06-16）
+
+- 变更来源：将 DEV 已验证的 THS moneyflow v2 评分逻辑同步到 UAT。
+- 同步目标：`smartinvestor_be` 的 moneyflow 评分函数与 latest 接口 meta。
+
+### 15.1 新增持续建仓判定（仅 N 类型启用）
+
+1. 启动信号（10日）：`mf_10_sum > 0` 且 `mf_10_pos_days >= 6`
+2. 持续信号（30日）：`mf_30_sum > 0` 且 `mf_30_pos_days >= 16` 且 `mf_30_sum >= mf_10_sum * 1.2`
+3. 趋势信号（60日）：`mf_60_sum > 0` 且 `mf_60_slope > 0`
+
+### 15.2 标签与加分
+
+- `NONE`: +0
+- `EARLY`: +2
+- `SUSTAINING`: +5
+- `STRONG`: +8
+
+### 15.3 输出兼容策略
+
+1. 保留原始口径：`score_total_v1`
+2. 新增升级口径：`score_total_v2`
+3. 对外 `score_total` 映射为 `score_total_v2`
+4. `meta.scoring_version` 升级为 `ths_moneyflow_v2`
+5. `meta` 新增 `accumulation_rule_version`
+
+### 15.4 验证步骤
+
+1. 执行：`manage.py refresh_ths_moneyflow_score_monthly --top-n 20 --lookback-days 30 --ths-index-type N`
+2. 访问 latest 接口，确认 `meta.scoring_version=ths_moneyflow_v2`
+3. 样本行业核对新增字段：
+  - `accumulation_level`
+  - `accumulation_bonus`
+  - `accumulation_signals`
+  - `accumulation_metrics`
+
+### 15.5 前台刷新体验优化（2026-06-16）
+
+1. moneyflow 与 rotation 的刷新按钮显示 loading 状态。
+2. 刷新过程列表区域展示 skeleton，占位完成后再渲染新列表。
+3. 刷新请求附加 `_ts` 参数，降低中间层缓存导致的“看起来未刷新”问题。
+4. 前端加入请求令牌，避免慢请求回包覆盖较新一次刷新结果。
+
+### 15.6 成分为空板块排除（2026-06-16）
+
+- 规则：若 THS 板块个股成分数 `member_count=0`，该板块不得进入资金流评分榜单。
+- 原因：成分为空的板块缺乏可交易对象，进入榜单没有实际意义。
+- 实现范围：评分生成阶段与 latest 展示阶段均应排除，避免旧快照残留。

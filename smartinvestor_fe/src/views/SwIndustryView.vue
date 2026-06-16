@@ -41,7 +41,7 @@
               <el-tab-pane v-if="selectedIndustryType === 'ths'" label="资金流评分" name="moneyflow" />
               <el-tab-pane :label="`收藏行业 (${favoriteIndustryList.length})`" name="favorites" />
             </el-tabs>
-            <div v-if="industryTab === 'rotation'" class="sw-rotation-panel" v-loading="rotationLoading">
+            <div v-if="industryTab === 'rotation'" class="sw-rotation-panel">
               <div class="sw-rotation-toolbar">
                 <el-input-number
                   v-model="rotationTopN"
@@ -51,15 +51,18 @@
                   :step="1"
                   controls-position="right"
                 />
-                <el-button size="small" @click="refreshRotationList">刷新</el-button>
+                <el-button size="small" :loading="rotationLoading" @click="refreshRotationList">刷新</el-button>
               </div>
               <div class="sw-rotation-meta" v-if="rotationMeta.generated_at">
                 <span>快照 {{ rotationMeta.asof_date || '-' }}</span>
-                <span>生成 {{ rotationMeta.generated_at || '-' }}</span>
+                <span>生成 {{ formatDateTimeLocal(rotationMeta.generated_at) }}</span>
                 <span>版本 {{ rotationMeta.scoring_version || '-' }}</span>
                 <span>run {{ rotationMeta.run_id || '-' }}</span>
               </div>
-              <el-scrollbar class="sw-rotation-scroll">
+              <div v-if="rotationLoading" class="sw-list-skeleton-wrap">
+                <el-skeleton :rows="6" animated />
+              </div>
+              <el-scrollbar v-else class="sw-rotation-scroll">
                 <div
                   v-for="(item, idx) in rotationRows"
                   :key="`${item.industry_code}-${idx}`"
@@ -90,7 +93,7 @@
               </div>
             </div>
 
-            <div v-else-if="industryTab === 'moneyflow'" class="sw-moneyflow-panel" v-loading="moneyflowLoading">
+            <div v-else-if="industryTab === 'moneyflow'" class="sw-moneyflow-panel">
               <div class="sw-rotation-toolbar">
                 <el-input-number
                   v-model="moneyflowTopN"
@@ -100,15 +103,18 @@
                   :step="1"
                   controls-position="right"
                 />
-                <el-button size="small" @click="refreshMoneyflowList">刷新</el-button>
+                <el-button size="small" :loading="moneyflowLoading" @click="refreshMoneyflowList">刷新</el-button>
               </div>
               <div class="sw-rotation-meta" v-if="moneyflowMeta.generated_at">
                 <span>快照 {{ moneyflowMeta.asof_date || '-' }}</span>
-                <span>生成 {{ moneyflowMeta.generated_at || '-' }}</span>
+                <span>生成 {{ formatDateTimeLocal(moneyflowMeta.generated_at) }}</span>
                 <span>版本 {{ moneyflowMeta.scoring_version || '-' }}</span>
                 <span>类型 {{ moneyflowMeta.ths_index_type || selectedThsIndexType }}</span>
               </div>
-              <el-scrollbar class="sw-rotation-scroll">
+              <div v-if="moneyflowLoading" class="sw-list-skeleton-wrap">
+                <el-skeleton :rows="8" animated />
+              </div>
+              <el-scrollbar v-else class="sw-rotation-scroll">
                 <div
                   v-for="(item, idx) in moneyflowRows"
                   :key="`${item.industry_code}-${idx}`"
@@ -335,7 +341,7 @@
 <script setup lang="ts">
 import { computed, inject, onMounted, ref, watch } from 'vue'
 import axios from 'axios'
-import { ElButton, ElCard, ElCol, ElDialog, ElEmpty, ElInput, ElInputNumber, ElLink, ElMessage, ElMessageBox, ElOption, ElPagination, ElRadioButton, ElRadioGroup, ElRow, ElScrollbar, ElSelect, ElTable, ElTableColumn, ElTabPane, ElTabs, ElTag } from 'element-plus'
+import { ElButton, ElCard, ElCol, ElDialog, ElEmpty, ElInput, ElInputNumber, ElLink, ElMessage, ElMessageBox, ElOption, ElPagination, ElRadioButton, ElRadioGroup, ElRow, ElScrollbar, ElSelect, ElSkeleton, ElTable, ElTableColumn, ElTabPane, ElTabs, ElTag } from 'element-plus'
 import { use } from 'echarts/core'
 import { CanvasRenderer } from 'echarts/renderers'
 import { BarChart, LineChart } from 'echarts/charts'
@@ -452,6 +458,8 @@ const moneyflowMeta = ref<{
   scoring_version?: string
   ths_index_type?: string
 }>({})
+let moneyflowRequestToken = 0
+let rotationRequestToken = 0
 
 type RotationRunSummary = {
   run_id: string
@@ -700,6 +708,22 @@ const historyChartOption = computed(() => {
 function formatMetric(value: number | null | undefined) {
   if (typeof value !== 'number' || !Number.isFinite(value)) return '-'
   return value.toFixed(2)
+}
+
+function formatDateTimeLocal(value: string | null | undefined) {
+  const text = String(value || '').trim()
+  if (!text) return '-'
+  const parsed = new Date(text)
+  if (Number.isNaN(parsed.getTime())) return text
+  return parsed.toLocaleString('zh-CN', {
+    hour12: false,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+  })
 }
 
 function buildIndustryHistoryCacheKey() {
@@ -1016,9 +1040,11 @@ async function fetchConstituents() {
   }
 }
 
-async function fetchRotationList(useRecompute = false) {
+async function fetchRotationList(useRecompute = false, forceRefresh = false) {
   if (!baseURL) return
   rotationLoading.value = true
+  rotationRequestToken += 1
+  const requestToken = rotationRequestToken
   try {
     const topN = Math.max(1, Math.min(50, Number(rotationTopN.value || 10)))
     const thsIndexType = selectedIndustryType.value === 'ths' ? selectedThsIndexType.value : 'ALL'
@@ -1030,6 +1056,7 @@ async function fetchRotationList(useRecompute = false) {
         top_n: topN,
       })
       const recomputeRows = Array.isArray(recomputeResp?.data?.data) ? recomputeResp.data.data : []
+      if (requestToken !== rotationRequestToken) return
       rotationRows.value = recomputeRows.map((row: any) => ({
         industry_code: String(row?.industry_code || ''),
         industry_name: String(row?.industry_name || ''),
@@ -1057,9 +1084,11 @@ async function fetchRotationList(useRecompute = false) {
         industry_type: selectedIndustryType.value,
         ths_index_type: thsIndexType,
         top_n: topN,
+        ...(forceRefresh ? { _ts: Date.now() } : {}),
       },
     })
     const rows = Array.isArray(resp?.data?.data) ? resp.data.data : []
+    if (requestToken !== rotationRequestToken) return
     rotationRows.value = rows.map((row: any) => ({
       industry_code: String(row?.industry_code || ''),
       industry_name: String(row?.industry_name || ''),
@@ -1084,7 +1113,7 @@ async function fetchRotationList(useRecompute = false) {
 }
 
 function refreshRotationList() {
-  void fetchRotationList(false)
+  void fetchRotationList(false, true)
 }
 
 function recomputeRotationList() {
@@ -1229,13 +1258,15 @@ function selectRotationIndustry(item: {
   })
 }
 
-async function fetchMoneyflowList() {
+async function fetchMoneyflowList(forceRefresh = false) {
   if (!baseURL || selectedIndustryType.value !== 'ths') {
     moneyflowRows.value = []
     moneyflowMeta.value = {}
     return
   }
   moneyflowLoading.value = true
+  moneyflowRequestToken += 1
+  const requestToken = moneyflowRequestToken
   try {
     const topN = Math.max(1, Math.min(50, Number(moneyflowTopN.value || 20)))
     const resp = await axios.get(`${baseURL}/industry-universe/moneyflow/latest/`, {
@@ -1244,9 +1275,11 @@ async function fetchMoneyflowList() {
         industry_type: 'ths',
         ths_index_type: 'N',
         top_n: topN,
+        ...(forceRefresh ? { _ts: Date.now() } : {}),
       },
     })
     const rows = Array.isArray(resp?.data?.data) ? resp.data.data : []
+    if (requestToken !== moneyflowRequestToken) return
     moneyflowRows.value = rows.map((row: any) => ({
       rank: Number.isFinite(Number(row?.rank)) ? Number(row.rank) : null,
       industry_code: String(row?.industry_code || ''),
@@ -1272,7 +1305,7 @@ async function fetchMoneyflowList() {
 }
 
 function refreshMoneyflowList() {
-  void fetchMoneyflowList()
+  void fetchMoneyflowList(true)
 }
 
 function selectMoneyflowIndustry(item: {
@@ -1565,6 +1598,10 @@ onMounted(async () => {
   margin-top: 6px;
   font-size: 12px;
   color: #0f172a;
+}
+
+.sw-list-skeleton-wrap {
+  padding: 6px 0;
 }
 
 .sw-rotation-breakdown {
