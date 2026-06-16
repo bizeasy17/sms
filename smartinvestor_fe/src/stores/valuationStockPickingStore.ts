@@ -20,6 +20,8 @@ export type ValuationStockPickingParams = {
     requirePositivePrevNetprofit: boolean;
     requirePositivePrevEbit: boolean;
     applyFinancialFilters: boolean;
+    applyMoneyflowFilters: boolean;
+    moneyflowNetInflowDaysWindow: string;
     financialFilterMode: string;
     priorityPolicy: string;
     buyCandidateOnly: string;
@@ -62,6 +64,8 @@ export const useValuationStockPickingStore = defineStore("valuationStockPicking"
     const requirePositivePrevNetprofit = ref(true);
     const requirePositivePrevEbit = ref(true);
     const applyFinancialFilters = ref(false);
+    const applyMoneyflowFilters = ref(false);
+    const moneyflowNetInflowDaysWindow = ref("10");
     const financialFilterMode = ref("all");
     const priorityPolicy = ref("score_desc");
     const buyCandidateOnly = ref("BC:ONLY");
@@ -95,6 +99,8 @@ export const useValuationStockPickingStore = defineStore("valuationStockPicking"
     function setRequirePositivePrevNetprofit(value: boolean) { requirePositivePrevNetprofit.value = value; }
     function setRequirePositivePrevEbit(value: boolean) { requirePositivePrevEbit.value = value; }
     function setApplyFinancialFilters(value: boolean) { applyFinancialFilters.value = value; }
+    function setApplyMoneyflowFilters(value: boolean) { applyMoneyflowFilters.value = value; }
+    function setMoneyflowNetInflowDaysWindow(value: string) { moneyflowNetInflowDaysWindow.value = value; }
     function setFinancialFilterMode(value: string) { financialFilterMode.value = value; }
     function setPriorityPolicy(value: string) { priorityPolicy.value = value; }
     function setBuyCandidateOnly(value: string) { buyCandidateOnly.value = value; }
@@ -142,6 +148,8 @@ export const useValuationStockPickingStore = defineStore("valuationStockPicking"
         requirePositivePrevNetprofit,
         requirePositivePrevEbit,
         applyFinancialFilters,
+        applyMoneyflowFilters,
+        moneyflowNetInflowDaysWindow,
         financialFilterMode,
         priorityPolicy,
         buyCandidateOnly,
@@ -174,6 +182,8 @@ export const useValuationStockPickingStore = defineStore("valuationStockPicking"
         setRequirePositivePrevNetprofit,
         setRequirePositivePrevEbit,
         setApplyFinancialFilters,
+        setApplyMoneyflowFilters,
+        setMoneyflowNetInflowDaysWindow,
         setFinancialFilterMode,
         setPriorityPolicy,
         setBuyCandidateOnly,

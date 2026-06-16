@@ -18,6 +18,7 @@ from prediction.management.commands.pickbuycandidates import (
     _build_snapshot_method_map,
     _summarize_buy_candidate,
 )
+from prediction.models import StockThsMoneyflowDaily, StockThsMoneyflowFeatureDaily
 from valuation.models import StockValuationSnapshotHistory
 from valuation.services.snapshot_provider import query_local_financial_df
 from valuation_risk.models import ValuationRiskSnapshot
@@ -37,6 +38,84 @@ TECHNICAL_FACTOR_ALIAS_MAP = {
     "volume_ratio": "volume_ratio",
     "vol_ratio": "volume_ratio",
 }
+
+MONEYFLOW_WINDOW_OPTIONS = (5, 10, 15, 30, 60)
+
+
+def _normalize_moneyflow_window_days(value):
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError):
+        parsed = 10
+    if parsed not in MONEYFLOW_WINDOW_OPTIONS:
+        parsed = 10
+    return parsed
+
+
+def _load_moneyflow_feature_map(*, ts_codes, trade_date, window_days):
+    normalized_codes = sorted({str(code or "").strip().upper() for code in (ts_codes or []) if str(code or "").strip()})
+    if not normalized_codes or trade_date is None:
+        return {}
+
+    normalized_window_days = _normalize_moneyflow_window_days(window_days)
+    sum_field = f"mf_sum_{normalized_window_days}"
+    obs_field = f"obs_days_{normalized_window_days}"
+
+    feature_rows = (
+        StockThsMoneyflowFeatureDaily.objects.filter(ts_code__in=normalized_codes, trade_date=trade_date)
+        .values("ts_code", sum_field, obs_field)
+    )
+    result = {}
+    for row in feature_rows.iterator(chunk_size=2000):
+        ts_code = str(row.get("ts_code") or "").strip().upper()
+        if not ts_code:
+            continue
+        result[ts_code] = {
+            "net_inflow_sum": _safe_float(row.get(sum_field)),
+            "observed_days": int(row.get(obs_field) or 0),
+        }
+
+    missing_codes = [code for code in normalized_codes if code not in result]
+    if not missing_codes:
+        return result
+
+    # Fallback path: compute from daily table for symbols missing feature rows.
+    start_date = trade_date - timedelta(days=normalized_window_days * 3)
+    rows = (
+        StockThsMoneyflowDaily.objects.filter(
+            ts_code__in=missing_codes,
+            trade_date__gte=start_date,
+            trade_date__lte=trade_date,
+        )
+        .order_by("ts_code", "trade_date")
+        .values("ts_code", "net_amount", "net_mf_amount")
+    )
+
+    state_map = {
+        code: {"queue": deque(), "sum": 0.0}
+        for code in missing_codes
+    }
+    for row in rows.iterator(chunk_size=5000):
+        ts_code = str(row.get("ts_code") or "").strip().upper()
+        if ts_code not in state_map:
+            continue
+        value = _safe_float(row.get("net_amount"))
+        if value is None:
+            value = _safe_float(row.get("net_mf_amount"))
+        value = float(value) if value is not None else 0.0
+        state = state_map[ts_code]
+        state["queue"].append(value)
+        state["sum"] += value
+        if len(state["queue"]) > normalized_window_days:
+            state["sum"] -= state["queue"].popleft()
+
+    for ts_code in missing_codes:
+        state = state_map[ts_code]
+        result[ts_code] = {
+            "net_inflow_sum": float(state["sum"]) if state["queue"] else None,
+            "observed_days": len(state["queue"]),
+        }
+    return result
 
 
 def _normalize_technical_factors(value):
@@ -881,6 +960,8 @@ def _persist_traditional_backtest_run(
     technical_lookback_days=60,
     technical_factors=None,
     technical_low_quantile=0.1,
+    apply_moneyflow_filters=False,
+    moneyflow_net_inflow_days_window=10,
     result_file,
     summary,
 ):
@@ -934,6 +1015,8 @@ def _persist_traditional_backtest_run(
                 "technical_lookback_days": int(technical_lookback_days or 60),
                 "technical_factors": _normalize_technical_factors(technical_factors),
                 "technical_low_quantile": float(technical_low_quantile or 0.1),
+                "apply_moneyflow_filters": bool(apply_moneyflow_filters),
+                "moneyflow_net_inflow_days_window": _normalize_moneyflow_window_days(moneyflow_net_inflow_days_window),
             },
             "summary_json": stored_summary,
             "result_json": summary or {},
@@ -1166,6 +1249,8 @@ def run_traditional_value_exit_backtest(
     technical_lookback_days=60,
     technical_factors=None,
     technical_low_quantile=0.1,
+    apply_moneyflow_filters=False,
+    moneyflow_net_inflow_days_window=10,
     disable_target_hit=False,
     progress_every=50,
     output_json=None,
@@ -1201,6 +1286,8 @@ def run_traditional_value_exit_backtest(
     technical_filters_enabled = bool(technical_strategy_enabled and technical_factors)
     technical_lookback_days = max(5, int(technical_lookback_days or 60))
     technical_low_quantile = min(1.0, max(0.0, float(technical_low_quantile or 0.1)))
+    apply_moneyflow_filters = bool(apply_moneyflow_filters)
+    moneyflow_net_inflow_days_window = _normalize_moneyflow_window_days(moneyflow_net_inflow_days_window)
 
     entry_dates = _resolve_entry_dates(
         scope=scope,
@@ -1268,6 +1355,8 @@ def run_traditional_value_exit_backtest(
     financial_missing_count = 0
     technical_filtered_count = 0
     technical_missing_count = 0
+    moneyflow_filtered_count = 0
+    moneyflow_missing_count = 0
 
     for idx, trade_date in enumerate(sorted(entry_dates), 1):
         date_prices = date_price_map.get(trade_date, {})
@@ -1276,6 +1365,15 @@ def run_traditional_value_exit_backtest(
 
         ts_codes = sorted(date_prices.keys())
         method_map = _build_snapshot_method_map(ts_codes=ts_codes, trade_date=trade_date, market=market)
+        moneyflow_sum_map = (
+            _load_moneyflow_feature_map(
+                ts_codes=ts_codes,
+                trade_date=trade_date,
+                window_days=moneyflow_net_inflow_days_window,
+            )
+            if apply_moneyflow_filters
+            else {}
+        )
 
         for ts_code, position in list(open_positions.items()):
             bar = (ohlc_map.get(ts_code) or {}).get(trade_date) or {}
@@ -1468,6 +1566,18 @@ def run_traditional_value_exit_backtest(
                     technical_filtered_count += 1
                     continue
 
+            moneyflow_payload = None
+            if apply_moneyflow_filters:
+                moneyflow_payload = moneyflow_sum_map.get(ts_code) or {}
+                net_inflow_sum = _safe_float(moneyflow_payload.get("net_inflow_sum"))
+                if net_inflow_sum is None:
+                    moneyflow_missing_count += 1
+                    moneyflow_filtered_count += 1
+                    continue
+                if float(net_inflow_sum) <= 0:
+                    moneyflow_filtered_count += 1
+                    continue
+
             open_positions[ts_code] = {
                 "entry_date": trade_date,
                 "entry_price": float(current_price),
@@ -1481,6 +1591,11 @@ def run_traditional_value_exit_backtest(
                 "tp_stage_done": 0,
                 "trend_ma_value": None,
                 "trend_below_ma_days": 0,
+                "moneyflow_net_inflow_sum": (
+                    _safe_float((moneyflow_payload or {}).get("net_inflow_sum"))
+                    if apply_moneyflow_filters
+                    else None
+                ),
             }
 
         if stdout is not None and (idx % progress_every == 0 or idx == len(entry_dates)):
@@ -1525,6 +1640,7 @@ def run_traditional_value_exit_backtest(
                 "tp_stage_done": int(position.get("tp_stage_done") or 0),
                 "trend_ma_value": round(float(position.get("trend_ma_value")), 4) if position.get("trend_ma_value") is not None else None,
                 "trend_below_ma_days": int(position.get("trend_below_ma_days") or 0),
+                "moneyflow_net_inflow_sum": _safe_float(position.get("moneyflow_net_inflow_sum")),
                 "return_pct": round((float(exit_price) / float(position["entry_price"]) - 1.0) * 100.0, 4),
                 "holding_days": holding_days,
                 "exit_reason": "end_of_period",
@@ -1561,6 +1677,8 @@ def run_traditional_value_exit_backtest(
             "technical_lookback_days": technical_lookback_days,
             "technical_factors": technical_factors,
             "technical_low_quantile": technical_low_quantile,
+            "apply_moneyflow_filters": apply_moneyflow_filters,
+            "moneyflow_net_inflow_days_window": moneyflow_net_inflow_days_window,
             "take_profit_mode": take_profit_mode,
             "take_profit_tiers": take_profit_tiers,
             "trend_take_profit_enabled": trend_take_profit_enabled,
@@ -1586,6 +1704,8 @@ def run_traditional_value_exit_backtest(
             "financial_missing_count": financial_missing_count,
             "technical_filtered_count": technical_filtered_count,
             "technical_missing_count": technical_missing_count,
+            "moneyflow_filtered_count": moneyflow_filtered_count,
+            "moneyflow_missing_count": moneyflow_missing_count,
             "closed_trade_count": len(closed_trades),
             "dynamic_state_enabled": bool(take_profit_mode != "fixed" or stop_loss_mode != "fixed" or trend_take_profit_enabled),
         },
@@ -1625,6 +1745,8 @@ def run_traditional_value_exit_backtest(
         technical_lookback_days=technical_lookback_days,
         technical_factors=technical_factors,
         technical_low_quantile=technical_low_quantile,
+        apply_moneyflow_filters=apply_moneyflow_filters,
+        moneyflow_net_inflow_days_window=moneyflow_net_inflow_days_window,
         take_profit_mode=take_profit_mode,
         take_profit_tiers=take_profit_tiers,
         trend_take_profit_enabled=trend_take_profit_enabled,
@@ -1679,6 +1801,8 @@ def run_traditional_value_exit_account_backtest(
     technical_lookback_days=60,
     technical_factors=None,
     technical_low_quantile=0.1,
+    apply_moneyflow_filters=False,
+    moneyflow_net_inflow_days_window=10,
     output_json=None,
     stdout=None,
     starting_capital=200000.0,
@@ -1788,6 +1912,8 @@ def run_traditional_value_exit_account_backtest(
     technical_filters_enabled = bool(technical_strategy_enabled and technical_factors)
     technical_lookback_days = max(5, int(technical_lookback_days or 60))
     technical_low_quantile = min(1.0, max(0.0, float(technical_low_quantile or 0.1)))
+    apply_moneyflow_filters = bool(apply_moneyflow_filters)
+    moneyflow_net_inflow_days_window = _normalize_moneyflow_window_days(moneyflow_net_inflow_days_window)
 
     if entry_date_source == "history":
         entry_dates = _resolve_history_entry_dates(
@@ -1876,6 +2002,8 @@ def run_traditional_value_exit_account_backtest(
     financial_missing_count = 0
     technical_filtered_count = 0
     technical_missing_count = 0
+    moneyflow_filtered_count = 0
+    moneyflow_missing_count = 0
     buy_executed_count = 0
     take_profit_partial_count = 0
     exposure_days = 0
@@ -2289,6 +2417,15 @@ def run_traditional_value_exit_account_backtest(
                 method_map = _build_history_method_map(ts_codes=ts_codes, trade_date=trade_date, market=market)
             else:
                 method_map = _build_snapshot_method_map(ts_codes=ts_codes, trade_date=trade_date, market=market)
+            moneyflow_sum_map = (
+                _load_moneyflow_feature_map(
+                    ts_codes=ts_codes,
+                    trade_date=trade_date,
+                    window_days=moneyflow_net_inflow_days_window,
+                )
+                if apply_moneyflow_filters
+                else {}
+            )
 
             candidates = []
             for ts_code in ts_codes:
@@ -2368,6 +2505,18 @@ def run_traditional_value_exit_account_backtest(
                         technical_filtered_count += 1
                         continue
 
+                moneyflow_payload = None
+                if apply_moneyflow_filters:
+                    moneyflow_payload = moneyflow_sum_map.get(ts_code) or {}
+                    net_inflow_sum = _safe_float(moneyflow_payload.get("net_inflow_sum"))
+                    if net_inflow_sum is None:
+                        moneyflow_missing_count += 1
+                        moneyflow_filtered_count += 1
+                        continue
+                    if float(net_inflow_sum) <= 0:
+                        moneyflow_filtered_count += 1
+                        continue
+
                 discount_pct = ((float(conservative_price) / float(current_price)) - 1.0) if float(current_price) > 0 else 0.0
                 target_discount_pct = ((float(composite_price) / float(current_price)) - 1.0) if float(current_price) > 0 else 0.0
                 agg_entry = buy_candidate_agg.setdefault(
@@ -2410,6 +2559,7 @@ def run_traditional_value_exit_account_backtest(
                         "risk_level": ",".join(allowed_risk_levels),
                         "risk_score": _safe_float((risk_payload or {}).get("min_risk_score")),
                         "financial_metrics": financial_payload or {},
+                        "moneyflow_net_inflow_sum": _safe_float((moneyflow_payload or {}).get("net_inflow_sum")),
                     }
                 )
 
@@ -2469,6 +2619,7 @@ def run_traditional_value_exit_account_backtest(
                         "risk_level": candidate["risk_level"],
                         "risk_score": candidate.get("risk_score"),
                         "financial_metrics": candidate.get("financial_metrics") or {},
+                        "moneyflow_net_inflow_sum": _safe_float(candidate.get("moneyflow_net_inflow_sum")),
                         "shares": int(shares),
                         "entry_fee": float(entry_fee),
                         "add_on1_done": bool(add_on_entry_pct <= 0),
@@ -2658,6 +2809,8 @@ def run_traditional_value_exit_account_backtest(
             "technical_lookback_days": technical_lookback_days,
             "technical_factors": technical_factors,
             "technical_low_quantile": technical_low_quantile,
+            "apply_moneyflow_filters": apply_moneyflow_filters,
+            "moneyflow_net_inflow_days_window": moneyflow_net_inflow_days_window,
             "take_profit_mode": take_profit_mode,
             "take_profit_tiers": take_profit_tiers,
             "trend_take_profit_enabled": trend_take_profit_enabled,
@@ -2700,6 +2853,8 @@ def run_traditional_value_exit_account_backtest(
             "financial_missing_count": financial_missing_count,
             "technical_filtered_count": technical_filtered_count,
             "technical_missing_count": technical_missing_count,
+            "moneyflow_filtered_count": moneyflow_filtered_count,
+            "moneyflow_missing_count": moneyflow_missing_count,
             "buy_executed_count": buy_executed_count,
             "take_profit_partial_count": take_profit_partial_count,
             "closed_trade_count": trade_count,
@@ -2767,6 +2922,8 @@ def run_traditional_value_exit_account_backtest(
         technical_lookback_days=technical_lookback_days,
         technical_factors=technical_factors,
         technical_low_quantile=technical_low_quantile,
+        apply_moneyflow_filters=apply_moneyflow_filters,
+        moneyflow_net_inflow_days_window=moneyflow_net_inflow_days_window,
         take_profit_mode=take_profit_mode,
         take_profit_tiers=take_profit_tiers,
         trend_take_profit_enabled=trend_take_profit_enabled,

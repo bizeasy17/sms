@@ -43,6 +43,18 @@ class Command(BaseCommand):
             help="Financial filter mode when multiple thresholds are set: all or any",
         )
         parser.add_argument("--progress-every", type=int, default=50, help="Progress print interval by trade date")
+        parser.add_argument(
+            "--apply-moneyflow-filters",
+            action="store_true",
+            default=False,
+            help="Enable moneyflow filter: rolling net inflow sum over selected window must be > 0",
+        )
+        parser.add_argument(
+            "--moneyflow-net-inflow-days-window",
+            type=int,
+            default=10,
+            help="Moneyflow rolling window days, allowed: 5,10,15,30,60",
+        )
         parser.add_argument("--output-json", type=str, default="", help="Optional output json path")
         parser.add_argument(
             "--mode",
@@ -108,7 +120,7 @@ class Command(BaseCommand):
             "--add-on-drop-pct",
             type=float,
             default=0.0,
-            help="Add-on trigger drawdown from initial entry, e.g. 0.1 means -10%",
+            help="Add-on trigger drawdown from initial entry, e.g. 0.1 means -10%%",
         )
         parser.add_argument(
             "--add-on-entry-pct",
@@ -194,6 +206,8 @@ class Command(BaseCommand):
                 "min_ebit_yoy": options.get("min_ebit_yoy"),
                 "financial_filter_mode": financial_filter_mode,
                 "take_profit_pct": max(0.0, float(options.get("take_profit_pct") or 0.0)),
+                "apply_moneyflow_filters": bool(options.get("apply_moneyflow_filters")),
+                "moneyflow_net_inflow_days_window": int(options.get("moneyflow_net_inflow_days_window") or 10),
                 "output_json": str(options.get("output_json") or "").strip() or None,
                 "stdout": self.stdout,
             }

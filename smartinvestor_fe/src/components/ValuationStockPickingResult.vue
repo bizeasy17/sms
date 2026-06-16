@@ -407,6 +407,8 @@ function buildPickingSearchParams(from: number, to: number) {
     const requirePositivePrevNetprofitVal = valuationStockPickingStore.requirePositivePrevNetprofit ? "1" : "0";
     const requirePositivePrevEbitVal = valuationStockPickingStore.requirePositivePrevEbit ? "1" : "0";
     const applyFinancialFiltersVal = valuationStockPickingStore.applyFinancialFilters ? "1" : "0";
+    const applyMoneyflowFiltersVal = valuationStockPickingStore.applyMoneyflowFilters ? "1" : "0";
+    const moneyflowWindowVal = String(valuationStockPickingStore.moneyflowNetInflowDaysWindow || "10").trim();
     const priorityPolicyVal = String(valuationStockPickingStore.priorityPolicy || "score_desc").trim().toLowerCase();
     const pickingModeVal = valuationStockPickingStore.pickingMode.split(":")[1].toLowerCase();
     const earningsReportTypeVal = valuationStockPickingStore.earningsReportType.split(":")[1];
@@ -433,6 +435,10 @@ function buildPickingSearchParams(from: number, to: number) {
     if (minNetprofitYoyVal) search.set("min_netprofit_yoy", minNetprofitYoyVal);
     if (minEbitYoyVal) search.set("min_ebit_yoy", minEbitYoyVal);
     search.set("apply_financial_filters", applyFinancialFiltersVal);
+    search.set("apply_moneyflow_filters", applyMoneyflowFiltersVal);
+    if (["5", "10", "15", "30", "60"].includes(moneyflowWindowVal)) {
+        search.set("moneyflow_net_inflow_days_window", moneyflowWindowVal);
+    }
     search.set("require_positive_prev_netprofit", requirePositivePrevNetprofitVal);
     search.set("require_positive_prev_ebit", requirePositivePrevEbitVal);
     if (priorityPolicyVal) search.set("priority_policy", priorityPolicyVal);
@@ -1014,6 +1020,8 @@ watch(
         () => valuationStockPickingStore.minNetprofitYoy,
         () => valuationStockPickingStore.minEbitYoy,
         () => valuationStockPickingStore.applyFinancialFilters,
+        () => valuationStockPickingStore.applyMoneyflowFilters,
+        () => valuationStockPickingStore.moneyflowNetInflowDaysWindow,
         () => valuationStockPickingStore.requirePositivePrevNetprofit,
         () => valuationStockPickingStore.requirePositivePrevEbit,
         () => valuationStockPickingStore.priorityPolicy,

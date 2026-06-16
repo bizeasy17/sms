@@ -1791,6 +1791,8 @@ def run_traditional_backtest(request):
         stop_loss_pct = max(0.0, float(merged_payload.get("stop_loss_pct") or 0.0))
         trailing_stop_pct = max(0.0, float(merged_payload.get("trailing_stop_pct") or 0.0))
         stop_loss_scope = str(merged_payload.get("stop_loss_scope") or "position").strip().lower()
+        apply_moneyflow_filters = _parse_bool_or_default(merged_payload.get("apply_moneyflow_filters"), False)
+        moneyflow_net_inflow_days_window = _parse_int_or_default(merged_payload.get("moneyflow_net_inflow_days_window"), 10)
         disable_target_hit = _parse_bool_or_default(merged_payload.get("disable_target_hit"), False)
         if stop_loss_scope not in {"position", "account"}:
             raise ValueError("stop_loss_scope must be position or account")
@@ -1839,6 +1841,8 @@ def run_traditional_backtest(request):
             "stop_loss_pct": stop_loss_pct,
             "trailing_stop_pct": trailing_stop_pct,
             "stop_loss_scope": stop_loss_scope,
+            "apply_moneyflow_filters": apply_moneyflow_filters,
+            "moneyflow_net_inflow_days_window": moneyflow_net_inflow_days_window,
             "disable_target_hit": disable_target_hit,
             "output_json": output_json,
             "stdout": None,

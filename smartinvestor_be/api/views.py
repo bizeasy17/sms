@@ -27,7 +27,9 @@ from django.http import FileResponse, Http404
 from django.views.decorators.cache import never_cache
 from prediction.models import (
     StockCombinedFeature,
+    StockGainLossQuantile,
     StockPrediction,
+    StockThsMoneyflowDaily,
 )
 from valuation.models import (
     StockValuationSnapshot,
@@ -49,7 +51,6 @@ from valuation.services.valuation_engine import test_valuation
 from prediction.utils.ta_util import calculate_atr
 from utils.analysis_utils import is_last_row_value_below_quantile
 from users.models import User, UserWatchlist
-from prediction.models import StockGainLossQuantile
 from valuation_risk.models import ValuationRiskSnapshot
 from valuation_risk.services import build_valuation_risk_payload
 from pandas.tseries.offsets import BDay
@@ -4758,6 +4759,16 @@ def _pick_stocks_by_valuation_fast(request, trade_date, scope, freq="D", from_in
         if hasattr(request, "query_params")
         else "0"
     )
+    apply_moneyflow_filters_raw = (
+        request.query_params.get("apply_moneyflow_filters", "0")
+        if hasattr(request, "query_params")
+        else "0"
+    )
+    moneyflow_window_raw = (
+        request.query_params.get("moneyflow_net_inflow_days_window", THS_STOCK_MONEYFLOW_DEFAULT_WINDOW)
+        if hasattr(request, "query_params")
+        else THS_STOCK_MONEYFLOW_DEFAULT_WINDOW
+    )
     priority_policy_raw = (
         request.query_params.get("priority_policy", "score_desc")
         if hasattr(request, "query_params")
@@ -4844,6 +4855,8 @@ def _pick_stocks_by_valuation_fast(request, trade_date, scope, freq="D", from_in
     require_positive_prev_netprofit = _parse_bool_flag(require_positive_prev_netprofit_raw, True)
     require_positive_prev_ebit = _parse_bool_flag(require_positive_prev_ebit_raw, True)
     apply_financial_filters = _parse_bool_flag(apply_financial_filters_raw, False)
+    apply_moneyflow_filters = _parse_bool_flag(apply_moneyflow_filters_raw, False)
+    moneyflow_window_days = _normalize_stock_moneyflow_window(moneyflow_window_raw)
     priority_policy = str(priority_policy_raw or "score_desc").strip().lower()
     allowed_priority_policies = {
         "score_desc",
@@ -4889,6 +4902,8 @@ def _pick_stocks_by_valuation_fast(request, trade_date, scope, freq="D", from_in
             "min_ebit_yoy_ratio": min_ebit_yoy_ratio,
             "require_positive_prev_netprofit": require_positive_prev_netprofit,
             "require_positive_prev_ebit": require_positive_prev_ebit,
+            "apply_moneyflow_filters": apply_moneyflow_filters,
+            "moneyflow_window_days": moneyflow_window_days,
         }
     )
 
@@ -4901,6 +4916,7 @@ def _pick_stocks_by_valuation_fast(request, trade_date, scope, freq="D", from_in
         total_filtered,
         strategy_effective_stocks,
         predictive_stats,
+        moneyflow_stats=None,
         timing_ms,
         cache_hit,
     ):
@@ -4937,6 +4953,13 @@ def _pick_stocks_by_valuation_fast(request, trade_date, scope, freq="D", from_in
                         "require_positive_prev_netprofit": require_positive_prev_netprofit,
                         "require_positive_prev_ebit": require_positive_prev_ebit,
                         "netprofit_growth_floor": effective_netprofit_yoy_floor,
+                    },
+                    "effective_moneyflow_filters": {
+                        "apply_moneyflow_filters": bool(apply_moneyflow_filters),
+                        "moneyflow_net_inflow_days_window": int(moneyflow_window_days),
+                        "mode": "sum_positive",
+                        "matched_count_before": int((moneyflow_stats or {}).get("before") or 0),
+                        "matched_count_after": int((moneyflow_stats or {}).get("after") or 0),
                     },
                 },
                 "meta": {
@@ -4994,6 +5017,7 @@ def _pick_stocks_by_valuation_fast(request, trade_date, scope, freq="D", from_in
             total_filtered=len(cached_result),
             strategy_effective_stocks=int(cached_bundle.get("multi_candidate_rows") or 0),
             predictive_stats=(cached_bundle.get("predictive_earnings_stats") or {}),
+            moneyflow_stats=(cached_bundle.get("moneyflow_filter_stats") or {}),
             timing_ms={
                 "total": cached_total_ms,
                 "load_trading_rows": 0.0,
@@ -5288,6 +5312,42 @@ def _pick_stocks_by_valuation_fast(request, trade_date, scope, freq="D", from_in
                 filtered_rows.append(item)
 
             result = filtered_rows
+
+    moneyflow_filter_stats = {
+        "before": len(result),
+        "after": len(result),
+    }
+    if apply_moneyflow_filters and result:
+        moneyflow_filter_stats["before"] = len(result)
+        candidate_codes = [
+            _normalize_ts_code(item.get("ts_code"))
+            for item in result
+            if item.get("ts_code")
+        ]
+        candidate_codes = [code for code in list(dict.fromkeys(candidate_codes)) if code]
+        moneyflow_sum_map = _build_stock_moneyflow_sum_map(
+            candidate_codes,
+            asof_date=trade_date_for_query,
+            window_days=moneyflow_window_days,
+        )
+
+        filtered_rows = []
+        for item in result:
+            ts_code = _normalize_ts_code(item.get("ts_code"))
+            sum_payload = moneyflow_sum_map.get(ts_code) or {}
+            net_inflow_sum = _to_float_or_none(sum_payload.get("net_inflow_sum"))
+            observed_days = int(sum_payload.get("observed_days") or 0)
+            item["moneyflow_net_inflow_sum"] = (
+                round(float(net_inflow_sum), 4) if net_inflow_sum is not None else None
+            )
+            item["moneyflow_window_days_observed"] = observed_days
+            item["moneyflow_window_days_requested"] = int(moneyflow_window_days)
+
+            if net_inflow_sum is not None and float(net_inflow_sum) > 0.0:
+                filtered_rows.append(item)
+
+        result = filtered_rows
+        moneyflow_filter_stats["after"] = len(result)
 
     if picking_mode == "predictive" and result:
         predictive_ts_codes = [row.get("ts_code") for row in result if row.get("ts_code")]
@@ -5601,6 +5661,7 @@ def _pick_stocks_by_valuation_fast(request, trade_date, scope, freq="D", from_in
                 "result": result,
                 "multi_candidate_rows": multi_candidate_rows,
                 "predictive_earnings_stats": predictive_earnings_stats,
+                "moneyflow_filter_stats": moneyflow_filter_stats,
             },
             VALUATION_PICK_CACHE_TTL_SECONDS,
         )
@@ -5612,6 +5673,7 @@ def _pick_stocks_by_valuation_fast(request, trade_date, scope, freq="D", from_in
         total_filtered=len(result),
         strategy_effective_stocks=multi_candidate_rows,
         predictive_stats=predictive_earnings_stats,
+        moneyflow_stats=moneyflow_filter_stats,
         timing_ms={
             "total": _ms(perf_t0, perf_after_all),
             "load_trading_rows": _ms(perf_t0, perf_after_trading),
@@ -5748,6 +5810,10 @@ THS_MONEYFLOW_DAILY_FILE = "ths_moneyflow_daily.json"
 THS_MONEYFLOW_SCORE_LATEST_FILE = "ths_moneyflow_score_latest.json"
 THS_MONEYFLOW_TOPN_DEFAULT = int(getattr(settings, "THS_MONEYFLOW_TOPN_DEFAULT", 20) or 20)
 THS_MONEYFLOW_LOOKBACK_DAYS = int(getattr(settings, "THS_MONEYFLOW_LOOKBACK_DAYS", 30) or 30)
+THS_STOCK_MONEYFLOW_WINDOW_OPTIONS = (5, 10, 15, 30, 60)
+THS_STOCK_MONEYFLOW_DEFAULT_WINDOW = int(
+    getattr(settings, "THS_STOCK_MONEYFLOW_DEFAULT_WINDOW", 10) or 10
+)
 THS_MONEYFLOW_SCORE_WEIGHT_MONEYFLOW = 0.50
 THS_MONEYFLOW_SCORE_WEIGHT_POSITION = 0.30
 THS_MONEYFLOW_SCORE_WEIGHT_VOLATILITY = 0.20
@@ -6075,6 +6141,312 @@ def _sync_ths_moneyflow_daily(lookback_days=7):
         "fetched_rows": len(rows_to_upsert),
         **upsert_result,
     }
+
+
+def _normalize_stock_moneyflow_window(raw_value, default_value=None):
+    try:
+        candidate = int(raw_value)
+    except (TypeError, ValueError):
+        candidate = int(default_value or THS_STOCK_MONEYFLOW_DEFAULT_WINDOW)
+    if candidate not in THS_STOCK_MONEYFLOW_WINDOW_OPTIONS:
+        candidate = int(default_value or THS_STOCK_MONEYFLOW_DEFAULT_WINDOW)
+    if candidate not in THS_STOCK_MONEYFLOW_WINDOW_OPTIONS:
+        candidate = 10
+    return candidate
+
+
+def _fetch_stock_moneyflow_ths_frame(pro, trade_date_text, offset=0, limit=5000):
+    if pro is None or not hasattr(pro, "moneyflow_ths"):
+        return None
+
+    token = str(trade_date_text or "").replace("-", "")
+    if len(token) != 8 or not token.isdigit():
+        return None
+
+    fields = (
+        "ts_code,trade_date,buy_sm_amount,sell_sm_amount,buy_md_amount,sell_md_amount,"
+        "buy_lg_amount,sell_lg_amount,buy_elg_amount,sell_elg_amount,"
+        "net_amount,net_pct,net_amount_rate,net_mf_amount,net_mf_rate"
+    )
+    call_kwargs_list = [
+        {
+            "trade_date": token,
+            "fields": fields,
+            "offset": int(offset),
+            "limit": int(limit),
+        },
+        {
+            "trade_date": token,
+            "offset": int(offset),
+            "limit": int(limit),
+        },
+        {
+            "trade_date": token,
+            "fields": fields,
+        },
+        {"trade_date": token},
+    ]
+
+    for call_kwargs in call_kwargs_list:
+        try:
+            frame = pro.moneyflow_ths(**call_kwargs)
+            if frame is not None:
+                return frame
+        except TypeError:
+            continue
+        except Exception:
+            continue
+    return None
+
+
+def _upsert_stock_moneyflow_ths_rows(incoming_rows):
+    row_map = {}
+    for row in incoming_rows:
+        item = row if isinstance(row, dict) else {}
+        ts_code = _normalize_ts_code(item.get("ts_code"))
+        trade_date = _parse_date_like(item.get("trade_date"))
+        if not ts_code or trade_date is None:
+            continue
+        row_map[(ts_code, trade_date)] = {
+            "ts_code": ts_code,
+            "trade_date": trade_date,
+            "buy_sm_amount": _as_float_or_none(item.get("buy_sm_amount")),
+            "sell_sm_amount": _as_float_or_none(item.get("sell_sm_amount")),
+            "buy_md_amount": _as_float_or_none(item.get("buy_md_amount")),
+            "sell_md_amount": _as_float_or_none(item.get("sell_md_amount")),
+            "buy_lg_amount": _as_float_or_none(item.get("buy_lg_amount")),
+            "sell_lg_amount": _as_float_or_none(item.get("sell_lg_amount")),
+            "buy_elg_amount": _as_float_or_none(item.get("buy_elg_amount")),
+            "sell_elg_amount": _as_float_or_none(item.get("sell_elg_amount")),
+            "net_amount": _as_float_or_none(item.get("net_amount")),
+            "net_pct": _as_float_or_none(item.get("net_pct")),
+            "net_amount_rate": _as_float_or_none(item.get("net_amount_rate")),
+            "net_mf_amount": _as_float_or_none(item.get("net_mf_amount")),
+            "net_mf_rate": _as_float_or_none(item.get("net_mf_rate")),
+            "raw_payload": item.get("raw_payload") if isinstance(item.get("raw_payload"), dict) else {},
+        }
+
+    objects = [StockThsMoneyflowDaily(**payload) for payload in row_map.values()]
+    if not objects:
+        return {"upsert_count": 0, "total_rows": int(StockThsMoneyflowDaily.objects.count())}
+
+    try:
+        StockThsMoneyflowDaily.objects.bulk_create(
+            objects,
+            batch_size=1000,
+            update_conflicts=True,
+            unique_fields=["ts_code", "trade_date"],
+            update_fields=[
+                "buy_sm_amount",
+                "sell_sm_amount",
+                "buy_md_amount",
+                "sell_md_amount",
+                "buy_lg_amount",
+                "sell_lg_amount",
+                "buy_elg_amount",
+                "sell_elg_amount",
+                "net_amount",
+                "net_pct",
+                "net_amount_rate",
+                "net_mf_amount",
+                "net_mf_rate",
+                "raw_payload",
+                "updated_at",
+            ],
+        )
+    except TypeError:
+        for payload in row_map.values():
+            StockThsMoneyflowDaily.objects.update_or_create(
+                ts_code=payload["ts_code"],
+                trade_date=payload["trade_date"],
+                defaults={
+                    "buy_sm_amount": payload["buy_sm_amount"],
+                    "sell_sm_amount": payload["sell_sm_amount"],
+                    "buy_md_amount": payload["buy_md_amount"],
+                    "sell_md_amount": payload["sell_md_amount"],
+                    "buy_lg_amount": payload["buy_lg_amount"],
+                    "sell_lg_amount": payload["sell_lg_amount"],
+                    "buy_elg_amount": payload["buy_elg_amount"],
+                    "sell_elg_amount": payload["sell_elg_amount"],
+                    "net_amount": payload["net_amount"],
+                    "net_pct": payload["net_pct"],
+                    "net_amount_rate": payload["net_amount_rate"],
+                    "net_mf_amount": payload["net_mf_amount"],
+                    "net_mf_rate": payload["net_mf_rate"],
+                    "raw_payload": payload["raw_payload"],
+                },
+            )
+
+    return {
+        "upsert_count": len(objects),
+        "total_rows": int(StockThsMoneyflowDaily.objects.count()),
+    }
+
+
+def _sync_stock_moneyflow_ths_daily(start_date=None, end_date=None, latest=False, lookback_days=365):
+    try:
+        pro = get_tushare_pro()
+    except Exception as exc:
+        raise RuntimeError(f"init tushare pro failed: {exc}") from exc
+
+    today = datetime.date.today()
+    parsed_start = _parse_date_like(start_date)
+    parsed_end = _parse_date_like(end_date)
+
+    if latest:
+        start_dt = today
+        end_dt = today
+    else:
+        end_dt = parsed_end or today
+        if parsed_start is not None:
+            start_dt = parsed_start
+        else:
+            lookback = max(1, int(lookback_days or 365))
+            start_dt = end_dt - datetime.timedelta(days=lookback - 1)
+
+    if start_dt > end_dt:
+        raise ValueError("start_date should be <= end_date")
+
+    checked_days = 0
+    fetched_rows = 0
+    upsert_count = 0
+    fetched_dates = []
+
+    current = start_dt
+    while current <= end_dt:
+        checked_days += 1
+        trade_date_text = current.strftime("%Y-%m-%d")
+
+        page_offset = 0
+        page_limit = 5000
+        rows_for_date = []
+        while True:
+            frame = _fetch_stock_moneyflow_ths_frame(
+                pro,
+                trade_date_text,
+                offset=page_offset,
+                limit=page_limit,
+            )
+            if frame is None or getattr(frame, "empty", True):
+                break
+
+            for _, row in frame.fillna("").iterrows():
+                ts_code = _normalize_ts_code(row.get("ts_code"))
+                if not ts_code:
+                    continue
+                rows_for_date.append(
+                    {
+                        "ts_code": ts_code,
+                        "trade_date": _parse_date_like(row.get("trade_date")) or current,
+                        "buy_sm_amount": row.get("buy_sm_amount"),
+                        "sell_sm_amount": row.get("sell_sm_amount"),
+                        "buy_md_amount": row.get("buy_md_amount"),
+                        "sell_md_amount": row.get("sell_md_amount"),
+                        "buy_lg_amount": row.get("buy_lg_amount"),
+                        "sell_lg_amount": row.get("sell_lg_amount"),
+                        "buy_elg_amount": row.get("buy_elg_amount"),
+                        "sell_elg_amount": row.get("sell_elg_amount"),
+                        "net_amount": row.get("net_amount"),
+                        "net_pct": row.get("net_pct"),
+                        "net_amount_rate": row.get("net_amount_rate"),
+                        "net_mf_amount": row.get("net_mf_amount"),
+                        "net_mf_rate": row.get("net_mf_rate"),
+                        "raw_payload": {
+                            "ts_code": row.get("ts_code"),
+                            "trade_date": row.get("trade_date"),
+                            "buy_sm_amount": row.get("buy_sm_amount"),
+                            "sell_sm_amount": row.get("sell_sm_amount"),
+                            "buy_md_amount": row.get("buy_md_amount"),
+                            "sell_md_amount": row.get("sell_md_amount"),
+                            "buy_lg_amount": row.get("buy_lg_amount"),
+                            "sell_lg_amount": row.get("sell_lg_amount"),
+                            "buy_elg_amount": row.get("buy_elg_amount"),
+                            "sell_elg_amount": row.get("sell_elg_amount"),
+                            "net_amount": row.get("net_amount"),
+                            "net_pct": row.get("net_pct"),
+                            "net_amount_rate": row.get("net_amount_rate"),
+                            "net_mf_amount": row.get("net_mf_amount"),
+                            "net_mf_rate": row.get("net_mf_rate"),
+                        },
+                    }
+                )
+
+            frame_size = int(len(frame.index))
+            if frame_size < page_limit:
+                break
+            page_offset += page_limit
+
+        if rows_for_date:
+            fetched_dates.append(trade_date_text)
+            fetched_rows += len(rows_for_date)
+            upsert_result = _upsert_stock_moneyflow_ths_rows(rows_for_date)
+            upsert_count += int(upsert_result.get("upsert_count") or 0)
+
+        current += datetime.timedelta(days=1)
+
+    return {
+        "checked_days": checked_days,
+        "fetched_dates": fetched_dates,
+        "fetched_rows": fetched_rows,
+        "upsert_count": upsert_count,
+        "total_rows": int(StockThsMoneyflowDaily.objects.count()),
+        "start_date": start_dt.strftime("%Y-%m-%d"),
+        "end_date": end_dt.strftime("%Y-%m-%d"),
+    }
+
+
+def _build_stock_moneyflow_sum_map(ts_codes, asof_date, window_days):
+    normalized_codes = list(
+        dict.fromkeys(
+            [
+                _normalize_ts_code(code)
+                for code in (ts_codes or [])
+                if _normalize_ts_code(code)
+            ]
+        )
+    )
+    if not normalized_codes:
+        return {}
+
+    end_dt = _parse_date_like(asof_date) or datetime.date.today()
+    lookback_days = max(5, int(window_days or THS_STOCK_MONEYFLOW_DEFAULT_WINDOW))
+    scan_start = end_dt - datetime.timedelta(days=max(lookback_days * 3, 90))
+
+    qs = (
+        StockThsMoneyflowDaily.objects.filter(
+            ts_code__in=normalized_codes,
+            trade_date__gte=scan_start,
+            trade_date__lte=end_dt,
+        )
+        .order_by("ts_code", "-trade_date")
+        .values("ts_code", "trade_date", "net_amount", "net_mf_amount")
+    )
+
+    sum_map = {}
+    for row in qs:
+        ts_code = _normalize_ts_code(row.get("ts_code"))
+        if not ts_code:
+            continue
+        payload = sum_map.get(ts_code)
+        if payload is None:
+            payload = {
+                "net_inflow_sum": 0.0,
+                "observed_days": 0,
+                "latest_trade_date": None,
+            }
+            sum_map[ts_code] = payload
+        if payload["observed_days"] >= lookback_days:
+            continue
+
+        payload["observed_days"] += 1
+        net_inflow = _as_float_or_none(row.get("net_amount"))
+        if net_inflow is None:
+            net_inflow = _as_float_or_none(row.get("net_mf_amount"))
+        payload["net_inflow_sum"] += float(net_inflow or 0.0)
+        if payload["latest_trade_date"] is None:
+            payload["latest_trade_date"] = row.get("trade_date")
+
+    return sum_map
 
 
 def _compute_and_write_ths_moneyflow_score_snapshot(top_n=None, lookback_days=None, ths_index_type="ALL"):

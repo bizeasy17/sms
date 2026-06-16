@@ -2886,3 +2886,77 @@ class StockValuationVariantSummaryLatest(models.Model):
                 name="svvsl_bucket_idx",
             ),
         ]
+
+
+class StockThsMoneyflowDaily(models.Model):
+    """THS 个股资金流日数据（来自 TuShare moneyflow_ths）。"""
+
+    id = models.BigAutoField(primary_key=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    ts_code = models.CharField(_("交易代码"), max_length=10, db_index=True)
+    trade_date = models.DateField(_("交易日"), db_index=True)
+
+    buy_sm_amount = models.DecimalField(_("小单买入额"), max_digits=24, decimal_places=4, blank=True, null=True)
+    sell_sm_amount = models.DecimalField(_("小单卖出额"), max_digits=24, decimal_places=4, blank=True, null=True)
+    buy_md_amount = models.DecimalField(_("中单买入额"), max_digits=24, decimal_places=4, blank=True, null=True)
+    sell_md_amount = models.DecimalField(_("中单卖出额"), max_digits=24, decimal_places=4, blank=True, null=True)
+    buy_lg_amount = models.DecimalField(_("大单买入额"), max_digits=24, decimal_places=4, blank=True, null=True)
+    sell_lg_amount = models.DecimalField(_("大单卖出额"), max_digits=24, decimal_places=4, blank=True, null=True)
+    buy_elg_amount = models.DecimalField(_("特大单买入额"), max_digits=24, decimal_places=4, blank=True, null=True)
+    sell_elg_amount = models.DecimalField(_("特大单卖出额"), max_digits=24, decimal_places=4, blank=True, null=True)
+    net_amount = models.DecimalField(_("净流入额(net_amount)"), max_digits=24, decimal_places=4, blank=True, null=True)
+    net_pct = models.DecimalField(_("净流入占比"), max_digits=18, decimal_places=6, blank=True, null=True)
+    net_amount_rate = models.DecimalField(_("净流入率"), max_digits=18, decimal_places=6, blank=True, null=True)
+    net_mf_amount = models.DecimalField(_("净流入额"), max_digits=24, decimal_places=4, blank=True, null=True)
+    net_mf_rate = models.DecimalField(_("净流入率(net_mf_rate)"), max_digits=18, decimal_places=6, blank=True, null=True)
+
+    raw_payload = models.JSONField(_("原始载荷"), default=dict, blank=True)
+
+    class Meta:
+        verbose_name = _("THS个股资金流日数据")
+        verbose_name_plural = verbose_name
+        ordering = ["-trade_date", "ts_code"]
+        constraints = [
+            models.UniqueConstraint(fields=["ts_code", "trade_date"], name="sthsmfd_tsdate_uniq"),
+        ]
+        indexes = [
+            models.Index(fields=["trade_date", "ts_code"], name="sthsmfd_date_code_ix"),
+            models.Index(fields=["ts_code", "trade_date"], name="sthsmfd_code_date_ix"),
+        ]
+
+
+class StockThsMoneyflowFeatureDaily(models.Model):
+    """回测用个股资金流滚动特征（日级快照）。"""
+
+    id = models.BigAutoField(primary_key=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    ts_code = models.CharField(_("交易代码"), max_length=10, db_index=True)
+    trade_date = models.DateField(_("交易日"), db_index=True)
+
+    mf_sum_5 = models.DecimalField(_("5日净流入和"), max_digits=24, decimal_places=4, blank=True, null=True)
+    mf_sum_10 = models.DecimalField(_("10日净流入和"), max_digits=24, decimal_places=4, blank=True, null=True)
+    mf_sum_15 = models.DecimalField(_("15日净流入和"), max_digits=24, decimal_places=4, blank=True, null=True)
+    mf_sum_30 = models.DecimalField(_("30日净流入和"), max_digits=24, decimal_places=4, blank=True, null=True)
+    mf_sum_60 = models.DecimalField(_("60日净流入和"), max_digits=24, decimal_places=4, blank=True, null=True)
+
+    obs_days_5 = models.IntegerField(_("5日样本天数"), default=0)
+    obs_days_10 = models.IntegerField(_("10日样本天数"), default=0)
+    obs_days_15 = models.IntegerField(_("15日样本天数"), default=0)
+    obs_days_30 = models.IntegerField(_("30日样本天数"), default=0)
+    obs_days_60 = models.IntegerField(_("60日样本天数"), default=0)
+
+    class Meta:
+        verbose_name = _("THS个股资金流特征日数据")
+        verbose_name_plural = verbose_name
+        ordering = ["-trade_date", "ts_code"]
+        constraints = [
+            models.UniqueConstraint(fields=["ts_code", "trade_date"], name="sthmffd_tsdate_uniq"),
+        ]
+        indexes = [
+            models.Index(fields=["trade_date", "ts_code"], name="sthmffd_date_codex"),
+            models.Index(fields=["ts_code", "trade_date"], name="sthmffd_code_datex"),
+        ]

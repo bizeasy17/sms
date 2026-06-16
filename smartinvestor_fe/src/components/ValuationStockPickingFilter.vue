@@ -223,6 +223,36 @@
                         </div>
                     </div>
 
+                    <div class="filter-divider" aria-hidden="true"></div>
+
+                    <div class="filter-item">
+                        <span class="filter-label">应用资金流入条件：</span>
+                        <el-switch v-model="selectedApplyMoneyflowFilters" class="filter-control filter-control--switch" />
+                    </div>
+
+                    <div class="filter-item">
+                        <span class="filter-label">净流入天数窗口：</span>
+                        <el-select
+                            v-model="selectedMoneyflowNetInflowDaysWindow"
+                            size="small"
+                            class="filter-control"
+                            :disabled="!selectedApplyMoneyflowFilters"
+                            placeholder="净流入窗口"
+                        >
+                            <el-option label="5日" value="5" />
+                            <el-option label="10日" value="10" />
+                            <el-option label="15日" value="15" />
+                            <el-option label="30日" value="30" />
+                            <el-option label="60日" value="60" />
+                        </el-select>
+                    </div>
+
+                    <div class="filter-item filter-item--full filter-item--hint">
+                        <span class="filter-note">
+                            说明：开启后按“最近N日累计净流入 &gt; 0”执行二次过滤（口径B）。
+                        </span>
+                    </div>
+
                     <div class="filter-item filter-item--u8 filter-item--order-2">
                         <span class="filter-label">状态：</span>
                         <el-radio-group v-model="selectedValuationStatus" size="small" class="filter-control filter-radio-group">
@@ -273,6 +303,8 @@ const selectedMinEbitYoy = ref<number | null>(null);
 const selectedRequirePositivePrevNetprofit = ref(true);
 const selectedRequirePositivePrevEbit = ref(true);
 const selectedApplyFinancialFilters = ref(false);
+const selectedApplyMoneyflowFilters = ref(false);
+const selectedMoneyflowNetInflowDaysWindow = ref("10");
 const selectedPriorityPolicy = ref("score_desc");
 const selectedBuyCandidateOnly = ref("BC:ONLY");
 const selectedSwIndustry = ref("");
@@ -403,6 +435,8 @@ function applyTraditionalQuickStrategy() {
     selectedRequirePositivePrevNetprofit.value = Boolean(profile.require_positive_prev_netprofit ?? true);
     selectedRequirePositivePrevEbit.value = Boolean(profile.require_positive_prev_ebit ?? true);
     selectedApplyFinancialFilters.value = Boolean(profile.apply_financial_filters ?? false);
+    selectedApplyMoneyflowFilters.value = Boolean(profile.apply_moneyflow_filters ?? false);
+    selectedMoneyflowNetInflowDaysWindow.value = String(profile.moneyflow_net_inflow_days_window ?? "10");
     selectedPriorityPolicy.value = String(profile.priority_policy ?? "score_desc");
     selectedBuyCandidateOnly.value = profile.buy_candidate_only || "BC:ONLY";
     selectedQuickStrategy.value = "traditional";
@@ -427,6 +461,8 @@ function applyPredictiveQuickStrategy() {
     selectedRequirePositivePrevNetprofit.value = Boolean(profile.require_positive_prev_netprofit ?? true);
     selectedRequirePositivePrevEbit.value = Boolean(profile.require_positive_prev_ebit ?? true);
     selectedApplyFinancialFilters.value = Boolean(profile.apply_financial_filters ?? false);
+    selectedApplyMoneyflowFilters.value = Boolean(profile.apply_moneyflow_filters ?? false);
+    selectedMoneyflowNetInflowDaysWindow.value = String(profile.moneyflow_net_inflow_days_window ?? "10");
     selectedPriorityPolicy.value = String(profile.priority_policy ?? "score_desc");
     selectedBuyCandidateOnly.value = profile.buy_candidate_only || "BC:ONLY";
     selectedQuickStrategy.value = "predictive";
@@ -578,6 +614,19 @@ function applyBacktestPrefillFromQuery() {
         selectedApplyFinancialFilters.value = parseBooleanFromQuery(applyFinancialFilters, false);
     }
 
+    const applyMoneyflowFilters = params.get("apply_moneyflow_filters");
+    if (applyMoneyflowFilters !== null) {
+        selectedApplyMoneyflowFilters.value = parseBooleanFromQuery(applyMoneyflowFilters, false);
+    }
+
+    const moneyflowWindow = params.get("moneyflow_net_inflow_days_window");
+    if (moneyflowWindow) {
+        const normalized = String(moneyflowWindow).trim();
+        if (["5", "10", "15", "30", "60"].includes(normalized)) {
+            selectedMoneyflowNetInflowDaysWindow.value = normalized;
+        }
+    }
+
     const priorityPolicy = params.get("priority_policy");
     if (priorityPolicy) {
         selectedPriorityPolicy.value = String(priorityPolicy);
@@ -638,6 +687,8 @@ watch(
         selectedRequirePositivePrevNetprofit,
         selectedRequirePositivePrevEbit,
         selectedApplyFinancialFilters,
+        selectedApplyMoneyflowFilters,
+        selectedMoneyflowNetInflowDaysWindow,
         selectedPriorityPolicy,
         selectedBuyCandidateOnly,
         selectedSwIndustry,
@@ -663,6 +714,8 @@ watch(
         valuationStockPickingStore.setRequirePositivePrevNetprofit(selectedRequirePositivePrevNetprofit.value);
         valuationStockPickingStore.setRequirePositivePrevEbit(selectedRequirePositivePrevEbit.value);
         valuationStockPickingStore.setApplyFinancialFilters(selectedApplyFinancialFilters.value);
+        valuationStockPickingStore.setApplyMoneyflowFilters(selectedApplyMoneyflowFilters.value);
+        valuationStockPickingStore.setMoneyflowNetInflowDaysWindow(selectedMoneyflowNetInflowDaysWindow.value);
         valuationStockPickingStore.setPriorityPolicy(selectedPriorityPolicy.value);
         valuationStockPickingStore.setBuyCandidateOnly(selectedBuyCandidateOnly.value);
         valuationStockPickingStore.setSwIndustry(selectedSwIndustry.value);
