@@ -74,6 +74,10 @@ call :run_step "BE sw rotation run daily evaluation" "%UAT_ROOT%\smartinvestor_b
 if errorlevel 1 exit /b %ERRORLEVEL%
 call :run_step "BE THS moneyflow daily sync" "%UAT_ROOT%\smartinvestor_be" "%PYTHON_CMD% manage.py sync_ths_moneyflow_daily --lookback-days 7"
 if errorlevel 1 exit /b %ERRORLEVEL%
+call :run_step "BE stock moneyflow daily sync" "%UAT_ROOT%\smartinvestor_be" "%PYTHON_CMD% manage.py sync_stock_moneyflow_ths_daily --lookback-days 7"
+if errorlevel 1 exit /b %ERRORLEVEL%
+call :run_step "BE stock moneyflow feature latest" "%UAT_ROOT%\smartinvestor_be" "%PYTHON_CMD% manage.py build_stock_moneyflow_features --latest"
+if errorlevel 1 exit /b %ERRORLEVEL%
 call :run_step "BE valuation risk prefill daily" "%UAT_ROOT%\smartinvestor_be" "%PYTHON_CMD% manage.py prefillvaluationrisk --market CN"
 if errorlevel 1 exit /b %ERRORLEVEL%
 @REM call :run_step "BE daily prediction" "%UAT_ROOT%\smartinvestor_be" "call %UAT_ROOT%\smartinvestor_be\daily_funda_prediction.bat"

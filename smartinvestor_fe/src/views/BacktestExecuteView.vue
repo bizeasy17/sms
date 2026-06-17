@@ -228,6 +228,32 @@
           </el-col>
         </el-row>
 
+        <el-divider content-position="left">资金流策略</el-divider>
+
+        <el-row :gutter="12" class="row-gap">
+          <el-col :xs="24" :md="6">
+            <el-form-item label="启用资金净流入过滤" label-position="top">
+              <el-switch v-model="form.apply_moneyflow_filters" inline-prompt active-text="开" inactive-text="关" />
+            </el-form-item>
+          </el-col>
+          <el-col :xs="24" :md="6">
+            <el-form-item label="资金净流入回看周期" label-position="top" :error="fieldErrors.moneyflow_net_inflow_days_window || ''">
+              <el-select
+                v-model="form.moneyflow_net_inflow_days_window"
+                style="width: 100%"
+                :disabled="!form.apply_moneyflow_filters"
+              >
+                <el-option label="5天" :value="5" />
+                <el-option label="10天" :value="10" />
+                <el-option label="15天" :value="15" />
+                <el-option label="20天" :value="20" />
+                <el-option label="30天" :value="30" />
+                <el-option label="60天" :value="60" />
+              </el-select>
+            </el-form-item>
+          </el-col>
+        </el-row>
+
         <template v-if="form.mode === 'account'">
           <el-divider content-position="left">账户与仓位</el-divider>
           <el-row :gutter="12" class="row-gap">
@@ -947,6 +973,8 @@ const DEFAULT_FORM = {
   technical_lookback_days: 60,
   technical_factors: 'price',
   technical_low_quantile: 0.1,
+  apply_moneyflow_filters: false,
+  moneyflow_net_inflow_days_window: 10,
   financial_filter_mode: 'all',
   take_profit_mode: 'fixed',
   take_profit_tiers_text: '0.15:0.15,0.3:0.2,0.5:0.15',
@@ -1083,6 +1111,8 @@ function buildScanRunParamsText(params: Record<string, any>): string {
     `technical=${source.technical_strategy_enabled ? 'on' : 'off'}`,
     `lookback=${source.technical_lookback_days ?? '-'}`,
     `factors=${technicalFactorsText || '-'}`,
+    `moneyflow=${source.apply_moneyflow_filters ? 'on' : 'off'}`,
+    `moneyflow_window=${source.moneyflow_net_inflow_days_window ?? '-'}`,
   ]
   return parts.join(', ')
 }
@@ -1811,6 +1841,8 @@ function compactParams(params: Record<string, any>) {
     'technical_strategy_enabled',
     'technical_lookback_days',
     'technical_factors',
+    'apply_moneyflow_filters',
+    'moneyflow_net_inflow_days_window',
     'max_position_pct',
     'max_buy_per_day',
     'first_entry_pct',
@@ -2010,6 +2042,12 @@ function validateExecutePayload(payload: Record<string, any>): boolean {
     if (!technicalFactors.length) {
       fieldErrors.technical_factors = '启用技术过滤时至少选择一个因子'
     }
+  }
+
+  const moneyflowEnabled = Boolean(payload.apply_moneyflow_filters)
+  const moneyflowWindow = Number(payload.moneyflow_net_inflow_days_window)
+  if (moneyflowEnabled && (!Number.isFinite(moneyflowWindow) || moneyflowWindow <= 0)) {
+    fieldErrors.moneyflow_net_inflow_days_window = '资金净流入回看周期必须大于 0'
   }
   if (String(payload.take_profit_mode || '').trim().toLowerCase() === 'dynamic') {
     const tiers = Array.isArray(payload.take_profit_tiers) ? payload.take_profit_tiers : []
@@ -2791,6 +2829,11 @@ async function applyRunParamsToForm(runId: number): Promise<boolean> {
       technical_factors: Array.isArray(merged.technical_factors)
         ? String(merged.technical_factors.find((item: unknown) => String(item || '').trim().length > 0) || '').trim()
         : String(merged.technical_factors || '').trim() || DEFAULT_FORM.technical_factors,
+      apply_moneyflow_filters: Boolean(merged.apply_moneyflow_filters ?? DEFAULT_FORM.apply_moneyflow_filters),
+      moneyflow_net_inflow_days_window: toNumberOrFallback(
+        merged.moneyflow_net_inflow_days_window,
+        DEFAULT_FORM.moneyflow_net_inflow_days_window,
+      ),
       financial_filter_mode: String(merged.financial_filter_mode ?? DEFAULT_FORM.financial_filter_mode),
       take_profit_mode: String(merged.take_profit_mode ?? DEFAULT_FORM.take_profit_mode),
       trend_position_pct: toNumberOrFallback(merged.trend_position_pct, DEFAULT_FORM.trend_position_pct),
