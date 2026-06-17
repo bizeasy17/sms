@@ -58,7 +58,18 @@
             </el-form-item>
           </el-col>
           <el-col :xs="24" :md="6">
-            <el-form-item label="估值带宽" label-position="top">
+            <el-form-item label-position="top">
+              <template #label>
+                <span class="label-with-tip">
+                  估值带宽
+                  <el-tooltip
+                    content="按估值中枢判断低估阈值：当前价 <= 中枢 × (1-带宽)。例如中枢12元时，带宽5%阈值11.4元，带宽50%阈值6元。"
+                    placement="top"
+                  >
+                    <span class="label-tip-trigger">?</span>
+                  </el-tooltip>
+                </span>
+              </template>
               <el-input-number v-model="form.band_pct" :min="0.01" :max="1" :step="0.01" :precision="2" style="width: 100%" />
             </el-form-item>
           </el-col>
@@ -850,6 +861,7 @@ import {
   ElSelect,
   ElSwitch,
   ElTag,
+  ElTooltip,
   ElTabs,
   ElTabPane,
   ElTable,
@@ -3009,6 +3021,26 @@ onBeforeUnmount(() => {
 .muted {
   color: #909399;
   font-size: 12px;
+}
+
+.label-with-tip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.label-tip-trigger {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  border: 1px solid #c0c4cc;
+  border-radius: 50%;
+  color: #909399;
+  font-size: 11px;
+  line-height: 1;
+  cursor: help;
 }
 
 .kline-chart {
