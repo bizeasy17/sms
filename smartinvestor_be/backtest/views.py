@@ -1578,6 +1578,52 @@ def _is_scan_like_run_key(run_key: str) -> bool:
     return bool(re.search(r"_run_\d+$", str(run_key or "")))
 
 
+def _is_single_scan_task_run(task, run_row):
+    """Treat single-job scan submissions as manual execute history."""
+    if task is None or not isinstance(run_row, dict):
+        return False
+
+    try:
+        total_jobs = int(getattr(task, "total_jobs", 0) or 0)
+    except (TypeError, ValueError):
+        total_jobs = 0
+
+    combo_index = run_row.get("index")
+    if combo_index in (None, ""):
+        combo_index = run_row.get("combo_index")
+    try:
+        combo_index_num = int(combo_index) if combo_index not in (None, "") else 1
+    except (TypeError, ValueError):
+        combo_index_num = 1
+
+    return total_jobs <= 1 and combo_index_num <= 1
+
+
+def _build_manual_row_from_scan_task(task, run_row):
+    params_payload = run_row.get("params") if isinstance(run_row.get("params"), dict) else {}
+    summary_payload = run_row.get("summary") if isinstance(run_row.get("summary"), dict) else {}
+    run_key = str(run_row.get("run_key") or "")
+    run_id = int(run_row.get("run_id") or _stable_run_id(run_key or f"scan_task_{task.id}_single"))
+    return {
+        "id": run_id,
+        "run_id": run_id,
+        "run_key": run_key,
+        "batch_key": str(task.strategy_name or "traditional_value_exit"),
+        "status": str(task.status or "success"),
+        "source": "manual",
+        "task_id": int(task.id),
+        "task_key": task.task_key,
+        "strategy_name": task.strategy_name,
+        "combo_index": None,
+        "start_date": str(params_payload.get("start_date") or ""),
+        "end_date": str(params_payload.get("end_date") or ""),
+        "created_at": str(run_row.get("created_at") or _format_dt(task.created_at) or ""),
+        "updated_at": str(run_row.get("updated_at") or _format_dt(task.updated_at) or ""),
+        "summary": summary_payload,
+        "params": params_payload,
+    }
+
+
 def _collect_manual_backtest_rows(*, limit: int, offset: int = 0, account_only: bool = False):
     queryset = TraditionalBacktestRun.objects.filter(
         strategy_name__in=["traditional_value_exit", "traditional_value_exit_account"],
@@ -1603,6 +1649,25 @@ def _collect_manual_backtest_rows(*, limit: int, offset: int = 0, account_only: 
             continue
         seen_run_keys.add(unique_key)
         merged.append(row)
+
+    try:
+        scan_tasks = list(TraditionalBacktestScanTask.objects.order_by("-updated_at", "-id"))
+    except (ProgrammingError, OperationalError):
+        scan_tasks = []
+
+    for task in scan_tasks:
+        result_payload = task.result_json if isinstance(task.result_json, dict) else {}
+        run_rows = result_payload.get("runs") if isinstance(result_payload.get("runs"), list) else []
+        for run_row in run_rows:
+            if not _is_single_scan_task_run(task, run_row):
+                continue
+            manual_row = _build_manual_row_from_scan_task(task, run_row)
+            run_key = str((manual_row or {}).get("run_key") or "")
+            unique_key = run_key or f"id:{(manual_row or {}).get('id')}"
+            if unique_key in seen_run_keys:
+                continue
+            seen_run_keys.add(unique_key)
+            merged.append(manual_row)
 
     if account_only:
         filtered = []
@@ -1630,6 +1695,8 @@ def _collect_scan_backtest_rows(*, limit: int, offset: int = 0):
         run_rows = result_payload.get("runs") if isinstance(result_payload.get("runs"), list) else []
         for run in run_rows:
             if not isinstance(run, dict):
+                continue
+            if _is_single_scan_task_run(task, run):
                 continue
             params_payload = run.get("params") if isinstance(run.get("params"), dict) else {}
             summary_payload = run.get("summary") if isinstance(run.get("summary"), dict) else {}

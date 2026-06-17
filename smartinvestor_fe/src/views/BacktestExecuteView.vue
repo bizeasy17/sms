@@ -738,6 +738,11 @@
               <el-table-column prop="avg_holding_days" label="平均持有" width="100" />
               <el-table-column prop="total_return_pct" label="总收益%" width="100" />
               <el-table-column prop="max_drawdown_pct" label="最大回撤%" width="110" />
+              <el-table-column prop="sharpe_ratio" label="Sharpe" width="90" />
+              <el-table-column prop="sortino_ratio" label="Sortino" width="90" />
+              <el-table-column prop="calmar_ratio" label="Calmar" width="90" />
+              <el-table-column prop="profit_factor" label="盈亏比" width="90" />
+              <el-table-column prop="expectancy_pct" label="期望收益%" width="110" />
               <el-table-column prop="created_at" label="记录时间" min-width="160" />
             </el-table>
 
@@ -795,6 +800,11 @@
               <el-table-column prop="win_rate_pct" label="胜率%" width="90" />
               <el-table-column prop="total_return_pct" label="总收益%" width="100" />
               <el-table-column prop="max_drawdown_pct" label="最大回撤%" width="110" />
+              <el-table-column prop="sharpe_ratio" label="Sharpe" width="90" />
+              <el-table-column prop="sortino_ratio" label="Sortino" width="90" />
+              <el-table-column prop="calmar_ratio" label="Calmar" width="90" />
+              <el-table-column prop="profit_factor" label="盈亏比" width="90" />
+              <el-table-column prop="expectancy_pct" label="期望收益%" width="110" />
               <el-table-column prop="created_at" label="记录时间" min-width="160" />
             </el-table>
 
@@ -1864,6 +1874,7 @@ function upsertGeneratedRunHistory(row: Record<string, any>) {
     return
   }
   const summary = (row?.summary && typeof row.summary === 'object') ? row.summary : {}
+  const avgReturnPct = summary.avg_return_pct ?? summary.avg_trade_return_pct ?? summary.return_pct ?? '-'
   const startingCapital = summary.starting_capital ?? summary.initial_capital ?? summary.initial_cash ?? '-'
   const endingCapital = summary.ending_capital ?? summary.final_capital ?? summary.final_asset ?? '-'
   const payload = {
@@ -1880,7 +1891,7 @@ function upsertGeneratedRunHistory(row: Record<string, any>) {
     starting_capital: startingCapital,
     ending_capital: endingCapital,
     trade_count: summary.trade_count ?? '-',
-    avg_return_pct: summary.avg_return_pct ?? '-',
+    avg_return_pct: avgReturnPct,
     win_rate_pct: summary.win_rate_pct ?? '-',
     avg_holding_days: summary.avg_holding_days ?? '-',
     median_return_pct: summary.median_return_pct ?? '-',
@@ -1905,6 +1916,7 @@ function upsertGeneratedRunHistory(row: Record<string, any>) {
 function normalizeRunHistoryRow(item: Record<string, any>, sourceLabel = 'all_history') {
   const summary = (item?.summary && typeof item.summary === 'object') ? item.summary : {}
   const params = (item?.params && typeof item.params === 'object') ? item.params : {}
+  const avgReturnPct = summary.avg_return_pct ?? summary.avg_trade_return_pct ?? summary.return_pct ?? '-'
   const runIdRaw = item?.run_id ?? item?.id
   const runId = Number(runIdRaw)
   const startingCapital = summary.starting_capital ?? summary.initial_capital ?? summary.initial_cash ?? '-'
@@ -1930,7 +1942,7 @@ function normalizeRunHistoryRow(item: Record<string, any>, sourceLabel = 'all_hi
     starting_capital: startingCapital,
     ending_capital: endingCapital,
     trade_count: summary.trade_count ?? '-',
-    avg_return_pct: summary.avg_return_pct ?? '-',
+    avg_return_pct: avgReturnPct,
     win_rate_pct: summary.win_rate_pct ?? '-',
     avg_holding_days: summary.avg_holding_days ?? '-',
     median_return_pct: summary.median_return_pct ?? '-',
