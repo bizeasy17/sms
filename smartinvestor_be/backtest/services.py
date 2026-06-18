@@ -1974,6 +1974,7 @@ def run_traditional_value_exit_account_backtest(
                         "first_hit_date": trade_date,
                         "last_hit_date": trade_date,
                         "latest_entry_price": float(current_price),
+                        "latest_composite_price": float(composite_price),
                         "latest_conservative_price": float(conservative_price),
                         "best_discount_pct": float(discount_pct) * 100.0,
                         "max_score": float(score),
@@ -1983,6 +1984,7 @@ def run_traditional_value_exit_account_backtest(
                 agg_entry["first_hit_date"] = min(agg_entry["first_hit_date"], trade_date)
                 agg_entry["last_hit_date"] = max(agg_entry["last_hit_date"], trade_date)
                 agg_entry["latest_entry_price"] = float(current_price)
+                agg_entry["latest_composite_price"] = float(composite_price)
                 agg_entry["latest_conservative_price"] = float(conservative_price)
                 agg_entry["best_discount_pct"] = max(float(agg_entry.get("best_discount_pct") or 0.0), float(discount_pct) * 100.0)
                 agg_entry["max_score"] = max(float(agg_entry.get("max_score") or 0.0), float(score))
@@ -2213,6 +2215,7 @@ def run_traditional_value_exit_account_backtest(
                     "first_hit_date": item.get("first_hit_date").isoformat() if item.get("first_hit_date") else None,
                     "last_hit_date": item.get("last_hit_date").isoformat() if item.get("last_hit_date") else None,
                     "latest_entry_price": round(float(item.get("latest_entry_price") or 0.0), 4),
+                    "latest_composite_price": round(float(item.get("latest_composite_price") or 0.0), 4),
                     "latest_conservative_price": round(float(item.get("latest_conservative_price") or 0.0), 4),
                     "best_discount_pct": round(float(item.get("best_discount_pct") or 0.0), 4),
                     "max_score": round(float(item.get("max_score") or 0.0), 2),
