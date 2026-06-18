@@ -291,8 +291,8 @@ class Command(BaseCommand):
         parser.add_argument("--min-composite-gap-pct", type=float, help="候选附加过滤：组合估值相对现价最小溢价(小数)")
         parser.add_argument("--min-conservative-gap-pct", type=float, help="候选附加过滤：保守估值相对现价最小溢价(小数)")
         parser.add_argument("--risk-lookback-days", type=int, default=20, help="风控统计回看窗口(交易日)")
-        parser.add_argument("--max-trailing-vol-pct", type=float, help="风控二筛：入场前波动率上限(%)")
-        parser.add_argument("--max-trailing-drawdown-pct", type=float, help="风控二筛：入场前回撤上限(%)")
+        parser.add_argument("--max-trailing-vol-pct", type=float, help="风控二筛：入场前波动率上限(%%)")
+        parser.add_argument("--max-trailing-drawdown-pct", type=float, help="风控二筛：入场前回撤上限(%%)")
         parser.add_argument("--rebalance-step", type=int, default=5, help="非 snapshot-only 模式下，每隔多少个交易日取一个入场日")
         parser.add_argument("--snapshot-only", action="store_true", default=False, help="仅使用已有 valuation snapshot 回测")
         parser.add_argument("--use-live-valuation", action="store_true", default=False, help="缺少 snapshot 时实时重算估值")
@@ -569,6 +569,9 @@ class Command(BaseCommand):
 
         for holding_period in holding_periods:
             return_col = f"return_{holding_period}d_pct"
+            if detail_df.empty or return_col not in detail_df.columns:
+                self.stdout.write(f"holding_{holding_period}d: no completed trades")
+                continue
             valid_df = detail_df.dropna(subset=[return_col])
             if valid_df.empty:
                 self.stdout.write(f"holding_{holding_period}d: no completed trades")
@@ -593,13 +596,15 @@ class Command(BaseCommand):
         for holding_period in holding_periods:
             preview_cols.append(f"return_{holding_period}d_pct")
 
-        preview_df = detail_df.sort_values(
-            by=["entry_date", "undervalue_score"],
-            ascending=[True, False],
-        )[preview_cols].head(top_n)
-        if not preview_df.empty:
-            self.stdout.write("top_candidates_preview=")
-            self.stdout.write(preview_df.to_string(index=False))
+        required_preview_cols = {"entry_date", "undervalue_score"}
+        if not detail_df.empty and required_preview_cols.issubset(set(detail_df.columns)):
+            preview_df = detail_df.sort_values(
+                by=["entry_date", "undervalue_score"],
+                ascending=[True, False],
+            )[preview_cols].head(top_n)
+            if not preview_df.empty:
+                self.stdout.write("top_candidates_preview=")
+                self.stdout.write(preview_df.to_string(index=False))
 
         output_csv = options.get("output_csv")
         if output_csv:

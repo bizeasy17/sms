@@ -2,6 +2,8 @@
 import csv
 import hashlib
 import math
+import threading
+import uuid
 from collections import defaultdict
 import pandas as pd
 from pathlib import Path
@@ -69,6 +71,9 @@ WEEKLY_UNDERVALUED_FILE_PREFIX = {
 WEEKLY_UNDERVALUED_JOB_CONFIG_FILE = "job_strategy_config.json"
 WEEKLY_STRATEGY_STYLE_KEYS = ("CONSERVATIVE", "BALANCED", "AGGRESSIVE")
 VALUATION_PICK_CACHE_TTL_SECONDS = 90
+VALUATION_PICK_JOB_CACHE_TTL_SECONDS = 1800
+VALUATION_PICK_JOB_POLL_INTERVAL_SECONDS = 3
+VALUATION_PICK_JOB_PREVIEW_SCAN_STEPS = (80, 300)
 
 
 def _build_valuation_pick_cache_key(payload):
@@ -729,6 +734,268 @@ def _load_persisted_variant_summary_payload(
         "valuation_core_methods": list(snapshot.valuation_core_methods or []),
         "summary_source": "persisted_variant_summary_latest",
     }
+
+
+def _build_valuation_pick_job_cache_key(job_id):
+    return f"valuation_pick_job:v1:{str(job_id or '').strip()}"
+
+
+def _get_valuation_pick_job_state(job_id):
+    cache_key = _build_valuation_pick_job_cache_key(job_id)
+    try:
+        cached = cache.get(cache_key)
+    except Exception as cache_err:
+        logger.debug("valuation pick job cache get failed: %s", cache_err)
+        cached = None
+    return cached if isinstance(cached, dict) else None
+
+
+def _set_valuation_pick_job_state(job_id, payload):
+    cache_key = _build_valuation_pick_job_cache_key(job_id)
+    data = dict(payload or {})
+    data["job_id"] = str(job_id or "")
+    data["updated_at"] = datetime.datetime.utcnow().isoformat() + "Z"
+    try:
+        cache.set(cache_key, data, timeout=VALUATION_PICK_JOB_CACHE_TTL_SECONDS)
+    except Exception as cache_err:
+        logger.debug("valuation pick job cache set failed: %s", cache_err)
+    return data
+
+
+def _resolve_active_variant_from_method_map(method_map, requested_variant=""):
+    grouped_rows = {}
+    variant_meta = {}
+    for method, payload in (method_map or {}).items():
+        normalized_method = _normalize_valuation_method_name(method)
+        if not normalized_method:
+            continue
+        variant = _normalize_valuation_variant(
+            (payload or {}).get("valuation_variant"),
+            fallback="default",
+        )
+        row = {
+            "valuation_method": normalized_method,
+            "valuation_variant": variant,
+            "valuation_price": (payload or {}).get("valuation_price"),
+            "latest_trade_date": (payload or {}).get("latest_trade_date"),
+            "profit_report_end_date": (payload or {}).get("profit_report_end_date"),
+            "profit_report_type": (payload or {}).get("profit_report_type"),
+            "profit_report_ann_date": (payload or {}).get("profit_report_ann_date"),
+            "profit_data_source": (payload or {}).get("profit_data_source"),
+            "compare_group": (payload or {}).get("compare_group"),
+            "match_score": (payload or {}).get("match_score"),
+            "industry_level": (payload or {}).get("industry_level"),
+            "industry_code": (payload or {}).get("industry_code"),
+            "industry_name": (payload or {}).get("industry_name"),
+        }
+        grouped_rows.setdefault(variant, []).append(row)
+        meta = variant_meta.setdefault(
+            variant,
+            {
+                "valuation_variant": variant,
+                "compare_group": (payload or {}).get("compare_group"),
+                "industry_level": (payload or {}).get("industry_level"),
+                "industry_code": (payload or {}).get("industry_code"),
+                "industry_name": (payload or {}).get("industry_name"),
+                "max_match_score": None,
+            },
+        )
+        score = _to_float_or_none((payload or {}).get("match_score"))
+        if score is not None and (meta.get("max_match_score") is None or score > meta.get("max_match_score")):
+            meta["max_match_score"] = score
+
+    normalized_requested_variant = _normalize_valuation_variant(requested_variant, fallback="")
+    if normalized_requested_variant and normalized_requested_variant in grouped_rows:
+        return normalized_requested_variant, grouped_rows, variant_meta
+
+    def _variant_sort_key(meta):
+        variant = str(meta.get("valuation_variant") or "")
+        compare_group = str(meta.get("compare_group") or "")
+        score = meta.get("max_match_score")
+        if score is None:
+            score = -1e9
+        if compare_group == "sw_l3_baseline":
+            group_rank = 0
+        elif compare_group == "business_match":
+            group_rank = 1
+        elif variant == "default":
+            group_rank = 2
+        else:
+            group_rank = 3
+        return (group_rank, -float(score), variant)
+
+    if not variant_meta:
+        return "default", grouped_rows, variant_meta
+    active_variant = sorted(variant_meta.values(), key=_variant_sort_key)[0].get("valuation_variant") or "default"
+    return active_variant, grouped_rows, variant_meta
+
+
+def _build_strict_summary_from_method_map(
+    *,
+    ts_code,
+    market,
+    current_price,
+    method_map,
+    band_pct,
+    trade_date=None,
+    requested_variant="",
+    requested_report_type=None,
+):
+    active_variant, grouped_rows, _variant_meta = _resolve_active_variant_from_method_map(
+        method_map,
+        requested_variant=requested_variant,
+    )
+    variant_rows = list(grouped_rows.get(active_variant) or [])
+    if not variant_rows:
+        return None
+
+    normalized_report_type = _normalize_valuation_profit_report_type(requested_report_type)
+    filtered_rows = []
+    for row in variant_rows:
+        row_report_type = _normalize_valuation_profit_report_type(row.get("profit_report_type"))
+        if normalized_report_type and row_report_type != normalized_report_type:
+            continue
+        filtered_rows.append(row)
+    if not filtered_rows:
+        filtered_rows = variant_rows
+
+    report_end_dates = [
+        _parse_date_like((row or {}).get("profit_report_end_date"))
+        for row in filtered_rows
+        if _parse_date_like((row or {}).get("profit_report_end_date")) is not None
+    ]
+    selected_report_end_date = max(report_end_dates) if report_end_dates else None
+    if selected_report_end_date is not None:
+        filtered_rows = [
+            row for row in filtered_rows
+            if _parse_date_like((row or {}).get("profit_report_end_date")) == selected_report_end_date
+        ]
+
+    persisted_summary_payload = _load_persisted_variant_summary_payload(
+        ts_code=ts_code,
+        market=market,
+        valuation_variant=active_variant,
+        trade_date=trade_date,
+        profit_report_type=normalized_report_type,
+        profit_report_end_date=selected_report_end_date,
+    )
+    summary_payload = persisted_summary_payload or _build_valuation_summary_payload(
+        current_price,
+        filtered_rows,
+        band_pct,
+        ts_code=ts_code,
+    )
+    summary_payload = dict(summary_payload or {})
+    summary_payload["summary_mode"] = "single_variant_strict"
+    summary_payload["summary_variant"] = active_variant
+    summary_payload["summary_report_end_date"] = (
+        selected_report_end_date.strftime("%Y-%m-%d")
+        if selected_report_end_date is not None
+        else None
+    )
+    if not summary_payload.get("summary_source"):
+        summary_payload["summary_source"] = "strict_method_map"
+    return summary_payload
+
+
+def _build_valuation_pick_job_request(query_params):
+    request = RequestFactory().get("/internal/stock-pick-valuation/job-run/", query_params)
+    # Internal job runner uses a Django request; expose query_params for DRF-style readers.
+    if not hasattr(request, "query_params"):
+        request.query_params = request.GET
+    return request
+
+
+def _run_valuation_pick_job(job_id, payload):
+    raw_payload = payload if isinstance(payload, dict) else {}
+    trade_date = str(raw_payload.get("trade_date") or "").strip()
+    scope = str(raw_payload.get("scope") or "").strip()
+    query = raw_payload.get("query") if isinstance(raw_payload.get("query"), dict) else {}
+    freq = str(query.get("freq") or raw_payload.get("freq") or "D").strip().upper() or "D"
+    base_query = {str(key): str(value) for key, value in query.items() if value not in (None, "")}
+    base_query["freq"] = freq
+    base_query["from_index"] = "0"
+    base_query["to_index"] = "25"
+
+    try:
+        _set_valuation_pick_job_state(
+            job_id,
+            {
+                "status": "running",
+                "progress_pct": 1,
+                "processed_count": 0,
+                "matched_count": 0,
+                "total_candidates": None,
+                "message": "任务已启动，正在生成预览结果",
+                "data": [],
+                "has_more": True,
+                "poll_interval_seconds": VALUATION_PICK_JOB_POLL_INTERVAL_SECONDS,
+            },
+        )
+
+        step_limits = list(VALUATION_PICK_JOB_PREVIEW_SCAN_STEPS) + [None]
+        final_rows = []
+        final_total = 0
+        total_candidates = None
+        for index, scan_limit in enumerate(step_limits):
+            step_query = dict(base_query)
+            if scan_limit is not None:
+                step_query["scan_limit"] = str(scan_limit)
+            elif "scan_limit" in step_query:
+                step_query.pop("scan_limit", None)
+
+            step_request = _build_valuation_pick_job_request(step_query)
+            response = _pick_stocks_by_valuation_fast(
+                request=step_request,
+                trade_date=trade_date,
+                scope=scope,
+                freq=freq,
+                from_index=0,
+                to_index=25,
+            )
+            response_data = response.data if hasattr(response, "data") else {}
+            rows = response_data.get("data") or []
+            meta = response_data.get("meta") or {}
+            final_rows = rows
+            final_total = int(meta.get("total_filtered") or len(rows))
+            total_candidates = meta.get("total_candidates")
+
+            is_final_step = scan_limit is None
+            progress_pct = 100 if is_final_step else min(95, int(((index + 1) / len(step_limits)) * 100))
+            _set_valuation_pick_job_state(
+                job_id,
+                {
+                    "status": "done" if is_final_step else "running",
+                    "progress_pct": progress_pct,
+                    "processed_count": int(scan_limit or total_candidates or final_total or len(rows)),
+                    "matched_count": final_total,
+                    "total_candidates": total_candidates,
+                    "message": "结果已生成" if is_final_step else "正在扩展选股结果范围",
+                    "data": final_rows,
+                    "has_more": not is_final_step,
+                    "poll_interval_seconds": VALUATION_PICK_JOB_POLL_INTERVAL_SECONDS,
+                    "meta": meta,
+                    "valuation_filter": response_data.get("valuation_filter") or {},
+                    "trade_date": response_data.get("trade_date"),
+                    "freq": response_data.get("freq"),
+                },
+            )
+    except Exception as err:
+        logger.exception("valuation pick job failed: %s", err)
+        _set_valuation_pick_job_state(
+            job_id,
+            {
+                "status": "failed",
+                "progress_pct": 100,
+                "processed_count": 0,
+                "matched_count": 0,
+                "total_candidates": None,
+                "message": str(err),
+                "data": [],
+                "has_more": False,
+                "poll_interval_seconds": VALUATION_PICK_JOB_POLL_INTERVAL_SECONDS,
+            },
+        )
 
 
 def _load_latest_indicator_profile(ts_code):
@@ -4702,6 +4969,16 @@ def _pick_stocks_by_valuation_fast(request, trade_date, scope, freq="D", from_in
         if hasattr(request, "query_params")
         else LIVE_VALUATION_PICK_STRATEGY
     )
+    summary_mode_raw = (
+        request.query_params.get("summary_mode", "single_variant_strict")
+        if hasattr(request, "query_params")
+        else "single_variant_strict"
+    )
+    requested_valuation_variant_raw = (
+        request.query_params.get("valuation_variant", "")
+        if hasattr(request, "query_params")
+        else ""
+    )
     buy_candidate_only_raw = (
         request.query_params.get("buy_candidate_only", "") if hasattr(request, "query_params") else ""
     )
@@ -4774,6 +5051,11 @@ def _pick_stocks_by_valuation_fast(request, trade_date, scope, freq="D", from_in
         if hasattr(request, "query_params")
         else "score_desc"
     )
+    scan_limit_raw = (
+        request.query_params.get("scan_limit", "")
+        if hasattr(request, "query_params")
+        else ""
+    )
 
     try:
         valuation_band_pct = max(0.01, float(valuation_band_pct_raw))
@@ -4783,6 +5065,13 @@ def _pick_stocks_by_valuation_fast(request, trade_date, scope, freq="D", from_in
     valuation_status = str(valuation_status).strip().lower()
     selected_valuation_method = str(valuation_method or "pe").strip().lower() or "pe"
     valuation_pick_strategy = _normalize_pick_strategy(valuation_pick_strategy_raw)
+    summary_mode = str(summary_mode_raw or "single_variant_strict").strip().lower()
+    if summary_mode not in {"single_variant_strict", "mixed_method"}:
+        summary_mode = "single_variant_strict"
+    requested_valuation_variant = _normalize_valuation_variant(
+        requested_valuation_variant_raw,
+        fallback="",
+    )
     buy_candidate_only = str(buy_candidate_only_raw).strip().lower() in {
         "1", "true", "yes", "y", "on",
     }
@@ -4868,6 +5157,12 @@ def _pick_stocks_by_valuation_fast(request, trade_date, scope, freq="D", from_in
     }
     if priority_policy not in allowed_priority_policies:
         priority_policy = "score_desc"
+    try:
+        scan_limit = int(str(scan_limit_raw).strip()) if str(scan_limit_raw).strip() else None
+    except (TypeError, ValueError):
+        scan_limit = None
+    if scan_limit is not None and scan_limit <= 0:
+        scan_limit = None
     netprofit_growth_floor = 0.2 if netprofit_growth == "HIGH" else (0.1 if netprofit_growth == "MEDIUM" else None)
     min_netprofit_yoy_ratio = _normalize_yoy_threshold(min_netprofit_yoy)
     min_ebit_yoy_ratio = _normalize_yoy_threshold(min_ebit_yoy)
@@ -4884,6 +5179,8 @@ def _pick_stocks_by_valuation_fast(request, trade_date, scope, freq="D", from_in
             "valuation_status": valuation_status,
             "valuation_band_pct": valuation_band_pct,
             "valuation_pick_strategy": valuation_pick_strategy,
+            "summary_mode": summary_mode,
+            "valuation_variant": requested_valuation_variant,
             "buy_candidate_only": buy_candidate_only,
             "sw_industry": sw_industry,
             "picking_mode": picking_mode,
@@ -4897,6 +5194,7 @@ def _pick_stocks_by_valuation_fast(request, trade_date, scope, freq="D", from_in
             "netprofit_growth": netprofit_growth,
             "min_valuation_score": min_valuation_score,
             "priority_policy": priority_policy,
+            "scan_limit": scan_limit,
             "apply_financial_filters": apply_financial_filters,
             "effective_netprofit_yoy_floor": effective_netprofit_yoy_floor,
             "min_ebit_yoy_ratio": min_ebit_yoy_ratio,
@@ -4914,6 +5212,7 @@ def _pick_stocks_by_valuation_fast(request, trade_date, scope, freq="D", from_in
         *,
         paged_result,
         total_filtered,
+        total_candidates=None,
         strategy_effective_stocks,
         predictive_stats,
         moneyflow_stats=None,
@@ -4931,6 +5230,8 @@ def _pick_stocks_by_valuation_fast(request, trade_date, scope, freq="D", from_in
                     "band_pct": valuation_band_pct,
                     "buy_candidate_only": buy_candidate_only,
                     "pick_strategy": valuation_pick_strategy,
+                    "summary_mode": summary_mode,
+                    "valuation_variant": requested_valuation_variant or None,
                     "sw_industry": sw_industry,
                     "strict_snapshot_only": True,
                     "picking_mode": picking_mode,
@@ -4968,6 +5269,7 @@ def _pick_stocks_by_valuation_fast(request, trade_date, scope, freq="D", from_in
                     "requested_trade_date": normalized_trade_date,
                     "resolved_trade_date": trade_date_for_query,
                     "auto_latest": auto_latest,
+                    "total_candidates": total_candidates,
                     "total_filtered": total_filtered,
                     "strategy_effective_stocks": strategy_effective_stocks,
                     "page_from_index": from_index,
@@ -5015,6 +5317,7 @@ def _pick_stocks_by_valuation_fast(request, trade_date, scope, freq="D", from_in
         return _build_pick_response(
             paged_result=paged_result,
             total_filtered=len(cached_result),
+            total_candidates=cached_bundle.get("total_candidates"),
             strategy_effective_stocks=int(cached_bundle.get("multi_candidate_rows") or 0),
             predictive_stats=(cached_bundle.get("predictive_earnings_stats") or {}),
             moneyflow_stats=(cached_bundle.get("moneyflow_filter_stats") or {}),
@@ -5049,6 +5352,9 @@ def _pick_stocks_by_valuation_fast(request, trade_date, scope, freq="D", from_in
         )
     )
     perf_after_trading = time.perf_counter()
+    total_candidates_count = len(trading_rows)
+    if scan_limit is not None:
+        trading_rows = trading_rows[:scan_limit]
     ts_codes = [row["ts_code"] for row in trading_rows]
 
     valuation_snapshot_map = _build_latest_snapshot_method_map(
@@ -5165,11 +5471,36 @@ def _pick_stocks_by_valuation_fast(request, trade_date, scope, freq="D", from_in
         if selected_price is None:
             valuation_payload["valuation_source"] = "snapshot_only_miss"
 
-        buy_candidate_payload = _summarize_buy_candidate(
-            current_price=current_price,
-            method_map=method_map,
-            band_pct=valuation_band_pct,
-        )
+        buy_candidate_payload = None
+        if summary_mode == "single_variant_strict":
+            strict_report_type = None
+            if valuation_express_only:
+                strict_report_type = "EXP"
+            elif earnings_report_type in {"Q1", "H1", "Q3", "FY"}:
+                strict_report_type = earnings_report_type
+
+            strict_payload = _build_strict_summary_from_method_map(
+                ts_code=ts_code,
+                market="CN",
+                current_price=current_price,
+                method_map=method_map,
+                band_pct=valuation_band_pct,
+                trade_date=trade_date_for_query,
+                requested_variant=requested_valuation_variant or "",
+                requested_report_type=strict_report_type,
+            )
+            if strict_payload:
+                buy_candidate_payload = dict(strict_payload)
+
+        if buy_candidate_payload is None:
+            buy_candidate_payload = _summarize_buy_candidate(
+                current_price=current_price,
+                method_map=method_map,
+                band_pct=valuation_band_pct,
+            )
+            buy_candidate_payload["summary_mode"] = "mixed_method"
+            buy_candidate_payload.setdefault("summary_variant", None)
+            buy_candidate_payload.setdefault("summary_report_end_date", None)
         valuation_score = _to_float_or_none(buy_candidate_payload.get("undervalue_score"))
         if valuation_score is None:
             # Prefer composite gap fallback for traditional mode when selected-method gap is missing.
@@ -5659,6 +5990,7 @@ def _pick_stocks_by_valuation_fast(request, trade_date, scope, freq="D", from_in
             cache_key,
             {
                 "result": result,
+                "total_candidates": total_candidates_count,
                 "multi_candidate_rows": multi_candidate_rows,
                 "predictive_earnings_stats": predictive_earnings_stats,
                 "moneyflow_filter_stats": moneyflow_filter_stats,
@@ -5671,6 +6003,7 @@ def _pick_stocks_by_valuation_fast(request, trade_date, scope, freq="D", from_in
     return _build_pick_response(
         paged_result=paged_result,
         total_filtered=len(result),
+        total_candidates=total_candidates_count,
         strategy_effective_stocks=multi_candidate_rows,
         predictive_stats=predictive_earnings_stats,
         moneyflow_stats=moneyflow_filter_stats,
@@ -9847,6 +10180,50 @@ def get_or_update_weekly_job_strategy_config(request):
     return Response({"code": 0, "message": "saved", "data": saved})
 
 
+@api_view(["POST"])
+def create_stock_pick_valuation_job(request):
+    payload = request.data if isinstance(request.data, dict) else {}
+    trade_date = str(payload.get("trade_date") or "").strip()
+    scope = str(payload.get("scope") or "").strip()
+    query = payload.get("query") if isinstance(payload.get("query"), dict) else {}
+    freq = str(query.get("freq") or payload.get("freq") or "D").strip().upper() or "D"
+    if not trade_date or not scope:
+        return Response({"error": "trade_date and scope are required"}, status=400)
+
+    job_id = uuid.uuid4().hex
+    state = _set_valuation_pick_job_state(
+        job_id,
+        {
+            "status": "queued",
+            "progress_pct": 0,
+            "processed_count": 0,
+            "matched_count": 0,
+            "total_candidates": None,
+            "message": "任务已排队",
+            "data": [],
+            "has_more": True,
+            "poll_interval_seconds": VALUATION_PICK_JOB_POLL_INTERVAL_SECONDS,
+            "trade_date": trade_date,
+            "freq": freq,
+        },
+    )
+    worker = threading.Thread(
+        target=_run_valuation_pick_job,
+        args=(job_id, {"trade_date": trade_date, "scope": scope, "query": query, "freq": freq}),
+        daemon=True,
+    )
+    worker.start()
+    return Response(state, status=202)
+
+
+@api_view(["GET"])
+def get_stock_pick_valuation_job(request, job_id):
+    state = _get_valuation_pick_job_state(job_id)
+    if state is None:
+        return Response({"error": "job not found"}, status=404)
+    return Response(state)
+
+
 @api_view(["GET"])
 def pick_stocks_by_valuation_simple(request, trade_date, scope):
     freq = request.query_params.get("freq", "D") if hasattr(request, "query_params") else "D"
@@ -11244,6 +11621,18 @@ def get_stock_valuation_methods(request, ts_code):
             ts_code=ts_code,
             freq=freq,
         )
+        summary_payload = dict(summary_payload or {})
+        summary_report_end_date = next(
+            (
+                item.get("profit_report_end_date")
+                for item in (rows or [])
+                if isinstance(item, dict) and item.get("profit_report_end_date")
+            ),
+            None,
+        )
+        summary_payload["summary_mode"] = "single_variant_strict"
+        summary_payload["summary_variant"] = active_variant
+        summary_payload["summary_report_end_date"] = summary_report_end_date
         normalized_summary_payload = summary_by_variant_normalized.get(active_variant) or _build_valuation_summary_payload(
             current_price,
             rows,
@@ -11493,6 +11882,7 @@ def _load_internal_stock_valuation_methods_payload(
     earnings_report_type=None,
     valuation_report_end_date=None,
     valuation_band_pct=0.1,
+    valuation_variant=None,
 ):
     query_params = {
         "freq": str(freq),
@@ -11502,6 +11892,8 @@ def _load_internal_stock_valuation_methods_payload(
         query_params["earnings_report_type"] = str(earnings_report_type)
     if valuation_report_end_date:
         query_params["valuation_report_end_date"] = str(valuation_report_end_date)
+    if valuation_variant:
+        query_params["valuation_variant"] = str(valuation_variant)
 
     internal_request = RequestFactory().get("/internal/valuation/methods/", query_params)
     response = get_stock_valuation_methods(internal_request, ts_code)

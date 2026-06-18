@@ -9,10 +9,23 @@
                             </el-tag>
                         </el-col>
                     </el-row>
+                    <el-row v-if="jobStatusText" style="margin-bottom: 8px;">
+                        <el-col :span="24">
+                            <div style="display:flex; flex-direction:column; gap:6px;">
+                                <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap; font-size:12px; color:#606266;">
+                                    <el-tag size="small" :type="isJobLoading ? 'warning' : 'success'" effect="light">{{ jobStatusText }}</el-tag>
+                                    <span v-if="jobMessage">{{ jobMessage }}</span>
+                                    <span v-if="jobMatchedCount > 0">已命中 {{ jobMatchedCount }} 条</span>
+                                    <span v-if="jobTotalCandidates > 0">候选 {{ jobTotalCandidates }} 支</span>
+                                </div>
+                                <el-progress v-if="isJobLoading" :percentage="jobProgressPct" :stroke-width="12" />
+                            </div>
+                        </el-col>
+                    </el-row>
                     <el-row>
                         <el-col :span="24">
                             <div ref="tableWrapperRef" class="result-table-wrapper">
-                            <el-table :data="pickingResult" style="width: 100%" size="small" :height="tableHeight" @row-dblclick="onRowDblClick">
+                            <el-table v-loading="isJobLoading" :data="pickingResult" style="width: 100%" size="small" :height="tableHeight" @row-dblclick="onRowDblClick">
                                     <el-table-column prop="ts_code" label="代码" fixed="left">
                                         <template #default="{ row }">
                                             <div style="display:flex; align-items:center; gap:6px; flex-wrap:wrap;">
@@ -167,8 +180,8 @@
                     <el-row :gutter="12" style="margin-top: 10px;">
                         <el-col :span="controlSpan">
                             <div ref="tableControlRef" class="result-table-controls">
-                            <el-button type="primary" @click="fetchPrevPage" size="small">上一页</el-button>
-                            <el-button type="primary" @click="fetchNextPage" size="small">下一页</el-button>
+                            <el-button type="primary" @click="fetchPrevPage" size="small" :disabled="isJobLoading">上一页</el-button>
+                            <el-button type="primary" @click="fetchNextPage" size="small" :disabled="isJobLoading || !hasNextPage">下一页</el-button>
                             <el-button type="success" plain @click="exportPickingResultCsv" size="small" :loading="isExportingAllCsv" :disabled="isExportingAllCsv || totalFiltered === 0">导出CSV</el-button>
                             <el-button type="warning" plain @click="sortByUndervalue('desc')" size="small">低估分降序</el-button>
                             <el-button type="warning" plain @click="sortByUndervalue('asc')" size="small">低估分升序</el-button>
@@ -251,7 +264,7 @@
 </template>
 
 <script setup lang="ts">
-import { ElCard, ElTable, ElTableColumn, ElMessage, ElRow, ElCol, ElButton, ElTag, ElTabs, ElTabPane, ElDialog, ElCheckTag, ElText } from "element-plus";
+import { ElCard, ElTable, ElTableColumn, ElMessage, ElRow, ElCol, ElButton, ElTag, ElTabs, ElTabPane, ElDialog, ElCheckTag, ElText, ElProgress } from "element-plus";
 import { computed, ref, watch, onMounted, nextTick, onBeforeUnmount } from "vue";
 import axios from "axios";
 import { inject } from "vue";
@@ -290,6 +303,14 @@ const tableWrapperRef = ref<HTMLElement | null>(null);
 const tableControlRef = ref<HTMLElement | null>(null);
 const tableHeight = ref(460);
 const isExportingAllCsv = ref(false);
+const isJobLoading = ref(false);
+const jobStatusText = ref("");
+const jobMessage = ref("");
+const jobProgressPct = ref(0);
+const jobMatchedCount = ref(0);
+const jobTotalCandidates = ref(0);
+const activeJobId = ref("");
+let jobPollTimer: number | null = null;
 
 const baseURL = inject<string>("baseURL", "");
 const pickingResult = ref<Array<Record<string, any>>>([]);
@@ -297,6 +318,13 @@ const isPredictiveMode = computed(() => valuationStockPickingStore.pickingMode =
 
 const hasPrevStock = computed(() => detailRowIndex.value > 0);
 const hasNextStock = computed(() => detailRowIndex.value >= 0 && detailRowIndex.value < pickingResult.value.length - 1);
+const hasNextPage = computed(() => {
+    const total = Number(totalFiltered.value || 0);
+    if (total <= 0) {
+        return false;
+    }
+    return Number(curToIndex.value || 0) < total;
+});
 const detailPositionText = computed(() => {
     if (detailRowIndex.value < 0 || pickingResult.value.length === 0) {
         return "";
@@ -461,6 +489,149 @@ function buildPickingRequestUrl(from: number, to: number) {
     const scopePath = normalizeScopeForApi(valuationStockPickingStore.scopeParam);
     const search = buildPickingSearchParams(from, to);
     return `${buildApiUrl(`/stock-pick-valuation/${valuationStockPickingStore.tradeDate}/${scopePath}/`)}?${search.toString()}`;
+}
+
+function stopPickingJobPolling() {
+    if (jobPollTimer !== null) {
+        window.clearTimeout(jobPollTimer);
+        jobPollTimer = null;
+    }
+}
+
+function buildPickingJobPayload() {
+    const search = buildPickingSearchParams(0, 25);
+    const query: Record<string, string> = {};
+    search.forEach((value, key) => {
+        query[key] = value;
+    });
+    return {
+        trade_date: valuationStockPickingStore.tradeDate,
+        scope: normalizeScopeForApi(valuationStockPickingStore.scopeParam),
+        query,
+    };
+}
+
+function applyPickingJobState(payload: any) {
+    const rows = Array.isArray(payload?.data) ? payload.data : [];
+    const meta = payload?.meta || {};
+    const valuationFilter = payload?.valuation_filter || {};
+    pickingResult.value = rows;
+    effectiveFinancialFilters.value = valuationFilter.effective_financial_filters || {};
+    totalFiltered.value = Number(payload?.matched_count ?? meta.total_filtered ?? 0);
+    jobMatchedCount.value = totalFiltered.value;
+    jobTotalCandidates.value = Number(payload?.total_candidates ?? meta.total_candidates ?? 0);
+    if (rows.length > 0) {
+        currentRangeStart.value = 1;
+        currentRangeEnd.value = rows.length;
+        curFromIndex.value = 0;
+        curToIndex.value = rows.length;
+        fromIndex.value = rows.length;
+        toIndex.value = rows.length + increment.value;
+    } else {
+        currentRangeStart.value = 0;
+        currentRangeEnd.value = 0;
+        curFromIndex.value = 0;
+        curToIndex.value = 25;
+        fromIndex.value = 0;
+        toIndex.value = 25;
+    }
+    valuationStockPickingStore.setPickingResults(
+        rows.map((item: any) => ({
+            ts_code: item.ts_code,
+            name: item.name,
+            close_qfq: item.close_qfq,
+            pct_change_qfq: item.pct_change_qfq,
+        }))
+    );
+    if (payload?.status === "done") {
+        valuationStockPickingStore.markResultDate(
+            valuationStockPickingStore.tradeDate,
+            totalFiltered.value > 0,
+        );
+    }
+    nextTick(() => updateTableHeight());
+}
+
+async function pollPickingJob(jobId: string) {
+    try {
+        const res = await axios.get(buildApiUrl(`/stock-pick-valuation/jobs/${jobId}/`));
+        const payload = res.data || {};
+        if (activeJobId.value !== jobId) {
+            return;
+        }
+        jobProgressPct.value = Number(payload.progress_pct || 0);
+        jobMessage.value = String(payload.message || "");
+        const status = String(payload.status || "");
+        jobStatusText.value = status === "queued"
+            ? "排队中"
+            : status === "running"
+                ? "计算中"
+                : status === "done"
+                    ? "已完成"
+                    : status === "failed"
+                        ? "失败"
+                        : "处理中";
+        applyPickingJobState(payload);
+        if (status === "done") {
+            isJobLoading.value = false;
+            stopPickingJobPolling();
+            return;
+        }
+        if (status === "failed") {
+            isJobLoading.value = false;
+            stopPickingJobPolling();
+            ElMessage.error(jobMessage.value || "选股任务失败，请稍后重试");
+            return;
+        }
+        const pollIntervalSeconds = Math.max(2, Number(payload.poll_interval_seconds || 3));
+        jobPollTimer = window.setTimeout(() => {
+            void pollPickingJob(jobId);
+        }, pollIntervalSeconds * 1000);
+    } catch (_error) {
+        if (activeJobId.value === jobId) {
+            isJobLoading.value = false;
+            stopPickingJobPolling();
+            ElMessage.error("获取选股任务进度失败，请稍后重试");
+        }
+    }
+}
+
+async function startPickingJob() {
+    try {
+        stopPickingJobPolling();
+        activeJobId.value = "";
+        jobStatusText.value = "提交中";
+        jobMessage.value = "正在创建选股任务";
+        jobProgressPct.value = 0;
+        jobMatchedCount.value = 0;
+        jobTotalCandidates.value = 0;
+        if (valuationStockPickingStore.scopeParam === "SCOPE:NONE") {
+            isJobLoading.value = false;
+            pickingResult.value = [];
+            totalFiltered.value = 0;
+            valuationStockPickingStore.setPickingResults([]);
+            return;
+        }
+        isJobLoading.value = true;
+        pickingResult.value = [];
+        totalFiltered.value = 0;
+        effectiveFinancialFilters.value = {};
+        const res = await axios.post(buildApiUrl("/stock-pick-valuation/jobs/"), buildPickingJobPayload());
+        const payload = res.data || {};
+        const jobId = String(payload.job_id || "").trim();
+        if (!jobId) {
+            throw new Error("missing job_id");
+        }
+        activeJobId.value = jobId;
+        jobProgressPct.value = Number(payload.progress_pct || 0);
+        jobMessage.value = String(payload.message || "");
+        jobStatusText.value = String(payload.status || "queued") === "queued" ? "排队中" : "计算中";
+        await pollPickingJob(jobId);
+    } catch (_error) {
+        isJobLoading.value = false;
+        stopPickingJobPolling();
+        ElMessage.error("提交选股任务失败，请稍后重试");
+    }
 }
 
 async function exportPickingResultCsv() {
@@ -997,6 +1168,10 @@ async function warmupPickingCache() {
 }
 
 async function fetchPrevPage() {
+    if (isJobLoading.value) {
+        ElMessage.info("当前仍在生成结果，请等待任务完成后再翻页");
+        return;
+    }
     if (curFromIndex.value <= 0) return;
     fromIndex.value = curFromIndex.value - increment.value;
     toIndex.value = curToIndex.value - increment.value;
@@ -1004,6 +1179,14 @@ async function fetchPrevPage() {
 }
 
 async function fetchNextPage() {
+    if (isJobLoading.value) {
+        ElMessage.info("当前仍在生成结果，请等待任务完成后再翻页");
+        return;
+    }
+    if (!hasNextPage.value) {
+        ElMessage.info("已经是最后一页");
+        return;
+    }
     await fetchPickingResult();
 }
 
@@ -1040,7 +1223,7 @@ watch(
         toIndex.value = 25;
         currentRangeStart.value = 0;
         currentRangeEnd.value = 0;
-        fetchPickingResult();
+        void startPickingJob();
     },
     { immediate: true }
 );
@@ -1049,10 +1232,10 @@ onMounted(() => {
     stockChartFilterStore.setTopBottomSwitch(false);
     updateTableHeight();
     window.addEventListener("resize", updateTableHeight);
-    warmupPickingCache();
 });
 
 onBeforeUnmount(() => {
+    stopPickingJobPolling();
     window.removeEventListener("resize", updateTableHeight);
 });
 </script>

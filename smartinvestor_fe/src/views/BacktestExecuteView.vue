@@ -342,7 +342,7 @@
           :closable="false"
           show-icon
           class="row-gap"
-          title="批量扫描会复用上方回测参数，并按分数/带宽/止盈模式/止盈/止损/风险网格做组合扫描。"
+          title="批量扫描会复用上方回测参数，并按分数/带宽/持仓天数/止盈模式/止盈/止损/风险网格做组合扫描。"
         />
 
         <el-row :gutter="12" class="row-gap">
@@ -372,6 +372,11 @@
             </el-form-item>
           </el-col>
           <el-col :xs="24" :md="6">
+            <el-form-item label="持仓天数网格" label-position="top">
+              <el-input v-model="scanGrid.max_holding_days" placeholder="例如: 0,5,10,20" />
+            </el-form-item>
+          </el-col>
+          <el-col :xs="24" :md="6">
             <el-form-item label="风险网格" label-position="top">
               <el-input v-model="scanGrid.risk_level" placeholder="例如: LOW,MEDIUM（两档）或 LOW+MEDIUM（组合档）" />
             </el-form-item>
@@ -389,7 +394,7 @@
             </el-form-item>
           </el-col>
         </el-row>
-        <div class="muted" style="font-size: 12px; margin-top: -4px;">参数示例：85,90,95 / 0.05,0.08,0.1,0.12 / fixed / 0.15,0.25,0.5,0.75,1 / 0,0.03,0.05,0.1,0.15,0.2,0.25 / LOW,MEDIUM（默认两档=840组）</div>
+        <div class="muted" style="font-size: 12px; margin-top: -4px;">参数示例：85,90,95 / 0.05,0.08,0.1,0.12 / 0,5,10,20 / fixed / 0.15,0.25,0.5,0.75,1 / 0,0.03,0.05,0.1,0.15,0.2,0.25 / LOW,MEDIUM（默认两档=840组）</div>
 
         <div v-if="message" class="message-row row-gap">
           <el-alert
@@ -740,7 +745,18 @@
               <el-table-column prop="ending_capital" label="期末资金" width="120" />
               <el-table-column label="参数设置" min-width="320">
                 <template #default="scope">
-                  <span>{{ compactParams(scope.row.params || {}) }}</span>
+                  <div class="history-param-cell">
+                    <span>{{ getHistoryParamsDisplayText(scope.row, 'manual') }}</span>
+                    <el-button
+                      v-if="shouldShowParamsExpand(scope.row, 'manual')"
+                      link
+                      type="primary"
+                      size="small"
+                      @click.stop="toggleHistoryParamsExpand(scope.row, 'manual')"
+                    >
+                      {{ isHistoryParamsExpanded(scope.row, 'manual') ? '收起' : '展开' }}
+                    </el-button>
+                  </div>
                 </template>
               </el-table-column>
               <el-table-column prop="trade_count" label="交易数" width="90" />
@@ -803,7 +819,18 @@
               <el-table-column prop="task_key" label="任务Key" min-width="180" />
               <el-table-column label="参数设置" min-width="320">
                 <template #default="scope">
-                  <span>{{ compactParams(scope.row.params || {}) }}</span>
+                  <div class="history-param-cell">
+                    <span>{{ getHistoryParamsDisplayText(scope.row, 'scan') }}</span>
+                    <el-button
+                      v-if="shouldShowParamsExpand(scope.row, 'scan')"
+                      link
+                      type="primary"
+                      size="small"
+                      @click.stop="toggleHistoryParamsExpand(scope.row, 'scan')"
+                    >
+                      {{ isHistoryParamsExpanded(scope.row, 'scan') ? '收起' : '展开' }}
+                    </el-button>
+                  </div>
                 </template>
               </el-table-column>
               <el-table-column prop="trade_count" label="交易数" width="90" />
@@ -955,6 +982,7 @@ const scanHistoryTotal = ref(0)
 const scanHistoryPage = ref(1)
 const scanHistoryPageSize = ref(20)
 const loadingScanHistory = ref(false)
+const historyParamsExpanded = ref<Record<string, boolean>>({})
 const submittedScanTaskIds = ref<number[]>([])
 const singleRunTaskId = ref<number | null>(null)
 let singleRunPollTimer: number | null = null
@@ -1029,6 +1057,7 @@ const form = reactive({ ...DEFAULT_FORM })
 const scanGrid = reactive({
   min_score: '85,90,95',
   band_pct: '0.05,0.08,0.1,0.12',
+  max_holding_days: '0,5,10,20',
   take_profit_mode: 'fixed',
   take_profit_pct: '0.15,0.25,0.5,0.75,1',
   take_profit_tiers: '',
@@ -1801,6 +1830,9 @@ function buildScanGridPayload() {
   const payload: Record<string, Array<any>> = {}
   const minScoreList = toNumberList(scanGrid.min_score)
   const bandList = toNumberList(scanGrid.band_pct)
+  const maxHoldingDaysList = toNumberList(scanGrid.max_holding_days)
+    .map((item) => Math.floor(item))
+    .filter((item) => Number.isFinite(item) && item >= 0)
   const takeProfitModeList = toTakeProfitModeGridList(scanGrid.take_profit_mode)
   const takeProfitList = toNumberList(scanGrid.take_profit_pct)
   const takeProfitTierGridList = parseTakeProfitTierGridText(scanGrid.take_profit_tiers)
@@ -1819,6 +1851,9 @@ function buildScanGridPayload() {
   }
   if (bandList.length) {
     payload.band_pct = bandList
+  }
+  if (maxHoldingDaysList.length) {
+    payload.max_holding_days = maxHoldingDaysList
   }
   if (takeProfitBundleList.length) {
     payload.take_profit_bundle = takeProfitBundleList
@@ -1871,6 +1906,7 @@ function compactParams(params: Record<string, any>) {
     'add_on_entry_pct',
     'add_on_drop_pct',
     'add_on2_drop_pct',
+    'max_holding_days',
     'add_on2_fill_remaining',
     'priority_policy',
   ]
@@ -1878,6 +1914,50 @@ function compactParams(params: Record<string, any>) {
     .filter((key) => params && params[key] !== undefined && params[key] !== null)
     .map((key) => `${key}=${params[key]}`)
     .join(' | ')
+}
+
+const HISTORY_PARAMS_COLLAPSE_LENGTH = 120
+
+function buildHistoryParamsExpandKey(row: Record<string, any>, tab: 'manual' | 'scan') {
+  const runId = Number(row?.run_id)
+  const taskId = Number(row?.task_id)
+  const comboIndex = Number(row?.combo_index)
+  const runKey = String(row?.run_key || '')
+  const keyPart = Number.isFinite(runId) && runId > 0
+    ? `run:${runId}`
+    : Number.isFinite(taskId) && taskId > 0
+      ? `task:${taskId}:combo:${comboIndex}`
+      : `key:${runKey}`
+  return `${tab}:${keyPart}`
+}
+
+function isHistoryParamsExpanded(row: Record<string, any>, tab: 'manual' | 'scan') {
+  const key = buildHistoryParamsExpandKey(row, tab)
+  return historyParamsExpanded.value[key] === true
+}
+
+function toggleHistoryParamsExpand(row: Record<string, any>, tab: 'manual' | 'scan') {
+  const key = buildHistoryParamsExpandKey(row, tab)
+  historyParamsExpanded.value[key] = !isHistoryParamsExpanded(row, tab)
+}
+
+function shouldShowParamsExpand(row: Record<string, any>, tab: 'manual' | 'scan') {
+  const text = compactParams((row?.params as Record<string, any>) || {})
+  if (!text) {
+    return false
+  }
+  return text.length > HISTORY_PARAMS_COLLAPSE_LENGTH || isHistoryParamsExpanded(row, tab)
+}
+
+function getHistoryParamsDisplayText(row: Record<string, any>, tab: 'manual' | 'scan') {
+  const text = compactParams((row?.params as Record<string, any>) || {})
+  if (!text) {
+    return '-'
+  }
+  if (isHistoryParamsExpanded(row, tab) || text.length <= HISTORY_PARAMS_COLLAPSE_LENGTH) {
+    return text
+  }
+  return `${text.slice(0, HISTORY_PARAMS_COLLAPSE_LENGTH)}...`
 }
 
 function upsertGeneratedRunHistory(row: Record<string, any>) {
@@ -3021,6 +3101,12 @@ onBeforeUnmount(() => {
 .muted {
   color: #909399;
   font-size: 12px;
+}
+
+.history-param-cell {
+  display: flex;
+  align-items: center;
+  gap: 6px;
 }
 
 .label-with-tip {
