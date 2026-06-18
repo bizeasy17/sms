@@ -600,7 +600,14 @@
         </div>
         <el-row :gutter="12">
           <el-col :xs="24" :md="18">
-            <v-chart v-if="executeStockKlineOption" :option="executeStockKlineOption" autoresize class="kline-chart" />
+            <v-chart
+              v-if="executeStockKlineOption"
+              :key="`execute-stock-kline-${executeStockCode}`"
+              :option="executeStockKlineOption"
+              :update-options="{ notMerge: true, replaceMerge: ['series'] }"
+              autoresize
+              class="kline-chart"
+            />
 
             <el-table :data="executeStockTradeRows" stripe border size="small" height="220" class="trade-table">
               <el-table-column prop="entry_date" label="买入日" width="110" />
@@ -2214,6 +2221,9 @@ function validateExecutePayload(payload: Record<string, any>): boolean {
 }
 
 function toFiniteNumber(value: unknown): number | null {
+  if (value === null || value === undefined || value === '') {
+    return null
+  }
   const num = Number(value)
   return Number.isFinite(num) ? num : null
 }
@@ -2327,7 +2337,28 @@ function formatKlineTooltip(rows: Array<Record<string, any>>, axisValue: unknown
     ? `${(((close - prevClose) / prevClose) * 100).toFixed(2)}%`
     : '-'
   const closeText = close !== null ? close.toFixed(4) : '-'
-  return `${tradeDate}<br/>收盘价: ${closeText}<br/>涨跌幅: ${pctChange}`
+  const currentMarker = executeStockMarkers.value.find((item) => String(item?.trade_date || '') === tradeDate && item?.type === 'buy_candidate')
+  const compositePrice = toFiniteNumber(currentMarker?.composite_price)
+  const conservativePrice = toFiniteNumber(currentMarker?.conservative_price)
+  const compositeText = compositePrice !== null ? compositePrice.toFixed(4) : '-'
+  const conservativeText = conservativePrice !== null ? conservativePrice.toFixed(4) : '-'
+  return `${tradeDate}<br/>收盘价: ${closeText}<br/>涨跌幅: ${pctChange}<br/>组合估值价: ${compositeText}<br/>保守估值价: ${conservativeText}`
+}
+
+function buildMarkerPricePoints(
+  markers: Array<Record<string, any>>,
+  field: 'composite_price' | 'conservative_price',
+): Array<{ value: [string, number]; tradeDate: string; price: number }> {
+  return markers
+    .filter((item) => item?.type === 'buy_candidate')
+    .map((item) => {
+      const tradeDate = String(item?.trade_date || '').trim()
+      const value = toFiniteNumber(item?.[field])
+      return tradeDate && value !== null
+        ? { value: [tradeDate, value] as [string, number], tradeDate, price: value }
+        : null
+    })
+    .filter((item): item is { value: [string, number]; tradeDate: string; price: number } => !!item)
 }
 
 const executeStockKlineOption = computed(() => {
@@ -2352,6 +2383,15 @@ const executeStockKlineOption = computed(() => {
     .map((item) => ({ value: [item.trade_date, item.price], tradeDate: item.trade_date, price: item.price }))
     .filter((item) => item.tradeDate && item.price !== undefined && item.price !== null)
 
+  const buyCandidateCompositePoints = buildMarkerPricePoints(
+    executeStockMarkers.value,
+    'composite_price',
+  )
+  const buyCandidateConservativePoints = buildMarkerPricePoints(
+    executeStockMarkers.value,
+    'conservative_price',
+  )
+
   const maPeriods = [6, 10, 25, 43, 60, 120, 200]
   const maSeries = maPeriods.map((period) => {
     const name = `MA${period}`
@@ -2370,12 +2410,16 @@ const executeStockKlineOption = computed(() => {
   const lowerPriceQuantile = buildFlatQuantileSeries(executeStockKlineRows.value, 0.1)
   return {
     animation: false,
-    legend: { data: ['K线', ...maPeriods.map((period) => `MA${period}`), '收盘价 90%分位', '收盘价 10%分位', '买点', '卖点', '可买点'] },
+    legend: {
+      top: 6,
+      itemGap: 14,
+      data: ['K线', ...maPeriods.map((period) => `MA${period}`), '收盘价 90%分位', '收盘价 10%分位', '组合估值价', '保守估值价', '买点', '卖点', '可买点'],
+    },
     tooltip: {
       trigger: 'axis',
       formatter: (params: any) => formatKlineTooltip(executeStockKlineRows.value, Array.isArray(params) && params.length ? params[0]?.axisValue : ''),
     },
-    grid: { left: 40, right: 20, top: 30, bottom: 60 },
+    grid: { left: 40, right: 20, top: 68, bottom: 60 },
     xAxis: {
       type: 'category',
       data: xAxisData,
@@ -2406,6 +2450,40 @@ const executeStockKlineOption = computed(() => {
         smooth: true,
         showSymbol: false,
         lineStyle: { color: '#16a34a', width: 1, type: 'dashed' },
+      },
+      {
+        name: '组合估值价',
+        type: 'scatter',
+        data: buyCandidateCompositePoints,
+        symbol: 'circle',
+        symbolSize: 10,
+        showSymbol: true,
+        itemStyle: { color: '#7c3aed' },
+        label: {
+          show: true,
+          formatter: (params: any) => `组估 ${toFiniteNumber(params?.data?.price)?.toFixed(4) ?? '-'}`,
+          position: 'top',
+          color: '#6d28d9',
+          fontSize: 10,
+          fontWeight: 600,
+        },
+      },
+      {
+        name: '保守估值价',
+        type: 'scatter',
+        data: buyCandidateConservativePoints,
+        symbol: 'circle',
+        symbolSize: 10,
+        showSymbol: true,
+        itemStyle: { color: '#ea580c' },
+        label: {
+          show: true,
+          formatter: (params: any) => `保估 ${toFiniteNumber(params?.data?.price)?.toFixed(4) ?? '-'}`,
+          position: 'bottom',
+          color: '#c2410c',
+          fontSize: 10,
+          fontWeight: 600,
+        },
       },
       {
         name: '买点',

@@ -5,7 +5,7 @@ import zlib
 import importlib
 import math
 from collections import defaultdict
-from datetime import datetime, timedelta
+from datetime import datetime, date, timedelta
 from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor
 
@@ -952,6 +952,7 @@ def _build_buy_candidate_markers(payload, ts_code: str):
         cached_rows = cached_markers_map.get(normalized_code)
         if isinstance(cached_rows, list):
             out = []
+            has_valuation_overlay = False
             for row in cached_rows:
                 if not isinstance(row, dict):
                     continue
@@ -959,15 +960,23 @@ def _build_buy_candidate_markers(payload, ts_code: str):
                 price = _safe_float(row.get("price"))
                 if not trade_date or price is None:
                     continue
+                composite_price = _safe_float(row.get("composite_price"))
+                conservative_price = _safe_float(row.get("conservative_price"))
+                if composite_price is not None or conservative_price is not None:
+                    has_valuation_overlay = True
                 out.append(
                     {
                         "type": "buy_candidate",
                         "trade_date": trade_date,
                         "price": round(float(price), 4),
+                        "composite_price": composite_price,
                         "label": "可买",
+                        "conservative_price": conservative_price,
                     }
                 )
-            if out:
+            # Older runs may have cached markers without valuation overlay fields.
+            # In that case, fall back to recomputing markers below.
+            if out and has_valuation_overlay:
                 return out
 
     strategy_payload = (result_payload or {}).get("strategy") if isinstance(result_payload, dict) else {}
@@ -1087,6 +1096,8 @@ def _build_buy_candidate_markers(payload, ts_code: str):
                 "type": "buy_candidate",
                 "trade_date": trade_date.isoformat(),
                 "price": round(float(current_price), 4),
+                "composite_price": round(float(summary.get("composite_valuation_price")), 4),
+                "conservative_price": round(float(conservative_price), 4),
                 "label": "可买",
             }
         )
@@ -2329,6 +2340,7 @@ def get_traditional_backtest_run_stock_detail(request, run_id: int, ts_code: str
     trade_rows.sort(key=lambda item: (str(item.get("entry_date") or ""), str(item.get("exit_date") or "")))
 
     markers = _build_trade_markers(trade_rows)
+    candidate_markers = _build_buy_candidate_markers(payload, normalized_code)
     valuation_history = []
     stats = {}
 
@@ -2352,6 +2364,7 @@ def get_traditional_backtest_run_stock_detail(request, run_id: int, ts_code: str
     forward_days = max(5, min(120, int(request.GET.get("forward_days", 20))))
     start_date = min(valid_entry_dates) - timedelta(days=lookback_days)
     end_date = max(valid_exit_dates) + timedelta(days=forward_days)
+    end_date = max(end_date, date(2025, 12, 31))
 
     kline_rows = _load_kline_rows(normalized_code, start_date=start_date, end_date=end_date)
     stats = _compute_backtesting_stats(kline_rows=kline_rows, trades=trade_rows)
@@ -2364,6 +2377,8 @@ def get_traditional_backtest_run_stock_detail(request, run_id: int, ts_code: str
     stock_name = _load_stock_name(normalized_code)
     if trade_rows:
         valuation_history = _build_valuation_history(normalized_code, start_date=start_date, end_date=end_date)
+    if candidate_markers:
+        markers.extend(candidate_markers)
 
     return Response(
         {
