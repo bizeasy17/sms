@@ -227,6 +227,11 @@ urlpatterns = [
         name="stock-valuation-methods",
     ),
     path(
+        "stocks/<str:ts_code>/valuation/snapshot-history/",
+        views.get_stock_valuation_snapshot_history,
+        name="stock-valuation-snapshot-history",
+    ),
+    path(
         "openclaw/valuation/chat/",
         views.openclaw_valuation_chat,
         name="openclaw-valuation-chat",

@@ -88,7 +88,25 @@
                         </el-tab-pane>
                         <el-tab-pane label="技术趋势" name="trend" lazy>
                             <div class="trend-tab-panel">
-                                <StockChart ref="trendChartCompRef" :display-embed="true" :show-bottom-in-embed="true" />
+                                <div class="trend-overlay-toolbar">
+                                    <el-radio-group v-model="trendOverlayMode" size="small">
+                                        <el-radio-button label="traditional">传统估值</el-radio-button>
+                                        <el-radio-button label="predictive">预测估值</el-radio-button>
+                                    </el-radio-group>
+                                    <el-radio-group v-if="trendOverlayMode === 'predictive'" v-model="trendOverlayReportType" size="small">
+                                        <el-radio-button label="Q1">Q1</el-radio-button>
+                                        <el-radio-button label="H1">H1</el-radio-button>
+                                        <el-radio-button label="Q3">Q3</el-radio-button>
+                                        <el-radio-button label="FY">FY</el-radio-button>
+                                    </el-radio-group>
+                                </div>
+                                <StockChart
+                                    ref="trendChartCompRef"
+                                    :display-embed="true"
+                                    :show-bottom-in-embed="true"
+                                    :valuation-overlay-mode="trendOverlayMode"
+                                    :valuation-overlay-report-type="trendOverlayReportType"
+                                />
                             </div>
                         </el-tab-pane>
                         <el-tab-pane label="成本 / 财报" name="finance" lazy>
@@ -188,6 +206,8 @@ const inputVisible = ref(false)
 const InputRef = ref<InputInstance>()
 const overviewTab = ref('valuation')
 const trendChartCompRef = ref<InstanceType<typeof StockChart> | null>(null)
+const trendOverlayMode = ref<'traditional' | 'predictive'>('traditional')
+const trendOverlayReportType = ref<'Q1' | 'H1' | 'Q3' | 'FY'>('FY')
 const marketOverallValuation = ref<any | null>(null)
 const topQuoteFetchSeq = ref(0)
 const marketQuantileDialogVisible = ref(false)
@@ -906,6 +926,14 @@ defineOptions({
 
 .valuation-quickview-row {
     margin-top: 10px;
+}
+
+.trend-overlay-toolbar {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    margin-bottom: 8px;
+    flex-wrap: wrap;
 }
 
 .market-quantile-dialog-toolbar {

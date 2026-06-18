@@ -438,12 +438,13 @@ const chipRequestToken = ref(0)
 const tradingHistoryCache = new Map()
 const tradingHistoryPending = new Map()
 const parsedTradingCache = new Map()
-const derivedTradingCache = new Map()
 const tradingHistoryRenderPending = new Map()
 const latestTradingRenderKey = ref('')
 const tradingHistoryPrefetched = new Set()
 const topBottomCache = new Map()
 const topBottomPending = new Map()
+const valuationOverlayCache = new Map()
+const valuationOverlayPending = new Map()
 const trendChartsLoading = ref(false)
 const trendInitialLoadDone = ref(false)
 const TREND_ZOOM_STORAGE_KEY = 'smartinvestor_stockchart_trend_zoom_v1'
@@ -566,6 +567,14 @@ const props = defineProps({
     showBottomInEmbed: {
         type: Boolean,
         default: false
+    },
+    valuationOverlayMode: {
+        type: String,
+        default: 'traditional'
+    },
+    valuationOverlayReportType: {
+        type: String,
+        default: 'FY'
     }
 })
 const displayEmbed = computed(() => props.displayEmbed)
@@ -861,6 +870,8 @@ function buildDerivedTradingChartData(parsedData) {
         }
     ]
 
+    const overlaySeries = buildTrendValuationOverlaySeries(parsedData)
+
     const volSeries = [
         {
             name: '成交量',
@@ -907,8 +918,10 @@ function buildDerivedTradingChartData(parsedData) {
 
     return {
         trendSeries,
+        overlaySeries,
         volSeries,
         techXAxis: parsedData.tradeDates,
+        overlayLegend: overlaySeries.map(item => item.name),
         techSeriesByOption: Object.fromEntries(
             Object.entries(techSeriesByOption).map(([option, items]) => [
                 option,
@@ -926,6 +939,186 @@ function buildDerivedTradingChartData(parsedData) {
     }
 }
 
+function normalizeOverlayMode(value) {
+    const text = String(value || '').trim().toLowerCase()
+    if (text === 'predictive') {
+        return 'predictive'
+    }
+    return 'traditional'
+}
+
+function normalizeOverlayReportType(value) {
+    const text = String(value || '').trim().toUpperCase()
+    if (['Q1', 'H1', 'Q3', 'FY'].includes(text)) {
+        return text
+    }
+    return 'FY'
+}
+
+function normalizeTradeDateText(value) {
+    return String(value || '').trim().replace(/-/g, '')
+}
+
+function buildTrendValuationOverlaySeries(parsedData) {
+    const dateList = Array.isArray(parsedData?.tradeDates) ? parsedData.tradeDates : []
+    if (!dateList.length) {
+        return []
+    }
+    const normalizedDateIndex = new Map()
+    dateList.forEach((dateText, index) => {
+        const key = normalizeTradeDateText(dateText)
+        if (key && !normalizedDateIndex.has(key)) {
+            normalizedDateIndex.set(key, index)
+        }
+    })
+
+    const overlayRows = Array.isArray(parsedData?.valuationOverlayRows) ? parsedData.valuationOverlayRows : []
+    if (!overlayRows.length) {
+        return []
+    }
+
+    const compositeData = []
+    const conservativeData = []
+    overlayRows.forEach((row) => {
+        const key = normalizeTradeDateText(row?.trade_date)
+        const idx = normalizedDateIndex.get(key)
+        if (!Number.isInteger(idx)) {
+            return
+        }
+        const compositePrice = Number(row?.composite_price)
+        const conservativePrice = Number(row?.conservative_price)
+        if (Number.isFinite(compositePrice)) {
+            compositeData.push({
+                value: [idx, Number(compositePrice.toFixed(4))],
+                tradeDate: String(row?.trade_date || ''),
+            })
+        }
+        if (Number.isFinite(conservativePrice)) {
+            conservativeData.push({
+                value: [idx, Number(conservativePrice.toFixed(4))],
+                tradeDate: String(row?.trade_date || ''),
+            })
+        }
+    })
+
+    const overlaySeries = []
+    if (compositeData.length) {
+        overlaySeries.push({
+            name: '组合估值',
+            type: 'scatter',
+            xAxisIndex: 0,
+            yAxisIndex: 0,
+            symbol: 'circle',
+            symbolSize: 9,
+            data: compositeData,
+            itemStyle: { color: '#2563eb' },
+            label: {
+                show: true,
+                position: 'top',
+                formatter: (params) => {
+                    const value = Number(params?.data?.value?.[1])
+                    return Number.isFinite(value) ? `组 ${value.toFixed(2)}` : ''
+                },
+                color: '#1d4ed8',
+                fontSize: 10,
+            },
+            z: 7,
+        })
+    }
+    if (conservativeData.length) {
+        overlaySeries.push({
+            name: '保守估值',
+            type: 'scatter',
+            xAxisIndex: 0,
+            yAxisIndex: 0,
+            symbol: 'diamond',
+            symbolSize: 9,
+            data: conservativeData,
+            itemStyle: { color: '#d97706' },
+            label: {
+                show: true,
+                position: 'bottom',
+                formatter: (params) => {
+                    const value = Number(params?.data?.value?.[1])
+                    return Number.isFinite(value) ? `保 ${value.toFixed(2)}` : ''
+                },
+                color: '#92400e',
+                fontSize: 10,
+            },
+            z: 7,
+        })
+    }
+    return overlaySeries
+}
+
+function getValuationOverlayCacheKey(tsCode, freq, period) {
+    const mode = normalizeOverlayMode(props.valuationOverlayMode)
+    const reportType = normalizeOverlayReportType(props.valuationOverlayReportType)
+    const preferredVariant = String(stockStore.preferredValuationVariant || '').trim()
+    return [String(tsCode || '').trim().toUpperCase(), freq, String(period), mode, reportType, preferredVariant].join('|')
+}
+
+async function fetchValuationOverlayPoints(tsCode, freq, period) {
+    if (!baseURL || !tsCode) {
+        return []
+    }
+    const mode = normalizeOverlayMode(props.valuationOverlayMode)
+    const reportType = normalizeOverlayReportType(props.valuationOverlayReportType)
+    const preferredVariant = String(stockStore.preferredValuationVariant || '').trim()
+    const cacheKey = getValuationOverlayCacheKey(tsCode, freq, period)
+    if (valuationOverlayCache.has(cacheKey)) {
+        return valuationOverlayCache.get(cacheKey)
+    }
+
+    let pending = valuationOverlayPending.get(cacheKey)
+    if (!pending) {
+        const url = `${baseURL}/stocks/${tsCode}/valuation/snapshot-history/`
+        pending = axios.get(url, {
+            params: {
+                mode,
+                freq,
+                period,
+                report_type: reportType,
+                valuation_variant: mode === 'traditional' ? preferredVariant : '',
+            },
+        }).then((response) => {
+            const payload = response?.data
+            let rows = []
+            if (Array.isArray(payload)) {
+                rows = payload
+            } else if (Array.isArray(payload?.data)) {
+                rows = payload.data
+            } else if (Array.isArray(payload?.results)) {
+                rows = payload.results
+            }
+            const normalizedRows = rows
+                .map((item) => {
+                    const tradeDate = String(item?.trade_date || '').trim()
+                    if (!tradeDate) {
+                        return null
+                    }
+                    const compositePrice = Number(item?.composite_price)
+                    const conservativePrice = Number(item?.conservative_price)
+                    return {
+                        trade_date: tradeDate,
+                        composite_price: Number.isFinite(compositePrice) ? compositePrice : null,
+                        conservative_price: Number.isFinite(conservativePrice) ? conservativePrice : null,
+                    }
+                })
+                .filter((item) => item && (item.composite_price !== null || item.conservative_price !== null))
+            valuationOverlayCache.set(cacheKey, normalizedRows)
+            return normalizedRows
+        }).catch(() => {
+            valuationOverlayCache.set(cacheKey, [])
+            return []
+        }).finally(() => {
+            valuationOverlayPending.delete(cacheKey)
+        })
+        valuationOverlayPending.set(cacheKey, pending)
+    }
+    return pending
+}
+
 function applyDerivedTradingChartData(parsedData, derivedData) {
     chartTrendOption.value.xAxis[0].data = parsedData.tradeDates
     chartTrendOption.value.xAxis[1].data = parsedData.tradeDates
@@ -935,12 +1128,17 @@ function applyDerivedTradingChartData(parsedData, derivedData) {
         xAxisIndex: 0,
         yAxisIndex: 0,
     }))
+    const overlaySeries = (derivedData.overlaySeries || []).map(series => ({ ...series }))
     const volSeries = derivedData.volSeries.map(series => ({
         ...series,
         xAxisIndex: 1,
         yAxisIndex: 1,
     }))
-    chartTrendOption.value.series = [...trendSeries, ...volSeries]
+    chartTrendOption.value.series = [...trendSeries, ...overlaySeries, ...volSeries]
+    chartTrendOption.value.legend.data = [
+        'MA6', 'MA10', 'MA25', 'MA43', 'MA60', 'MA120', 'MA200',
+        ...(derivedData.overlayLegend || []),
+    ]
     applyPositionTriggerLines(stockStore.tsCode)
     chartTechOption.value.xAxis.data = derivedData.techXAxis
     chartTechOption.value.series = (derivedData.techSeriesByOption[techOption.value] || []).map(series => ({ ...series }))
@@ -1677,7 +1875,7 @@ async function fetchTradingHistory(stockCode = '', freq = 'D', adj = 'qfq', coun
         renderTask = (async () => {
             try {
                 let parsedData = parsedTradingCache.get(cacheKey)
-                let derivedData = derivedTradingCache.get(cacheKey)
+                let derivedData = null
                 const shouldShowSkeleton = !trendInitialLoadDone.value && !parsedData && !tradingHistoryCache.has(cacheKey)
                 if (shouldShowSkeleton) {
                     trendChartsLoading.value = true
@@ -1707,8 +1905,9 @@ async function fetchTradingHistory(stockCode = '', freq = 'D', adj = 'qfq', coun
                     parsedTradingCache.set(cacheKey, parsedData)
                 }
                 if (!derivedData) {
+                    const valuationOverlayRows = await fetchValuationOverlayPoints(normalizedStockCode, freq, count)
+                    parsedData.valuationOverlayRows = valuationOverlayRows
                     derivedData = buildDerivedTradingChartData(parsedData)
-                    derivedTradingCache.set(cacheKey, derivedData)
                 }
 
                 // Guard against async stale update when user switches period/freq quickly.
@@ -1930,6 +2129,35 @@ const renderTopBottomSymbol = (tradeChartData, entryPoints) => {
 }
 
 // 在fetchTradingHistory后调用
+watch(
+    () => ({
+        mode: normalizeOverlayMode(props.valuationOverlayMode),
+        reportType: normalizeOverlayReportType(props.valuationOverlayReportType),
+        preferredVariant: String(stockStore.preferredValuationVariant || '').trim(),
+        tsCode: stockStore.tsCode,
+        freq: stockChartFilterStore.freq,
+        period: stockChartFilterStore.period,
+        adj: adjPriceOption.value,
+    }),
+    (nextVal, prevVal) => {
+        if (!String(nextVal.tsCode || '').trim()) {
+            return
+        }
+        if (
+            nextVal.mode === prevVal?.mode
+            && nextVal.reportType === prevVal?.reportType
+            && nextVal.preferredVariant === prevVal?.preferredVariant
+            && nextVal.tsCode === prevVal?.tsCode
+            && nextVal.freq === prevVal?.freq
+            && nextVal.period === prevVal?.period
+            && nextVal.adj === prevVal?.adj
+        ) {
+            return
+        }
+        fetchTradingHistory(nextVal.tsCode, nextVal.freq, nextVal.adj, nextVal.period)
+    }
+)
+
 watch(
     () => ({ topBtmSwitch: stockChartFilterStore.topBottomSwitch }),
     () => {

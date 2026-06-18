@@ -2754,6 +2754,9 @@ async function fetchValuationRows(includePredictive = true) {
       'default'
     )
     activeVariant.value = resolvedActive
+    if (String(stockTradeStore.preferredValuationVariant || '').trim() !== resolvedActive) {
+      stockTradeStore.setPreferredValuationVariant(resolvedActive)
+    }
 
     const resolvedRows = variantPayload[resolvedActive]
     rows.value = Array.isArray(resolvedRows)

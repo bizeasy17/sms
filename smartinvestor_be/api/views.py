@@ -35,6 +35,7 @@ from prediction.models import (
 )
 from valuation.models import (
     StockValuationSnapshot,
+    StockValuationSnapshotHistory,
     StockValuationSnapshotLatest,
     StockValuationVariantSummaryLatest,
     IndustryVariantCache,
@@ -11748,6 +11749,370 @@ def get_stock_valuation_methods(request, ts_code):
         return Response({"error": str(e)}, status=400)
     except Exception as e:
         return Response({"error": str(e)}, status=500)
+
+
+@api_view(["GET"])
+def get_stock_valuation_snapshot_history(request, ts_code):
+    """Return valuation snapshot points for trend chart overlay."""
+
+    normalized_ts_code = str(ts_code or "").strip().upper()
+    if not normalized_ts_code:
+        return Response({"error": "ts_code is required"}, status=400)
+
+    market = (request.query_params.get("market") or "CN").strip() or "CN"
+    freq = (request.query_params.get("freq") or "D").strip().upper() or "D"
+    mode = str(request.query_params.get("mode") or "traditional").strip().lower()
+    if mode in {"prediction", "earnings", "forecast"}:
+        mode = "predictive"
+    if mode not in {"traditional", "predictive"}:
+        mode = "traditional"
+
+    period_raw = request.query_params.get("period")
+    try:
+        period = int(period_raw) if period_raw not in (None, "") else 200
+    except (TypeError, ValueError):
+        period = 200
+    period = max(30, min(period, 2000))
+
+    band_pct = _parse_optional_float(request.query_params.get("valuation_band_pct"), default=0.1)
+    if band_pct is None:
+        band_pct = 0.1
+
+    latest_trade_row = (
+        StockTradingHistory.objects.filter(ts_code=normalized_ts_code, freq=freq)
+        .order_by("-trade_date")
+        .values("trade_date")
+        .first()
+    )
+    latest_trade_date = _parse_date_like((latest_trade_row or {}).get("trade_date"))
+    if latest_trade_date is None:
+        return Response(
+            {
+                "code": 0,
+                "message": "ok",
+                "data": [],
+                "meta": {
+                    "ts_code": normalized_ts_code,
+                    "mode": mode,
+                    "freq": freq,
+                    "period": period,
+                },
+            }
+        )
+
+    year_window_map = {200: 1, 400: 2, 1000: 5, 2000: 10}
+    years = year_window_map.get(period)
+    trading_qs = StockTradingHistory.objects.filter(ts_code=normalized_ts_code, freq=freq, trade_date__lte=latest_trade_date)
+    if years:
+        try:
+            start_date = datetime.date(latest_trade_date.year - years, latest_trade_date.month, latest_trade_date.day)
+        except ValueError:
+            start_date = datetime.date(latest_trade_date.year - years, latest_trade_date.month, 1)
+        trading_rows = list(
+            trading_qs.filter(trade_date__gte=start_date)
+            .order_by("trade_date")
+            .values("trade_date", "close_qfq", "close")
+        )
+    else:
+        trading_rows = list(
+            trading_qs.order_by("-trade_date")
+            .values("trade_date", "close_qfq", "close")[:period]
+        )
+        trading_rows.reverse()
+
+    if not trading_rows:
+        return Response(
+            {
+                "code": 0,
+                "message": "ok",
+                "data": [],
+                "meta": {
+                    "ts_code": normalized_ts_code,
+                    "mode": mode,
+                    "freq": freq,
+                    "period": period,
+                },
+            }
+        )
+
+    period_start_date = _parse_date_like(trading_rows[0].get("trade_date"))
+    period_end_date = _parse_date_like(trading_rows[-1].get("trade_date"))
+    price_by_date = {}
+    trading_dates = []
+    for row in trading_rows:
+        trade_date = _parse_date_like(row.get("trade_date"))
+        if trade_date is None:
+            continue
+        close_price = _to_float_or_none(row.get("close_qfq"))
+        if close_price is None:
+            close_price = _to_float_or_none(row.get("close"))
+        price_by_date[trade_date] = close_price
+        trading_dates.append(trade_date)
+
+    if not trading_dates:
+        return Response(
+            {
+                "code": 0,
+                "message": "ok",
+                "data": [],
+                "meta": {
+                    "ts_code": normalized_ts_code,
+                    "mode": mode,
+                    "freq": freq,
+                    "period": period,
+                },
+            }
+        )
+
+    points = []
+
+    if mode == "traditional":
+        requested_variant = _normalize_valuation_variant(
+            request.query_params.get("valuation_variant"),
+            fallback="",
+        )
+        history_rows = list(
+            StockValuationSnapshotHistory.objects.filter(
+                ts_code=normalized_ts_code,
+                market=market,
+                trade_date__gte=period_start_date,
+                trade_date__lte=period_end_date,
+            )
+            .order_by("trade_date", "valuation_variant", "valuation_method", "-id")
+            .values("trade_date", "valuation_method", "valuation_variant", "valuation_price")
+        )
+
+        grouped = {}
+        seen = set()
+        for row in history_rows:
+            trade_date = _parse_date_like(row.get("trade_date"))
+            method = _normalize_valuation_method_name(row.get("valuation_method"))
+            variant = _normalize_valuation_variant(row.get("valuation_variant"), fallback="default")
+            valuation_price = _to_float_or_none(row.get("valuation_price"))
+            if trade_date is None or not method or valuation_price is None:
+                continue
+            dedup_key = (trade_date, variant, method)
+            if dedup_key in seen:
+                continue
+            seen.add(dedup_key)
+            grouped.setdefault(trade_date, {}).setdefault(variant, {})[method] = {
+                "valuation_price": valuation_price,
+                "candidate_count": 1,
+            }
+
+        # Fallback: if snapshot table has a newer trade_date than archived history,
+        # append that latest date to avoid missing freshly generated snapshots.
+        latest_history_trade_date = max(grouped.keys()) if grouped else None
+        latest_snapshot_row = (
+            StockValuationSnapshot.objects.filter(
+                ts_code=normalized_ts_code,
+                market=market,
+                trade_date__gte=period_start_date,
+                trade_date__lte=period_end_date,
+            )
+            .order_by("-trade_date")
+            .values("trade_date")
+            .first()
+        )
+        latest_snapshot_trade_date = _parse_date_like((latest_snapshot_row or {}).get("trade_date"))
+        if (
+            latest_snapshot_trade_date is not None
+            and (latest_history_trade_date is None or latest_snapshot_trade_date > latest_history_trade_date)
+            and latest_snapshot_trade_date not in grouped
+        ):
+            snapshot_rows = list(
+                StockValuationSnapshot.objects.filter(
+                    ts_code=normalized_ts_code,
+                    market=market,
+                    trade_date=latest_snapshot_trade_date,
+                )
+                .order_by("valuation_variant", "valuation_method", "-id")
+                .values("valuation_variant", "valuation_method", "valuation_price")
+            )
+            variant_map = {}
+            variant_seen = set()
+            for row in snapshot_rows:
+                method = _normalize_valuation_method_name(row.get("valuation_method"))
+                variant = _normalize_valuation_variant(row.get("valuation_variant"), fallback="default")
+                valuation_price = _to_float_or_none(row.get("valuation_price"))
+                if not method or valuation_price is None:
+                    continue
+                dedup_key = (variant, method)
+                if dedup_key in variant_seen:
+                    continue
+                variant_seen.add(dedup_key)
+                variant_map.setdefault(variant, {})[method] = {
+                    "valuation_price": valuation_price,
+                    "candidate_count": 1,
+                }
+            if variant_map:
+                grouped[latest_snapshot_trade_date] = variant_map
+
+        for trade_date in sorted(grouped.keys()):
+            current_price = _to_float_or_none(price_by_date.get(trade_date))
+            if current_price is None:
+                older_dates = [d for d in trading_dates if d <= trade_date]
+                if older_dates:
+                    current_price = _to_float_or_none(price_by_date.get(older_dates[-1]))
+            if current_price is None or current_price <= 0:
+                continue
+            variant_map = grouped.get(trade_date) or {}
+            if not variant_map:
+                continue
+
+            if requested_variant:
+                # Strict variant mode: when caller pins a variant, skip dates
+                # that do not contain this variant instead of falling back.
+                if requested_variant not in variant_map:
+                    continue
+                selected_variant = requested_variant
+            elif "default" in variant_map:
+                selected_variant = "default"
+            else:
+                selected_variant = sorted(
+                    variant_map.keys(),
+                    key=lambda key: (-len(variant_map.get(key) or {}), key),
+                )[0]
+
+            summary = _summarize_buy_candidate(current_price, variant_map.get(selected_variant) or {}, band_pct)
+            composite_price = _to_float_or_none(summary.get("composite_valuation_price"))
+            conservative_price = _to_float_or_none(summary.get("conservative_valuation_price"))
+            if composite_price is None and conservative_price is None:
+                continue
+
+            points.append(
+                {
+                    "trade_date": trade_date.strftime("%Y-%m-%d"),
+                    "composite_price": round(composite_price, 4) if composite_price is not None else None,
+                    "conservative_price": round(conservative_price, 4) if conservative_price is not None else None,
+                    "source_mode": "traditional",
+                    "valuation_variant": selected_variant,
+                }
+            )
+    else:
+        report_type = _normalize_earnings_report_type(request.query_params.get("report_type") or "FY")
+        panel_report_type = _map_valuation_report_type_to_panel_type(report_type)
+        suffix_map = {
+            "Q1": "0331",
+            "H1": "0630",
+            "Q3": "0930",
+            "FY": "1231",
+        }
+        suffix = suffix_map.get(panel_report_type)
+
+        sql_params = [normalized_ts_code, period_start_date.strftime("%Y%m%d"), period_end_date.strftime("%Y%m%d")]
+        sql = """
+            SELECT ann_date, end_date
+            FROM earnings_fin_income
+            WHERE ts_code = %s
+              AND ann_date IS NOT NULL
+              AND ann_date >= %s
+              AND ann_date <= %s
+        """
+        if suffix:
+            sql += " AND RIGHT(CAST(end_date AS TEXT), 4) = %s"
+            sql_params.append(suffix)
+        sql += " ORDER BY ann_date ASC, end_date ASC"
+
+        try:
+            report_df = query_local_financial_df(sql, sql_params)
+        except Exception:
+            report_df = None
+
+        release_rows = []
+        if report_df is not None and not report_df.empty:
+            seen_release = set()
+            for _, row in report_df.iterrows():
+                ann_date = _parse_date_like(row.get("ann_date"))
+                end_date = _parse_date_like(row.get("end_date"))
+                if ann_date is None:
+                    continue
+                key = (ann_date, end_date)
+                if key in seen_release:
+                    continue
+                seen_release.add(key)
+                release_rows.append((ann_date, end_date))
+
+        for ann_date, end_date in release_rows:
+            current_price = _to_float_or_none(price_by_date.get(ann_date))
+            if current_price is None:
+                older_dates = [d for d in trading_dates if d <= ann_date]
+                if older_dates:
+                    current_price = _to_float_or_none(price_by_date.get(older_dates[-1]))
+
+            try:
+                signal_payload = _fetch_earnings_signal(
+                    normalized_ts_code,
+                    report_type,
+                    financial_end_date=end_date,
+                    source="snapshot",
+                    anchor_mode="ann",
+                )
+                signal_payload = _build_earnings_dual_target_payload(
+                    signal_payload,
+                    current_price=current_price,
+                    latest_trade_date=ann_date,
+                    anchor_mode="ann",
+                )
+            except Exception:
+                continue
+
+            conservative_price = _to_float_or_none(signal_payload.get("target_price_low_raw"))
+            if conservative_price is None:
+                conservative_price = _to_float_or_none(signal_payload.get("target_price_low"))
+            if conservative_price is None:
+                conservative_price = _to_float_or_none(signal_payload.get("target_price_raw"))
+            if conservative_price is None:
+                conservative_price = _to_float_or_none(signal_payload.get("target_price"))
+
+            composite_price = _to_float_or_none(signal_payload.get("target_price_high_raw"))
+            if composite_price is None:
+                composite_price = _to_float_or_none(signal_payload.get("target_price_high"))
+            if composite_price is None:
+                composite_price = _to_float_or_none(signal_payload.get("target_price_raw"))
+            if composite_price is None:
+                composite_price = _to_float_or_none(signal_payload.get("target_price"))
+
+            if composite_price is None and conservative_price is None:
+                continue
+
+            anchor_trade_date = _parse_date_like(signal_payload.get("anchor_trade_date"))
+            point_trade_date = anchor_trade_date or ann_date
+            points.append(
+                {
+                    "trade_date": point_trade_date.strftime("%Y-%m-%d"),
+                    "composite_price": round(composite_price, 4) if composite_price is not None else None,
+                    "conservative_price": round(conservative_price, 4) if conservative_price is not None else None,
+                    "source_mode": "predictive",
+                    "report_type": report_type,
+                    "report_end_date": end_date.strftime("%Y-%m-%d") if end_date is not None else None,
+                    "anchor_mode": "ann",
+                }
+            )
+
+    dedup = {}
+    for item in points:
+        key = str(item.get("trade_date") or "").strip()
+        if not key:
+            continue
+        dedup[key] = item
+
+    output_rows = [dedup[key] for key in sorted(dedup.keys())]
+    return Response(
+        {
+            "code": 0,
+            "message": "ok",
+            "data": output_rows,
+            "meta": {
+                "ts_code": normalized_ts_code,
+                "mode": mode,
+                "freq": freq,
+                "period": period,
+                "period_start_date": period_start_date.strftime("%Y-%m-%d") if period_start_date is not None else None,
+                "period_end_date": period_end_date.strftime("%Y-%m-%d") if period_end_date is not None else None,
+            },
+        }
+    )
 
 
 def _extract_ts_code_from_text(text):
