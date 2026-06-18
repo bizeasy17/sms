@@ -2,6 +2,8 @@ import datetime
 import csv
 import hashlib
 import math
+import threading
+import uuid
 from collections import defaultdict
 import pandas as pd
 from pathlib import Path
@@ -66,6 +68,9 @@ WEEKLY_UNDERVALUED_FILE_PREFIX = {
 
 WEEKLY_UNDERVALUED_JOB_CONFIG_FILE = "job_strategy_config.json"
 WEEKLY_STRATEGY_STYLE_KEYS = ("CONSERVATIVE", "BALANCED", "AGGRESSIVE")
+VALUATION_PICK_JOB_CACHE_TTL_SECONDS = 1800
+VALUATION_PICK_JOB_POLL_INTERVAL_SECONDS = 3
+VALUATION_PICK_JOB_PREVIEW_SCAN_STEPS = (80, 300)
 
 THS_INDUSTRY_OUTPUT_SUBDIR = "output/industry_universe"
 THS_MONEYFLOW_DAILY_FILE = "ths_moneyflow_daily.json"
@@ -75,6 +80,13 @@ THS_MONEYFLOW_LOOKBACK_DAYS = int(getattr(settings, "THS_MONEYFLOW_LOOKBACK_DAYS
 THS_MONEYFLOW_SCORE_WEIGHT_MONEYFLOW = 0.50
 THS_MONEYFLOW_SCORE_WEIGHT_POSITION = 0.30
 THS_MONEYFLOW_SCORE_WEIGHT_VOLATILITY = 0.20
+THS_MONEYFLOW_ACCUMULATION_BONUS_MAP = {
+    "NONE": 0.0,
+    "EARLY": 2.0,
+    "SUSTAINING": 5.0,
+    "STRONG": 8.0,
+}
+THS_MONEYFLOW_ACCUMULATION_RULE_VERSION = "v1_10_30_60"
 
 THS_INDEX_TYPE_LABEL_MAP = {
     "N": "概念指数",
@@ -519,14 +531,70 @@ def _compute_and_write_ths_moneyflow_score_snapshot(top_n=None, lookback_days=No
         score = (1.0 - ratio) * 100.0 if invert else ratio * 100.0
         return max(0.0, min(100.0, float(score)))
 
+    def _sum_last(values, window_size):
+        tail = values[-window_size:] if len(values) > window_size else values
+        return float(sum(tail))
+
+    def _count_positive_last(values, window_size):
+        tail = values[-window_size:] if len(values) > window_size else values
+        return int(sum(1 for value in tail if float(value) > 0.0))
+
+    def _linear_slope(series):
+        if not series or len(series) < 2:
+            return 0.0
+        length = len(series)
+        x_mean = (length - 1) / 2.0
+        y_mean = sum(series) / length
+        numerator = 0.0
+        denominator = 0.0
+        for idx, value in enumerate(series):
+            dx = float(idx) - x_mean
+            numerator += dx * (float(value) - y_mean)
+            denominator += dx * dx
+        if denominator <= 1e-12:
+            return 0.0
+        return float(numerator / denominator)
+
     candidates_by_type = defaultdict(list)
     for industry_code, rows in by_code_rows.items():
         current_type = _normalize_ths_index_type(by_code_type.get(industry_code))
         if current_type != requested_type:
             continue
         ordered_rows = sorted(rows, key=lambda item: str(item.get("trade_date") or ""))
+        net_amount_series = [float(item.get("net_amount") or 0.0) for item in ordered_rows]
         tail_rows = ordered_rows[-lookback:] if len(ordered_rows) > lookback else ordered_rows
         moneyflow_30d = sum(float(item.get("net_amount") or 0.0) for item in tail_rows)
+
+        mf_10_sum = _sum_last(net_amount_series, 10)
+        mf_30_sum = _sum_last(net_amount_series, 30)
+        mf_60_tail = net_amount_series[-60:] if len(net_amount_series) > 60 else net_amount_series
+        mf_60_sum = float(sum(mf_60_tail))
+        mf_10_pos_days = _count_positive_last(net_amount_series, 10)
+        mf_30_pos_days = _count_positive_last(net_amount_series, 30)
+
+        cumulative_60 = []
+        running_sum = 0.0
+        for value in mf_60_tail:
+            running_sum += float(value)
+            cumulative_60.append(running_sum)
+        mf_60_slope = _linear_slope(cumulative_60)
+
+        start_signal = (mf_10_sum > 0.0) and (mf_10_pos_days >= 6)
+        sustain_signal = (mf_30_sum > 0.0) and (mf_30_pos_days >= 16) and (mf_30_sum >= mf_10_sum * 1.2)
+        trend_signal = (mf_60_sum > 0.0) and (mf_60_slope > 0.0)
+
+        accumulation_level = "NONE"
+        if start_signal and not sustain_signal:
+            accumulation_level = "EARLY"
+        elif sustain_signal and not trend_signal:
+            accumulation_level = "SUSTAINING"
+        elif sustain_signal and trend_signal:
+            accumulation_level = "STRONG"
+
+        if current_type != "N":
+            accumulation_level = "NONE"
+
+        accumulation_bonus = float(THS_MONEYFLOW_ACCUMULATION_BONUS_MAP.get(accumulation_level, 0.0))
         metric_item = price_metric_cache.get(industry_code) or {}
         candidates_by_type[current_type].append(
             {
@@ -537,6 +605,21 @@ def _compute_and_write_ths_moneyflow_score_snapshot(top_n=None, lookback_days=No
                 "moneyflow_30d": float(moneyflow_30d),
                 "position": _as_float_or_none(metric_item.get("position")),
                 "volatility": _as_float_or_none(metric_item.get("volatility")),
+                "accumulation_level": accumulation_level,
+                "accumulation_bonus": accumulation_bonus,
+                "accumulation_signals": {
+                    "start_signal": bool(start_signal),
+                    "sustain_signal": bool(sustain_signal),
+                    "trend_signal": bool(trend_signal),
+                },
+                "accumulation_metrics": {
+                    "mf_10_sum": round(float(mf_10_sum), 4),
+                    "mf_30_sum": round(float(mf_30_sum), 4),
+                    "mf_60_sum": round(float(mf_60_sum), 4),
+                    "mf_10_pos_days": int(mf_10_pos_days),
+                    "mf_30_pos_days": int(mf_30_pos_days),
+                    "mf_60_slope": round(float(mf_60_slope), 6),
+                },
             }
         )
 
@@ -551,18 +634,22 @@ def _compute_and_write_ths_moneyflow_score_snapshot(top_n=None, lookback_days=No
             moneyflow_score = _to_score(item.get("moneyflow_30d"), moneyflow_pool, invert=False, default=50.0)
             position_score = _to_score(item.get("position"), position_pool, invert=False, default=50.0)
             volatility_score = _to_score(item.get("volatility"), volatility_pool, invert=True, default=50.0)
-            score_total = (
+            score_total_v1 = (
                 moneyflow_score * THS_MONEYFLOW_SCORE_WEIGHT_MONEYFLOW
                 + position_score * THS_MONEYFLOW_SCORE_WEIGHT_POSITION
                 + volatility_score * THS_MONEYFLOW_SCORE_WEIGHT_VOLATILITY
             )
+            accumulation_bonus = float(item.get("accumulation_bonus") or 0.0)
+            score_total_v2 = max(0.0, min(100.0, float(score_total_v1) + accumulation_bonus))
             scored_rows.append(
                 {
                     "industry_code": str(item.get("industry_code") or "").strip(),
                     "industry_name": str(item.get("industry_name") or "").strip(),
                     "index_type": index_type,
                     "index_type_label": _get_ths_index_type_label(index_type),
-                    "score_total": round(float(score_total), 4),
+                    "score_total": round(float(score_total_v2), 4),
+                    "score_total_v1": round(float(score_total_v1), 4),
+                    "score_total_v2": round(float(score_total_v2), 4),
                     "score_breakdown": {
                         "moneyflow_30d": round(float(moneyflow_score), 4),
                         "position": round(float(position_score), 4),
@@ -573,6 +660,10 @@ def _compute_and_write_ths_moneyflow_score_snapshot(top_n=None, lookback_days=No
                         "position": round(float(item.get("position")), 6) if item.get("position") is not None else None,
                         "volatility": round(float(item.get("volatility")), 6) if item.get("volatility") is not None else None,
                     },
+                    "accumulation_level": str(item.get("accumulation_level") or "NONE"),
+                    "accumulation_bonus": round(float(accumulation_bonus), 4),
+                    "accumulation_signals": item.get("accumulation_signals") if isinstance(item.get("accumulation_signals"), dict) else {},
+                    "accumulation_metrics": item.get("accumulation_metrics") if isinstance(item.get("accumulation_metrics"), dict) else {},
                 }
             )
 
@@ -591,7 +682,8 @@ def _compute_and_write_ths_moneyflow_score_snapshot(top_n=None, lookback_days=No
     payload = {
         "generated_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
         "asof_date": asof_date,
-        "scoring_version": "ths_moneyflow_v1",
+        "scoring_version": "ths_moneyflow_v2",
+        "accumulation_rule_version": THS_MONEYFLOW_ACCUMULATION_RULE_VERSION,
         "top_n_default": top_n_value,
         "lookback_days": lookback,
         "weights": {
@@ -599,6 +691,7 @@ def _compute_and_write_ths_moneyflow_score_snapshot(top_n=None, lookback_days=No
             "position": THS_MONEYFLOW_SCORE_WEIGHT_POSITION,
             "volatility": THS_MONEYFLOW_SCORE_WEIGHT_VOLATILITY,
         },
+        "accumulation_bonus_map": THS_MONEYFLOW_ACCUMULATION_BONUS_MAP,
         "snapshots": snapshots,
     }
     output_path = _write_ths_moneyflow_score_latest_payload(payload)
@@ -653,7 +746,8 @@ def get_industry_universe_moneyflow_latest(request):
                 "total_candidates": total_candidates,
                 "asof_date": str(snapshot.get("asof_date") or ""),
                 "generated_at": str(snapshot.get("generated_at") or ""),
-                "scoring_version": str(snapshot.get("scoring_version") or "ths_moneyflow_v1"),
+                "scoring_version": str(snapshot.get("scoring_version") or "ths_moneyflow_v2"),
+                "accumulation_rule_version": str(snapshot.get("accumulation_rule_version") or ""),
                 "lookback_days": int(snapshot.get("lookback_days") or THS_MONEYFLOW_LOOKBACK_DAYS),
                 "weights": snapshot.get("weights") if isinstance(snapshot.get("weights"), dict) else {},
                 "source": "snapshot",
@@ -1295,6 +1389,219 @@ def _load_persisted_variant_summary_payload(
         "valuation_core_methods": list(snapshot.valuation_core_methods or []),
         "summary_source": "persisted_variant_summary_latest",
     }
+
+
+def _build_valuation_pick_job_cache_key(job_id):
+    return f"valuation_pick_job:v1:{str(job_id or '').strip()}"
+
+
+def _get_valuation_pick_job_state(job_id):
+    cache_key = _build_valuation_pick_job_cache_key(job_id)
+    try:
+        cached = cache.get(cache_key)
+    except Exception as cache_err:
+        logger.debug("valuation pick job cache get failed: %s", cache_err)
+        cached = None
+    return cached if isinstance(cached, dict) else None
+
+
+def _set_valuation_pick_job_state(job_id, payload):
+    cache_key = _build_valuation_pick_job_cache_key(job_id)
+    data = dict(payload or {})
+    data["job_id"] = str(job_id or "")
+    data["updated_at"] = datetime.datetime.utcnow().isoformat() + "Z"
+    try:
+        cache.set(cache_key, data, timeout=VALUATION_PICK_JOB_CACHE_TTL_SECONDS)
+    except Exception as cache_err:
+        logger.debug("valuation pick job cache set failed: %s", cache_err)
+    return data
+
+
+def _resolve_active_variant_from_method_map(method_map, requested_variant=""):
+    grouped_rows = {}
+    variant_meta = {}
+    for method, payload in (method_map or {}).items():
+        normalized_method = _normalize_valuation_method_name(method)
+        if not normalized_method:
+            continue
+        variant = _normalize_valuation_variant(
+            (payload or {}).get("valuation_variant"),
+            fallback="default",
+        )
+        row = {
+            "valuation_method": normalized_method,
+            "valuation_variant": variant,
+            "valuation_price": (payload or {}).get("valuation_price"),
+            "latest_trade_date": (payload or {}).get("latest_trade_date"),
+            "profit_report_end_date": (payload or {}).get("profit_report_end_date"),
+            "profit_report_type": (payload or {}).get("profit_report_type"),
+            "profit_report_ann_date": (payload or {}).get("profit_report_ann_date"),
+            "profit_data_source": (payload or {}).get("profit_data_source"),
+            "compare_group": (payload or {}).get("compare_group"),
+            "match_score": (payload or {}).get("match_score"),
+            "industry_level": (payload or {}).get("industry_level"),
+            "industry_code": (payload or {}).get("industry_code"),
+            "industry_name": (payload or {}).get("industry_name"),
+        }
+        grouped_rows.setdefault(variant, []).append(row)
+        meta = variant_meta.setdefault(
+            variant,
+            {
+                "valuation_variant": variant,
+                "compare_group": (payload or {}).get("compare_group"),
+                "industry_level": (payload or {}).get("industry_level"),
+                "industry_code": (payload or {}).get("industry_code"),
+                "industry_name": (payload or {}).get("industry_name"),
+                "max_match_score": None,
+            },
+        )
+        score = _to_float_or_none((payload or {}).get("match_score"))
+        if score is not None and (meta.get("max_match_score") is None or score > meta.get("max_match_score")):
+            meta["max_match_score"] = score
+
+    normalized_requested_variant = _normalize_valuation_variant(requested_variant, fallback="")
+    if normalized_requested_variant and normalized_requested_variant in grouped_rows:
+        return normalized_requested_variant, grouped_rows, variant_meta
+
+    def _variant_sort_key(meta):
+        variant = str(meta.get("valuation_variant") or "")
+        compare_group = str(meta.get("compare_group") or "")
+        score = meta.get("max_match_score")
+        if score is None:
+            score = -1e9
+        if compare_group == "sw_l3_baseline":
+            group_rank = 0
+        elif compare_group == "business_match":
+            group_rank = 1
+        elif variant == "default":
+            group_rank = 2
+        else:
+            group_rank = 3
+        return (group_rank, -float(score), variant)
+
+    if not variant_meta:
+        return "default", grouped_rows, variant_meta
+    active_variant = sorted(variant_meta.values(), key=_variant_sort_key)[0].get("valuation_variant") or "default"
+    return active_variant, grouped_rows, variant_meta
+
+
+def _build_strict_summary_from_method_map(
+    *,
+    ts_code,
+    market,
+    current_price,
+    method_map,
+    band_pct,
+    trade_date=None,
+    requested_variant="",
+    requested_report_type=None,
+):
+    active_variant, grouped_rows, _variant_meta = _resolve_active_variant_from_method_map(
+        method_map,
+        requested_variant=requested_variant,
+    )
+    variant_rows = list(grouped_rows.get(active_variant) or [])
+    if not variant_rows:
+        return None
+
+    normalized_report_type = _normalize_valuation_profit_report_type(requested_report_type)
+    filtered_rows = []
+    for row in variant_rows:
+        row_report_type = _normalize_valuation_profit_report_type(row.get("profit_report_type"))
+        if normalized_report_type and row_report_type != normalized_report_type:
+            continue
+        filtered_rows.append(row)
+    if not filtered_rows:
+        filtered_rows = variant_rows
+
+    report_end_dates = [
+        _parse_date_like((row or {}).get("profit_report_end_date"))
+        for row in filtered_rows
+        if _parse_date_like((row or {}).get("profit_report_end_date")) is not None
+    ]
+    selected_report_end_date = max(report_end_dates) if report_end_dates else None
+    if selected_report_end_date is not None:
+        filtered_rows = [
+            row for row in filtered_rows
+            if _parse_date_like((row or {}).get("profit_report_end_date")) == selected_report_end_date
+        ]
+
+    persisted_summary_payload = _load_persisted_variant_summary_payload(
+        ts_code=ts_code,
+        market=market,
+        valuation_variant=active_variant,
+        trade_date=trade_date,
+        profit_report_type=normalized_report_type,
+        profit_report_end_date=selected_report_end_date,
+    )
+    summary_payload = persisted_summary_payload or _build_valuation_summary_payload(
+        current_price,
+        filtered_rows,
+        band_pct,
+        ts_code=ts_code,
+    )
+    summary_payload = dict(summary_payload or {})
+    summary_payload["summary_mode"] = "single_variant_strict"
+    summary_payload["summary_variant"] = active_variant
+    summary_payload["summary_report_end_date"] = (
+        selected_report_end_date.strftime("%Y-%m-%d") if selected_report_end_date is not None else None
+    )
+    if not summary_payload.get("summary_source"):
+        summary_payload["summary_source"] = "strict_method_map"
+    return summary_payload
+
+
+def _build_valuation_pick_job_request(query_params):
+    request = RequestFactory().get("/internal/stock-pick-valuation/job-run/", query_params)
+    # Internal job runner uses a Django request; expose query_params for DRF-style readers.
+    if not hasattr(request, "query_params"):
+        request.query_params = request.GET
+    return request
+
+
+def _run_valuation_pick_job(job_id, payload):
+    raw_payload = payload if isinstance(payload, dict) else {}
+    trade_date = str(raw_payload.get("trade_date") or "").strip()
+    scope = str(raw_payload.get("scope") or "").strip()
+    query = raw_payload.get("query") if isinstance(raw_payload.get("query"), dict) else {}
+    freq = str(query.get("freq") or raw_payload.get("freq") or "D").strip().upper() or "D"
+    base_query = {str(key): str(value) for key, value in query.items() if value not in (None, "")}
+    base_query["freq"] = freq
+    base_query["from_index"] = "0"
+    base_query["to_index"] = "25"
+
+    try:
+        _set_valuation_pick_job_state(job_id, {"status": "running", "progress_pct": 1, "processed_count": 0, "matched_count": 0, "total_candidates": None, "message": "任务已启动，正在生成预览结果", "data": [], "has_more": True, "poll_interval_seconds": VALUATION_PICK_JOB_POLL_INTERVAL_SECONDS})
+        step_limits = list(VALUATION_PICK_JOB_PREVIEW_SCAN_STEPS) + [None]
+        for index, scan_limit in enumerate(step_limits):
+            step_query = dict(base_query)
+            if scan_limit is not None:
+                step_query["scan_limit"] = str(scan_limit)
+            response = _pick_stocks_by_valuation_fast(_build_valuation_pick_job_request(step_query), trade_date, scope, freq=freq, from_index=0, to_index=25)
+            response_data = response.data if hasattr(response, "data") else {}
+            meta = response_data.get("meta") or {}
+            is_final_step = scan_limit is None
+            _set_valuation_pick_job_state(
+                job_id,
+                {
+                    "status": "done" if is_final_step else "running",
+                    "progress_pct": 100 if is_final_step else min(95, int(((index + 1) / len(step_limits)) * 100)),
+                    "processed_count": int(scan_limit or meta.get("total_candidates") or meta.get("total_filtered") or 0),
+                    "matched_count": int(meta.get("total_filtered") or 0),
+                    "total_candidates": meta.get("total_candidates"),
+                    "message": "结果已生成" if is_final_step else "正在扩展选股结果范围",
+                    "data": response_data.get("data") or [],
+                    "has_more": not is_final_step,
+                    "poll_interval_seconds": VALUATION_PICK_JOB_POLL_INTERVAL_SECONDS,
+                    "meta": meta,
+                    "valuation_filter": response_data.get("valuation_filter") or {},
+                    "trade_date": response_data.get("trade_date"),
+                    "freq": response_data.get("freq"),
+                },
+            )
+    except Exception as err:
+        logger.exception("valuation pick job failed: %s", err)
+        _set_valuation_pick_job_state(job_id, {"status": "failed", "progress_pct": 100, "processed_count": 0, "matched_count": 0, "total_candidates": None, "message": str(err), "data": [], "has_more": False, "poll_interval_seconds": VALUATION_PICK_JOB_POLL_INTERVAL_SECONDS})
 
 
 def _load_latest_indicator_profile(ts_code):
@@ -5198,6 +5505,16 @@ def _pick_stocks_by_valuation_fast(request, trade_date, scope, freq="D", from_in
         if hasattr(request, "query_params")
         else LIVE_VALUATION_PICK_STRATEGY
     )
+    summary_mode_raw = (
+        request.query_params.get("summary_mode", "single_variant_strict")
+        if hasattr(request, "query_params")
+        else "single_variant_strict"
+    )
+    requested_valuation_variant_raw = (
+        request.query_params.get("valuation_variant", "")
+        if hasattr(request, "query_params")
+        else ""
+    )
     buy_candidate_only_raw = (
         request.query_params.get("buy_candidate_only", "") if hasattr(request, "query_params") else ""
     )
@@ -5237,6 +5554,9 @@ def _pick_stocks_by_valuation_fast(request, trade_date, scope, freq="D", from_in
     min_valuation_score_raw = (
         request.query_params.get("min_valuation_score", "") if hasattr(request, "query_params") else ""
     )
+    scan_limit_raw = (
+        request.query_params.get("scan_limit", "") if hasattr(request, "query_params") else ""
+    )
 
     try:
         valuation_band_pct = max(0.01, float(valuation_band_pct_raw))
@@ -5246,6 +5566,13 @@ def _pick_stocks_by_valuation_fast(request, trade_date, scope, freq="D", from_in
     valuation_status = str(valuation_status).strip().lower()
     selected_valuation_method = str(valuation_method or "pe").strip().lower() or "pe"
     valuation_pick_strategy = _normalize_pick_strategy(valuation_pick_strategy_raw)
+    summary_mode = str(summary_mode_raw or "single_variant_strict").strip().lower()
+    if summary_mode not in {"single_variant_strict", "mixed_method"}:
+        summary_mode = "single_variant_strict"
+    requested_valuation_variant = _normalize_valuation_variant(
+        requested_valuation_variant_raw,
+        fallback="",
+    )
     buy_candidate_only = str(buy_candidate_only_raw).strip().lower() in {
         "1", "true", "yes", "y", "on",
     }
@@ -5273,6 +5600,12 @@ def _pick_stocks_by_valuation_fast(request, trade_date, scope, freq="D", from_in
         fiscal_year = int(fiscal_year_raw) if str(fiscal_year_raw).strip() else None
     except (TypeError, ValueError):
         fiscal_year = None
+    try:
+        scan_limit = int(str(scan_limit_raw).strip()) if str(scan_limit_raw).strip() else None
+    except (TypeError, ValueError):
+        scan_limit = None
+    if scan_limit is not None and scan_limit <= 0:
+        scan_limit = None
     netprofit_growth = str(netprofit_growth_raw or "ALL").strip().upper()
     if netprofit_growth not in {"ALL", "MEDIUM", "HIGH"}:
         netprofit_growth = "ALL"
@@ -5318,6 +5651,9 @@ def _pick_stocks_by_valuation_fast(request, trade_date, scope, freq="D", from_in
         )
     )
     perf_after_trading = time.perf_counter()
+    total_candidates_count = len(trading_rows)
+    if scan_limit is not None:
+        trading_rows = trading_rows[:scan_limit]
     ts_codes = [row["ts_code"] for row in trading_rows]
 
     valuation_snapshot_map = _build_latest_snapshot_method_map(
@@ -5434,11 +5770,36 @@ def _pick_stocks_by_valuation_fast(request, trade_date, scope, freq="D", from_in
         if selected_price is None:
             valuation_payload["valuation_source"] = "snapshot_only_miss"
 
-        buy_candidate_payload = _summarize_buy_candidate(
-            current_price=current_price,
-            method_map=method_map,
-            band_pct=valuation_band_pct,
-        )
+        buy_candidate_payload = None
+        if summary_mode == "single_variant_strict":
+            strict_report_type = None
+            if valuation_express_only:
+                strict_report_type = "EXP"
+            elif earnings_report_type in {"Q1", "H1", "Q3", "FY"}:
+                strict_report_type = earnings_report_type
+
+            strict_payload = _build_strict_summary_from_method_map(
+                ts_code=ts_code,
+                market="CN",
+                current_price=current_price,
+                method_map=method_map,
+                band_pct=valuation_band_pct,
+                trade_date=trade_date_for_query,
+                requested_variant=requested_valuation_variant or "",
+                requested_report_type=strict_report_type,
+            )
+            if strict_payload:
+                buy_candidate_payload = dict(strict_payload)
+
+        if buy_candidate_payload is None:
+            buy_candidate_payload = _summarize_buy_candidate(
+                current_price=current_price,
+                method_map=method_map,
+                band_pct=valuation_band_pct,
+            )
+            buy_candidate_payload["summary_mode"] = "mixed_method"
+            buy_candidate_payload.setdefault("summary_variant", None)
+            buy_candidate_payload.setdefault("summary_report_end_date", None)
         valuation_score = _to_float_or_none(buy_candidate_payload.get("undervalue_score"))
         if valuation_score is None:
             # Prefer composite gap fallback for traditional mode when selected-method gap is missing.
@@ -5705,6 +6066,8 @@ def _pick_stocks_by_valuation_fast(request, trade_date, scope, freq="D", from_in
                 "band_pct": valuation_band_pct,
                 "buy_candidate_only": buy_candidate_only,
                 "pick_strategy": valuation_pick_strategy,
+                "summary_mode": summary_mode,
+                "valuation_variant": requested_valuation_variant or None,
                 "sw_industry": sw_industry,
                 "strict_snapshot_only": True,
                 "picking_mode": picking_mode,
@@ -5725,6 +6088,7 @@ def _pick_stocks_by_valuation_fast(request, trade_date, scope, freq="D", from_in
                 "requested_trade_date": normalized_trade_date,
                 "resolved_trade_date": trade_date_for_query,
                 "auto_latest": auto_latest,
+                "total_candidates": total_candidates_count,
                 "total_filtered": len(result),
                 "strategy_effective_stocks": multi_candidate_rows,
                 "page_from_index": from_index,
@@ -6850,6 +7214,31 @@ def get_or_update_weekly_job_strategy_config(request):
     saved = _save_weekly_undervalued_job_config(payload)
     saved["config_path"] = str(_resolve_weekly_undervalued_job_config_path())
     return Response({"code": 0, "message": "saved", "data": saved})
+
+
+@api_view(["POST"])
+def create_stock_pick_valuation_job(request):
+    payload = request.data if isinstance(request.data, dict) else {}
+    trade_date = str(payload.get("trade_date") or "").strip()
+    scope = str(payload.get("scope") or "").strip()
+    query = payload.get("query") if isinstance(payload.get("query"), dict) else {}
+    freq = str(query.get("freq") or payload.get("freq") or "D").strip().upper() or "D"
+    if not trade_date or not scope:
+        return Response({"error": "trade_date and scope are required"}, status=400)
+
+    job_id = uuid.uuid4().hex
+    state = _set_valuation_pick_job_state(job_id, {"status": "queued", "progress_pct": 0, "processed_count": 0, "matched_count": 0, "total_candidates": None, "message": "任务已排队", "data": [], "has_more": True, "poll_interval_seconds": VALUATION_PICK_JOB_POLL_INTERVAL_SECONDS, "trade_date": trade_date, "freq": freq})
+    worker = threading.Thread(target=_run_valuation_pick_job, args=(job_id, {"trade_date": trade_date, "scope": scope, "query": query, "freq": freq}), daemon=True)
+    worker.start()
+    return Response(state, status=202)
+
+
+@api_view(["GET"])
+def get_stock_pick_valuation_job(request, job_id):
+    state = _get_valuation_pick_job_state(job_id)
+    if state is None:
+        return Response({"error": "job not found"}, status=404)
+    return Response(state)
 
 
 @api_view(["GET"])
@@ -8241,6 +8630,18 @@ def get_stock_valuation_methods(request, ts_code):
             ts_code=ts_code,
             freq=freq,
         )
+        summary_payload = dict(summary_payload or {})
+        summary_report_end_date = next(
+            (
+                item.get("profit_report_end_date")
+                for item in (rows or [])
+                if isinstance(item, dict) and item.get("profit_report_end_date")
+            ),
+            None,
+        )
+        summary_payload["summary_mode"] = "single_variant_strict"
+        summary_payload["summary_variant"] = active_variant
+        summary_payload["summary_report_end_date"] = summary_report_end_date
         normalized_summary_payload = summary_by_variant_normalized.get(active_variant) or _build_valuation_summary_payload(
             current_price,
             rows,
@@ -8448,6 +8849,7 @@ def _load_internal_stock_valuation_methods_payload(
     earnings_report_type=None,
     valuation_report_end_date=None,
     valuation_band_pct=0.1,
+    valuation_variant=None,
 ):
     query_params = {
         "freq": str(freq),
@@ -8457,6 +8859,8 @@ def _load_internal_stock_valuation_methods_payload(
         query_params["earnings_report_type"] = str(earnings_report_type)
     if valuation_report_end_date:
         query_params["valuation_report_end_date"] = str(valuation_report_end_date)
+    if valuation_variant:
+        query_params["valuation_variant"] = str(valuation_variant)
 
     internal_request = RequestFactory().get("/internal/valuation/methods/", query_params)
     response = get_stock_valuation_methods(internal_request, ts_code)

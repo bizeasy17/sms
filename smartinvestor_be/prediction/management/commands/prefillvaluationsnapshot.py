@@ -16,6 +16,7 @@ from valuation.models import (
     StockValuationSnapshot,
     StockValuationSnapshotHistory,
     StockValuationSnapshotLatest,
+    StockValuationVariantSummaryLatest,
 )
 from prediction.services.scarcity_auto_engine import ScarcityAutoEngine
 from prediction.utils.prediction_util import get_tushare_pro
@@ -916,9 +917,69 @@ def _build_refresh_summary_by_variant(snapshot_rows, current_price, band_pct):
     return summary_by_variant, variant_meta
 
 
+def _build_variant_summary_latest_rows(
+    *,
+    ts_code,
+    market,
+    trade_date,
+    corporation,
+    current_price,
+    summary_rows,
+    trace_fields,
+    band_pct=0.1,
+):
+    if current_price in (None, 0) or not summary_rows:
+        return []
+
+    summary_by_variant, _variant_meta = _build_refresh_summary_by_variant(
+        snapshot_rows=summary_rows,
+        current_price=current_price,
+        band_pct=band_pct,
+    )
+    if not summary_by_variant:
+        return []
+
+    profit_data_source = _normalize_optional_text((trace_fields or {}).get("profit_data_source"))
+    profit_report_type = _normalize_optional_text((trace_fields or {}).get("profit_report_type"))
+    profit_report_end_date = _parse_date_like((trace_fields or {}).get("profit_report_end_date"))
+    profit_report_ann_date = _parse_date_like((trace_fields or {}).get("profit_report_ann_date"))
+
+    rows = []
+    timestamp = timezone.now()
+    for variant, summary in summary_by_variant.items():
+        rows.append(
+            StockValuationVariantSummaryLatest(
+                ts_code=ts_code,
+                market=market,
+                valuation_variant=_normalize_valuation_variant(variant, fallback="default")[:128],
+                latest_trade_date=trade_date,
+                corporation=corporation,
+                profit_data_source=profit_data_source,
+                profit_report_type=profit_report_type,
+                profit_report_end_date=profit_report_end_date,
+                profit_report_ann_date=profit_report_ann_date,
+                composite_valuation_price=_to_decimal_or_none(summary.get("composite_valuation_price"), 6),
+                conservative_valuation_price=_to_decimal_or_none(summary.get("conservative_valuation_price"), 6),
+                undervalue_score=_to_decimal_or_none(summary.get("undervalue_score"), 4),
+                buy_candidate=bool(summary.get("buy_candidate")),
+                buy_candidate_reason=str(summary.get("buy_candidate_reason") or "")[:512],
+                buy_candidate_rule_version=str(summary.get("buy_candidate_rule_version") or "")[:32],
+                valuation_valid_methods=list(summary.get("valuation_valid_methods") or []),
+                valuation_under_methods=list(summary.get("valuation_under_methods") or []),
+                valuation_core_methods=list(summary.get("valuation_core_methods") or []),
+                source="prefill_refresh",
+                created_at=timestamp,
+                updated_at=timestamp,
+            )
+        )
+
+    return rows
+
+
 def _bulk_upsert_valuation_rows(
     snapshot_rows,
     latest_rows,
+    summary_latest_rows,
     *,
     backfill_history_only=False,
     is_backfill=False,
@@ -928,7 +989,7 @@ def _bulk_upsert_valuation_rows(
     target_report_type="",
     profit_bucket_mode="",
 ):
-    if not snapshot_rows and not latest_rows:
+    if not snapshot_rows and not latest_rows and not summary_latest_rows:
         return
 
     with transaction.atomic():
@@ -1148,6 +1209,38 @@ def _bulk_upsert_valuation_rows(
                     "ts_code",
                     "market",
                     "valuation_method",
+                    "valuation_variant",
+                    "profit_report_type",
+                    "profit_data_source",
+                ],
+            )
+
+        if summary_latest_rows:
+            StockValuationVariantSummaryLatest.objects.bulk_create(
+                summary_latest_rows,
+                batch_size=1000,
+                update_conflicts=True,
+                update_fields=[
+                    "updated_at",
+                    "latest_trade_date",
+                    "corporation",
+                    "profit_data_source",
+                    "profit_report_end_date",
+                    "profit_report_ann_date",
+                    "composite_valuation_price",
+                    "conservative_valuation_price",
+                    "undervalue_score",
+                    "buy_candidate",
+                    "buy_candidate_reason",
+                    "buy_candidate_rule_version",
+                    "valuation_valid_methods",
+                    "valuation_under_methods",
+                    "valuation_core_methods",
+                    "source",
+                ],
+                unique_fields=[
+                    "ts_code",
+                    "market",
                     "valuation_variant",
                     "profit_report_type",
                     "profit_data_source",
@@ -1693,22 +1786,28 @@ class Command(BaseCommand):
         disclosure_reason_counts = {}
         pending_snapshot_rows = []
         pending_latest_rows = []
+        pending_variant_summary_rows = []
         pending_write_count = 0
 
         def flush_pending_rows(force=False):
-            nonlocal pending_snapshot_rows, pending_latest_rows, pending_write_count
+            nonlocal pending_snapshot_rows, pending_latest_rows, pending_variant_summary_rows, pending_write_count
 
             if dry_run:
                 return
-            if not pending_snapshot_rows and not pending_latest_rows:
+            if not pending_snapshot_rows and not pending_latest_rows and not pending_variant_summary_rows:
                 return
             if not force:
-                if len(pending_snapshot_rows) < write_flush_rows and len(pending_latest_rows) < write_flush_rows:
+                if (
+                    len(pending_snapshot_rows) < write_flush_rows
+                    and len(pending_latest_rows) < write_flush_rows
+                    and len(pending_variant_summary_rows) < write_flush_rows
+                ):
                     return
 
             _bulk_upsert_valuation_rows(
                 pending_snapshot_rows,
                 pending_latest_rows,
+                pending_variant_summary_rows,
                 backfill_history_only=backfill_history_only,
                 is_backfill=is_backfill,
                 backfill_run_id=history_run_id,
@@ -1720,6 +1819,7 @@ class Command(BaseCommand):
             counters["written"] += pending_write_count
             pending_snapshot_rows = []
             pending_latest_rows = []
+            pending_variant_summary_rows = []
             pending_write_count = 0
 
         self.stdout.write(self.style.SUCCESS("开始预热估值快照"))
@@ -2108,10 +2208,26 @@ class Command(BaseCommand):
 
                 snapshot_rows = []
                 latest_rows = []
+                variant_summary_latest_rows = []
                 row_write_count = 0
                 write_latest_rows = forced_report_end_date is None
                 staged_snapshot_keys = set()
                 staged_latest_keys = set()
+
+                if write_latest_rows:
+                    current_price_for_summary = _to_float((primary_snapshot or {}).get("close_price"))
+                    if current_price_for_summary is None:
+                        current_price_for_summary = _to_float((primary_snapshot or {}).get("close"))
+                    variant_summary_latest_rows = _build_variant_summary_latest_rows(
+                        ts_code=ts_code,
+                        market=market,
+                        trade_date=valuation_trade_date,
+                        corporation=corp_map.get(ts_code),
+                        current_price=current_price_for_summary,
+                        summary_rows=list(summary_row_map.values()),
+                        trace_fields=primary_trace_fields,
+                        band_pct=0.1,
+                    )
 
                 methods_to_write = list(methods_to_compute)
                 if enable_market_style and not skip_market_style_for_recent_listing and market_style_method not in methods_to_write:
@@ -2248,7 +2364,8 @@ class Command(BaseCommand):
                 if not dry_run:
                     pending_snapshot_rows.extend(snapshot_rows)
                     pending_latest_rows.extend(latest_rows)
-                    pending_write_count += row_write_count
+                    pending_variant_summary_rows.extend(variant_summary_latest_rows)
+                    pending_write_count += row_write_count + len(variant_summary_latest_rows)
                     flush_pending_rows()
 
                 if interval > 0:

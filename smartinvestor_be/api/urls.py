@@ -166,6 +166,16 @@ urlpatterns = [
         name="weekly-job-strategy-config",
     ),
     path(
+        "stock-pick-valuation/jobs/",
+        views.create_stock_pick_valuation_job,
+        name="stock-pick-valuation-job-create",
+    ),
+    path(
+        "stock-pick-valuation/jobs/<str:job_id>/",
+        views.get_stock_pick_valuation_job,
+        name="stock-pick-valuation-job-detail",
+    ),
+    path(
         "stock-pick-valuation/<str:trade_date>/<str:scope>/",
         views.pick_stocks_by_valuation_simple,
         name="pick-stocks-by-valuation-simple",

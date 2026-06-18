@@ -549,7 +549,18 @@
             <el-table-column prop="ending_capital" label="期末资金" width="120" />
           <el-table-column label="参数设置" min-width="360">
             <template #default="scope">
-              <span>{{ compactParams(scope.row.params || {}) }}</span>
+              <div class="history-param-cell">
+                <span>{{ getHistoryParamsDisplayText(scope.row) }}</span>
+                <el-button
+                  v-if="shouldShowParamsExpand(scope.row)"
+                  link
+                  type="primary"
+                  size="small"
+                  @click.stop="toggleHistoryParamsExpand(scope.row)"
+                >
+                  {{ isHistoryParamsExpanded(scope.row) ? '收起' : '展开' }}
+                </el-button>
+              </div>
             </template>
           </el-table-column>
           <el-table-column prop="trade_count" label="交易数" width="90" />
@@ -711,6 +722,7 @@ const executeStockStats = ref<Record<string, any>>({})
 const runHistoryDialogVisible = ref(false)
 const generatedRunHistoryRows = ref<Array<Record<string, any>>>([])
 const loadingRunHistory = ref(false)
+const historyParamsExpanded = ref<Record<string, boolean>>({})
 const submittedScanTaskIds = ref<number[]>([])
 const singleRunTaskId = ref<number | null>(null)
 let singleRunPollTimer: number | null = null
@@ -1359,6 +1371,7 @@ function compactParams(params: Record<string, any>) {
     'add_on_entry_pct',
     'add_on_drop_pct',
     'add_on2_drop_pct',
+    'max_holding_days',
     'add_on2_fill_remaining',
     'priority_policy',
   ]
@@ -1366,6 +1379,46 @@ function compactParams(params: Record<string, any>) {
     .filter((key) => params && params[key] !== undefined && params[key] !== null)
     .map((key) => `${key}=${params[key]}`)
     .join(' | ')
+}
+
+const HISTORY_PARAMS_COLLAPSE_LENGTH = 120
+
+function buildHistoryParamsExpandKey(row: Record<string, any>) {
+  const runId = Number(row?.run_id)
+  const runKey = String(row?.run_key || '')
+  if (Number.isFinite(runId) && runId > 0) {
+    return `run:${runId}`
+  }
+  return `key:${runKey}`
+}
+
+function isHistoryParamsExpanded(row: Record<string, any>) {
+  const key = buildHistoryParamsExpandKey(row)
+  return historyParamsExpanded.value[key] === true
+}
+
+function toggleHistoryParamsExpand(row: Record<string, any>) {
+  const key = buildHistoryParamsExpandKey(row)
+  historyParamsExpanded.value[key] = !isHistoryParamsExpanded(row)
+}
+
+function shouldShowParamsExpand(row: Record<string, any>) {
+  const text = compactParams((row?.params as Record<string, any>) || {})
+  if (!text) {
+    return false
+  }
+  return text.length > HISTORY_PARAMS_COLLAPSE_LENGTH || isHistoryParamsExpanded(row)
+}
+
+function getHistoryParamsDisplayText(row: Record<string, any>) {
+  const text = compactParams((row?.params as Record<string, any>) || {})
+  if (!text) {
+    return '-'
+  }
+  if (isHistoryParamsExpanded(row) || text.length <= HISTORY_PARAMS_COLLAPSE_LENGTH) {
+    return text
+  }
+  return `${text.slice(0, HISTORY_PARAMS_COLLAPSE_LENGTH)}...`
 }
 
 function upsertGeneratedRunHistory(row: Record<string, any>) {
@@ -2328,6 +2381,12 @@ onBeforeUnmount(() => {
 .muted {
   color: #909399;
   font-size: 12px;
+}
+
+.history-param-cell {
+  display: flex;
+  align-items: center;
+  gap: 6px;
 }
 
 .kline-chart {

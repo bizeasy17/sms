@@ -2808,3 +2808,81 @@ class StockValuationSnapshotLatest(models.Model):
                 name="prediction_s_latest_bucket_idx",
             ),
         ]
+
+
+class StockValuationVariantSummaryLatest(models.Model):
+    """股票估值变体汇总最新表，每个股票/变体/利润口径保留最新一条。"""
+
+    id = models.BigAutoField(primary_key=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    corporation = models.ForeignKey(
+        Corporation,
+        related_name="stock_valuation_variant_summaries_latest",
+        blank=True,
+        null=True,
+        on_delete=models.SET_NULL,
+    )
+    ts_code = models.CharField(_("交易代码"), max_length=10, db_index=True)
+    market = models.CharField(_("市场"), max_length=10, default="CN", db_index=True)
+    valuation_variant = models.CharField(
+        _("估值变体键"),
+        max_length=128,
+        default="default",
+        db_index=True,
+    )
+    latest_trade_date = models.DateField(_("最新交易日"), db_index=True)
+    profit_data_source = models.CharField(_("利润口径来源"), max_length=64, blank=True, null=True, db_index=True)
+    profit_report_end_date = models.DateField(_("利润口径报告期"), blank=True, null=True, db_index=True)
+    profit_report_ann_date = models.DateField(_("利润口径公告日"), blank=True, null=True, db_index=True)
+    profit_report_type = models.CharField(_("利润口径报告类型"), max_length=16, blank=True, null=True, db_index=True)
+
+    composite_valuation_price = models.DecimalField(
+        _("组合估值价格"),
+        max_digits=20,
+        decimal_places=6,
+        null=True,
+        blank=True,
+    )
+    conservative_valuation_price = models.DecimalField(
+        _("保守估值价格"),
+        max_digits=20,
+        decimal_places=6,
+        null=True,
+        blank=True,
+    )
+    undervalue_score = models.DecimalField(
+        _("低估分"),
+        max_digits=8,
+        decimal_places=4,
+        null=True,
+        blank=True,
+    )
+    buy_candidate = models.BooleanField(_("是否买入候选"), default=False)
+    buy_candidate_reason = models.CharField(_("买入候选原因"), max_length=512, blank=True, default="")
+    buy_candidate_rule_version = models.CharField(_("规则版本"), max_length=32, blank=True, default="")
+    valuation_valid_methods = models.JSONField(_("有效估值方法"), default=list, blank=True)
+    valuation_under_methods = models.JSONField(_("低估估值方法"), default=list, blank=True)
+    valuation_core_methods = models.JSONField(_("核心估值方法"), default=list, blank=True)
+    source = models.CharField(_("来源"), max_length=32, default="prefill_refresh")
+
+    class Meta:
+        ordering = ["ts_code"]
+        verbose_name = _("估值变体汇总最新")
+        verbose_name_plural = verbose_name
+        unique_together = (
+            "ts_code",
+            "market",
+            "valuation_variant",
+            "profit_report_type",
+            "profit_data_source",
+        )
+        indexes = [
+            models.Index(fields=["market", "latest_trade_date"], name="svvsl_mkt_date_idx"),
+            models.Index(fields=["market", "ts_code"], name="svvsl_mkt_code_idx"),
+            models.Index(
+                fields=["market", "ts_code", "profit_report_type", "profit_data_source"],
+                name="svvsl_bucket_idx",
+            ),
+        ]
