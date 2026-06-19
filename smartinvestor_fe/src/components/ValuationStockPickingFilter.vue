@@ -189,6 +189,19 @@
                         </el-select>
                     </div>
 
+                    <div class="filter-item">
+                        <span class="filter-label">估值带宽：</span>
+                        <el-input-number
+                            v-model="selectedValuationBandNumber"
+                            :min="0.01"
+                            :max="0.5"
+                            :step="0.01"
+                            :precision="2"
+                            controls-position="right"
+                            class="filter-control"
+                        />
+                    </div>
+
                     <div class="filter-divider" aria-hidden="true"></div>
 
                     <div class="filter-item">
@@ -297,6 +310,21 @@ const selectedPickingMode = ref("MODE:BASELINE");
 const selectedValuationMethod = ref("VM:RECOMMENDED");
 const selectedValuationStatus = ref("VS:UNDER");
 const selectedValuationBand = ref("0.1");
+const selectedValuationBandNumber = computed<number>({
+    get: () => {
+        const value = Number(selectedValuationBand.value);
+        if (!Number.isFinite(value)) return 0.1;
+        return Math.min(0.5, Math.max(0.01, Number(value.toFixed(2))));
+    },
+    set: (value: number) => {
+        if (!Number.isFinite(value)) {
+            selectedValuationBand.value = "0.1";
+            return;
+        }
+        const normalized = Math.min(0.5, Math.max(0.01, value));
+        selectedValuationBand.value = String(Number(normalized.toFixed(2)));
+    },
+});
 const selectedValuationPickStrategy = ref("VPS:BASELINE");
 const selectedMinNetprofitYoy = ref<number | null>(null);
 const selectedMinEbitYoy = ref<number | null>(null);

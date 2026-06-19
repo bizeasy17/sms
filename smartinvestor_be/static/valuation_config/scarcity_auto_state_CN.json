@@ -7,53 +7,53 @@
       "pending_count": 0,
       "cooldown_until": null,
       "force_conservative_until": null,
-      "last_risk_score": 0.373017,
-      "last_date": "2026-06-12"
+      "last_risk_score": 0.431557,
+      "last_date": "2026-06-18"
     },
     "600004.SH": {
       "last_profile": "conservative",
       "pending_profile": null,
       "pending_count": 0,
       "cooldown_until": null,
-      "force_conservative_until": "2026-06-14",
-      "last_risk_score": 0.613447,
-      "last_date": "2026-06-12"
+      "force_conservative_until": "2026-06-20",
+      "last_risk_score": 0.8,
+      "last_date": "2026-06-18"
     },
     "600006.SH": {
-      "last_profile": "balanced",
+      "last_profile": "aggressive",
       "pending_profile": null,
       "pending_count": 0,
-      "cooldown_until": null,
+      "cooldown_until": "2026-06-23",
       "force_conservative_until": null,
-      "last_risk_score": 0.467479,
-      "last_date": "2026-06-12"
+      "last_risk_score": 0.372742,
+      "last_date": "2026-06-18"
     },
     "600007.SH": {
       "last_profile": "conservative",
       "pending_profile": null,
       "pending_count": 0,
       "cooldown_until": null,
-      "force_conservative_until": "2026-06-14",
-      "last_risk_score": 0.773738,
-      "last_date": "2026-06-12"
+      "force_conservative_until": "2026-06-20",
+      "last_risk_score": 0.8,
+      "last_date": "2026-06-18"
     },
     "600008.SH": {
-      "last_profile": "balanced",
+      "last_profile": "conservative",
       "pending_profile": null,
       "pending_count": 0,
       "cooldown_until": null,
-      "force_conservative_until": null,
-      "last_risk_score": 0.545306,
-      "last_date": "2026-06-12"
+      "force_conservative_until": "2026-06-20",
+      "last_risk_score": 0.62764,
+      "last_date": "2026-06-18"
     },
     "600009.SH": {
       "last_profile": "conservative",
       "pending_profile": null,
       "pending_count": 0,
       "cooldown_until": null,
-      "force_conservative_until": "2026-06-14",
-      "last_risk_score": 0.646666,
-      "last_date": "2026-06-12"
+      "force_conservative_until": "2026-06-20",
+      "last_risk_score": 0.633396,
+      "last_date": "2026-06-18"
     },
     "600010.SH": {
       "last_profile": "aggressive",
@@ -61,17 +61,17 @@
       "pending_count": 0,
       "cooldown_until": null,
       "force_conservative_until": null,
-      "last_risk_score": 0.37607,
-      "last_date": "2026-06-12"
+      "last_risk_score": 0.379623,
+      "last_date": "2026-06-18"
     },
     "600011.SH": {
       "last_profile": "conservative",
       "pending_profile": null,
       "pending_count": 0,
       "cooldown_until": null,
-      "force_conservative_until": "2026-06-14",
+      "force_conservative_until": "2026-06-20",
       "last_risk_score": 0.8,
-      "last_date": "2026-06-12"
+      "last_date": "2026-06-18"
     },
     "600012.SH": {
       "last_profile": "balanced",
@@ -79,17 +79,17 @@
       "pending_count": 0,
       "cooldown_until": null,
       "force_conservative_until": null,
-      "last_risk_score": 0.563208,
-      "last_date": "2026-06-12"
+      "last_risk_score": 0.591529,
+      "last_date": "2026-06-18"
     },
     "600015.SH": {
-      "last_profile": "aggressive",
+      "last_profile": "balanced",
       "pending_profile": null,
       "pending_count": 0,
-      "cooldown_until": null,
+      "cooldown_until": "2026-06-23",
       "force_conservative_until": null,
-      "last_risk_score": 0.386111,
-      "last_date": "2026-06-12"
+      "last_risk_score": 0.488191,
+      "last_date": "2026-06-18"
     },
     "600016.SH": {
       "last_profile": "balanced",
@@ -97,8 +97,8 @@
       "pending_count": 0,
       "cooldown_until": "2026-06-17",
       "force_conservative_until": null,
-      "last_risk_score": 0.476208,
-      "last_date": "2026-06-12"
+      "last_risk_score": 0.536358,
+      "last_date": "2026-06-18"
     },
     "600017.SH": {
       "last_profile": "balanced",
@@ -106,8 +106,8 @@
       "pending_count": 0,
       "cooldown_until": null,
       "force_conservative_until": null,
-      "last_risk_score": 0.588342,
-      "last_date": "2026-06-12"
+      "last_risk_score": 0.594872,
+      "last_date": "2026-06-18"
     },
     "600018.SH": {
       "last_profile": "balanced",
@@ -115,17 +115,17 @@
       "pending_count": 0,
       "cooldown_until": "2026-06-17",
       "force_conservative_until": null,
-      "last_risk_score": 0.540814,
-      "last_date": "2026-06-12"
+      "last_risk_score": 0.58627,
+      "last_date": "2026-06-18"
     },
     "600019.SH": {
-      "last_profile": "aggressive",
+      "last_profile": "balanced",
       "pending_profile": null,
       "pending_count": 0,
-      "cooldown_until": null,
+      "cooldown_until": "2026-06-23",
       "force_conservative_until": null,
-      "last_risk_score": 0.442854,
-      "last_date": "2026-06-12"
+      "last_risk_score": 0.459787,
+      "last_date": "2026-06-18"
     },
     "600020.SH": {
       "last_profile": "balanced",
@@ -133,8 +133,8 @@
       "pending_count": 0,
       "cooldown_until": null,
       "force_conservative_until": null,
-      "last_risk_score": 0.467455,
-      "last_date": "2026-06-12"
+      "last_risk_score": 0.474957,
+      "last_date": "2026-06-18"
     },
     "600021.SH": {
       "last_profile": "conservative",
@@ -142,8 +142,8 @@
       "pending_count": 0,
       "cooldown_until": null,
       "force_conservative_until": "2026-06-14",
-      "last_risk_score": 0.763661,
-      "last_date": "2026-06-12"
+      "last_risk_score": 0.710986,
+      "last_date": "2026-06-18"
     },
     "600022.SH": {
       "last_profile": "aggressive",
@@ -151,53 +151,53 @@
       "pending_count": 0,
       "cooldown_until": null,
       "force_conservative_until": null,
-      "last_risk_score": 0.398737,
-      "last_date": "2026-06-12"
+      "last_risk_score": 0.394726,
+      "last_date": "2026-06-18"
     },
     "600023.SH": {
-      "last_profile": "balanced",
+      "last_profile": "conservative",
       "pending_profile": null,
       "pending_count": 0,
       "cooldown_until": null,
-      "force_conservative_until": null,
-      "last_risk_score": 0.702024,
-      "last_date": "2026-06-12"
+      "force_conservative_until": "2026-06-20",
+      "last_risk_score": 0.8,
+      "last_date": "2026-06-18"
     },
     "600025.SH": {
-      "last_profile": "balanced",
+      "last_profile": "conservative",
       "pending_profile": null,
       "pending_count": 0,
       "cooldown_until": null,
-      "force_conservative_until": null,
-      "last_risk_score": 0.67031,
-      "last_date": "2026-06-12"
+      "force_conservative_until": "2026-06-20",
+      "last_risk_score": 0.61875,
+      "last_date": "2026-06-18"
     },
     "600026.SH": {
-      "last_profile": "aggressive",
+      "last_profile": "conservative",
       "pending_profile": null,
       "pending_count": 0,
       "cooldown_until": null,
-      "force_conservative_until": null,
-      "last_risk_score": 0.411864,
-      "last_date": "2026-06-12"
+      "force_conservative_until": "2026-06-20",
+      "last_risk_score": 0.66619,
+      "last_date": "2026-06-18"
     },
     "600027.SH": {
       "last_profile": "conservative",
       "pending_profile": null,
       "pending_count": 0,
       "cooldown_until": "2026-06-17",
-      "force_conservative_until": null,
-      "last_risk_score": 0.718484,
-      "last_date": "2026-06-12"
+      "force_conservative_until": "2026-06-20",
+      "last_risk_score": 0.792196,
+      "last_date": "2026-06-18"
     },
     "600028.SH": {
-      "last_profile": "aggressive",
+      "last_profile": "balanced",
       "pending_profile": null,
       "pending_count": 0,
-      "cooldown_until": null,
+      "cooldown_until": "2026-06-23",
       "force_conservative_until": null,
-      "last_risk_score": 0.444838,
-      "last_date": "2026-06-12"
+      "last_risk_score": 0.480212,
+      "last_date": "2026-06-18"
     },
     "600029.SH": {
       "last_profile": "balanced",
@@ -205,62 +205,62 @@
       "pending_count": 0,
       "cooldown_until": null,
       "force_conservative_until": null,
-      "last_risk_score": 0.499512,
-      "last_date": "2026-06-12"
+      "last_risk_score": 0.510243,
+      "last_date": "2026-06-18"
     },
     "600030.SH": {
-      "last_profile": "aggressive",
+      "last_profile": "balanced",
       "pending_profile": null,
       "pending_count": 0,
-      "cooldown_until": null,
+      "cooldown_until": "2026-06-23",
       "force_conservative_until": null,
-      "last_risk_score": 0.436599,
-      "last_date": "2026-06-12"
+      "last_risk_score": 0.480428,
+      "last_date": "2026-06-18"
     },
     "600031.SH": {
-      "last_profile": "conservative",
+      "last_profile": "balanced",
       "pending_profile": null,
       "pending_count": 0,
-      "cooldown_until": null,
+      "cooldown_until": "2026-06-23",
       "force_conservative_until": "2026-06-14",
-      "last_risk_score": 0.668842,
-      "last_date": "2026-06-12"
+      "last_risk_score": 0.6006,
+      "last_date": "2026-06-18"
     },
     "600032.SH": {
       "last_profile": "conservative",
       "pending_profile": null,
       "pending_count": 0,
       "cooldown_until": null,
-      "force_conservative_until": "2026-06-14",
-      "last_risk_score": 0.784152,
-      "last_date": "2026-06-12"
+      "force_conservative_until": "2026-06-20",
+      "last_risk_score": 0.705566,
+      "last_date": "2026-06-18"
     },
     "600033.SH": {
-      "last_profile": "aggressive",
+      "last_profile": "balanced",
       "pending_profile": null,
       "pending_count": 0,
-      "cooldown_until": null,
+      "cooldown_until": "2026-06-23",
       "force_conservative_until": null,
-      "last_risk_score": 0.43468,
-      "last_date": "2026-06-12"
+      "last_risk_score": 0.455078,
+      "last_date": "2026-06-18"
     },
     "600035.SH": {
       "last_profile": "conservative",
       "pending_profile": null,
       "pending_count": 0,
       "cooldown_until": null,
-      "force_conservative_until": "2026-06-14",
-      "last_risk_score": 0.62544,
-      "last_date": "2026-06-12"
+      "force_conservative_until": "2026-06-20",
+      "last_risk_score": 0.620272,
+      "last_date": "2026-06-18"
     },
     "600036.SH": {
-      "last_profile": "aggressive",
+      "last_profile": "balanced",
       "pending_profile": null,
       "pending_count": 0,
-      "cooldown_until": null,
+      "cooldown_until": "2026-06-23",
       "force_conservative_until": null,
-      "last_risk_score": 0.447747,
-      "last_date": "2026-06-12"
+      "last_risk_score": 0.57347,
+      "last_date": "2026-06-18"
     },
     "600037.SH": {
       "last_profile": "balanced",
@@ -268,8 +268,8 @@
       "pending_count": 0,
       "cooldown_until": null,
       "force_conservative_until": null,
-      "last_risk_score": 0.447686,
-      "last_date": "2026-06-12"
+      "last_risk_score": 0.390028,
+      "last_date": "2026-06-18"
     },
     "600038.SH": {
       "last_profile": "balanced",
@@ -277,8 +277,8 @@
       "pending_count": 0,
       "cooldown_until": "2026-06-17",
       "force_conservative_until": null,
-      "last_risk_score": 0.522485,
-      "last_date": "2026-06-12"
+      "last_risk_score": 0.501316,
+      "last_date": "2026-06-18"
     },
     "600039.SH": {
       "last_profile": "balanced",
@@ -286,8 +286,8 @@
       "pending_count": 0,
       "cooldown_until": null,
       "force_conservative_until": null,
-      "last_risk_score": 0.462242,
-      "last_date": "2026-06-12"
+      "last_risk_score": 0.467564,
+      "last_date": "2026-06-18"
     },
     "600048.SH": {
       "last_profile": "balanced",
@@ -295,17 +295,17 @@
       "pending_count": 0,
       "cooldown_until": null,
       "force_conservative_until": null,
-      "last_risk_score": 0.424165,
-      "last_date": "2026-06-12"
+      "last_risk_score": 0.414155,
+      "last_date": "2026-06-18"
     },
     "600050.SH": {
-      "last_profile": "conservative",
+      "last_profile": "aggressive",
       "pending_profile": null,
       "pending_count": 0,
-      "cooldown_until": null,
+      "cooldown_until": "2026-06-23",
       "force_conservative_until": null,
-      "last_risk_score": 0.736162,
-      "last_date": "2026-06-12"
+      "last_risk_score": 0.402644,
+      "last_date": "2026-06-18"
     },
     "600051.SH": {
       "last_profile": "balanced",
@@ -313,26 +313,26 @@
       "pending_count": 0,
       "cooldown_until": null,
       "force_conservative_until": null,
-      "last_risk_score": 0.506352,
-      "last_date": "2026-06-12"
+      "last_risk_score": 0.505368,
+      "last_date": "2026-06-18"
     },
     "600052.SH": {
-      "last_profile": "aggressive",
-      "pending_profile": null,
-      "pending_count": 0,
-      "cooldown_until": null,
-      "force_conservative_until": null,
-      "last_risk_score": 0.379138,
-      "last_date": "2026-06-12"
-    },
-    "600053.SH": {
       "last_profile": "balanced",
       "pending_profile": null,
       "pending_count": 0,
-      "cooldown_until": null,
+      "cooldown_until": "2026-06-23",
       "force_conservative_until": null,
-      "last_risk_score": 0.39953,
-      "last_date": "2026-06-12"
+      "last_risk_score": 0.628288,
+      "last_date": "2026-06-18"
+    },
+    "600053.SH": {
+      "last_profile": "aggressive",
+      "pending_profile": null,
+      "pending_count": 0,
+      "cooldown_until": "2026-06-23",
+      "force_conservative_until": null,
+      "last_risk_score": 0.376253,
+      "last_date": "2026-06-18"
     },
     "600054.SH": {
       "last_profile": "balanced",
@@ -340,8 +340,8 @@
       "pending_count": 0,
       "cooldown_until": "2026-06-17",
       "force_conservative_until": null,
-      "last_risk_score": 0.563067,
-      "last_date": "2026-06-12"
+      "last_risk_score": 0.552294,
+      "last_date": "2026-06-18"
     },
     "600055.SH": {
       "last_profile": "balanced",
@@ -349,8 +349,8 @@
       "pending_count": 0,
       "cooldown_until": null,
       "force_conservative_until": null,
-      "last_risk_score": 0.597492,
-      "last_date": "2026-06-12"
+      "last_risk_score": 0.528616,
+      "last_date": "2026-06-18"
     },
     "600056.SH": {
       "last_profile": "balanced",
@@ -358,8 +358,8 @@
       "pending_count": 0,
       "cooldown_until": null,
       "force_conservative_until": null,
-      "last_risk_score": 0.449785,
-      "last_date": "2026-06-12"
+      "last_risk_score": 0.468705,
+      "last_date": "2026-06-18"
     },
     "600057.SH": {
       "last_profile": "aggressive",
@@ -367,8 +367,8 @@
       "pending_count": 0,
       "cooldown_until": null,
       "force_conservative_until": null,
-      "last_risk_score": 0.405288,
-      "last_date": "2026-06-12"
+      "last_risk_score": 0.400826,
+      "last_date": "2026-06-18"
     },
     "600058.SH": {
       "last_profile": "balanced",
@@ -376,8 +376,8 @@
       "pending_count": 0,
       "cooldown_until": null,
       "force_conservative_until": null,
-      "last_risk_score": 0.670664,
-      "last_date": "2026-06-12"
+      "last_risk_score": 0.650834,
+      "last_date": "2026-06-18"
     },
     "600059.SH": {
       "last_profile": "aggressive",
@@ -385,8 +385,8 @@
       "pending_count": 0,
       "cooldown_until": "2026-06-17",
       "force_conservative_until": null,
-      "last_risk_score": 0.379533,
-      "last_date": "2026-06-12"
+      "last_risk_score": 0.395354,
+      "last_date": "2026-06-18"
     },
     "600060.SH": {
       "last_profile": "balanced",
@@ -394,17 +394,17 @@
       "pending_count": 0,
       "cooldown_until": "2026-06-17",
       "force_conservative_until": null,
-      "last_risk_score": 0.458064,
-      "last_date": "2026-06-12"
+      "last_risk_score": 0.598006,
+      "last_date": "2026-06-18"
     },
     "600061.SH": {
-      "last_profile": "balanced",
+      "last_profile": "conservative",
       "pending_profile": null,
       "pending_count": 0,
       "cooldown_until": "2026-06-17",
-      "force_conservative_until": null,
-      "last_risk_score": 0.56771,
-      "last_date": "2026-06-12"
+      "force_conservative_until": "2026-06-20",
+      "last_risk_score": 0.609217,
+      "last_date": "2026-06-18"
     },
     "600062.SH": {
       "last_profile": "balanced",
@@ -412,8 +412,8 @@
       "pending_count": 0,
       "cooldown_until": null,
       "force_conservative_until": null,
-      "last_risk_score": 0.585404,
-      "last_date": "2026-06-12"
+      "last_risk_score": 0.56301,
+      "last_date": "2026-06-18"
     },
     "600063.SH": {
       "last_profile": "balanced",
@@ -421,8 +421,8 @@
       "pending_count": 0,
       "cooldown_until": null,
       "force_conservative_until": null,
-      "last_risk_score": 0.633506,
-      "last_date": "2026-06-12"
+      "last_risk_score": 0.451112,
+      "last_date": "2026-06-18"
     },
     "600064.SH": {
       "last_profile": "balanced",
@@ -430,26 +430,26 @@
       "pending_count": 0,
       "cooldown_until": null,
       "force_conservative_until": null,
-      "last_risk_score": 0.519905,
-      "last_date": "2026-06-12"
+      "last_risk_score": 0.511712,
+      "last_date": "2026-06-18"
     },
     "600066.SH": {
-      "last_profile": "balanced",
+      "last_profile": "conservative",
       "pending_profile": null,
       "pending_count": 0,
       "cooldown_until": "2026-06-17",
-      "force_conservative_until": null,
-      "last_risk_score": 0.652102,
-      "last_date": "2026-06-12"
+      "force_conservative_until": "2026-06-20",
+      "last_risk_score": 0.744004,
+      "last_date": "2026-06-18"
     },
     "600067.SH": {
       "last_profile": "conservative",
       "pending_profile": null,
       "pending_count": 0,
       "cooldown_until": "2026-06-17",
-      "force_conservative_until": null,
-      "last_risk_score": 0.722742,
-      "last_date": "2026-06-12"
+      "force_conservative_until": "2026-06-20",
+      "last_risk_score": 0.754868,
+      "last_date": "2026-06-18"
     },
     "600071.SH": {
       "last_profile": "balanced",
@@ -457,8 +457,8 @@
       "pending_count": 0,
       "cooldown_until": "2026-06-17",
       "force_conservative_until": null,
-      "last_risk_score": 0.49859,
-      "last_date": "2026-06-12"
+      "last_risk_score": 0.514269,
+      "last_date": "2026-06-18"
     },
     "600072.SH": {
       "last_profile": "balanced",
@@ -466,8 +466,8 @@
       "pending_count": 0,
       "cooldown_until": null,
       "force_conservative_until": null,
-      "last_risk_score": 0.542371,
-      "last_date": "2026-06-12"
+      "last_risk_score": 0.546316,
+      "last_date": "2026-06-18"
     },
     "600073.SH": {
       "last_profile": "balanced",
@@ -475,8 +475,8 @@
       "pending_count": 0,
       "cooldown_until": null,
       "force_conservative_until": null,
-      "last_risk_score": 0.455805,
-      "last_date": "2026-06-12"
+      "last_risk_score": 0.451007,
+      "last_date": "2026-06-18"
     },
     "600075.SH": {
       "last_profile": "aggressive",
@@ -484,8 +484,8 @@
       "pending_count": 0,
       "cooldown_until": null,
       "force_conservative_until": null,
-      "last_risk_score": 0.413604,
-      "last_date": "2026-06-12"
+      "last_risk_score": 0.415777,
+      "last_date": "2026-06-18"
     },
     "600076.SH": {
       "last_profile": "balanced",
@@ -493,8 +493,8 @@
       "pending_count": 0,
       "cooldown_until": null,
       "force_conservative_until": null,
-      "last_risk_score": 0.393806,
-      "last_date": "2026-06-12"
+      "last_risk_score": 0.46203,
+      "last_date": "2026-06-18"
     },
     "600078.SH": {
       "last_profile": "balanced",
@@ -502,8 +502,8 @@
       "pending_count": 0,
       "cooldown_until": null,
       "force_conservative_until": null,
-      "last_risk_score": 0.496865,
-      "last_date": "2026-06-12"
+      "last_risk_score": 0.451065,
+      "last_date": "2026-06-18"
     },
     "600079.SH": {
       "last_profile": "aggressive",
@@ -511,8 +511,8 @@
       "pending_count": 0,
       "cooldown_until": null,
       "force_conservative_until": null,
-      "last_risk_score": 0.346041,
-      "last_date": "2026-06-12"
+      "last_risk_score": 0.328066,
+      "last_date": "2026-06-18"
     },
     "600080.SH": {
       "last_profile": "balanced",
@@ -520,8 +520,8 @@
       "pending_count": 0,
       "cooldown_until": "2026-06-17",
       "force_conservative_until": "2026-06-05",
-      "last_risk_score": 0.450899,
-      "last_date": "2026-06-12"
+      "last_risk_score": 0.465528,
+      "last_date": "2026-06-18"
     },
     "600081.SH": {
       "last_profile": "balanced",
@@ -529,8 +529,8 @@
       "pending_count": 0,
       "cooldown_until": "2026-06-17",
       "force_conservative_until": "2026-06-05",
-      "last_risk_score": 0.521809,
-      "last_date": "2026-06-12"
+      "last_risk_score": 0.472568,
+      "last_date": "2026-06-18"
     },
     "600082.SH": {
       "last_profile": "aggressive",
@@ -538,8 +538,8 @@
       "pending_count": 0,
       "cooldown_until": "2026-06-17",
       "force_conservative_until": null,
-      "last_risk_score": 0.383403,
-      "last_date": "2026-06-12"
+      "last_risk_score": 0.389833,
+      "last_date": "2026-06-18"
     },
     "600084.SH": {
       "last_profile": "balanced",
@@ -547,26 +547,26 @@
       "pending_count": 0,
       "cooldown_until": "2026-06-17",
       "force_conservative_until": "2026-06-05",
-      "last_risk_score": 0.545557,
-      "last_date": "2026-06-12"
+      "last_risk_score": 0.532787,
+      "last_date": "2026-06-18"
     },
     "600085.SH": {
       "last_profile": "conservative",
       "pending_profile": null,
       "pending_count": 0,
       "cooldown_until": null,
-      "force_conservative_until": "2026-06-14",
-      "last_risk_score": 0.698045,
-      "last_date": "2026-06-12"
+      "force_conservative_until": "2026-06-20",
+      "last_risk_score": 0.65657,
+      "last_date": "2026-06-18"
     },
     "600088.SH": {
       "last_profile": "conservative",
       "pending_profile": null,
       "pending_count": 0,
       "cooldown_until": null,
-      "force_conservative_until": "2026-06-14",
-      "last_risk_score": 0.797183,
-      "last_date": "2026-06-12"
+      "force_conservative_until": "2026-06-20",
+      "last_risk_score": 0.8,
+      "last_date": "2026-06-18"
     },
     "600089.SH": {
       "last_profile": "aggressive",
@@ -574,8 +574,8 @@
       "pending_count": 0,
       "cooldown_until": null,
       "force_conservative_until": null,
-      "last_risk_score": 0.409022,
-      "last_date": "2026-06-12"
+      "last_risk_score": 0.425697,
+      "last_date": "2026-06-18"
     },
     "600094.SH": {
       "last_profile": "balanced",
@@ -583,8 +583,8 @@
       "pending_count": 0,
       "cooldown_until": null,
       "force_conservative_until": null,
-      "last_risk_score": 0.427603,
-      "last_date": "2026-06-12"
+      "last_risk_score": 0.457103,
+      "last_date": "2026-06-18"
     },
     "600095.SH": {
       "last_profile": "aggressive",
@@ -592,17 +592,17 @@
       "pending_count": 0,
       "cooldown_until": null,
       "force_conservative_until": null,
-      "last_risk_score": 0.422072,
-      "last_date": "2026-06-12"
+      "last_risk_score": 0.440776,
+      "last_date": "2026-06-18"
     },
     "600096.SH": {
-      "last_profile": "aggressive",
+      "last_profile": "balanced",
       "pending_profile": null,
       "pending_count": 0,
-      "cooldown_until": null,
+      "cooldown_until": "2026-06-23",
       "force_conservative_until": null,
-      "last_risk_score": 0.403287,
-      "last_date": "2026-06-12"
+      "last_risk_score": 0.46946,
+      "last_date": "2026-06-18"
     },
     "600097.SH": {
       "last_profile": "aggressive",
@@ -610,17 +610,17 @@
       "pending_count": 0,
       "cooldown_until": null,
       "force_conservative_until": null,
-      "last_risk_score": 0.39522,
-      "last_date": "2026-06-12"
+      "last_risk_score": 0.394611,
+      "last_date": "2026-06-18"
     },
     "600098.SH": {
       "last_profile": "conservative",
       "pending_profile": null,
       "pending_count": 0,
       "cooldown_until": null,
-      "force_conservative_until": "2026-06-14",
-      "last_risk_score": 0.796573,
-      "last_date": "2026-06-12"
+      "force_conservative_until": "2026-06-20",
+      "last_risk_score": 0.8,
+      "last_date": "2026-06-18"
     },
     "600099.SH": {
       "last_profile": "balanced",
@@ -628,17 +628,17 @@
       "pending_count": 0,
       "cooldown_until": null,
       "force_conservative_until": null,
-      "last_risk_score": 0.439481,
-      "last_date": "2026-06-12"
+      "last_risk_score": 0.404488,
+      "last_date": "2026-06-18"
     },
     "600100.SH": {
-      "last_profile": "balanced",
+      "last_profile": "aggressive",
       "pending_profile": null,
       "pending_count": 0,
-      "cooldown_until": null,
+      "cooldown_until": "2026-06-23",
       "force_conservative_until": null,
-      "last_risk_score": 0.408243,
-      "last_date": "2026-06-12"
+      "last_risk_score": 0.370886,
+      "last_date": "2026-06-18"
     },
     "600101.SH": {
       "last_profile": "balanced",
@@ -646,8 +646,8 @@
       "pending_count": 0,
       "cooldown_until": null,
       "force_conservative_until": null,
-      "last_risk_score": 0.639002,
-      "last_date": "2026-06-12"
+      "last_risk_score": 0.605174,
+      "last_date": "2026-06-18"
     },
     "600103.SH": {
       "last_profile": "balanced",
@@ -655,8 +655,8 @@
       "pending_count": 0,
       "cooldown_until": null,
       "force_conservative_until": null,
-      "last_risk_score": 0.514623,
-      "last_date": "2026-06-12"
+      "last_risk_score": 0.483964,
+      "last_date": "2026-06-18"
     },
     "600104.SH": {
       "last_profile": "aggressive",
@@ -664,8 +664,8 @@
       "pending_count": 0,
       "cooldown_until": null,
       "force_conservative_until": null,
-      "last_risk_score": 0.424111,
-      "last_date": "2026-06-12"
+      "last_risk_score": 0.366495,
+      "last_date": "2026-06-18"
     },
     "600105.SH": {
       "last_profile": "aggressive",
@@ -673,8 +673,8 @@
       "pending_count": 0,
       "cooldown_until": null,
       "force_conservative_until": null,
-      "last_risk_score": 0.370296,
-      "last_date": "2026-06-12"
+      "last_risk_score": 0.26879,
+      "last_date": "2026-06-18"
     },
     "600106.SH": {
       "last_profile": "balanced",
@@ -682,8 +682,8 @@
       "pending_count": 0,
       "cooldown_until": null,
       "force_conservative_until": null,
-      "last_risk_score": 0.549683,
-      "last_date": "2026-06-12"
+      "last_risk_score": 0.48139,
+      "last_date": "2026-06-18"
     },
     "600107.SH": {
       "last_profile": "aggressive",
@@ -691,26 +691,26 @@
       "pending_count": 0,
       "cooldown_until": null,
       "force_conservative_until": null,
-      "last_risk_score": 0.290966,
-      "last_date": "2026-06-12"
+      "last_risk_score": 0.299977,
+      "last_date": "2026-06-18"
     },
     "600108.SH": {
       "last_profile": "conservative",
       "pending_profile": null,
       "pending_count": 0,
       "cooldown_until": null,
-      "force_conservative_until": "2026-06-14",
-      "last_risk_score": 0.623465,
-      "last_date": "2026-06-12"
+      "force_conservative_until": "2026-06-20",
+      "last_risk_score": 0.64145,
+      "last_date": "2026-06-18"
     },
     "600109.SH": {
       "last_profile": "conservative",
       "pending_profile": null,
       "pending_count": 0,
       "cooldown_until": null,
-      "force_conservative_until": "2026-06-14",
-      "last_risk_score": 0.782692,
-      "last_date": "2026-06-12"
+      "force_conservative_until": "2026-06-20",
+      "last_risk_score": 0.788423,
+      "last_date": "2026-06-18"
     },
     "600110.SH": {
       "last_profile": "aggressive",
@@ -718,17 +718,17 @@
       "pending_count": 0,
       "cooldown_until": "2026-06-17",
       "force_conservative_until": null,
-      "last_risk_score": 0.383635,
-      "last_date": "2026-06-12"
+      "last_risk_score": 0.43347,
+      "last_date": "2026-06-18"
     },
     "600111.SH": {
-      "last_profile": "balanced",
+      "last_profile": "aggressive",
       "pending_profile": null,
       "pending_count": 0,
-      "cooldown_until": null,
+      "cooldown_until": "2026-06-23",
       "force_conservative_until": null,
-      "last_risk_score": 0.41955,
-      "last_date": "2026-06-12"
+      "last_risk_score": 0.355023,
+      "last_date": "2026-06-18"
     },
     "600113.SH": {
       "last_profile": "balanced",
@@ -736,8 +736,8 @@
       "pending_count": 0,
       "cooldown_until": null,
       "force_conservative_until": null,
-      "last_risk_score": 0.466703,
-      "last_date": "2026-06-12"
+      "last_risk_score": 0.434053,
+      "last_date": "2026-06-18"
     },
     "600114.SH": {
       "last_profile": "balanced",
@@ -745,8 +745,8 @@
       "pending_count": 0,
       "cooldown_until": null,
       "force_conservative_until": null,
-      "last_risk_score": 0.514225,
-      "last_date": "2026-06-12"
+      "last_risk_score": 0.465473,
+      "last_date": "2026-06-18"
     },
     "600115.SH": {
       "last_profile": "balanced",
@@ -754,17 +754,17 @@
       "pending_count": 0,
       "cooldown_until": null,
       "force_conservative_until": null,
-      "last_risk_score": 0.538021,
-      "last_date": "2026-06-12"
+      "last_risk_score": 0.579684,
+      "last_date": "2026-06-18"
     },
     "600116.SH": {
       "last_profile": "conservative",
       "pending_profile": null,
       "pending_count": 0,
       "cooldown_until": null,
-      "force_conservative_until": "2026-06-14",
-      "last_risk_score": 0.72224,
-      "last_date": "2026-06-12"
+      "force_conservative_until": "2026-06-20",
+      "last_risk_score": 0.67376,
+      "last_date": "2026-06-18"
     },
     "600117.SH": {
       "last_profile": "balanced",
@@ -772,17 +772,17 @@
       "pending_count": 0,
       "cooldown_until": null,
       "force_conservative_until": null,
-      "last_risk_score": 0.446245,
-      "last_date": "2026-06-12"
+      "last_risk_score": 0.458569,
+      "last_date": "2026-06-18"
     },
     "600118.SH": {
-      "last_profile": "balanced",
+      "last_profile": "aggressive",
       "pending_profile": null,
       "pending_count": 0,
-      "cooldown_until": null,
+      "cooldown_until": "2026-06-23",
       "force_conservative_until": null,
-      "last_risk_score": 0.444387,
-      "last_date": "2026-06-12"
+      "last_risk_score": 0.385402,
+      "last_date": "2026-06-18"
     },
     "600119.SH": {
       "last_profile": "balanced",
@@ -790,8 +790,8 @@
       "pending_count": 0,
       "cooldown_until": null,
       "force_conservative_until": null,
-      "last_risk_score": 0.428249,
-      "last_date": "2026-06-12"
+      "last_risk_score": 0.434738,
+      "last_date": "2026-06-18"
     },
     "600120.SH": {
       "last_profile": "aggressive",
@@ -799,26 +799,26 @@
       "pending_count": 0,
       "cooldown_until": "2026-06-17",
       "force_conservative_until": null,
-      "last_risk_score": 0.375387,
-      "last_date": "2026-06-12"
+      "last_risk_score": 0.383026,
+      "last_date": "2026-06-18"
     },
     "600121.SH": {
       "last_profile": "conservative",
       "pending_profile": null,
       "pending_count": 0,
       "cooldown_until": "2026-06-17",
-      "force_conservative_until": null,
-      "last_risk_score": 0.746946,
-      "last_date": "2026-06-12"
+      "force_conservative_until": "2026-06-20",
+      "last_risk_score": 0.755981,
+      "last_date": "2026-06-18"
     },
     "600123.SH": {
-      "last_profile": "aggressive",
+      "last_profile": "balanced",
       "pending_profile": null,
       "pending_count": 0,
-      "cooldown_until": null,
+      "cooldown_until": "2026-06-23",
       "force_conservative_until": null,
-      "last_risk_score": 0.412585,
-      "last_date": "2026-06-12"
+      "last_risk_score": 0.585044,
+      "last_date": "2026-06-18"
     },
     "600125.SH": {
       "last_profile": "aggressive",
@@ -826,8 +826,8 @@
       "pending_count": 0,
       "cooldown_until": null,
       "force_conservative_until": null,
-      "last_risk_score": 0.40491,
-      "last_date": "2026-06-12"
+      "last_risk_score": 0.426374,
+      "last_date": "2026-06-18"
     },
     "600126.SH": {
       "last_profile": "aggressive",
@@ -835,8 +835,8 @@
       "pending_count": 0,
       "cooldown_until": null,
       "force_conservative_until": null,
-      "last_risk_score": 0.377449,
-      "last_date": "2026-06-12"
+      "last_risk_score": 0.379693,
+      "last_date": "2026-06-18"
     },
     "600127.SH": {
       "last_profile": "balanced",
@@ -844,8 +844,8 @@
       "pending_count": 0,
       "cooldown_until": null,
       "force_conservative_until": null,
-      "last_risk_score": 0.540113,
-      "last_date": "2026-06-12"
+      "last_risk_score": 0.555479,
+      "last_date": "2026-06-18"
     },
     "600128.SH": {
       "last_profile": "balanced",
@@ -853,8 +853,8 @@
       "pending_count": 0,
       "cooldown_until": null,
       "force_conservative_until": null,
-      "last_risk_score": 0.497804,
-      "last_date": "2026-06-12"
+      "last_risk_score": 0.504495,
+      "last_date": "2026-06-18"
     },
     "600129.SH": {
       "last_profile": "balanced",
@@ -862,17 +862,17 @@
       "pending_count": 0,
       "cooldown_until": null,
       "force_conservative_until": null,
-      "last_risk_score": 0.525048,
-      "last_date": "2026-06-12"
+      "last_risk_score": 0.494532,
+      "last_date": "2026-06-18"
     },
     "600130.SH": {
-      "last_profile": "conservative",
+      "last_profile": "balanced",
       "pending_profile": null,
       "pending_count": 0,
-      "cooldown_until": null,
+      "cooldown_until": "2026-06-23",
       "force_conservative_until": "2026-06-05",
-      "last_risk_score": 0.7107,
-      "last_date": "2026-06-12"
+      "last_risk_score": 0.460705,
+      "last_date": "2026-06-18"
     },
     "600131.SH": {
       "last_profile": "balanced",
@@ -880,17 +880,17 @@
       "pending_count": 0,
       "cooldown_until": null,
       "force_conservative_until": null,
-      "last_risk_score": 0.519749,
-      "last_date": "2026-06-12"
+      "last_risk_score": 0.462315,
+      "last_date": "2026-06-18"
     },
     "600132.SH": {
       "last_profile": "conservative",
       "pending_profile": null,
       "pending_count": 0,
       "cooldown_until": null,
-      "force_conservative_until": "2026-06-14",
-      "last_risk_score": 0.798543,
-      "last_date": "2026-06-12"
+      "force_conservative_until": "2026-06-20",
+      "last_risk_score": 0.760895,
+      "last_date": "2026-06-18"
     },
     "600133.SH": {
       "last_profile": "balanced",
@@ -898,8 +898,8 @@
       "pending_count": 0,
       "cooldown_until": null,
       "force_conservative_until": null,
-      "last_risk_score": 0.537321,
-      "last_date": "2026-06-12"
+      "last_risk_score": 0.428632,
+      "last_date": "2026-06-18"
     },
     "600135.SH": {
       "last_profile": "balanced",
@@ -907,8 +907,8 @@
       "pending_count": 0,
       "cooldown_until": null,
       "force_conservative_until": null,
-      "last_risk_score": 0.488934,
-      "last_date": "2026-06-12"
+      "last_risk_score": 0.48749,
+      "last_date": "2026-06-18"
     },
     "600136.SH": {
       "last_profile": "balanced",
@@ -916,8 +916,8 @@
       "pending_count": 0,
       "cooldown_until": null,
       "force_conservative_until": null,
-      "last_risk_score": 0.543212,
-      "last_date": "2026-06-12"
+      "last_risk_score": 0.503077,
+      "last_date": "2026-06-18"
     },
     "600137.SH": {
       "last_profile": "balanced",
@@ -925,8 +925,8 @@
       "pending_count": 0,
       "cooldown_until": null,
       "force_conservative_until": null,
-      "last_risk_score": 0.506124,
-      "last_date": "2026-06-12"
+      "last_risk_score": 0.476576,
+      "last_date": "2026-06-18"
     },
     "600138.SH": {
       "last_profile": "balanced",
@@ -934,8 +934,8 @@
       "pending_count": 0,
       "cooldown_until": null,
       "force_conservative_until": null,
-      "last_risk_score": 0.498456,
-      "last_date": "2026-06-12"
+      "last_risk_score": 0.498511,
+      "last_date": "2026-06-18"
     },
     "600141.SH": {
       "last_profile": "balanced",
@@ -943,8 +943,8 @@
       "pending_count": 0,
       "cooldown_until": null,
       "force_conservative_until": null,
-      "last_risk_score": 0.62054,
-      "last_date": "2026-06-12"
+      "last_risk_score": 0.513148,
+      "last_date": "2026-06-18"
     },
     "600143.SH": {
       "last_profile": "balanced",
@@ -952,8 +952,8 @@
       "pending_count": 0,
       "cooldown_until": null,
       "force_conservative_until": null,
-      "last_risk_score": 0.494541,
-      "last_date": "2026-06-12"
+      "last_risk_score": 0.531345,
+      "last_date": "2026-06-18"
     },
     "600148.SH": {
       "last_profile": "balanced",
@@ -961,26 +961,26 @@
       "pending_count": 0,
       "cooldown_until": null,
       "force_conservative_until": null,
-      "last_risk_score": 0.478069,
-      "last_date": "2026-06-12"
+      "last_risk_score": 0.461133,
+      "last_date": "2026-06-18"
     },
     "600149.SH": {
-      "last_profile": "balanced",
+      "last_profile": "aggressive",
       "pending_profile": null,
       "pending_count": 0,
-      "cooldown_until": null,
+      "cooldown_until": "2026-06-23",
       "force_conservative_until": null,
-      "last_risk_score": 0.499392,
-      "last_date": "2026-06-12"
+      "last_risk_score": 0.350195,
+      "last_date": "2026-06-18"
     },
     "600150.SH": {
-      "last_profile": "balanced",
+      "last_profile": "aggressive",
       "pending_profile": null,
       "pending_count": 0,
-      "cooldown_until": null,
+      "cooldown_until": "2026-06-23",
       "force_conservative_until": null,
-      "last_risk_score": 0.448305,
-      "last_date": "2026-06-12"
+      "last_risk_score": 0.331854,
+      "last_date": "2026-06-18"
     },
     "600151.SH": {
       "last_profile": "balanced",
@@ -988,8 +988,8 @@
       "pending_count": 0,
       "cooldown_until": null,
       "force_conservative_until": null,
-      "last_risk_score": 0.532749,
-      "last_date": "2026-06-12"
+      "last_risk_score": 0.507385,
+      "last_date": "2026-06-18"
     },
     "600152.SH": {
       "last_profile": "balanced",
@@ -997,8 +997,8 @@
       "pending_count": 0,
       "cooldown_until": null,
       "force_conservative_until": null,
-      "last_risk_score": 0.446473,
-      "last_date": "2026-06-12"
+      "last_risk_score": 0.45206,
+      "last_date": "2026-06-18"
     },
     "600153.SH": {
       "last_profile": "balanced",
@@ -1006,8 +1006,8 @@
       "pending_count": 0,
       "cooldown_until": null,
       "force_conservative_until": null,
-      "last_risk_score": 0.426127,
-      "last_date": "2026-06-12"
+      "last_risk_score": 0.460415,
+      "last_date": "2026-06-18"
     },
     "600155.SH": {
       "last_profile": "balanced",
@@ -1015,8 +1015,8 @@
       "pending_count": 0,
       "cooldown_until": null,
       "force_conservative_until": null,
-      "last_risk_score": 0.546828,
-      "last_date": "2026-06-12"
+      "last_risk_score": 0.599544,
+      "last_date": "2026-06-18"
     },
     "600156.SH": {
       "last_profile": "conservative",
@@ -1024,8 +1024,8 @@
       "pending_count": 0,
       "cooldown_until": null,
       "force_conservative_until": "2026-06-14",
-      "last_risk_score": 0.750155,
-      "last_date": "2026-06-12"
+      "last_risk_score": 0.68155,
+      "last_date": "2026-06-18"
     },
     "600157.SH": {
       "last_profile": "balanced",
@@ -1033,17 +1033,17 @@
       "pending_count": 0,
       "cooldown_until": "2026-06-17",
       "force_conservative_until": null,
-      "last_risk_score": 0.491401,
-      "last_date": "2026-06-12"
+      "last_risk_score": 0.432195,
+      "last_date": "2026-06-18"
     },
     "600158.SH": {
       "last_profile": "conservative",
       "pending_profile": null,
       "pending_count": 0,
       "cooldown_until": null,
-      "force_conservative_until": "2026-06-14",
-      "last_risk_score": 0.728171,
-      "last_date": "2026-06-12"
+      "force_conservative_until": "2026-06-20",
+      "last_risk_score": 0.673905,
+      "last_date": "2026-06-18"
     },
     "600159.SH": {
       "last_profile": "balanced",
@@ -1051,8 +1051,8 @@
       "pending_count": 0,
       "cooldown_until": null,
       "force_conservative_until": null,
-      "last_risk_score": 0.596359,
-      "last_date": "2026-06-12"
+      "last_risk_score": 0.478315,
+      "last_date": "2026-06-18"
     },
     "600160.SH": {
       "last_profile": "balanced",
@@ -1060,17 +1060,17 @@
       "pending_count": 0,
       "cooldown_until": null,
       "force_conservative_until": null,
-      "last_risk_score": 0.494572,
-      "last_date": "2026-06-12"
+      "last_risk_score": 0.608361,
+      "last_date": "2026-06-18"
     },
     "600161.SH": {
-      "last_profile": "conservative",
+      "last_profile": "balanced",
       "pending_profile": null,
       "pending_count": 0,
-      "cooldown_until": null,
+      "cooldown_until": "2026-06-23",
       "force_conservative_until": "2026-06-14",
-      "last_risk_score": 0.702758,
-      "last_date": "2026-06-12"
+      "last_risk_score": 0.644054,
+      "last_date": "2026-06-18"
     },
     "600162.SH": {
       "last_profile": "balanced",
@@ -1078,8 +1078,8 @@
       "pending_count": 0,
       "cooldown_until": null,
       "force_conservative_until": null,
-      "last_risk_score": 0.588087,
-      "last_date": "2026-06-12"
+      "last_risk_score": 0.569872,
+      "last_date": "2026-06-18"
     },
     "600163.SH": {
       "last_profile": "conservative",
@@ -1087,17 +1087,17 @@
       "pending_count": 0,
       "cooldown_until": null,
       "force_conservative_until": "2026-06-14",
-      "last_risk_score": 0.707541,
-      "last_date": "2026-06-12"
+      "last_risk_score": 0.685609,
+      "last_date": "2026-06-18"
     },
     "600165.SH": {
-      "last_profile": "balanced",
+      "last_profile": "aggressive",
       "pending_profile": null,
       "pending_count": 0,
-      "cooldown_until": null,
+      "cooldown_until": "2026-06-23",
       "force_conservative_until": null,
-      "last_risk_score": 0.454616,
-      "last_date": "2026-06-12"
+      "last_risk_score": 0.38277,
+      "last_date": "2026-06-18"
     },
     "600166.SH": {
       "last_profile": "balanced",
@@ -1105,8 +1105,8 @@
       "pending_count": 0,
       "cooldown_until": null,
       "force_conservative_until": null,
-      "last_risk_score": 0.453262,
-      "last_date": "2026-06-12"
+      "last_risk_score": 0.449823,
+      "last_date": "2026-06-18"
     },
     "600167.SH": {
       "last_profile": "balanced",
@@ -1114,17 +1114,17 @@
       "pending_count": 0,
       "cooldown_until": "2026-06-17",
       "force_conservative_until": null,
-      "last_risk_score": 0.500328,
-      "last_date": "2026-06-12"
+      "last_risk_score": 0.503704,
+      "last_date": "2026-06-18"
     },
     "600168.SH": {
-      "last_profile": "conservative",
+      "last_profile": "balanced",
       "pending_profile": null,
       "pending_count": 0,
-      "cooldown_until": null,
+      "cooldown_until": "2026-06-23",
       "force_conservative_until": null,
-      "last_risk_score": 0.763885,
-      "last_date": "2026-06-12"
+      "last_risk_score": 0.62227,
+      "last_date": "2026-06-18"
     },
     "600169.SH": {
       "last_profile": "balanced",
@@ -1132,8 +1132,8 @@
       "pending_count": 0,
       "cooldown_until": null,
       "force_conservative_until": null,
-      "last_risk_score": 0.48188,
-      "last_date": "2026-06-12"
+      "last_risk_score": 0.541478,
+      "last_date": "2026-06-18"
     },
     "600170.SH": {
       "last_profile": "aggressive",
@@ -1141,17 +1141,17 @@
       "pending_count": 0,
       "cooldown_until": null,
       "force_conservative_until": null,
-      "last_risk_score": 0.395214,
-      "last_date": "2026-06-12"
+      "last_risk_score": 0.402416,
+      "last_date": "2026-06-18"
     },
     "600171.SH": {
       "last_profile": "conservative",
       "pending_profile": null,
       "pending_count": 0,
       "cooldown_until": null,
-      "force_conservative_until": "2026-06-14",
-      "last_risk_score": 0.708431,
-      "last_date": "2026-06-12"
+      "force_conservative_until": "2026-06-20",
+      "last_risk_score": 0.672297,
+      "last_date": "2026-06-18"
     },
     "600172.SH": {
       "last_profile": "balanced",
@@ -1159,8 +1159,8 @@
       "pending_count": 0,
       "cooldown_until": null,
       "force_conservative_until": null,
-      "last_risk_score": 0.596317,
-      "last_date": "2026-06-12"
+      "last_risk_score": 0.397045,
+      "last_date": "2026-06-18"
     },
     "600173.SH": {
       "last_profile": "balanced",
@@ -1168,8 +1168,8 @@
       "pending_count": 0,
       "cooldown_until": null,
       "force_conservative_until": null,
-      "last_risk_score": 0.535437,
-      "last_date": "2026-06-12"
+      "last_risk_score": 0.528037,
+      "last_date": "2026-06-18"
     },
     "600176.SH": {
       "last_profile": "balanced",
@@ -1177,8 +1177,8 @@
       "pending_count": 0,
       "cooldown_until": "2026-06-17",
       "force_conservative_until": "2026-06-05",
-      "last_risk_score": 0.469368,
-      "last_date": "2026-06-12"
+      "last_risk_score": 0.435351,
+      "last_date": "2026-06-18"
     },
     "600177.SH": {
       "last_profile": "balanced",
@@ -1186,8 +1186,8 @@
       "pending_count": 0,
       "cooldown_until": "2026-06-17",
       "force_conservative_until": null,
-      "last_risk_score": 0.49198,
-      "last_date": "2026-06-12"
+      "last_risk_score": 0.445604,
+      "last_date": "2026-06-18"
     },
     "600178.SH": {
       "last_profile": "conservative",
@@ -1195,8 +1195,8 @@
       "pending_count": 0,
       "cooldown_until": "2026-06-17",
       "force_conservative_until": null,
-      "last_risk_score": 0.725098,
-      "last_date": "2026-06-12"
+      "last_risk_score": 0.753885,
+      "last_date": "2026-06-18"
     },
     "600179.SH": {
       "last_profile": "aggressive",
@@ -1204,17 +1204,17 @@
       "pending_count": 0,
       "cooldown_until": null,
       "force_conservative_until": null,
-      "last_risk_score": 0.390703,
-      "last_date": "2026-06-12"
+      "last_risk_score": 0.353477,
+      "last_date": "2026-06-18"
     },
     "600180.SH": {
       "last_profile": "conservative",
       "pending_profile": null,
       "pending_count": 0,
       "cooldown_until": null,
-      "force_conservative_until": "2026-06-14",
+      "force_conservative_until": "2026-06-20",
       "last_risk_score": 0.55,
-      "last_date": "2026-06-12"
+      "last_date": "2026-06-18"
     },
     "600182.SH": {
       "last_profile": "balanced",
@@ -1222,8 +1222,8 @@
       "pending_count": 0,
       "cooldown_until": null,
       "force_conservative_until": null,
-      "last_risk_score": 0.556728,
-      "last_date": "2026-06-12"
+      "last_risk_score": 0.543788,
+      "last_date": "2026-06-18"
     },
     "600183.SH": {
       "last_profile": "aggressive",
@@ -1231,8 +1231,8 @@
       "pending_count": 0,
       "cooldown_until": null,
       "force_conservative_until": null,
-      "last_risk_score": 0.374679,
-      "last_date": "2026-06-12"
+      "last_risk_score": 0.37029,
+      "last_date": "2026-06-18"
     },
     "600184.SH": {
       "last_profile": "aggressive",
@@ -1240,8 +1240,8 @@
       "pending_count": 0,
       "cooldown_until": null,
       "force_conservative_until": null,
-      "last_risk_score": 0.276141,
-      "last_date": "2026-06-12"
+      "last_risk_score": 0.200904,
+      "last_date": "2026-06-18"
     },
     "600185.SH": {
       "last_profile": "aggressive",
@@ -1249,8 +1249,8 @@
       "pending_count": 0,
       "cooldown_until": null,
       "force_conservative_until": null,
-      "last_risk_score": 0.352897,
-      "last_date": "2026-06-12"
+      "last_risk_score": 0.358658,
+      "last_date": "2026-06-18"
     },
     "600186.SH": {
       "last_profile": "balanced",
@@ -1258,8 +1258,8 @@
       "pending_count": 0,
       "cooldown_until": "2026-06-17",
       "force_conservative_until": "2026-06-05",
-      "last_risk_score": 0.613853,
-      "last_date": "2026-06-12"
+      "last_risk_score": 0.475919,
+      "last_date": "2026-06-18"
     },
     "600187.SH": {
       "last_profile": "balanced",
@@ -1267,17 +1267,17 @@
       "pending_count": 0,
       "cooldown_until": null,
       "force_conservative_until": null,
-      "last_risk_score": 0.460746,
-      "last_date": "2026-06-12"
+      "last_risk_score": 0.469549,
+      "last_date": "2026-06-18"
     },
     "600188.SH": {
       "last_profile": "conservative",
       "pending_profile": null,
       "pending_count": 0,
       "cooldown_until": null,
-      "force_conservative_until": "2026-06-14",
-      "last_risk_score": 0.746698,
-      "last_date": "2026-06-12"
+      "force_conservative_until": "2026-06-20",
+      "last_risk_score": 0.746781,
+      "last_date": "2026-06-18"
     },
     "600189.SH": {
       "last_profile": "balanced",
@@ -1285,8 +1285,8 @@
       "pending_count": 0,
       "cooldown_until": null,
       "force_conservative_until": null,
-      "last_risk_score": 0.48705,
-      "last_date": "2026-06-12"
+      "last_risk_score": 0.430609,
+      "last_date": "2026-06-18"
     },
     "600191.SH": {
       "last_profile": "balanced",
@@ -1294,17 +1294,17 @@
       "pending_count": 0,
       "cooldown_until": null,
       "force_conservative_until": null,
-      "last_risk_score": 0.539071,
-      "last_date": "2026-06-12"
+      "last_risk_score": 0.485248,
+      "last_date": "2026-06-18"
     },
     "600192.SH": {
-      "last_profile": "aggressive",
+      "last_profile": "balanced",
       "pending_profile": null,
       "pending_count": 0,
-      "cooldown_until": "2026-06-17",
+      "cooldown_until": "2026-06-23",
       "force_conservative_until": null,
-      "last_risk_score": 0.346874,
-      "last_date": "2026-06-12"
+      "last_risk_score": 0.648093,
+      "last_date": "2026-06-18"
     },
     "600195.SH": {
       "last_profile": "balanced",
@@ -1312,8 +1312,8 @@
       "pending_count": 0,
       "cooldown_until": null,
       "force_conservative_until": null,
-      "last_risk_score": 0.486513,
-      "last_date": "2026-06-12"
+      "last_risk_score": 0.487421,
+      "last_date": "2026-06-18"
     },
     "600196.SH": {
       "last_profile": "balanced",
@@ -1321,17 +1321,17 @@
       "pending_count": 0,
       "cooldown_until": null,
       "force_conservative_until": null,
-      "last_risk_score": 0.429587,
-      "last_date": "2026-06-12"
+      "last_risk_score": 0.437583,
+      "last_date": "2026-06-18"
     },
     "600197.SH": {
       "last_profile": "conservative",
       "pending_profile": null,
       "pending_count": 0,
       "cooldown_until": null,
-      "force_conservative_until": "2026-06-14",
-      "last_risk_score": 0.736216,
-      "last_date": "2026-06-12"
+      "force_conservative_until": "2026-06-20",
+      "last_risk_score": 0.707839,
+      "last_date": "2026-06-18"
     },
     "600198.SH": {
       "last_profile": "balanced",
@@ -1339,17 +1339,17 @@
       "pending_count": 0,
       "cooldown_until": null,
       "force_conservative_until": null,
-      "last_risk_score": 0.638503,
-      "last_date": "2026-06-12"
+      "last_risk_score": 0.611113,
+      "last_date": "2026-06-18"
     },
     "600199.SH": {
       "last_profile": "conservative",
       "pending_profile": null,
       "pending_count": 0,
       "cooldown_until": null,
-      "force_conservative_until": "2026-06-14",
-      "last_risk_score": 0.742004,
-      "last_date": "2026-06-12"
+      "force_conservative_until": "2026-06-20",
+      "last_risk_score": 0.727383,
+      "last_date": "2026-06-18"
     },
     "600201.SH": {
       "last_profile": "aggressive",
@@ -1357,8 +1357,8 @@
       "pending_count": 0,
       "cooldown_until": "2026-06-17",
       "force_conservative_until": null,
-      "last_risk_score": 0.384326,
-      "last_date": "2026-06-12"
+      "last_risk_score": 0.356043,
+      "last_date": "2026-06-18"
     },
     "600202.SH": {
       "last_profile": "balanced",
@@ -1366,8 +1366,8 @@
       "pending_count": 0,
       "cooldown_until": null,
       "force_conservative_until": null,
-      "last_risk_score": 0.524983,
-      "last_date": "2026-06-12"
+      "last_risk_score": 0.489471,
+      "last_date": "2026-06-18"
     },
     "600203.SH": {
       "last_profile": "balanced",
@@ -1375,8 +1375,8 @@
       "pending_count": 0,
       "cooldown_until": null,
       "force_conservative_until": null,
-      "last_risk_score": 0.591577,
-      "last_date": "2026-06-12"
+      "last_risk_score": 0.60826,
+      "last_date": "2026-06-18"
     },
     "600206.SH": {
       "last_profile": "balanced",
@@ -1384,26 +1384,26 @@
       "pending_count": 0,
       "cooldown_until": null,
       "force_conservative_until": null,
-      "last_risk_score": 0.472733,
-      "last_date": "2026-06-12"
+      "last_risk_score": 0.414832,
+      "last_date": "2026-06-18"
     },
     "600207.SH": {
-      "last_profile": "balanced",
-      "pending_profile": null,
-      "pending_count": 0,
-      "cooldown_until": null,
-      "force_conservative_until": null,
-      "last_risk_score": 0.634581,
-      "last_date": "2026-06-12"
-    },
-    "600208.SH": {
       "last_profile": "conservative",
       "pending_profile": null,
       "pending_count": 0,
       "cooldown_until": null,
+      "force_conservative_until": "2026-06-20",
+      "last_risk_score": 0.657737,
+      "last_date": "2026-06-18"
+    },
+    "600208.SH": {
+      "last_profile": "balanced",
+      "pending_profile": null,
+      "pending_count": 0,
+      "cooldown_until": "2026-06-23",
       "force_conservative_until": "2026-06-14",
-      "last_risk_score": 0.8,
-      "last_date": "2026-06-12"
+      "last_risk_score": 0.477632,
+      "last_date": "2026-06-18"
     },
     "600210.SH": {
       "last_profile": "aggressive",
@@ -1411,8 +1411,8 @@
       "pending_count": 0,
       "cooldown_until": null,
       "force_conservative_until": null,
-      "last_risk_score": 0.399285,
-      "last_date": "2026-06-12"
+      "last_risk_score": 0.403385,
+      "last_date": "2026-06-18"
     },
     "600211.SH": {
       "last_profile": "balanced",
@@ -1420,8 +1420,8 @@
       "pending_count": 0,
       "cooldown_until": "2026-06-17",
       "force_conservative_until": null,
-      "last_risk_score": 0.486146,
-      "last_date": "2026-06-12"
+      "last_risk_score": 0.467735,
+      "last_date": "2026-06-18"
     },
     "600212.SH": {
       "last_profile": "aggressive",
@@ -1429,8 +1429,8 @@
       "pending_count": 0,
       "cooldown_until": null,
       "force_conservative_until": null,
-      "last_risk_score": 0.344442,
-      "last_date": "2026-06-12"
+      "last_risk_score": 0.319214,
+      "last_date": "2026-06-18"
     },
     "600215.SH": {
       "last_profile": "balanced",
@@ -1438,8 +1438,8 @@
       "pending_count": 0,
       "cooldown_until": null,
       "force_conservative_until": null,
-      "last_risk_score": 0.545792,
-      "last_date": "2026-06-12"
+      "last_risk_score": 0.563179,
+      "last_date": "2026-06-18"
     },
     "600216.SH": {
       "last_profile": "aggressive",
@@ -1447,8 +1447,8 @@
       "pending_count": 0,
       "cooldown_until": null,
       "force_conservative_until": null,
-      "last_risk_score": 0.4215,
-      "last_date": "2026-06-12"
+      "last_risk_score": 0.415656,
+      "last_date": "2026-06-18"
     },
     "600217.SH": {
       "last_profile": "balanced",
@@ -1456,8 +1456,8 @@
       "pending_count": 0,
       "cooldown_until": null,
       "force_conservative_until": null,
-      "last_risk_score": 0.554331,
-      "last_date": "2026-06-12"
+      "last_risk_score": 0.576895,
+      "last_date": "2026-06-18"
     },
     "600218.SH": {
       "last_profile": "aggressive",
@@ -1465,8 +1465,8 @@
       "pending_count": 0,
       "cooldown_until": null,
       "force_conservative_until": null,
-      "last_risk_score": 0.371409,
-      "last_date": "2026-06-12"
+      "last_risk_score": 0.36354,
+      "last_date": "2026-06-18"
     },
     "600219.SH": {
       "last_profile": "balanced",
@@ -1474,8 +1474,8 @@
       "pending_count": 0,
       "cooldown_until": null,
       "force_conservative_until": null,
-      "last_risk_score": 0.542188,
-      "last_date": "2026-06-12"
+      "last_risk_score": 0.520579,
+      "last_date": "2026-06-18"
     },
     "600221.SH": {
       "last_profile": "balanced",
@@ -1483,8 +1483,8 @@
       "pending_count": 0,
       "cooldown_until": null,
       "force_conservative_until": null,
-      "last_risk_score": 0.411314,
-      "last_date": "2026-06-12"
+      "last_risk_score": 0.441688,
+      "last_date": "2026-06-18"
     },
     "600222.SH": {
       "last_profile": "aggressive",
@@ -1492,8 +1492,8 @@
       "pending_count": 0,
       "cooldown_until": null,
       "force_conservative_until": null,
-      "last_risk_score": 0.372147,
-      "last_date": "2026-06-12"
+      "last_risk_score": 0.386984,
+      "last_date": "2026-06-18"
     },
     "600223.SH": {
       "last_profile": "balanced",
@@ -1501,17 +1501,17 @@
       "pending_count": 0,
       "cooldown_until": null,
       "force_conservative_until": null,
-      "last_risk_score": 0.532925,
-      "last_date": "2026-06-12"
+      "last_risk_score": 0.560853,
+      "last_date": "2026-06-18"
     },
     "600226.SH": {
-      "last_profile": "aggressive",
+      "last_profile": "balanced",
       "pending_profile": null,
       "pending_count": 0,
-      "cooldown_until": null,
+      "cooldown_until": "2026-06-23",
       "force_conservative_until": null,
-      "last_risk_score": 0.425573,
-      "last_date": "2026-06-12"
+      "last_risk_score": 0.460621,
+      "last_date": "2026-06-18"
     },
     "600227.SH": {
       "last_profile": "aggressive",
@@ -1519,8 +1519,8 @@
       "pending_count": 0,
       "cooldown_until": null,
       "force_conservative_until": null,
-      "last_risk_score": 0.407045,
-      "last_date": "2026-06-12"
+      "last_risk_score": 0.392558,
+      "last_date": "2026-06-18"
     },
     "600228.SH": {
       "last_profile": "aggressive",
@@ -1536,9 +1536,9 @@
       "pending_profile": null,
       "pending_count": 0,
       "cooldown_until": null,
-      "force_conservative_until": "2026-06-05",
-      "last_risk_score": 0.735523,
-      "last_date": "2026-06-12"
+      "force_conservative_until": "2026-06-20",
+      "last_risk_score": 0.8,
+      "last_date": "2026-06-18"
     },
     "600230.SH": {
       "last_profile": "aggressive",
@@ -1546,8 +1546,8 @@
       "pending_count": 0,
       "cooldown_until": null,
       "force_conservative_until": null,
-      "last_risk_score": 0.415147,
-      "last_date": "2026-06-12"
+      "last_risk_score": 0.410481,
+      "last_date": "2026-06-18"
     },
     "600231.SH": {
       "last_profile": "aggressive",
@@ -1555,8 +1555,8 @@
       "pending_count": 0,
       "cooldown_until": null,
       "force_conservative_until": null,
-      "last_risk_score": 0.336303,
-      "last_date": "2026-06-12"
+      "last_risk_score": 0.336145,
+      "last_date": "2026-06-18"
     },
     "600232.SH": {
       "last_profile": "aggressive",
@@ -1564,26 +1564,26 @@
       "pending_count": 0,
       "cooldown_until": null,
       "force_conservative_until": null,
-      "last_risk_score": 0.387042,
-      "last_date": "2026-06-12"
+      "last_risk_score": 0.363108,
+      "last_date": "2026-06-18"
     },
     "600233.SH": {
-      "last_profile": "aggressive",
+      "last_profile": "balanced",
       "pending_profile": null,
       "pending_count": 0,
-      "cooldown_until": null,
+      "cooldown_until": "2026-06-23",
       "force_conservative_until": null,
-      "last_risk_score": 0.390096,
-      "last_date": "2026-06-12"
+      "last_risk_score": 0.469876,
+      "last_date": "2026-06-18"
     },
     "600234.SH": {
-      "last_profile": "conservative",
+      "last_profile": "balanced",
       "pending_profile": null,
       "pending_count": 0,
-      "cooldown_until": null,
+      "cooldown_until": "2026-06-23",
       "force_conservative_until": "2026-06-05",
-      "last_risk_score": 0.657256,
-      "last_date": "2026-06-12"
+      "last_risk_score": 0.567057,
+      "last_date": "2026-06-18"
     },
     "600235.SH": {
       "last_profile": "balanced",
@@ -1591,26 +1591,26 @@
       "pending_count": 0,
       "cooldown_until": null,
       "force_conservative_until": null,
-      "last_risk_score": 0.513591,
-      "last_date": "2026-06-12"
+      "last_risk_score": 0.462681,
+      "last_date": "2026-06-18"
     },
     "600236.SH": {
       "last_profile": "conservative",
       "pending_profile": null,
       "pending_count": 0,
       "cooldown_until": null,
-      "force_conservative_until": "2026-06-14",
-      "last_risk_score": 0.631458,
-      "last_date": "2026-06-12"
+      "force_conservative_until": "2026-06-20",
+      "last_risk_score": 0.606774,
+      "last_date": "2026-06-18"
     },
     "600237.SH": {
-      "last_profile": "conservative",
+      "last_profile": "balanced",
       "pending_profile": null,
       "pending_count": 0,
-      "cooldown_until": null,
+      "cooldown_until": "2026-06-23",
       "force_conservative_until": "2026-06-14",
-      "last_risk_score": 0.66021,
-      "last_date": "2026-06-12"
+      "last_risk_score": 0.460794,
+      "last_date": "2026-06-18"
     },
     "600238.SH": {
       "last_profile": "aggressive",
@@ -1618,8 +1618,8 @@
       "pending_count": 0,
       "cooldown_until": null,
       "force_conservative_until": null,
-      "last_risk_score": 0.376488,
-      "last_date": "2026-06-12"
+      "last_risk_score": 0.342483,
+      "last_date": "2026-06-18"
     },
     "600239.SH": {
       "last_profile": "balanced",
@@ -1627,8 +1627,8 @@
       "pending_count": 0,
       "cooldown_until": null,
       "force_conservative_until": null,
-      "last_risk_score": 0.544108,
-      "last_date": "2026-06-12"
+      "last_risk_score": 0.505116,
+      "last_date": "2026-06-18"
     },
     "600241.SH": {
       "last_profile": "balanced",
@@ -1636,8 +1636,8 @@
       "pending_count": 0,
       "cooldown_until": null,
       "force_conservative_until": null,
-      "last_risk_score": 0.478551,
-      "last_date": "2026-06-12"
+      "last_risk_score": 0.448371,
+      "last_date": "2026-06-18"
     },
     "600243.SH": {
       "last_profile": "aggressive",
@@ -1645,8 +1645,8 @@
       "pending_count": 0,
       "cooldown_until": null,
       "force_conservative_until": null,
-      "last_risk_score": 0.382866,
-      "last_date": "2026-06-12"
+      "last_risk_score": 0.368989,
+      "last_date": "2026-06-18"
     },
     "600246.SH": {
       "last_profile": "balanced",
@@ -1654,8 +1654,8 @@
       "pending_count": 0,
       "cooldown_until": null,
       "force_conservative_until": null,
-      "last_risk_score": 0.617815,
-      "last_date": "2026-06-12"
+      "last_risk_score": 0.450669,
+      "last_date": "2026-06-18"
     },
     "600248.SH": {
       "last_profile": "balanced",
@@ -1663,8 +1663,8 @@
       "pending_count": 0,
       "cooldown_until": "2026-06-17",
       "force_conservative_until": null,
-      "last_risk_score": 0.475004,
-      "last_date": "2026-06-12"
+      "last_risk_score": 0.454684,
+      "last_date": "2026-06-18"
     },
     "600249.SH": {
       "last_profile": "aggressive",
@@ -1672,8 +1672,8 @@
       "pending_count": 0,
       "cooldown_until": "2026-06-17",
       "force_conservative_until": null,
-      "last_risk_score": 0.366518,
-      "last_date": "2026-06-12"
+      "last_risk_score": 0.443536,
+      "last_date": "2026-06-18"
     },
     "600250.SH": {
       "last_profile": "aggressive",
@@ -1681,8 +1681,8 @@
       "pending_count": 0,
       "cooldown_until": null,
       "force_conservative_until": null,
-      "last_risk_score": 0.350638,
-      "last_date": "2026-06-12"
+      "last_risk_score": 0.350318,
+      "last_date": "2026-06-18"
     },
     "600251.SH": {
       "last_profile": "aggressive",
@@ -1690,17 +1690,17 @@
       "pending_count": 0,
       "cooldown_until": null,
       "force_conservative_until": null,
-      "last_risk_score": 0.407672,
-      "last_date": "2026-06-12"
+      "last_risk_score": 0.399016,
+      "last_date": "2026-06-18"
     },
     "600252.SH": {
-      "last_profile": "aggressive",
+      "last_profile": "balanced",
       "pending_profile": null,
       "pending_count": 0,
-      "cooldown_until": null,
+      "cooldown_until": "2026-06-23",
       "force_conservative_until": null,
-      "last_risk_score": 0.435688,
-      "last_date": "2026-06-12"
+      "last_risk_score": 0.541526,
+      "last_date": "2026-06-18"
     },
     "600255.SH": {
       "last_profile": "balanced",
@@ -1708,17 +1708,17 @@
       "pending_count": 0,
       "cooldown_until": null,
       "force_conservative_until": null,
-      "last_risk_score": 0.666271,
-      "last_date": "2026-06-12"
+      "last_risk_score": 0.644357,
+      "last_date": "2026-06-18"
     },
     "600256.SH": {
-      "last_profile": "balanced",
+      "last_profile": "conservative",
       "pending_profile": null,
       "pending_count": 0,
       "cooldown_until": null,
-      "force_conservative_until": null,
-      "last_risk_score": 0.531839,
-      "last_date": "2026-06-12"
+      "force_conservative_until": "2026-06-20",
+      "last_risk_score": 0.626607,
+      "last_date": "2026-06-18"
     },
     "600257.SH": {
       "last_profile": "aggressive",
@@ -1726,8 +1726,8 @@
       "pending_count": 0,
       "cooldown_until": null,
       "force_conservative_until": null,
-      "last_risk_score": 0.35831,
-      "last_date": "2026-06-12"
+      "last_risk_score": 0.340038,
+      "last_date": "2026-06-18"
     },
     "600258.SH": {
       "last_profile": "aggressive",
@@ -1735,8 +1735,8 @@
       "pending_count": 0,
       "cooldown_until": null,
       "force_conservative_until": null,
-      "last_risk_score": 0.407655,
-      "last_date": "2026-06-12"
+      "last_risk_score": 0.406826,
+      "last_date": "2026-06-18"
     },
     "600259.SH": {
       "last_profile": "aggressive",
@@ -1744,8 +1744,8 @@
       "pending_count": 0,
       "cooldown_until": null,
       "force_conservative_until": null,
-      "last_risk_score": 0.323625,
-      "last_date": "2026-06-12"
+      "last_risk_score": 0.273814,
+      "last_date": "2026-06-18"
     },
     "600261.SH": {
       "last_profile": "balanced",
@@ -1753,8 +1753,8 @@
       "pending_count": 0,
       "cooldown_until": null,
       "force_conservative_until": null,
-      "last_risk_score": 0.474872,
-      "last_date": "2026-06-12"
+      "last_risk_score": 0.499851,
+      "last_date": "2026-06-18"
     },
     "600262.SH": {
       "last_profile": "aggressive",
@@ -1762,8 +1762,8 @@
       "pending_count": 0,
       "cooldown_until": null,
       "force_conservative_until": null,
-      "last_risk_score": 0.346524,
-      "last_date": "2026-06-12"
+      "last_risk_score": 0.348665,
+      "last_date": "2026-06-18"
     },
     "600265.SH": {
       "last_profile": "balanced",
@@ -1771,8 +1771,8 @@
       "pending_count": 0,
       "cooldown_until": "2026-06-17",
       "force_conservative_until": null,
-      "last_risk_score": 0.567355,
-      "last_date": "2026-06-12"
+      "last_risk_score": 0.640923,
+      "last_date": "2026-06-18"
     },
     "600266.SH": {
       "last_profile": "balanced",
@@ -1780,8 +1780,8 @@
       "pending_count": 0,
       "cooldown_until": null,
       "force_conservative_until": null,
-      "last_risk_score": 0.463932,
-      "last_date": "2026-06-12"
+      "last_risk_score": 0.433091,
+      "last_date": "2026-06-18"
     },
     "600267.SH": {
       "last_profile": "balanced",
@@ -1789,8 +1789,8 @@
       "pending_count": 0,
       "cooldown_until": null,
       "force_conservative_until": null,
-      "last_risk_score": 0.470681,
-      "last_date": "2026-06-12"
+      "last_risk_score": 0.462605,
+      "last_date": "2026-06-18"
     },
     "600268.SH": {
       "last_profile": "aggressive",
@@ -1798,8 +1798,8 @@
       "pending_count": 0,
       "cooldown_until": null,
       "force_conservative_until": null,
-      "last_risk_score": 0.426833,
-      "last_date": "2026-06-12"
+      "last_risk_score": 0.387766,
+      "last_date": "2026-06-18"
     },
     "600269.SH": {
       "last_profile": "balanced",
@@ -1807,8 +1807,8 @@
       "pending_count": 0,
       "cooldown_until": null,
       "force_conservative_until": null,
-      "last_risk_score": 0.55991,
-      "last_date": "2026-06-12"
+      "last_risk_score": 0.563011,
+      "last_date": "2026-06-18"
     },
     "600271.SH": {
       "last_profile": "balanced",
@@ -1816,8 +1816,8 @@
       "pending_count": 0,
       "cooldown_until": null,
       "force_conservative_until": null,
-      "last_risk_score": 0.430838,
-      "last_date": "2026-06-12"
+      "last_risk_score": 0.404868,
+      "last_date": "2026-06-18"
     },
     "600272.SH": {
       "last_profile": "aggressive",
@@ -1825,8 +1825,8 @@
       "pending_count": 0,
       "cooldown_until": null,
       "force_conservative_until": null,
-      "last_risk_score": 0.411801,
-      "last_date": "2026-06-12"
+      "last_risk_score": 0.400235,
+      "last_date": "2026-06-18"
     },
     "600273.SH": {
       "last_profile": "balanced",
@@ -1834,8 +1834,8 @@
       "pending_count": 0,
       "cooldown_until": null,
       "force_conservative_until": null,
-      "last_risk_score": 0.501101,
-      "last_date": "2026-06-12"
+      "last_risk_score": 0.433274,
+      "last_date": "2026-06-18"
     },
     "600276.SH": {
       "last_profile": "balanced",
@@ -1843,8 +1843,8 @@
       "pending_count": 0,
       "cooldown_until": null,
       "force_conservative_until": null,
-      "last_risk_score": 0.509885,
-      "last_date": "2026-06-12"
+      "last_risk_score": 0.514921,
+      "last_date": "2026-06-18"
     },
     "600278.SH": {
       "last_profile": "aggressive",
@@ -1852,35 +1852,35 @@
       "pending_count": 0,
       "cooldown_until": "2026-06-17",
       "force_conservative_until": null,
-      "last_risk_score": 0.379588,
-      "last_date": "2026-06-12"
+      "last_risk_score": 0.409371,
+      "last_date": "2026-06-18"
     },
     "600279.SH": {
       "last_profile": "conservative",
       "pending_profile": null,
       "pending_count": 0,
       "cooldown_until": null,
-      "force_conservative_until": "2026-06-14",
+      "force_conservative_until": "2026-06-20",
       "last_risk_score": 0.8,
-      "last_date": "2026-06-12"
+      "last_date": "2026-06-18"
     },
     "600280.SH": {
       "last_profile": "conservative",
       "pending_profile": null,
       "pending_count": 0,
       "cooldown_until": null,
-      "force_conservative_until": "2026-06-14",
+      "force_conservative_until": "2026-06-20",
       "last_risk_score": 0.8,
-      "last_date": "2026-06-12"
+      "last_date": "2026-06-18"
     },
     "600281.SH": {
-      "last_profile": "aggressive",
+      "last_profile": "balanced",
       "pending_profile": null,
       "pending_count": 0,
-      "cooldown_until": null,
+      "cooldown_until": "2026-06-23",
       "force_conservative_until": null,
-      "last_risk_score": 0.388083,
-      "last_date": "2026-06-12"
+      "last_risk_score": 0.511559,
+      "last_date": "2026-06-18"
     },
     "600282.SH": {
       "last_profile": "balanced",
@@ -1888,17 +1888,17 @@
       "pending_count": 0,
       "cooldown_until": null,
       "force_conservative_until": null,
-      "last_risk_score": 0.49931,
-      "last_date": "2026-06-12"
+      "last_risk_score": 0.499416,
+      "last_date": "2026-06-18"
     },
     "600283.SH": {
       "last_profile": "conservative",
       "pending_profile": null,
       "pending_count": 0,
       "cooldown_until": null,
-      "force_conservative_until": "2026-06-14",
-      "last_risk_score": 0.758252,
-      "last_date": "2026-06-12"
+      "force_conservative_until": "2026-06-20",
+      "last_risk_score": 0.769926,
+      "last_date": "2026-06-18"
     },
     "600284.SH": {
       "last_profile": "balanced",
@@ -1906,8 +1906,8 @@
       "pending_count": 0,
       "cooldown_until": "2026-06-17",
       "force_conservative_until": null,
-      "last_risk_score": 0.595976,
-      "last_date": "2026-06-12"
+      "last_risk_score": 0.59058,
+      "last_date": "2026-06-18"
     },
     "600285.SH": {
       "last_profile": "aggressive",
@@ -1915,8 +1915,8 @@
       "pending_count": 0,
       "cooldown_until": null,
       "force_conservative_until": null,
-      "last_risk_score": 0.406372,
-      "last_date": "2026-06-12"
+      "last_risk_score": 0.395234,
+      "last_date": "2026-06-18"
     },
     "600287.SH": {
       "last_profile": "balanced",
@@ -1924,8 +1924,8 @@
       "pending_count": 0,
       "cooldown_until": null,
       "force_conservative_until": null,
-      "last_risk_score": 0.495867,
-      "last_date": "2026-06-12"
+      "last_risk_score": 0.481312,
+      "last_date": "2026-06-18"
     },
     "600288.SH": {
       "last_profile": "balanced",
@@ -1933,8 +1933,8 @@
       "pending_count": 0,
       "cooldown_until": null,
       "force_conservative_until": null,
-      "last_risk_score": 0.554694,
-      "last_date": "2026-06-12"
+      "last_risk_score": 0.5822,
+      "last_date": "2026-06-18"
     },
     "600289.SH": {
       "last_profile": "aggressive",
@@ -1942,8 +1942,8 @@
       "pending_count": 0,
       "cooldown_until": "2026-06-17",
       "force_conservative_until": null,
-      "last_risk_score": 0.346259,
-      "last_date": "2026-06-12"
+      "last_risk_score": 0.385,
+      "last_date": "2026-06-18"
     },
     "600292.SH": {
       "last_profile": "balanced",
@@ -20806,8 +20806,8 @@
       "pending_count": 0,
       "cooldown_until": null,
       "force_conservative_until": null,
-      "last_risk_score": 0.54288,
-      "last_date": "2026-06-12"
+      "last_risk_score": 0.618421,
+      "last_date": "2026-06-19"
     },
     "000002.SZ": {
       "last_profile": "balanced",
@@ -20815,8 +20815,8 @@
       "pending_count": 0,
       "cooldown_until": null,
       "force_conservative_until": null,
-      "last_risk_score": 0.527257,
-      "last_date": "2026-06-12"
+      "last_risk_score": 0.545102,
+      "last_date": "2026-06-19"
     },
     "000006.SZ": {
       "last_profile": "balanced",
@@ -20824,8 +20824,8 @@
       "pending_count": 0,
       "cooldown_until": "2026-06-17",
       "force_conservative_until": "2026-06-05",
-      "last_risk_score": 0.596107,
-      "last_date": "2026-06-12"
+      "last_risk_score": 0.50459,
+      "last_date": "2026-06-19"
     },
     "000007.SZ": {
       "last_profile": "balanced",
@@ -20833,17 +20833,17 @@
       "pending_count": 0,
       "cooldown_until": "2026-06-17",
       "force_conservative_until": "2026-06-05",
-      "last_risk_score": 0.502384,
-      "last_date": "2026-06-12"
+      "last_risk_score": 0.516819,
+      "last_date": "2026-06-19"
     },
     "000008.SZ": {
-      "last_profile": "aggressive",
+      "last_profile": "balanced",
       "pending_profile": null,
       "pending_count": 0,
-      "cooldown_until": null,
+      "cooldown_until": "2026-06-24",
       "force_conservative_until": null,
-      "last_risk_score": 0.389245,
-      "last_date": "2026-06-12"
+      "last_risk_score": 0.473327,
+      "last_date": "2026-06-19"
     },
     "000009.SZ": {
       "last_profile": "aggressive",
@@ -20851,8 +20851,8 @@
       "pending_count": 0,
       "cooldown_until": null,
       "force_conservative_until": null,
-      "last_risk_score": 0.38887,
-      "last_date": "2026-06-12"
+      "last_risk_score": 0.389441,
+      "last_date": "2026-06-19"
     },
     "000010.SZ": {
       "last_profile": "balanced",
@@ -20860,8 +20860,8 @@
       "pending_count": 0,
       "cooldown_until": null,
       "force_conservative_until": null,
-      "last_risk_score": 0.463425,
-      "last_date": "2026-06-12"
+      "last_risk_score": 0.469432,
+      "last_date": "2026-06-19"
     },
     "000011.SZ": {
       "last_profile": "balanced",
@@ -20869,8 +20869,8 @@
       "pending_count": 0,
       "cooldown_until": null,
       "force_conservative_until": null,
-      "last_risk_score": 0.554092,
-      "last_date": "2026-06-12"
+      "last_risk_score": 0.547452,
+      "last_date": "2026-06-19"
     },
     "000012.SZ": {
       "last_profile": "conservative",
@@ -20878,8 +20878,8 @@
       "pending_count": 0,
       "cooldown_until": null,
       "force_conservative_until": "2026-06-14",
-      "last_risk_score": 0.8,
-      "last_date": "2026-06-12"
+      "last_risk_score": 0.753304,
+      "last_date": "2026-06-19"
     },
     "000014.SZ": {
       "last_profile": "aggressive",
@@ -20887,8 +20887,8 @@
       "pending_count": 0,
       "cooldown_until": null,
       "force_conservative_until": null,
-      "last_risk_score": 0.355871,
-      "last_date": "2026-06-12"
+      "last_risk_score": 0.355834,
+      "last_date": "2026-06-19"
     },
     "000016.SZ": {
       "last_profile": "balanced",
@@ -20896,8 +20896,8 @@
       "pending_count": 0,
       "cooldown_until": null,
       "force_conservative_until": null,
-      "last_risk_score": 0.466491,
-      "last_date": "2026-06-12"
+      "last_risk_score": 0.45918,
+      "last_date": "2026-06-19"
     },
     "000017.SZ": {
       "last_profile": "aggressive",
@@ -20905,8 +20905,8 @@
       "pending_count": 0,
       "cooldown_until": null,
       "force_conservative_until": null,
-      "last_risk_score": 0.378251,
-      "last_date": "2026-06-12"
+      "last_risk_score": 0.389812,
+      "last_date": "2026-06-19"
     },
     "000019.SZ": {
       "last_profile": "balanced",
@@ -20914,8 +20914,8 @@
       "pending_count": 0,
       "cooldown_until": "2026-06-17",
       "force_conservative_until": null,
-      "last_risk_score": 0.453924,
-      "last_date": "2026-06-12"
+      "last_risk_score": 0.441286,
+      "last_date": "2026-06-19"
     },
     "000020.SZ": {
       "last_profile": "balanced",
@@ -20923,26 +20923,26 @@
       "pending_count": 0,
       "cooldown_until": null,
       "force_conservative_until": null,
-      "last_risk_score": 0.40578,
-      "last_date": "2026-06-12"
+      "last_risk_score": 0.416448,
+      "last_date": "2026-06-19"
     },
     "000021.SZ": {
-      "last_profile": "balanced",
+      "last_profile": "aggressive",
       "pending_profile": null,
       "pending_count": 0,
-      "cooldown_until": null,
+      "cooldown_until": "2026-06-24",
       "force_conservative_until": null,
-      "last_risk_score": 0.482013,
-      "last_date": "2026-06-12"
+      "last_risk_score": 0.265481,
+      "last_date": "2026-06-19"
     },
     "000025.SZ": {
       "last_profile": "conservative",
       "pending_profile": null,
       "pending_count": 0,
       "cooldown_until": null,
-      "force_conservative_until": "2026-06-14",
-      "last_risk_score": 0.8,
-      "last_date": "2026-06-12"
+      "force_conservative_until": "2026-06-21",
+      "last_risk_score": 0.806345,
+      "last_date": "2026-06-19"
     },
     "000026.SZ": {
       "last_profile": "balanced",
@@ -20950,62 +20950,62 @@
       "pending_count": 0,
       "cooldown_until": null,
       "force_conservative_until": null,
-      "last_risk_score": 0.699325,
-      "last_date": "2026-06-12"
+      "last_risk_score": 0.631489,
+      "last_date": "2026-06-19"
     },
     "000027.SZ": {
       "last_profile": "conservative",
       "pending_profile": null,
       "pending_count": 0,
       "cooldown_until": "2026-06-17",
-      "force_conservative_until": null,
-      "last_risk_score": 0.726565,
-      "last_date": "2026-06-12"
+      "force_conservative_until": "2026-06-21",
+      "last_risk_score": 0.802771,
+      "last_date": "2026-06-19"
     },
     "000028.SZ": {
       "last_profile": "conservative",
       "pending_profile": null,
       "pending_count": 0,
       "cooldown_until": null,
-      "force_conservative_until": "2026-06-14",
-      "last_risk_score": 0.596562,
-      "last_date": "2026-06-12"
+      "force_conservative_until": "2026-06-21",
+      "last_risk_score": 0.610776,
+      "last_date": "2026-06-19"
     },
     "000029.SZ": {
-      "last_profile": "conservative",
+      "last_profile": "balanced",
       "pending_profile": null,
       "pending_count": 0,
-      "cooldown_until": null,
+      "cooldown_until": "2026-06-24",
       "force_conservative_until": null,
-      "last_risk_score": 0.698661,
-      "last_date": "2026-06-12"
+      "last_risk_score": 0.64048,
+      "last_date": "2026-06-19"
     },
     "000030.SZ": {
       "last_profile": "conservative",
       "pending_profile": null,
       "pending_count": 0,
       "cooldown_until": null,
-      "force_conservative_until": "2026-06-14",
-      "last_risk_score": 0.75678,
-      "last_date": "2026-06-12"
+      "force_conservative_until": "2026-06-21",
+      "last_risk_score": 0.785574,
+      "last_date": "2026-06-19"
     },
     "000031.SZ": {
       "last_profile": "conservative",
       "pending_profile": null,
       "pending_count": 0,
       "cooldown_until": null,
-      "force_conservative_until": "2026-06-14",
-      "last_risk_score": 0.711574,
-      "last_date": "2026-06-12"
+      "force_conservative_until": "2026-06-21",
+      "last_risk_score": 0.721541,
+      "last_date": "2026-06-19"
     },
     "000032.SZ": {
-      "last_profile": "conservative",
+      "last_profile": "balanced",
       "pending_profile": null,
       "pending_count": 0,
-      "cooldown_until": null,
+      "cooldown_until": "2026-06-24",
       "force_conservative_until": "2026-06-14",
-      "last_risk_score": 0.628048,
-      "last_date": "2026-06-12"
+      "last_risk_score": 0.633238,
+      "last_date": "2026-06-19"
     },
     "000034.SZ": {
       "last_profile": "balanced",
@@ -21013,8 +21013,8 @@
       "pending_count": 0,
       "cooldown_until": "2026-06-17",
       "force_conservative_until": "2026-06-05",
-      "last_risk_score": 0.523876,
-      "last_date": "2026-06-12"
+      "last_risk_score": 0.631401,
+      "last_date": "2026-06-19"
     },
     "000035.SZ": {
       "last_profile": "balanced",
@@ -21022,8 +21022,8 @@
       "pending_count": 0,
       "cooldown_until": null,
       "force_conservative_until": null,
-      "last_risk_score": 0.464454,
-      "last_date": "2026-06-12"
+      "last_risk_score": 0.492847,
+      "last_date": "2026-06-19"
     },
     "000036.SZ": {
       "last_profile": "aggressive",
@@ -21031,17 +21031,17 @@
       "pending_count": 0,
       "cooldown_until": "2026-06-17",
       "force_conservative_until": null,
-      "last_risk_score": 0.30939,
-      "last_date": "2026-06-12"
+      "last_risk_score": 0.344752,
+      "last_date": "2026-06-19"
     },
     "000037.SZ": {
-      "last_profile": "balanced",
+      "last_profile": "conservative",
       "pending_profile": null,
       "pending_count": 0,
       "cooldown_until": null,
-      "force_conservative_until": null,
-      "last_risk_score": 0.684143,
-      "last_date": "2026-06-12"
+      "force_conservative_until": "2026-06-21",
+      "last_risk_score": 0.776828,
+      "last_date": "2026-06-19"
     },
     "000039.SZ": {
       "last_profile": "balanced",
@@ -21049,8 +21049,8 @@
       "pending_count": 0,
       "cooldown_until": null,
       "force_conservative_until": null,
-      "last_risk_score": 0.55525,
-      "last_date": "2026-06-12"
+      "last_risk_score": 0.473279,
+      "last_date": "2026-06-19"
     },
     "000042.SZ": {
       "last_profile": "aggressive",
@@ -21058,8 +21058,8 @@
       "pending_count": 0,
       "cooldown_until": null,
       "force_conservative_until": null,
-      "last_risk_score": 0.307025,
-      "last_date": "2026-06-12"
+      "last_risk_score": 0.41224,
+      "last_date": "2026-06-19"
     },
     "000045.SZ": {
       "last_profile": "balanced",
@@ -21067,8 +21067,8 @@
       "pending_count": 0,
       "cooldown_until": null,
       "force_conservative_until": null,
-      "last_risk_score": 0.511942,
-      "last_date": "2026-06-12"
+      "last_risk_score": 0.51031,
+      "last_date": "2026-06-19"
     },
     "000048.SZ": {
       "last_profile": "balanced",
@@ -21076,8 +21076,8 @@
       "pending_count": 0,
       "cooldown_until": null,
       "force_conservative_until": null,
-      "last_risk_score": 0.551314,
-      "last_date": "2026-06-12"
+      "last_risk_score": 0.627503,
+      "last_date": "2026-06-19"
     },
     "000049.SZ": {
       "last_profile": "balanced",
@@ -21085,17 +21085,17 @@
       "pending_count": 0,
       "cooldown_until": null,
       "force_conservative_until": null,
-      "last_risk_score": 0.477357,
-      "last_date": "2026-06-12"
+      "last_risk_score": 0.518895,
+      "last_date": "2026-06-19"
     },
     "000050.SZ": {
-      "last_profile": "conservative",
+      "last_profile": "balanced",
       "pending_profile": null,
       "pending_count": 0,
-      "cooldown_until": null,
+      "cooldown_until": "2026-06-24",
       "force_conservative_until": "2026-06-14",
-      "last_risk_score": 0.598799,
-      "last_date": "2026-06-12"
+      "last_risk_score": 0.590098,
+      "last_date": "2026-06-19"
     },
     "000055.SZ": {
       "last_profile": "conservative",
@@ -21103,8 +21103,8 @@
       "pending_count": 0,
       "cooldown_until": "2026-06-17",
       "force_conservative_until": null,
-      "last_risk_score": 0.725601,
-      "last_date": "2026-06-12"
+      "last_risk_score": 0.772259,
+      "last_date": "2026-06-19"
     },
     "000056.SZ": {
       "last_profile": "balanced",
@@ -21112,8 +21112,8 @@
       "pending_count": 0,
       "cooldown_until": null,
       "force_conservative_until": null,
-      "last_risk_score": 0.478865,
-      "last_date": "2026-06-12"
+      "last_risk_score": 0.48032,
+      "last_date": "2026-06-19"
     },
     "000058.SZ": {
       "last_profile": "aggressive",
@@ -21121,8 +21121,8 @@
       "pending_count": 0,
       "cooldown_until": null,
       "force_conservative_until": null,
-      "last_risk_score": 0.381376,
-      "last_date": "2026-06-12"
+      "last_risk_score": 0.353504,
+      "last_date": "2026-06-19"
     },
     "000059.SZ": {
       "last_profile": "balanced",
@@ -21130,8 +21130,8 @@
       "pending_count": 0,
       "cooldown_until": null,
       "force_conservative_until": null,
-      "last_risk_score": 0.560933,
-      "last_date": "2026-06-12"
+      "last_risk_score": 0.613209,
+      "last_date": "2026-06-19"
     },
     "000060.SZ": {
       "last_profile": "balanced",
@@ -21139,8 +21139,8 @@
       "pending_count": 0,
       "cooldown_until": null,
       "force_conservative_until": null,
-      "last_risk_score": 0.473675,
-      "last_date": "2026-06-12"
+      "last_risk_score": 0.43297,
+      "last_date": "2026-06-19"
     },
     "000061.SZ": {
       "last_profile": "balanced",
@@ -21148,17 +21148,17 @@
       "pending_count": 0,
       "cooldown_until": null,
       "force_conservative_until": null,
-      "last_risk_score": 0.437477,
-      "last_date": "2026-06-12"
+      "last_risk_score": 0.45702,
+      "last_date": "2026-06-19"
     },
     "000062.SZ": {
-      "last_profile": "conservative",
+      "last_profile": "balanced",
       "pending_profile": null,
       "pending_count": 0,
-      "cooldown_until": null,
+      "cooldown_until": "2026-06-24",
       "force_conservative_until": "2026-06-14",
-      "last_risk_score": 0.642857,
-      "last_date": "2026-06-12"
+      "last_risk_score": 0.60821,
+      "last_date": "2026-06-19"
     },
     "000063.SZ": {
       "last_profile": "balanced",
@@ -21166,17 +21166,17 @@
       "pending_count": 0,
       "cooldown_until": null,
       "force_conservative_until": null,
-      "last_risk_score": 0.609497,
-      "last_date": "2026-06-12"
+      "last_risk_score": 0.576252,
+      "last_date": "2026-06-19"
     },
     "000065.SZ": {
-      "last_profile": "balanced",
+      "last_profile": "conservative",
       "pending_profile": null,
       "pending_count": 0,
       "cooldown_until": null,
-      "force_conservative_until": null,
-      "last_risk_score": 0.544362,
-      "last_date": "2026-06-12"
+      "force_conservative_until": "2026-06-21",
+      "last_risk_score": 0.591721,
+      "last_date": "2026-06-19"
     },
     "000066.SZ": {
       "last_profile": "balanced",
@@ -21184,17 +21184,17 @@
       "pending_count": 0,
       "cooldown_until": "2026-06-17",
       "force_conservative_until": "2026-06-05",
-      "last_risk_score": 0.504258,
-      "last_date": "2026-06-12"
+      "last_risk_score": 0.580512,
+      "last_date": "2026-06-19"
     },
     "000068.SZ": {
       "last_profile": "conservative",
       "pending_profile": null,
       "pending_count": 0,
       "cooldown_until": null,
-      "force_conservative_until": "2026-06-05",
-      "last_risk_score": 0.720588,
-      "last_date": "2026-06-12"
+      "force_conservative_until": "2026-06-21",
+      "last_risk_score": 0.788471,
+      "last_date": "2026-06-19"
     },
     "000069.SZ": {
       "last_profile": "balanced",
@@ -21202,8 +21202,8 @@
       "pending_count": 0,
       "cooldown_until": null,
       "force_conservative_until": null,
-      "last_risk_score": 0.429314,
-      "last_date": "2026-06-12"
+      "last_risk_score": 0.427367,
+      "last_date": "2026-06-19"
     },
     "000070.SZ": {
       "last_profile": "aggressive",
@@ -21211,8 +21211,8 @@
       "pending_count": 0,
       "cooldown_until": null,
       "force_conservative_until": null,
-      "last_risk_score": 0.419059,
-      "last_date": "2026-06-12"
+      "last_risk_score": 0.227877,
+      "last_date": "2026-06-19"
     },
     "000078.SZ": {
       "last_profile": "balanced",
@@ -21220,8 +21220,8 @@
       "pending_count": 0,
       "cooldown_until": null,
       "force_conservative_until": null,
-      "last_risk_score": 0.480997,
-      "last_date": "2026-06-12"
+      "last_risk_score": 0.481373,
+      "last_date": "2026-06-19"
     },
     "000088.SZ": {
       "last_profile": "balanced",
@@ -21229,26 +21229,26 @@
       "pending_count": 0,
       "cooldown_until": null,
       "force_conservative_until": null,
-      "last_risk_score": 0.519231,
-      "last_date": "2026-06-12"
+      "last_risk_score": 0.562362,
+      "last_date": "2026-06-19"
     },
     "000089.SZ": {
       "last_profile": "conservative",
       "pending_profile": null,
       "pending_count": 0,
       "cooldown_until": null,
-      "force_conservative_until": "2026-06-14",
-      "last_risk_score": 0.684214,
-      "last_date": "2026-06-12"
+      "force_conservative_until": "2026-06-21",
+      "last_risk_score": 0.716898,
+      "last_date": "2026-06-19"
     },
     "000090.SZ": {
       "last_profile": "conservative",
       "pending_profile": null,
       "pending_count": 0,
       "cooldown_until": null,
-      "force_conservative_until": "2026-06-14",
-      "last_risk_score": 0.779408,
-      "last_date": "2026-06-12"
+      "force_conservative_until": "2026-06-21",
+      "last_risk_score": 0.812,
+      "last_date": "2026-06-19"
     },
     "000096.SZ": {
       "last_profile": "balanced",
@@ -21256,17 +21256,17 @@
       "pending_count": 0,
       "cooldown_until": null,
       "force_conservative_until": null,
-      "last_risk_score": 0.449085,
-      "last_date": "2026-06-12"
+      "last_risk_score": 0.43768,
+      "last_date": "2026-06-19"
     },
     "000099.SZ": {
       "last_profile": "conservative",
       "pending_profile": null,
       "pending_count": 0,
       "cooldown_until": null,
-      "force_conservative_until": "2026-06-14",
-      "last_risk_score": 0.759599,
-      "last_date": "2026-06-12"
+      "force_conservative_until": "2026-06-21",
+      "last_risk_score": 0.781587,
+      "last_date": "2026-06-19"
     },
     "000100.SZ": {
       "last_profile": "balanced",
@@ -21274,8 +21274,8 @@
       "pending_count": 0,
       "cooldown_until": null,
       "force_conservative_until": null,
-      "last_risk_score": 0.60377,
-      "last_date": "2026-06-12"
+      "last_risk_score": 0.570736,
+      "last_date": "2026-06-19"
     },
     "000151.SZ": {
       "last_profile": "balanced",
@@ -21283,26 +21283,26 @@
       "pending_count": 0,
       "cooldown_until": null,
       "force_conservative_until": null,
-      "last_risk_score": 0.649301,
-      "last_date": "2026-06-12"
+      "last_risk_score": 0.705018,
+      "last_date": "2026-06-19"
     },
     "000153.SZ": {
-      "last_profile": "aggressive",
-      "pending_profile": null,
-      "pending_count": 0,
-      "cooldown_until": null,
-      "force_conservative_until": null,
-      "last_risk_score": 0.433582,
-      "last_date": "2026-06-12"
-    },
-    "000155.SZ": {
       "last_profile": "balanced",
       "pending_profile": null,
       "pending_count": 0,
-      "cooldown_until": null,
+      "cooldown_until": "2026-06-24",
       "force_conservative_until": null,
-      "last_risk_score": 0.484506,
-      "last_date": "2026-06-12"
+      "last_risk_score": 0.45061,
+      "last_date": "2026-06-19"
+    },
+    "000155.SZ": {
+      "last_profile": "aggressive",
+      "pending_profile": null,
+      "pending_count": 0,
+      "cooldown_until": "2026-06-24",
+      "force_conservative_until": null,
+      "last_risk_score": 0.383325,
+      "last_date": "2026-06-19"
     },
     "000156.SZ": {
       "last_profile": "balanced",
@@ -21310,8 +21310,8 @@
       "pending_count": 0,
       "cooldown_until": null,
       "force_conservative_until": null,
-      "last_risk_score": 0.496697,
-      "last_date": "2026-06-12"
+      "last_risk_score": 0.494214,
+      "last_date": "2026-06-19"
     },
     "000157.SZ": {
       "last_profile": "balanced",
@@ -21319,17 +21319,17 @@
       "pending_count": 0,
       "cooldown_until": null,
       "force_conservative_until": null,
-      "last_risk_score": 0.454768,
-      "last_date": "2026-06-12"
+      "last_risk_score": 0.473989,
+      "last_date": "2026-06-19"
     },
     "000158.SZ": {
       "last_profile": "conservative",
       "pending_profile": null,
       "pending_count": 0,
       "cooldown_until": null,
-      "force_conservative_until": "2026-06-14",
-      "last_risk_score": 0.7451,
-      "last_date": "2026-06-12"
+      "force_conservative_until": "2026-06-21",
+      "last_risk_score": 0.761084,
+      "last_date": "2026-06-19"
     },
     "000159.SZ": {
       "last_profile": "balanced",
@@ -21337,8 +21337,8 @@
       "pending_count": 0,
       "cooldown_until": null,
       "force_conservative_until": null,
-      "last_risk_score": 0.494818,
-      "last_date": "2026-06-12"
+      "last_risk_score": 0.501228,
+      "last_date": "2026-06-19"
     },
     "000166.SZ": {
       "last_profile": "balanced",
@@ -21346,35 +21346,35 @@
       "pending_count": 0,
       "cooldown_until": null,
       "force_conservative_until": null,
-      "last_risk_score": 0.446543,
-      "last_date": "2026-06-12"
+      "last_risk_score": 0.590666,
+      "last_date": "2026-06-19"
     },
     "000301.SZ": {
-      "last_profile": "aggressive",
+      "last_profile": "balanced",
       "pending_profile": null,
       "pending_count": 0,
-      "cooldown_until": null,
+      "cooldown_until": "2026-06-24",
       "force_conservative_until": null,
-      "last_risk_score": 0.335715,
-      "last_date": "2026-06-12"
+      "last_risk_score": 0.551444,
+      "last_date": "2026-06-19"
     },
     "000333.SZ": {
-      "last_profile": "aggressive",
+      "last_profile": "conservative",
       "pending_profile": null,
       "pending_count": 0,
       "cooldown_until": null,
-      "force_conservative_until": null,
-      "last_risk_score": 0.400644,
-      "last_date": "2026-06-12"
+      "force_conservative_until": "2026-06-21",
+      "last_risk_score": 0.644066,
+      "last_date": "2026-06-19"
     },
     "000338.SZ": {
       "last_profile": "conservative",
       "pending_profile": null,
       "pending_count": 0,
       "cooldown_until": null,
-      "force_conservative_until": "2026-06-14",
-      "last_risk_score": 0.590046,
-      "last_date": "2026-06-12"
+      "force_conservative_until": "2026-06-21",
+      "last_risk_score": 0.551921,
+      "last_date": "2026-06-19"
     },
     "000400.SZ": {
       "last_profile": "balanced",
@@ -21382,8 +21382,8 @@
       "pending_count": 0,
       "cooldown_until": "2026-06-17",
       "force_conservative_until": null,
-      "last_risk_score": 0.506886,
-      "last_date": "2026-06-12"
+      "last_risk_score": 0.513856,
+      "last_date": "2026-06-19"
     },
     "000401.SZ": {
       "last_profile": "balanced",
@@ -21391,8 +21391,8 @@
       "pending_count": 0,
       "cooldown_until": null,
       "force_conservative_until": null,
-      "last_risk_score": 0.494546,
-      "last_date": "2026-06-12"
+      "last_risk_score": 0.50196,
+      "last_date": "2026-06-19"
     },
     "000402.SZ": {
       "last_profile": "balanced",
@@ -21400,26 +21400,26 @@
       "pending_count": 0,
       "cooldown_until": null,
       "force_conservative_until": null,
-      "last_risk_score": 0.498141,
-      "last_date": "2026-06-12"
+      "last_risk_score": 0.450055,
+      "last_date": "2026-06-19"
     },
     "000403.SZ": {
       "last_profile": "conservative",
       "pending_profile": null,
       "pending_count": 0,
       "cooldown_until": null,
-      "force_conservative_until": "2026-06-14",
-      "last_risk_score": 0.796467,
-      "last_date": "2026-06-12"
+      "force_conservative_until": "2026-06-21",
+      "last_risk_score": 0.762057,
+      "last_date": "2026-06-19"
     },
     "000404.SZ": {
       "last_profile": "conservative",
       "pending_profile": null,
       "pending_count": 0,
       "cooldown_until": null,
-      "force_conservative_until": "2026-06-14",
-      "last_risk_score": 0.8,
-      "last_date": "2026-06-12"
+      "force_conservative_until": "2026-06-21",
+      "last_risk_score": 0.692955,
+      "last_date": "2026-06-19"
     },
     "000407.SZ": {
       "last_profile": "balanced",
@@ -21427,8 +21427,8 @@
       "pending_count": 0,
       "cooldown_until": null,
       "force_conservative_until": null,
-      "last_risk_score": 0.453969,
-      "last_date": "2026-06-12"
+      "last_risk_score": 0.417013,
+      "last_date": "2026-06-19"
     },
     "000408.SZ": {
       "last_profile": "balanced",
@@ -21436,8 +21436,8 @@
       "pending_count": 0,
       "cooldown_until": null,
       "force_conservative_until": null,
-      "last_risk_score": 0.495574,
-      "last_date": "2026-06-12"
+      "last_risk_score": 0.55969,
+      "last_date": "2026-06-19"
     },
     "000409.SZ": {
       "last_profile": "conservative",
@@ -21445,8 +21445,8 @@
       "pending_count": 0,
       "cooldown_until": null,
       "force_conservative_until": null,
-      "last_risk_score": 0.743522,
-      "last_date": "2026-06-12"
+      "last_risk_score": 0.751674,
+      "last_date": "2026-06-19"
     },
     "000410.SZ": {
       "last_profile": "aggressive",
@@ -21454,17 +21454,17 @@
       "pending_count": 0,
       "cooldown_until": null,
       "force_conservative_until": null,
-      "last_risk_score": 0.364542,
-      "last_date": "2026-06-12"
+      "last_risk_score": 0.392497,
+      "last_date": "2026-06-19"
     },
     "000411.SZ": {
       "last_profile": "conservative",
       "pending_profile": null,
       "pending_count": 0,
       "cooldown_until": "2026-06-17",
-      "force_conservative_until": null,
-      "last_risk_score": 0.72443,
-      "last_date": "2026-06-12"
+      "force_conservative_until": "2026-06-21",
+      "last_risk_score": 0.801516,
+      "last_date": "2026-06-19"
     },
     "000415.SZ": {
       "last_profile": "conservative",
@@ -21472,8 +21472,8 @@
       "pending_count": 0,
       "cooldown_until": null,
       "force_conservative_until": "2026-06-14",
-      "last_risk_score": 0.697923,
-      "last_date": "2026-06-12"
+      "last_risk_score": 0.659124,
+      "last_date": "2026-06-19"
     },
     "000417.SZ": {
       "last_profile": "conservative",
@@ -21481,8 +21481,8 @@
       "pending_count": 0,
       "cooldown_until": null,
       "force_conservative_until": "2026-06-14",
-      "last_risk_score": 0.8,
-      "last_date": "2026-06-12"
+      "last_risk_score": 0.678586,
+      "last_date": "2026-06-19"
     },
     "000419.SZ": {
       "last_profile": "balanced",
@@ -21490,8 +21490,8 @@
       "pending_count": 0,
       "cooldown_until": null,
       "force_conservative_until": null,
-      "last_risk_score": 0.428902,
-      "last_date": "2026-06-12"
+      "last_risk_score": 0.427061,
+      "last_date": "2026-06-19"
     },
     "000420.SZ": {
       "last_profile": "aggressive",
@@ -21499,8 +21499,8 @@
       "pending_count": 0,
       "cooldown_until": null,
       "force_conservative_until": null,
-      "last_risk_score": 0.409136,
-      "last_date": "2026-06-12"
+      "last_risk_score": 0.404025,
+      "last_date": "2026-06-19"
     },
     "000421.SZ": {
       "last_profile": "balanced",
@@ -21508,8 +21508,8 @@
       "pending_count": 0,
       "cooldown_until": null,
       "force_conservative_until": null,
-      "last_risk_score": 0.461994,
-      "last_date": "2026-06-12"
+      "last_risk_score": 0.445806,
+      "last_date": "2026-06-19"
     },
     "000422.SZ": {
       "last_profile": "balanced",
@@ -21517,8 +21517,8 @@
       "pending_count": 0,
       "cooldown_until": "2026-06-17",
       "force_conservative_until": null,
-      "last_risk_score": 0.494879,
-      "last_date": "2026-06-12"
+      "last_risk_score": 0.49995,
+      "last_date": "2026-06-19"
     },
     "000423.SZ": {
       "last_profile": "balanced",
@@ -21526,8 +21526,8 @@
       "pending_count": 0,
       "cooldown_until": null,
       "force_conservative_until": null,
-      "last_risk_score": 0.509598,
-      "last_date": "2026-06-12"
+      "last_risk_score": 0.609569,
+      "last_date": "2026-06-19"
     },
     "000425.SZ": {
       "last_profile": "balanced",
@@ -21535,8 +21535,8 @@
       "pending_count": 0,
       "cooldown_until": "2026-06-17",
       "force_conservative_until": "2026-06-05",
-      "last_risk_score": 0.627251,
-      "last_date": "2026-06-12"
+      "last_risk_score": 0.559927,
+      "last_date": "2026-06-19"
     },
     "000426.SZ": {
       "last_profile": "balanced",
@@ -21544,17 +21544,17 @@
       "pending_count": 0,
       "cooldown_until": null,
       "force_conservative_until": null,
-      "last_risk_score": 0.420479,
-      "last_date": "2026-06-12"
+      "last_risk_score": 0.489571,
+      "last_date": "2026-06-19"
     },
     "000428.SZ": {
-      "last_profile": "aggressive",
+      "last_profile": "balanced",
       "pending_profile": null,
       "pending_count": 0,
-      "cooldown_until": null,
+      "cooldown_until": "2026-06-24",
       "force_conservative_until": null,
-      "last_risk_score": 0.443218,
-      "last_date": "2026-06-12"
+      "last_risk_score": 0.464512,
+      "last_date": "2026-06-19"
     },
     "000429.SZ": {
       "last_profile": "balanced",
@@ -21562,17 +21562,17 @@
       "pending_count": 0,
       "cooldown_until": "2026-06-17",
       "force_conservative_until": null,
-      "last_risk_score": 0.530569,
-      "last_date": "2026-06-12"
+      "last_risk_score": 0.47962,
+      "last_date": "2026-06-19"
     },
     "000430.SZ": {
-      "last_profile": "balanced",
+      "last_profile": "conservative",
       "pending_profile": null,
       "pending_count": 0,
       "cooldown_until": null,
-      "force_conservative_until": null,
-      "last_risk_score": 0.634197,
-      "last_date": "2026-06-12"
+      "force_conservative_until": "2026-06-21",
+      "last_risk_score": 0.643236,
+      "last_date": "2026-06-19"
     },
     "000488.SZ": {
       "last_profile": "balanced",
@@ -21580,8 +21580,8 @@
       "pending_count": 0,
       "cooldown_until": "2026-06-17",
       "force_conservative_until": null,
-      "last_risk_score": 0.490185,
-      "last_date": "2026-06-12"
+      "last_risk_score": 0.465574,
+      "last_date": "2026-06-19"
     },
     "000498.SZ": {
       "last_profile": "aggressive",
@@ -21589,8 +21589,8 @@
       "pending_count": 0,
       "cooldown_until": null,
       "force_conservative_until": null,
-      "last_risk_score": 0.405201,
-      "last_date": "2026-06-12"
+      "last_risk_score": 0.431836,
+      "last_date": "2026-06-19"
     },
     "000501.SZ": {
       "last_profile": "balanced",
@@ -21598,8 +21598,8 @@
       "pending_count": 0,
       "cooldown_until": null,
       "force_conservative_until": null,
-      "last_risk_score": 0.43893,
-      "last_date": "2026-06-12"
+      "last_risk_score": 0.482886,
+      "last_date": "2026-06-19"
     },
     "000503.SZ": {
       "last_profile": "balanced",
@@ -21607,17 +21607,17 @@
       "pending_count": 0,
       "cooldown_until": null,
       "force_conservative_until": null,
-      "last_risk_score": 0.481788,
-      "last_date": "2026-06-12"
+      "last_risk_score": 0.497746,
+      "last_date": "2026-06-19"
     },
     "000504.SZ": {
-      "last_profile": "aggressive",
+      "last_profile": "balanced",
       "pending_profile": null,
       "pending_count": 0,
-      "cooldown_until": null,
+      "cooldown_until": "2026-06-24",
       "force_conservative_until": null,
-      "last_risk_score": 0.446196,
-      "last_date": "2026-06-12"
+      "last_risk_score": 0.479932,
+      "last_date": "2026-06-19"
     },
     "000505.SZ": {
       "last_profile": "aggressive",
@@ -21625,8 +21625,8 @@
       "pending_count": 0,
       "cooldown_until": null,
       "force_conservative_until": null,
-      "last_risk_score": 0.368799,
-      "last_date": "2026-06-12"
+      "last_risk_score": 0.371855,
+      "last_date": "2026-06-19"
     },
     "000506.SZ": {
       "last_profile": "balanced",
@@ -21634,26 +21634,26 @@
       "pending_count": 0,
       "cooldown_until": "2026-06-17",
       "force_conservative_until": null,
-      "last_risk_score": 0.543649,
-      "last_date": "2026-06-12"
+      "last_risk_score": 0.640308,
+      "last_date": "2026-06-19"
     },
     "000507.SZ": {
       "last_profile": "conservative",
       "pending_profile": null,
       "pending_count": 0,
       "cooldown_until": null,
-      "force_conservative_until": "2026-06-14",
-      "last_risk_score": 0.734748,
-      "last_date": "2026-06-12"
+      "force_conservative_until": "2026-06-21",
+      "last_risk_score": 0.697976,
+      "last_date": "2026-06-19"
     },
     "000509.SZ": {
       "last_profile": "conservative",
       "pending_profile": null,
       "pending_count": 0,
       "cooldown_until": null,
-      "force_conservative_until": "2026-06-14",
-      "last_risk_score": 0.8,
-      "last_date": "2026-06-12"
+      "force_conservative_until": "2026-06-21",
+      "last_risk_score": 0.812,
+      "last_date": "2026-06-19"
     },
     "000510.SZ": {
       "last_profile": "aggressive",
@@ -21661,8 +21661,8 @@
       "pending_count": 0,
       "cooldown_until": null,
       "force_conservative_until": null,
-      "last_risk_score": 0.363111,
-      "last_date": "2026-06-12"
+      "last_risk_score": 0.309872,
+      "last_date": "2026-06-19"
     },
     "000513.SZ": {
       "last_profile": "balanced",
@@ -21670,17 +21670,17 @@
       "pending_count": 0,
       "cooldown_until": null,
       "force_conservative_until": null,
-      "last_risk_score": 0.498529,
-      "last_date": "2026-06-12"
+      "last_risk_score": 0.55777,
+      "last_date": "2026-06-19"
     },
     "000514.SZ": {
-      "last_profile": "balanced",
+      "last_profile": "aggressive",
       "pending_profile": null,
       "pending_count": 0,
-      "cooldown_until": null,
+      "cooldown_until": "2026-06-24",
       "force_conservative_until": null,
-      "last_risk_score": 0.450186,
-      "last_date": "2026-06-12"
+      "last_risk_score": 0.354865,
+      "last_date": "2026-06-19"
     },
     "000516.SZ": {
       "last_profile": "aggressive",
@@ -21688,26 +21688,26 @@
       "pending_count": 0,
       "cooldown_until": null,
       "force_conservative_until": null,
-      "last_risk_score": 0.422254,
-      "last_date": "2026-06-12"
+      "last_risk_score": 0.439374,
+      "last_date": "2026-06-19"
     },
     "000517.SZ": {
       "last_profile": "conservative",
       "pending_profile": null,
       "pending_count": 0,
       "cooldown_until": null,
-      "force_conservative_until": "2026-06-14",
-      "last_risk_score": 0.777678,
-      "last_date": "2026-06-12"
+      "force_conservative_until": "2026-06-21",
+      "last_risk_score": 0.812,
+      "last_date": "2026-06-19"
     },
     "000518.SZ": {
       "last_profile": "conservative",
       "pending_profile": null,
       "pending_count": 0,
       "cooldown_until": null,
-      "force_conservative_until": "2026-06-14",
-      "last_risk_score": 0.8,
-      "last_date": "2026-06-12"
+      "force_conservative_until": "2026-06-21",
+      "last_risk_score": 0.812,
+      "last_date": "2026-06-19"
     },
     "000519.SZ": {
       "last_profile": "balanced",
@@ -21715,26 +21715,26 @@
       "pending_count": 0,
       "cooldown_until": null,
       "force_conservative_until": null,
-      "last_risk_score": 0.516856,
-      "last_date": "2026-06-12"
+      "last_risk_score": 0.443068,
+      "last_date": "2026-06-19"
     },
     "000520.SZ": {
-      "last_profile": "balanced",
+      "last_profile": "conservative",
       "pending_profile": null,
       "pending_count": 0,
-      "cooldown_until": null,
+      "cooldown_until": "2026-06-24",
       "force_conservative_until": null,
-      "last_risk_score": 0.692041,
-      "last_date": "2026-06-12"
+      "last_risk_score": 0.711019,
+      "last_date": "2026-06-19"
     },
     "000521.SZ": {
       "last_profile": "conservative",
       "pending_profile": null,
       "pending_count": 0,
       "cooldown_until": null,
-      "force_conservative_until": "2026-06-14",
-      "last_risk_score": 0.712133,
-      "last_date": "2026-06-12"
+      "force_conservative_until": "2026-06-21",
+      "last_risk_score": 0.800646,
+      "last_date": "2026-06-19"
     },
     "000523.SZ": {
       "last_profile": "aggressive",
@@ -21742,8 +21742,8 @@
       "pending_count": 0,
       "cooldown_until": null,
       "force_conservative_until": null,
-      "last_risk_score": 0.444342,
-      "last_date": "2026-06-12"
+      "last_risk_score": 0.430364,
+      "last_date": "2026-06-19"
     },
     "000524.SZ": {
       "last_profile": "aggressive",
@@ -21751,17 +21751,17 @@
       "pending_count": 0,
       "cooldown_until": null,
       "force_conservative_until": null,
-      "last_risk_score": 0.366335,
-      "last_date": "2026-06-12"
+      "last_risk_score": 0.384507,
+      "last_date": "2026-06-19"
     },
     "000525.SZ": {
-      "last_profile": "aggressive",
+      "last_profile": "balanced",
       "pending_profile": null,
       "pending_count": 0,
-      "cooldown_until": null,
+      "cooldown_until": "2026-06-24",
       "force_conservative_until": null,
-      "last_risk_score": 0.425984,
-      "last_date": "2026-06-12"
+      "last_risk_score": 0.502542,
+      "last_date": "2026-06-19"
     },
     "000526.SZ": {
       "last_profile": "balanced",
@@ -21769,8 +21769,8 @@
       "pending_count": 0,
       "cooldown_until": null,
       "force_conservative_until": null,
-      "last_risk_score": 0.534952,
-      "last_date": "2026-06-12"
+      "last_risk_score": 0.570372,
+      "last_date": "2026-06-19"
     },
     "000528.SZ": {
       "last_profile": "aggressive",
@@ -21778,8 +21778,8 @@
       "pending_count": 0,
       "cooldown_until": null,
       "force_conservative_until": null,
-      "last_risk_score": 0.336748,
-      "last_date": "2026-06-12"
+      "last_risk_score": 0.362734,
+      "last_date": "2026-06-19"
     },
     "000529.SZ": {
       "last_profile": "balanced",
@@ -21787,35 +21787,35 @@
       "pending_count": 0,
       "cooldown_until": null,
       "force_conservative_until": null,
-      "last_risk_score": 0.520691,
-      "last_date": "2026-06-12"
+      "last_risk_score": 0.58604,
+      "last_date": "2026-06-19"
     },
     "000530.SZ": {
       "last_profile": "conservative",
       "pending_profile": null,
       "pending_count": 0,
       "cooldown_until": null,
-      "force_conservative_until": "2026-06-14",
-      "last_risk_score": 0.693077,
-      "last_date": "2026-06-12"
+      "force_conservative_until": "2026-06-21",
+      "last_risk_score": 0.711847,
+      "last_date": "2026-06-19"
     },
     "000531.SZ": {
       "last_profile": "conservative",
       "pending_profile": null,
       "pending_count": 0,
       "cooldown_until": null,
-      "force_conservative_until": "2026-06-14",
-      "last_risk_score": 0.662937,
-      "last_date": "2026-06-12"
+      "force_conservative_until": "2026-06-21",
+      "last_risk_score": 0.670227,
+      "last_date": "2026-06-19"
     },
     "000532.SZ": {
       "last_profile": "conservative",
       "pending_profile": null,
       "pending_count": 0,
       "cooldown_until": null,
-      "force_conservative_until": "2026-06-14",
-      "last_risk_score": 0.8,
-      "last_date": "2026-06-12"
+      "force_conservative_until": "2026-06-21",
+      "last_risk_score": 0.812,
+      "last_date": "2026-06-19"
     },
     "000533.SZ": {
       "last_profile": "balanced",
@@ -21823,8 +21823,8 @@
       "pending_count": 0,
       "cooldown_until": null,
       "force_conservative_until": null,
-      "last_risk_score": 0.397605,
-      "last_date": "2026-06-12"
+      "last_risk_score": 0.401871,
+      "last_date": "2026-06-19"
     },
     "000534.SZ": {
       "last_profile": "balanced",
@@ -21832,8 +21832,8 @@
       "pending_count": 0,
       "cooldown_until": null,
       "force_conservative_until": null,
-      "last_risk_score": 0.448026,
-      "last_date": "2026-06-12"
+      "last_risk_score": 0.509818,
+      "last_date": "2026-06-19"
     },
     "000536.SZ": {
       "last_profile": "conservative",
@@ -21841,44 +21841,44 @@
       "pending_count": 0,
       "cooldown_until": null,
       "force_conservative_until": "2026-06-14",
-      "last_risk_score": 0.779444,
-      "last_date": "2026-06-12"
+      "last_risk_score": 0.78199,
+      "last_date": "2026-06-19"
     },
     "000537.SZ": {
       "last_profile": "conservative",
       "pending_profile": null,
       "pending_count": 0,
       "cooldown_until": null,
-      "force_conservative_until": "2026-06-14",
-      "last_risk_score": 0.783454,
-      "last_date": "2026-06-12"
+      "force_conservative_until": "2026-06-21",
+      "last_risk_score": 0.744645,
+      "last_date": "2026-06-19"
     },
     "000538.SZ": {
-      "last_profile": "balanced",
+      "last_profile": "conservative",
       "pending_profile": null,
       "pending_count": 0,
       "cooldown_until": null,
-      "force_conservative_until": null,
-      "last_risk_score": 0.662124,
-      "last_date": "2026-06-12"
+      "force_conservative_until": "2026-06-21",
+      "last_risk_score": 0.631553,
+      "last_date": "2026-06-19"
     },
     "000539.SZ": {
       "last_profile": "conservative",
       "pending_profile": null,
       "pending_count": 0,
       "cooldown_until": null,
-      "force_conservative_until": "2026-06-14",
-      "last_risk_score": 0.8,
-      "last_date": "2026-06-12"
+      "force_conservative_until": "2026-06-21",
+      "last_risk_score": 0.795098,
+      "last_date": "2026-06-19"
     },
     "000541.SZ": {
-      "last_profile": "balanced",
+      "last_profile": "conservative",
       "pending_profile": null,
       "pending_count": 0,
       "cooldown_until": null,
-      "force_conservative_until": null,
-      "last_risk_score": 0.500179,
-      "last_date": "2026-06-12"
+      "force_conservative_until": "2026-06-21",
+      "last_risk_score": 0.811208,
+      "last_date": "2026-06-19"
     },
     "000543.SZ": {
       "last_profile": "balanced",
@@ -21886,8 +21886,8 @@
       "pending_count": 0,
       "cooldown_until": null,
       "force_conservative_until": null,
-      "last_risk_score": 0.687443,
-      "last_date": "2026-06-12"
+      "last_risk_score": 0.705826,
+      "last_date": "2026-06-19"
     },
     "000544.SZ": {
       "last_profile": "balanced",
@@ -21895,17 +21895,17 @@
       "pending_count": 0,
       "cooldown_until": null,
       "force_conservative_until": null,
-      "last_risk_score": 0.61158,
-      "last_date": "2026-06-12"
+      "last_risk_score": 0.598913,
+      "last_date": "2026-06-19"
     },
     "000545.SZ": {
-      "last_profile": "aggressive",
+      "last_profile": "balanced",
       "pending_profile": null,
       "pending_count": 0,
-      "cooldown_until": null,
+      "cooldown_until": "2026-06-24",
       "force_conservative_until": null,
-      "last_risk_score": 0.346959,
-      "last_date": "2026-06-12"
+      "last_risk_score": 0.475727,
+      "last_date": "2026-06-19"
     },
     "000546.SZ": {
       "last_profile": "aggressive",
@@ -21913,8 +21913,8 @@
       "pending_count": 0,
       "cooldown_until": null,
       "force_conservative_until": null,
-      "last_risk_score": 0.381566,
-      "last_date": "2026-06-12"
+      "last_risk_score": 0.383932,
+      "last_date": "2026-06-19"
     },
     "000547.SZ": {
       "last_profile": "balanced",
@@ -21922,17 +21922,17 @@
       "pending_count": 0,
       "cooldown_until": null,
       "force_conservative_until": null,
-      "last_risk_score": 0.445865,
-      "last_date": "2026-06-12"
+      "last_risk_score": 0.45829,
+      "last_date": "2026-06-19"
     },
     "000548.SZ": {
-      "last_profile": "conservative",
+      "last_profile": "balanced",
       "pending_profile": null,
       "pending_count": 0,
-      "cooldown_until": null,
+      "cooldown_until": "2026-06-24",
       "force_conservative_until": "2026-06-14",
-      "last_risk_score": 0.594327,
-      "last_date": "2026-06-12"
+      "last_risk_score": 0.577863,
+      "last_date": "2026-06-19"
     },
     "000550.SZ": {
       "last_profile": "balanced",
@@ -21940,8 +21940,8 @@
       "pending_count": 0,
       "cooldown_until": "2026-06-17",
       "force_conservative_until": null,
-      "last_risk_score": 0.466482,
-      "last_date": "2026-06-12"
+      "last_risk_score": 0.525825,
+      "last_date": "2026-06-19"
     },
     "000551.SZ": {
       "last_profile": "aggressive",
@@ -21949,8 +21949,8 @@
       "pending_count": 0,
       "cooldown_until": null,
       "force_conservative_until": null,
-      "last_risk_score": 0.358664,
-      "last_date": "2026-06-12"
+      "last_risk_score": 0.37638,
+      "last_date": "2026-06-19"
     },
     "000552.SZ": {
       "last_profile": "balanced",
@@ -21958,8 +21958,8 @@
       "pending_count": 0,
       "cooldown_until": "2026-06-17",
       "force_conservative_until": null,
-      "last_risk_score": 0.513201,
-      "last_date": "2026-06-12"
+      "last_risk_score": 0.571007,
+      "last_date": "2026-06-19"
     },
     "000553.SZ": {
       "last_profile": "balanced",
@@ -21967,8 +21967,8 @@
       "pending_count": 0,
       "cooldown_until": "2026-06-17",
       "force_conservative_until": null,
-      "last_risk_score": 0.482465,
-      "last_date": "2026-06-12"
+      "last_risk_score": 0.452359,
+      "last_date": "2026-06-19"
     },
     "000554.SZ": {
       "last_profile": "balanced",
@@ -21976,8 +21976,8 @@
       "pending_count": 0,
       "cooldown_until": null,
       "force_conservative_until": null,
-      "last_risk_score": 0.526152,
-      "last_date": "2026-06-12"
+      "last_risk_score": 0.458741,
+      "last_date": "2026-06-19"
     },
     "000555.SZ": {
       "last_profile": "aggressive",
@@ -21985,8 +21985,8 @@
       "pending_count": 0,
       "cooldown_until": null,
       "force_conservative_until": null,
-      "last_risk_score": 0.430906,
-      "last_date": "2026-06-12"
+      "last_risk_score": 0.442246,
+      "last_date": "2026-06-19"
     },
     "000557.SZ": {
       "last_profile": "aggressive",
@@ -21994,8 +21994,8 @@
       "pending_count": 0,
       "cooldown_until": null,
       "force_conservative_until": null,
-      "last_risk_score": 0.421895,
-      "last_date": "2026-06-12"
+      "last_risk_score": 0.44067,
+      "last_date": "2026-06-19"
     },
     "000558.SZ": {
       "last_profile": "balanced",
@@ -22003,8 +22003,8 @@
       "pending_count": 0,
       "cooldown_until": "2026-06-17",
       "force_conservative_until": null,
-      "last_risk_score": 0.540925,
-      "last_date": "2026-06-12"
+      "last_risk_score": 0.638153,
+      "last_date": "2026-06-19"
     },
     "000559.SZ": {
       "last_profile": "aggressive",
@@ -22012,8 +22012,8 @@
       "pending_count": 0,
       "cooldown_until": null,
       "force_conservative_until": null,
-      "last_risk_score": 0.374986,
-      "last_date": "2026-06-12"
+      "last_risk_score": 0.388766,
+      "last_date": "2026-06-19"
     },
     "000560.SZ": {
       "last_profile": "balanced",
@@ -22021,8 +22021,8 @@
       "pending_count": 0,
       "cooldown_until": null,
       "force_conservative_until": null,
-      "last_risk_score": 0.446341,
-      "last_date": "2026-06-12"
+      "last_risk_score": 0.421312,
+      "last_date": "2026-06-19"
     },
     "000561.SZ": {
       "last_profile": "aggressive",
@@ -22030,35 +22030,35 @@
       "pending_count": 0,
       "cooldown_until": null,
       "force_conservative_until": null,
-      "last_risk_score": 0.385024,
-      "last_date": "2026-06-12"
+      "last_risk_score": 0.387152,
+      "last_date": "2026-06-19"
     },
     "000563.SZ": {
-      "last_profile": "aggressive",
+      "last_profile": "balanced",
       "pending_profile": null,
       "pending_count": 0,
-      "cooldown_until": null,
+      "cooldown_until": "2026-06-24",
       "force_conservative_until": null,
-      "last_risk_score": 0.427756,
-      "last_date": "2026-06-12"
+      "last_risk_score": 0.461803,
+      "last_date": "2026-06-19"
     },
     "000564.SZ": {
       "last_profile": "conservative",
       "pending_profile": null,
       "pending_count": 0,
       "cooldown_until": null,
-      "force_conservative_until": "2026-06-14",
-      "last_risk_score": 0.692379,
-      "last_date": "2026-06-12"
+      "force_conservative_until": "2026-06-21",
+      "last_risk_score": 0.79342,
+      "last_date": "2026-06-19"
     },
     "000565.SZ": {
-      "last_profile": "balanced",
+      "last_profile": "aggressive",
       "pending_profile": null,
       "pending_count": 0,
-      "cooldown_until": null,
+      "cooldown_until": "2026-06-24",
       "force_conservative_until": null,
-      "last_risk_score": 0.405936,
-      "last_date": "2026-06-12"
+      "last_risk_score": 0.385154,
+      "last_date": "2026-06-19"
     },
     "000566.SZ": {
       "last_profile": "aggressive",
@@ -22066,8 +22066,8 @@
       "pending_count": 0,
       "cooldown_until": null,
       "force_conservative_until": null,
-      "last_risk_score": 0.340378,
-      "last_date": "2026-06-12"
+      "last_risk_score": 0.348619,
+      "last_date": "2026-06-19"
     },
     "000567.SZ": {
       "last_profile": "aggressive",
@@ -22075,8 +22075,8 @@
       "pending_count": 0,
       "cooldown_until": null,
       "force_conservative_until": null,
-      "last_risk_score": 0.403672,
-      "last_date": "2026-06-12"
+      "last_risk_score": 0.411123,
+      "last_date": "2026-06-19"
     },
     "000568.SZ": {
       "last_profile": "balanced",
@@ -22084,8 +22084,8 @@
       "pending_count": 0,
       "cooldown_until": null,
       "force_conservative_until": null,
-      "last_risk_score": 0.412869,
-      "last_date": "2026-06-12"
+      "last_risk_score": 0.429423,
+      "last_date": "2026-06-19"
     },
     "000570.SZ": {
       "last_profile": "balanced",
@@ -22093,8 +22093,8 @@
       "pending_count": 0,
       "cooldown_until": null,
       "force_conservative_until": null,
-      "last_risk_score": 0.446838,
-      "last_date": "2026-06-12"
+      "last_risk_score": 0.449127,
+      "last_date": "2026-06-19"
     },
     "000571.SZ": {
       "last_profile": "balanced",
@@ -22102,8 +22102,8 @@
       "pending_count": 0,
       "cooldown_until": null,
       "force_conservative_until": null,
-      "last_risk_score": 0.565714,
-      "last_date": "2026-06-12"
+      "last_risk_score": 0.495749,
+      "last_date": "2026-06-19"
     },
     "000572.SZ": {
       "last_profile": "aggressive",
@@ -22111,8 +22111,8 @@
       "pending_count": 0,
       "cooldown_until": null,
       "force_conservative_until": null,
-      "last_risk_score": 0.324364,
-      "last_date": "2026-06-12"
+      "last_risk_score": 0.343109,
+      "last_date": "2026-06-19"
     },
     "000573.SZ": {
       "last_profile": "balanced",
@@ -22120,8 +22120,8 @@
       "pending_count": 0,
       "cooldown_until": null,
       "force_conservative_until": null,
-      "last_risk_score": 0.470263,
-      "last_date": "2026-06-12"
+      "last_risk_score": 0.480311,
+      "last_date": "2026-06-19"
     },
     "000576.SZ": {
       "last_profile": "aggressive",
@@ -22129,8 +22129,8 @@
       "pending_count": 0,
       "cooldown_until": null,
       "force_conservative_until": null,
-      "last_risk_score": 0.366108,
-      "last_date": "2026-06-12"
+      "last_risk_score": 0.391099,
+      "last_date": "2026-06-19"
     },
     "000581.SZ": {
       "last_profile": "aggressive",
@@ -22138,35 +22138,35 @@
       "pending_count": 0,
       "cooldown_until": null,
       "force_conservative_until": null,
-      "last_risk_score": 0.363033,
-      "last_date": "2026-06-12"
+      "last_risk_score": 0.393706,
+      "last_date": "2026-06-19"
     },
     "000582.SZ": {
       "last_profile": "conservative",
       "pending_profile": null,
       "pending_count": 0,
       "cooldown_until": null,
-      "force_conservative_until": "2026-06-14",
-      "last_risk_score": 0.715383,
-      "last_date": "2026-06-12"
+      "force_conservative_until": "2026-06-21",
+      "last_risk_score": 0.720132,
+      "last_date": "2026-06-19"
     },
     "000586.SZ": {
-      "last_profile": "conservative",
+      "last_profile": "balanced",
       "pending_profile": null,
       "pending_count": 0,
-      "cooldown_until": null,
+      "cooldown_until": "2026-06-24",
       "force_conservative_until": "2026-06-05",
-      "last_risk_score": 0.654228,
-      "last_date": "2026-06-12"
+      "last_risk_score": 0.553765,
+      "last_date": "2026-06-19"
     },
     "000589.SZ": {
-      "last_profile": "aggressive",
+      "last_profile": "balanced",
       "pending_profile": null,
       "pending_count": 0,
-      "cooldown_until": null,
+      "cooldown_until": "2026-06-24",
       "force_conservative_until": null,
-      "last_risk_score": 0.404967,
-      "last_date": "2026-06-12"
+      "last_risk_score": 0.495744,
+      "last_date": "2026-06-19"
     },
     "000590.SZ": {
       "last_profile": "aggressive",
@@ -22174,17 +22174,17 @@
       "pending_count": 0,
       "cooldown_until": null,
       "force_conservative_until": null,
-      "last_risk_score": 0.41376,
-      "last_date": "2026-06-12"
+      "last_risk_score": 0.394218,
+      "last_date": "2026-06-19"
     },
     "000591.SZ": {
-      "last_profile": "conservative",
+      "last_profile": "balanced",
       "pending_profile": null,
       "pending_count": 0,
-      "cooldown_until": null,
+      "cooldown_until": "2026-06-24",
       "force_conservative_until": "2026-06-14",
-      "last_risk_score": 0.567486,
-      "last_date": "2026-06-12"
+      "last_risk_score": 0.541794,
+      "last_date": "2026-06-19"
     },
     "000592.SZ": {
       "last_profile": "aggressive",
@@ -22192,8 +22192,8 @@
       "pending_count": 0,
       "cooldown_until": null,
       "force_conservative_until": null,
-      "last_risk_score": 0.350828,
-      "last_date": "2026-06-12"
+      "last_risk_score": 0.362447,
+      "last_date": "2026-06-19"
     },
     "000593.SZ": {
       "last_profile": "aggressive",
@@ -22201,8 +22201,8 @@
       "pending_count": 0,
       "cooldown_until": null,
       "force_conservative_until": null,
-      "last_risk_score": 0.398732,
-      "last_date": "2026-06-12"
+      "last_risk_score": 0.292922,
+      "last_date": "2026-06-19"
     },
     "000595.SZ": {
       "last_profile": "balanced",
@@ -22210,8 +22210,8 @@
       "pending_count": 0,
       "cooldown_until": "2026-06-17",
       "force_conservative_until": null,
-      "last_risk_score": 0.491797,
-      "last_date": "2026-06-12"
+      "last_risk_score": 0.491844,
+      "last_date": "2026-06-19"
     },
     "000596.SZ": {
       "last_profile": "aggressive",
@@ -22219,8 +22219,8 @@
       "pending_count": 0,
       "cooldown_until": null,
       "force_conservative_until": null,
-      "last_risk_score": 0.33298,
-      "last_date": "2026-06-12"
+      "last_risk_score": 0.363418,
+      "last_date": "2026-06-19"
     },
     "000597.SZ": {
       "last_profile": "balanced",
@@ -22228,35 +22228,35 @@
       "pending_count": 0,
       "cooldown_until": null,
       "force_conservative_until": null,
-      "last_risk_score": 0.431976,
-      "last_date": "2026-06-12"
+      "last_risk_score": 0.49773,
+      "last_date": "2026-06-19"
     },
     "000598.SZ": {
-      "last_profile": "balanced",
+      "last_profile": "conservative",
       "pending_profile": null,
       "pending_count": 0,
       "cooldown_until": "2026-06-17",
-      "force_conservative_until": null,
-      "last_risk_score": 0.476279,
-      "last_date": "2026-06-12"
+      "force_conservative_until": "2026-06-21",
+      "last_risk_score": 0.550419,
+      "last_date": "2026-06-19"
     },
     "000599.SZ": {
-      "last_profile": "balanced",
+      "last_profile": "aggressive",
       "pending_profile": null,
       "pending_count": 0,
-      "cooldown_until": null,
+      "cooldown_until": "2026-06-24",
       "force_conservative_until": null,
-      "last_risk_score": 0.41014,
-      "last_date": "2026-06-12"
+      "last_risk_score": 0.332596,
+      "last_date": "2026-06-19"
     },
     "000600.SZ": {
       "last_profile": "conservative",
       "pending_profile": null,
       "pending_count": 0,
       "cooldown_until": null,
-      "force_conservative_until": "2026-06-14",
-      "last_risk_score": 0.780372,
-      "last_date": "2026-06-12"
+      "force_conservative_until": "2026-06-21",
+      "last_risk_score": 0.762389,
+      "last_date": "2026-06-19"
     },
     "000601.SZ": {
       "last_profile": "conservative",
@@ -22264,17 +22264,17 @@
       "pending_count": 0,
       "cooldown_until": "2026-06-17",
       "force_conservative_until": null,
-      "last_risk_score": 0.728141,
-      "last_date": "2026-06-12"
+      "last_risk_score": 0.702286,
+      "last_date": "2026-06-19"
     },
     "000603.SZ": {
-      "last_profile": "aggressive",
+      "last_profile": "balanced",
       "pending_profile": null,
       "pending_count": 0,
-      "cooldown_until": null,
+      "cooldown_until": "2026-06-24",
       "force_conservative_until": null,
-      "last_risk_score": 0.367321,
-      "last_date": "2026-06-12"
+      "last_risk_score": 0.472522,
+      "last_date": "2026-06-19"
     },
     "000605.SZ": {
       "last_profile": "balanced",
@@ -22282,8 +22282,8 @@
       "pending_count": 0,
       "cooldown_until": null,
       "force_conservative_until": null,
-      "last_risk_score": 0.572214,
-      "last_date": "2026-06-12"
+      "last_risk_score": 0.550733,
+      "last_date": "2026-06-19"
     },
     "000607.SZ": {
       "last_profile": "balanced",
@@ -22291,8 +22291,8 @@
       "pending_count": 0,
       "cooldown_until": null,
       "force_conservative_until": null,
-      "last_risk_score": 0.457052,
-      "last_date": "2026-06-12"
+      "last_risk_score": 0.461571,
+      "last_date": "2026-06-19"
     },
     "000608.SZ": {
       "last_profile": "balanced",
@@ -22300,8 +22300,8 @@
       "pending_count": 0,
       "cooldown_until": null,
       "force_conservative_until": null,
-      "last_risk_score": 0.592432,
-      "last_date": "2026-06-12"
+      "last_risk_score": 0.466723,
+      "last_date": "2026-06-19"
     },
     "000609.SZ": {
       "last_profile": "aggressive",
@@ -22309,8 +22309,8 @@
       "pending_count": 0,
       "cooldown_until": null,
       "force_conservative_until": null,
-      "last_risk_score": 0.340728,
-      "last_date": "2026-06-12"
+      "last_risk_score": 0.308592,
+      "last_date": "2026-06-19"
     },
     "000610.SZ": {
       "last_profile": "balanced",
@@ -22318,8 +22318,8 @@
       "pending_count": 0,
       "cooldown_until": null,
       "force_conservative_until": null,
-      "last_risk_score": 0.514351,
-      "last_date": "2026-06-12"
+      "last_risk_score": 0.502555,
+      "last_date": "2026-06-19"
     },
     "000612.SZ": {
       "last_profile": "balanced",
@@ -22327,8 +22327,8 @@
       "pending_count": 0,
       "cooldown_until": "2026-06-17",
       "force_conservative_until": null,
-      "last_risk_score": 0.502283,
-      "last_date": "2026-06-12"
+      "last_risk_score": 0.532702,
+      "last_date": "2026-06-19"
     },
     "000615.SZ": {
       "last_profile": "aggressive",
@@ -22336,8 +22336,8 @@
       "pending_count": 0,
       "cooldown_until": null,
       "force_conservative_until": null,
-      "last_risk_score": 0.390526,
-      "last_date": "2026-06-12"
+      "last_risk_score": 0.365815,
+      "last_date": "2026-06-19"
     },
     "000617.SZ": {
       "last_profile": "aggressive",
@@ -22345,8 +22345,8 @@
       "pending_count": 0,
       "cooldown_until": null,
       "force_conservative_until": null,
-      "last_risk_score": 0.368723,
-      "last_date": "2026-06-12"
+      "last_risk_score": 0.352303,
+      "last_date": "2026-06-19"
     },
     "000619.SZ": {
       "last_profile": "balanced",
@@ -22354,8 +22354,8 @@
       "pending_count": 0,
       "cooldown_until": null,
       "force_conservative_until": null,
-      "last_risk_score": 0.431037,
-      "last_date": "2026-06-12"
+      "last_risk_score": 0.436766,
+      "last_date": "2026-06-19"
     },
     "000620.SZ": {
       "last_profile": "aggressive",
@@ -22363,8 +22363,8 @@
       "pending_count": 0,
       "cooldown_until": null,
       "force_conservative_until": null,
-      "last_risk_score": 0.445922,
-      "last_date": "2026-06-12"
+      "last_risk_score": 0.444218,
+      "last_date": "2026-06-19"
     },
     "000623.SZ": {
       "last_profile": "balanced",
@@ -22372,8 +22372,8 @@
       "pending_count": 0,
       "cooldown_until": "2026-06-17",
       "force_conservative_until": null,
-      "last_risk_score": 0.483757,
-      "last_date": "2026-06-12"
+      "last_risk_score": 0.53345,
+      "last_date": "2026-06-19"
     },
     "000625.SZ": {
       "last_profile": "conservative",
@@ -46752,9 +46752,9 @@
       "pending_profile": null,
       "pending_count": 0,
       "cooldown_until": null,
-      "force_conservative_until": "2026-06-14",
+      "force_conservative_until": "2026-06-20",
       "last_risk_score": 0.8,
-      "last_date": "2026-06-12"
+      "last_date": "2026-06-18"
     },
     "600608.SH": {
       "last_profile": "conservative",
@@ -46800,7 +46800,16 @@
       "force_conservative_until": "2026-06-14",
       "last_risk_score": 0.8,
       "last_date": "2026-06-12"
+    },
+    "300029.SZ": {
+      "last_profile": "conservative",
+      "pending_profile": null,
+      "pending_count": 0,
+      "cooldown_until": null,
+      "force_conservative_until": "2026-06-20",
+      "last_risk_score": 0.8,
+      "last_date": "2026-06-18"
     }
   },
-  "updated_at": "2026-06-13T17:05:05"
+  "updated_at": "2026-06-19T11:52:27"
 }
