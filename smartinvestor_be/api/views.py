@@ -5521,12 +5521,35 @@ def _pick_stocks_by_valuation_fast(request, trade_date, scope, freq="D", from_in
         if buy_candidate_payload.get("undervalue_score") is None:
             buy_candidate_payload["undervalue_score"] = valuation_score
 
+        conservative_price_num = _to_float_or_none(
+            buy_candidate_payload.get("conservative_valuation_price")
+        )
+        current_price_num = _to_float_or_none(current_price)
+        backtest_aligned = (
+            current_price_num is not None
+            and conservative_price_num is not None
+            and current_price_num <= conservative_price_num
+        )
+        if current_price_num is None:
+            backtest_align_reason = "missing_current_price"
+        elif conservative_price_num is None:
+            backtest_align_reason = "missing_conservative_price"
+        elif backtest_aligned:
+            backtest_align_reason = "price_lte_conservative"
+        else:
+            backtest_align_reason = "price_gt_conservative"
+        buy_candidate_payload["buy_candidate_backtest_aligned"] = bool(backtest_aligned)
+        buy_candidate_payload["buy_candidate_backtest_align_reason"] = backtest_align_reason
+
         if min_valuation_score is not None and (valuation_score is None or float(valuation_score) < float(min_valuation_score)):
             continue
 
         if valuation_status and valuation_payload.get("valuation_status") != valuation_status:
             continue
-        if buy_candidate_only and not buy_candidate_payload.get("buy_candidate"):
+        if buy_candidate_only and (
+            (not buy_candidate_payload.get("buy_candidate"))
+            or (not buy_candidate_payload.get("buy_candidate_backtest_aligned"))
+        ):
             continue
 
         traditional_metric_payload = {}

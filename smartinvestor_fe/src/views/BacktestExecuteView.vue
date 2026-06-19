@@ -864,6 +864,81 @@
               />
             </div>
           </el-tab-pane>
+
+          <el-tab-pane label="已收藏" name="favorites">
+            <div class="history-toolbar row-gap">
+              <span class="muted">共 {{ favoritesHistoryTotal }} 条</span>
+              <div class="actions-left">
+                <el-button size="small" :loading="loadingFavoritesHistory" @click="fetchFavoriteHistoryRows">刷新</el-button>
+              </div>
+            </div>
+
+            <el-alert
+              v-if="!loadingFavoritesHistory && !favoritesHistoryTotal"
+              title="当前没有已收藏的回测结果。"
+              type="info"
+              :closable="false"
+              class="row-gap"
+            />
+
+            <el-table
+              v-else
+              :data="pagedFavoritesHistoryRows"
+              stripe
+              border
+              size="small"
+              max-height="460"
+              v-loading="loadingFavoritesHistory"
+              @row-dblclick="handleRunHistoryRowDoubleClick"
+            >
+              <el-table-column label="收藏" width="88" fixed="left">
+                <template #default="scope">
+                  <el-button link type="warning" @click.stop="toggleFavoriteRun(scope.row.run_id)">
+                    {{ isRunFavorited(scope.row.run_id) ? '★ 已藏' : '☆ 收藏' }}
+                  </el-button>
+                </template>
+              </el-table-column>
+              <el-table-column prop="run_id" label="Run ID" width="90" fixed="left" />
+              <el-table-column prop="run_key" label="Run Key" min-width="220" fixed="left" />
+              <el-table-column prop="source_kind_label" label="来源类型" width="100" />
+              <el-table-column prop="mode" label="模式" width="90" />
+              <el-table-column prop="start_date" label="开始日期" width="110" />
+              <el-table-column prop="end_date" label="结束日期" width="110" />
+              <el-table-column label="参数设置" min-width="320">
+                <template #default="scope">
+                  <div class="history-param-cell">
+                    <span>{{ getHistoryParamsDisplayText(scope.row, 'favorites') }}</span>
+                    <el-button
+                      v-if="shouldShowParamsExpand(scope.row, 'favorites')"
+                      link
+                      type="primary"
+                      size="small"
+                      @click.stop="toggleHistoryParamsExpand(scope.row, 'favorites')"
+                    >
+                      {{ isHistoryParamsExpanded(scope.row, 'favorites') ? '收起' : '展开' }}
+                    </el-button>
+                  </div>
+                </template>
+              </el-table-column>
+              <el-table-column prop="trade_count" label="交易数" width="90" />
+              <el-table-column prop="avg_return_pct" label="平均收益%" width="110" />
+              <el-table-column prop="win_rate_pct" label="胜率%" width="90" />
+              <el-table-column prop="total_return_pct" label="总收益%" width="100" />
+              <el-table-column prop="max_drawdown_pct" label="最大回撤%" width="110" />
+              <el-table-column prop="created_at" label="记录时间" min-width="160" />
+            </el-table>
+
+            <div class="table-footer row-gap" v-if="favoritesHistoryTotal > 0">
+              <el-pagination
+                background
+                layout="prev, pager, next, total"
+                :current-page="favoritesHistoryPage"
+                :page-size="favoritesHistoryPageSize"
+                :total="favoritesHistoryTotal"
+                @current-change="handleFavoritesHistoryPageChange"
+              />
+            </div>
+          </el-tab-pane>
         </el-tabs>
       </el-dialog>
     </div>
@@ -978,7 +1053,7 @@ const executeStockTradeRows = ref<Array<Record<string, any>>>([])
 const executeStockValuationRows = ref<Array<Record<string, any>>>([])
 const executeStockStats = ref<Record<string, any>>({})
 const runHistoryDialogVisible = ref(false)
-const historyActiveTab = ref<'manual' | 'scan'>('manual')
+const historyActiveTab = ref<'manual' | 'scan' | 'favorites'>('manual')
 const manualHistoryRows = ref<Array<Record<string, any>>>([])
 const manualHistoryTotal = ref(0)
 const manualHistoryPage = ref(1)
@@ -989,6 +1064,11 @@ const scanHistoryTotal = ref(0)
 const scanHistoryPage = ref(1)
 const scanHistoryPageSize = ref(20)
 const loadingScanHistory = ref(false)
+const favoritesHistoryRows = ref<Array<Record<string, any>>>([])
+const favoritesHistoryTotal = ref(0)
+const favoritesHistoryPage = ref(1)
+const favoritesHistoryPageSize = ref(20)
+const loadingFavoritesHistory = ref(false)
 const historyParamsExpanded = ref<Record<string, boolean>>({})
 const submittedScanTaskIds = ref<number[]>([])
 const singleRunTaskId = ref<number | null>(null)
@@ -1106,6 +1186,14 @@ const activeStockTabCount = computed(() => {
     return executeBuyableStockRows.value.length
   }
   return executeStockRows.value.length
+})
+
+const pagedFavoritesHistoryRows = computed(() => {
+  const safePage = Math.max(1, Math.floor(Number(favoritesHistoryPage.value) || 1))
+  const pageSize = Math.max(1, Math.floor(Number(favoritesHistoryPageSize.value) || 20))
+  const start = (safePage - 1) * pageSize
+  const end = start + pageSize
+  return favoritesHistoryRows.value.slice(start, end)
 })
 
 function formatLocalDateTime(value: unknown): string {
@@ -1374,6 +1462,10 @@ function toggleFavoriteRun(runIdValue: unknown) {
     favoriteRunIds.value = [...favoriteRunIds.value, runId]
   }
   saveFavoriteRunIds()
+  if (runHistoryDialogVisible.value && historyActiveTab.value === 'favorites') {
+    favoritesHistoryPage.value = 1
+    void fetchFavoriteHistoryRows()
+  }
 }
 
 function mapBacktestScopeToPickingScope(rawScope: unknown): string {
@@ -1925,7 +2017,7 @@ function compactParams(params: Record<string, any>) {
 
 const HISTORY_PARAMS_COLLAPSE_LENGTH = 120
 
-function buildHistoryParamsExpandKey(row: Record<string, any>, tab: 'manual' | 'scan') {
+function buildHistoryParamsExpandKey(row: Record<string, any>, tab: 'manual' | 'scan' | 'favorites') {
   const runId = Number(row?.run_id)
   const taskId = Number(row?.task_id)
   const comboIndex = Number(row?.combo_index)
@@ -1938,17 +2030,17 @@ function buildHistoryParamsExpandKey(row: Record<string, any>, tab: 'manual' | '
   return `${tab}:${keyPart}`
 }
 
-function isHistoryParamsExpanded(row: Record<string, any>, tab: 'manual' | 'scan') {
+function isHistoryParamsExpanded(row: Record<string, any>, tab: 'manual' | 'scan' | 'favorites') {
   const key = buildHistoryParamsExpandKey(row, tab)
   return historyParamsExpanded.value[key] === true
 }
 
-function toggleHistoryParamsExpand(row: Record<string, any>, tab: 'manual' | 'scan') {
+function toggleHistoryParamsExpand(row: Record<string, any>, tab: 'manual' | 'scan' | 'favorites') {
   const key = buildHistoryParamsExpandKey(row, tab)
   historyParamsExpanded.value[key] = !isHistoryParamsExpanded(row, tab)
 }
 
-function shouldShowParamsExpand(row: Record<string, any>, tab: 'manual' | 'scan') {
+function shouldShowParamsExpand(row: Record<string, any>, tab: 'manual' | 'scan' | 'favorites') {
   const text = compactParams((row?.params as Record<string, any>) || {})
   if (!text) {
     return false
@@ -1956,7 +2048,7 @@ function shouldShowParamsExpand(row: Record<string, any>, tab: 'manual' | 'scan'
   return text.length > HISTORY_PARAMS_COLLAPSE_LENGTH || isHistoryParamsExpanded(row, tab)
 }
 
-function getHistoryParamsDisplayText(row: Record<string, any>, tab: 'manual' | 'scan') {
+function getHistoryParamsDisplayText(row: Record<string, any>, tab: 'manual' | 'scan' | 'favorites') {
   const text = compactParams((row?.params as Record<string, any>) || {})
   if (!text) {
     return '-'
@@ -2024,11 +2116,14 @@ function normalizeRunHistoryRow(item: Record<string, any>, sourceLabel = 'all_hi
   const endDate = String(item?.end_date || params.end_date || '')
   const batchKey = String(item?.batch_key || '')
   const mode = String(params.mode || (batchKey.includes('account') ? 'account' : 'signal') || '')
+  const sourceKind = sourceLabel.startsWith('scan') ? 'scan' : 'manual'
   return {
     run_id: Number.isFinite(runId) ? runId : runIdRaw,
     run_key: String(item?.run_key || ''),
     batch_key: String(item?.batch_key || ''),
     source: String(item?.source || sourceLabel),
+    source_kind: sourceKind,
+    source_kind_label: sourceKind === 'scan' ? '网格' : '手动',
     mode,
     status: String(item?.status || ''),
     task_id: Number(item?.task_id || 0) || null,
@@ -3065,10 +3160,12 @@ async function openRunHistoryDialog() {
   historyActiveTab.value = 'manual'
   manualHistoryPage.value = 1
   scanHistoryPage.value = 1
+  favoritesHistoryPage.value = 1
   runHistoryDialogVisible.value = true
   await Promise.all([
     fetchManualHistoryPage(1),
     fetchScanHistoryPage(1),
+    fetchFavoriteHistoryRows(),
   ])
 }
 
@@ -3120,6 +3217,9 @@ async function handleHistoryTabChanged(tabName: string | number) {
   if (String(tabName) === 'scan' && !scanHistoryRows.value.length && !loadingScanHistory.value) {
     await fetchScanHistoryPage(scanHistoryPage.value)
   }
+  if (String(tabName) === 'favorites' && !loadingFavoritesHistory.value) {
+    await fetchFavoriteHistoryRows()
+  }
 }
 
 async function handleManualHistoryPageChange(page: number) {
@@ -3128,6 +3228,94 @@ async function handleManualHistoryPageChange(page: number) {
 
 async function handleScanHistoryPageChange(page: number) {
   await fetchScanHistoryPage(page)
+}
+
+async function fetchFavoriteHistoryRows() {
+  const favoriteIds = favoriteRunIds.value
+    .map((item) => toRunId(item))
+    .filter((item): item is number => item !== null)
+  const favoriteIdSet = new Set<number>(favoriteIds)
+  if (!favoriteIdSet.size) {
+    favoritesHistoryRows.value = []
+    favoritesHistoryTotal.value = 0
+    favoritesHistoryPage.value = 1
+    return
+  }
+
+  loadingFavoritesHistory.value = true
+  try {
+    const rows: Array<Record<string, any>> = []
+    const seenRunIds = new Set<number>()
+    const queryKinds: Array<'manual' | 'scan'> = ['manual', 'scan']
+    const pageSize = 200
+    const maxPagesPerKind = 20
+
+    for (const kind of queryKinds) {
+      let page = 1
+      while (page <= maxPagesPerKind) {
+        const offset = (page - 1) * pageSize
+        const resp = await axios.get(`${apiBase()}/backtest/traditional/runs/`, {
+          params: {
+            kind,
+            limit: pageSize,
+            offset,
+          },
+        })
+        const rawRows = Array.isArray(resp?.data?.data) ? resp.data.data : []
+        if (!rawRows.length) {
+          break
+        }
+
+        for (const item of rawRows) {
+          const normalized = normalizeRunHistoryRow(item, `${kind}_history`)
+          const runId = toRunId(normalized.run_id)
+          if (!runId || !favoriteIdSet.has(runId) || seenRunIds.has(runId)) {
+            continue
+          }
+          seenRunIds.add(runId)
+          rows.push(normalized)
+        }
+
+        const total = Number(resp?.data?.total || 0)
+        if ((total > 0 && offset + rawRows.length >= total) || seenRunIds.size >= favoriteIdSet.size) {
+          break
+        }
+        page += 1
+      }
+      if (seenRunIds.size >= favoriteIdSet.size) {
+        break
+      }
+    }
+
+    const favoriteOrderMap = new Map<number, number>()
+    favoriteIds.forEach((runId, index) => {
+      favoriteOrderMap.set(runId, index)
+    })
+    rows.sort((a, b) => {
+      const runIdA = toRunId(a.run_id)
+      const runIdB = toRunId(b.run_id)
+      const orderA = runIdA ? (favoriteOrderMap.get(runIdA) ?? Number.MAX_SAFE_INTEGER) : Number.MAX_SAFE_INTEGER
+      const orderB = runIdB ? (favoriteOrderMap.get(runIdB) ?? Number.MAX_SAFE_INTEGER) : Number.MAX_SAFE_INTEGER
+      return orderA - orderB
+    })
+
+    favoritesHistoryRows.value = rows
+    favoritesHistoryTotal.value = rows.length
+    const maxPage = Math.max(1, Math.ceil(rows.length / Math.max(1, favoritesHistoryPageSize.value)))
+    if (favoritesHistoryPage.value > maxPage) {
+      favoritesHistoryPage.value = maxPage
+    }
+  } catch {
+    favoritesHistoryRows.value = []
+    favoritesHistoryTotal.value = 0
+    favoritesHistoryPage.value = 1
+  } finally {
+    loadingFavoritesHistory.value = false
+  }
+}
+
+async function handleFavoritesHistoryPageChange(page: number) {
+  favoritesHistoryPage.value = Math.max(1, Math.floor(Number(page) || 1))
 }
 
 onMounted(async () => {
