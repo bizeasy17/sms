@@ -19,13 +19,16 @@ Default history API response should prioritize active working set and skip archi
 
 ## 4. Functional Changes
 
-1. Add management command to archive old backtest runs:
+1. Add management command to archive old backtest runs and scan tasks:
    - Command name: `archivebacktestruns`
    - Default retention: 14 days
    - Candidate rule: `updated_at < now - retention_days`
-   - Scope: `traditional_value_exit` and `traditional_value_exit_account`
+   - Scope:
+     - `TraditionalBacktestRun` with `strategy_name in {traditional_value_exit, traditional_value_exit_account}`
+     - `TraditionalBacktestScanTask` older than retention window
 2. Archive outputs:
    - Export archived DB rows to `output/archive/db_backtest_runs_cleanup_<timestamp>/traditional_backtest_runs.json`
+   - Export archived scan tasks to `output/archive/db_backtest_runs_cleanup_<timestamp>/traditional_backtest_scan_tasks.json`
    - Move run result JSON files to `output/archive/backtests/<strategy_name>/`
 3. Working set cleanup:
    - Remove archived records from active DB after successful export/move bookkeeping.
@@ -45,8 +48,9 @@ Default history API response should prioritize active working set and skip archi
 1. Run archive command in dry-run mode and verify candidate counts.
 2. Run command in apply mode and verify:
    - Archive JSON file created.
+   - Scan task archive JSON file created.
    - Archived run files moved to archive folder.
-   - Active DB count reduced for older than 14 days.
+   - Active DB count reduced for older than 14 days (runs + scan tasks).
 3. Verify API:
    - `GET /backtest/traditional/runs/?kind=manual` returns active only by default.
    - `GET /backtest/traditional/runs/?kind=manual&include_archive=1` includes archive rows.

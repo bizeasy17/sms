@@ -7,11 +7,11 @@ from django.conf import settings
 from django.core.management.base import BaseCommand
 from django.utils import timezone
 
-from backtest.models import TraditionalBacktestRun
+from backtest.models import TraditionalBacktestRun, TraditionalBacktestScanTask
 
 
 class Command(BaseCommand):
-    help = "Archive old traditional backtest runs and keep recent working-set runs."
+    help = "Archive old traditional backtest runs/scan tasks and keep recent working-set data."
 
     def add_arguments(self, parser):
         parser.add_argument(
@@ -32,32 +32,38 @@ class Command(BaseCommand):
         cutoff_dt = timezone.now() - timedelta(days=retention_days)
 
         strategy_names = ["traditional_value_exit", "traditional_value_exit_account"]
-        queryset = (
+        run_queryset = (
             TraditionalBacktestRun.objects.filter(strategy_name__in=strategy_names, updated_at__lt=cutoff_dt)
             .order_by("updated_at", "id")
         )
-        runs = list(queryset)
+        scan_task_queryset = (
+            TraditionalBacktestScanTask.objects.filter(strategy_name__in=strategy_names, updated_at__lt=cutoff_dt)
+            .order_by("updated_at", "id")
+        )
+        runs = list(run_queryset)
+        scan_tasks = list(scan_task_queryset)
 
         self.stdout.write(
-            f"archivebacktestruns start: retention_days={retention_days} cutoff={cutoff_dt.isoformat()} candidates={len(runs)} dry_run={dry_run}"
+            f"archivebacktestruns start: retention_days={retention_days} cutoff={cutoff_dt.isoformat()} run_candidates={len(runs)} scan_task_candidates={len(scan_tasks)} dry_run={dry_run}"
         )
-
-        if not runs:
-            self.stdout.write("no candidates")
-            return
 
         base_dir = Path(settings.BASE_DIR)
         archive_root = base_dir / "output" / "archive"
         stamp = timezone.now().strftime("%Y%m%d_%H%M%S")
         archive_batch_dir = archive_root / f"db_backtest_runs_cleanup_{stamp}"
         archived_db_file = archive_batch_dir / "traditional_backtest_runs.json"
+        archived_scan_task_db_file = archive_batch_dir / "traditional_backtest_scan_tasks.json"
 
         move_total = 0
         move_ok = 0
         move_missing = 0
         move_failed = 0
+        orphan_file_total = 0
+        orphan_file_ok = 0
+        orphan_file_failed = 0
         deletable_ids = []
         archived_rows = []
+        moved_src_paths = set()
 
         for run in runs:
             row = {
@@ -109,6 +115,7 @@ class Command(BaseCommand):
                         try:
                             strategy_dir.mkdir(parents=True, exist_ok=True)
                             shutil.move(str(src_path), str(dest_path))
+                            moved_src_paths.add(str(src_path))
                             move_ok += 1
                             row["archive_meta"]["result_file_status"] = "moved"
                             row["result_file"] = str(dest_path.relative_to(base_dir)).replace("\\", "/")
@@ -122,9 +129,83 @@ class Command(BaseCommand):
                 deletable_ids.append(int(run.id))
             archived_rows.append(row)
 
+        # Also archive orphan result files older than retention window, even without DB rows.
+        orphan_file_rows = []
+        for strategy_name in strategy_names:
+            src_dir = base_dir / "output" / "backtests" / strategy_name
+            if not src_dir.exists() or not src_dir.is_dir():
+                continue
+
+            for src_path in sorted(src_dir.glob(f"{strategy_name}_*.json")):
+                if not src_path.is_file():
+                    continue
+                src_resolved = str(src_path.resolve())
+                if src_resolved in moved_src_paths:
+                    continue
+
+                mtime_dt = timezone.make_aware(
+                    timezone.datetime.fromtimestamp(src_path.stat().st_mtime),
+                    timezone.get_current_timezone(),
+                )
+                if mtime_dt >= cutoff_dt:
+                    continue
+
+                orphan_file_total += 1
+                strategy_dir = archive_root / "backtests" / strategy_name
+                dest_path = strategy_dir / src_path.name
+                if dest_path.exists():
+                    dest_path = strategy_dir / f"{src_path.stem}_orphan{src_path.suffix}"
+
+                row = {
+                    "strategy_name": strategy_name,
+                    "src": str(src_path),
+                    "dest": str(dest_path),
+                    "updated_at": mtime_dt.isoformat(),
+                    "status": "",
+                    "error": "",
+                }
+                if dry_run:
+                    orphan_file_ok += 1
+                    row["status"] = "would_move"
+                else:
+                    try:
+                        strategy_dir.mkdir(parents=True, exist_ok=True)
+                        shutil.move(str(src_path), str(dest_path))
+                        orphan_file_ok += 1
+                        row["status"] = "moved"
+                    except OSError as exc:
+                        orphan_file_failed += 1
+                        row["status"] = "move_failed"
+                        row["error"] = str(exc)
+                orphan_file_rows.append(row)
+
+        archived_scan_task_rows = []
+        deletable_scan_task_ids = []
+        for task in scan_tasks:
+            row = {
+                "id": int(task.id),
+                "task_key": task.task_key,
+                "status": task.status,
+                "strategy_name": task.strategy_name,
+                "total_jobs": int(task.total_jobs or 0),
+                "completed_jobs": int(task.completed_jobs or 0),
+                "failed_jobs": int(task.failed_jobs or 0),
+                "created_at": task.created_at.isoformat() if task.created_at else "",
+                "updated_at": task.updated_at.isoformat() if task.updated_at else "",
+                "params_json": task.params_json or {},
+                "result_json": task.result_json or {},
+                "error_message": task.error_message or "",
+            }
+            deletable_scan_task_ids.append(int(task.id))
+            archived_scan_task_rows.append(row)
+
+        if not runs and not scan_tasks and orphan_file_total == 0:
+            self.stdout.write("no candidates")
+            return
+
         if dry_run:
             self.stdout.write(
-                f"dry-run summary: candidates={len(runs)} deletable={len(deletable_ids)} file_move_total={move_total} file_move_ok={move_ok} file_missing={move_missing} file_move_failed={move_failed}"
+                f"dry-run summary: run_candidates={len(runs)} run_deletable={len(deletable_ids)} scan_task_candidates={len(scan_tasks)} scan_task_deletable={len(deletable_scan_task_ids)} file_move_total={move_total} file_move_ok={move_ok} file_missing={move_missing} file_move_failed={move_failed} orphan_file_total={orphan_file_total} orphan_file_ok={orphan_file_ok} orphan_file_failed={orphan_file_failed}"
             )
             return
 
@@ -133,11 +214,24 @@ class Command(BaseCommand):
             json.dumps(archived_rows, ensure_ascii=False, indent=2),
             encoding="utf-8",
         )
+        archived_scan_task_db_file.write_text(
+            json.dumps(archived_scan_task_rows, ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
+        orphan_file_report = archive_batch_dir / "traditional_backtest_orphan_files.json"
+        orphan_file_report.write_text(
+            json.dumps(orphan_file_rows, ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
 
-        deleted = 0
+        deleted_runs = 0
         if deletable_ids:
-            deleted, _ = TraditionalBacktestRun.objects.filter(id__in=deletable_ids).delete()
+            deleted_runs, _ = TraditionalBacktestRun.objects.filter(id__in=deletable_ids).delete()
+
+        deleted_scan_tasks = 0
+        if deletable_scan_task_ids:
+            deleted_scan_tasks, _ = TraditionalBacktestScanTask.objects.filter(id__in=deletable_scan_task_ids).delete()
 
         self.stdout.write(
-            f"archivebacktestruns done: archived_json={archived_db_file} deleted={deleted} candidates={len(runs)} file_move_total={move_total} file_move_ok={move_ok} file_missing={move_missing} file_move_failed={move_failed}"
+            f"archivebacktestruns done: archived_runs_json={archived_db_file} archived_scan_tasks_json={archived_scan_task_db_file} orphan_file_report={orphan_file_report} deleted_runs={deleted_runs} deleted_scan_tasks={deleted_scan_tasks} run_candidates={len(runs)} scan_task_candidates={len(scan_tasks)} file_move_total={move_total} file_move_ok={move_ok} file_missing={move_missing} file_move_failed={move_failed} orphan_file_total={orphan_file_total} orphan_file_ok={orphan_file_ok} orphan_file_failed={orphan_file_failed}"
         )
