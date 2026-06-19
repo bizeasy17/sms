@@ -17,6 +17,10 @@ call :run_step "BE monthly pull" :step_be_monthly_pull
 if errorlevel 1 exit /b %ERRORLEVEL%
 call :run_step "BE traditional valuation monthly full refresh" :step_be_traditional_monthly_full
 if errorlevel 1 exit /b %ERRORLEVEL%
+call :run_step "BE monthly traditional valuation risk prefill" :step_be_monthly_traditional_valuation_risk_prefill
+if errorlevel 1 exit /b %ERRORLEVEL%
+call :run_step "BE monthly weekly undervalued export" :step_be_monthly_weekly_undervalued_export
+if errorlevel 1 exit /b %ERRORLEVEL%
 call :run_step "Earnings predictive valuation monthly full refresh" :step_earnings_predictive_monthly_full
 if errorlevel 1 exit /b %ERRORLEVEL%
 call :run_step "BE THS moneyflow monthly score" :step_be_ths_moneyflow_monthly_score
@@ -48,6 +52,19 @@ exit /b %ERRORLEVEL%
 set "CANDIDATE_POLICY=all"
 call "%UAT_ROOT%\smartinvestor_be\earnings_refresh.bat"
 set "CANDIDATE_POLICY="
+exit /b %ERRORLEVEL%
+
+:step_be_monthly_traditional_valuation_risk_prefill
+set "PYTHON_CMD=C:\Users\HANJ29\Development\code\JIUCAI_DEV\.venv\Scripts\python.exe"
+if not exist "%PYTHON_CMD%" set "PYTHON_CMD=python"
+pushd "%UAT_ROOT%\smartinvestor_be"
+"%PYTHON_CMD%" manage.py prefillvaluationrisk --market CN
+set "ERR=%ERRORLEVEL%"
+popd
+exit /b %ERR%
+
+:step_be_monthly_weekly_undervalued_export
+call "%UAT_ROOT%\smartinvestor_be\weekly_undervalued_friday.bat"
 exit /b %ERRORLEVEL%
 
 :step_earnings_predictive_monthly_full

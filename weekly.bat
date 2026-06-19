@@ -25,6 +25,8 @@ call :run_step "BE weekly fundamental pull" :step_be_weekly_fundamental
 if errorlevel 1 exit /b %ERRORLEVEL%
 call :run_step "BE weekly valuation due runner" :step_be_weekly_valuation_due_runner
 if errorlevel 1 exit /b %ERRORLEVEL%
+call :run_step "BE weekly traditional valuation risk prefill" :step_be_weekly_traditional_valuation_risk_prefill
+if errorlevel 1 exit /b %ERRORLEVEL%
 call :run_step "BE weekly undervalued export" :step_be_weekly_undervalued_export
 if errorlevel 1 exit /b %ERRORLEVEL%
 call :run_step "BE weekly fund holdings sync" :step_be_weekly_fund_holdings
@@ -76,6 +78,11 @@ exit /b %ERRORLEVEL%
 :step_be_weekly_valuation_due_runner
 cd /d "%UAT_ROOT%\smartinvestor_be"
 call "%UAT_ROOT%\smartinvestor_be\daily_valuation_due_runner.bat"
+exit /b %ERRORLEVEL%
+
+:step_be_weekly_traditional_valuation_risk_prefill
+cd /d "%UAT_ROOT%\smartinvestor_be"
+"%PYTHON_CMD%" manage.py prefillvaluationrisk --market CN
 exit /b %ERRORLEVEL%
 
 :step_be_weekly_undervalued_export
