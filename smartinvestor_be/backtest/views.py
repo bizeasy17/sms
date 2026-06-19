@@ -1635,7 +1635,7 @@ def _build_manual_row_from_scan_task(task, run_row):
     }
 
 
-def _collect_manual_backtest_rows(*, limit: int, offset: int = 0, account_only: bool = False):
+def _collect_manual_backtest_rows(*, limit: int, offset: int = 0, account_only: bool = False, include_archive: bool = False):
     queryset = TraditionalBacktestRun.objects.filter(
         strategy_name__in=["traditional_value_exit", "traditional_value_exit_account"],
     ).order_by("-updated_at", "-id")
@@ -1643,15 +1643,19 @@ def _collect_manual_backtest_rows(*, limit: int, offset: int = 0, account_only: 
 
     file_candidates = _list_traditional_backtest_files(strategy_name="traditional_value_exit")
     file_candidates += _list_traditional_backtest_files(strategy_name="traditional_value_exit_account")
-    file_candidates += _list_archived_traditional_backtest_files(strategy_name="traditional_value_exit")
-    file_candidates += _list_archived_traditional_backtest_files(strategy_name="traditional_value_exit_account")
     file_rows = [_build_run_row(path) for path in file_candidates]
 
-    archive_db_rows = _load_archived_db_run_rows(["traditional_value_exit", "traditional_value_exit_account"])
+    archive_file_rows = []
+    archive_db_rows = []
+    if include_archive:
+        archive_file_candidates = _list_archived_traditional_backtest_files(strategy_name="traditional_value_exit")
+        archive_file_candidates += _list_archived_traditional_backtest_files(strategy_name="traditional_value_exit_account")
+        archive_file_rows = [_build_run_row(path) for path in archive_file_candidates]
+        archive_db_rows = _load_archived_db_run_rows(["traditional_value_exit", "traditional_value_exit_account"])
 
     merged = []
     seen_run_keys = set()
-    for row in db_rows + file_rows + archive_db_rows:
+    for row in db_rows + file_rows + archive_file_rows + archive_db_rows:
         run_key = str((row or {}).get("run_key") or "")
         if _is_scan_like_run_key(run_key):
             continue
@@ -1800,6 +1804,7 @@ def list_traditional_backtest_runs(request):
     offset = max(0, offset)
     kind = str(request.GET.get("kind") or "manual").strip().lower()
     account_only = str(request.GET.get("account_only") or "").strip().lower() in {"1", "true", "yes"}
+    include_archive = str(request.GET.get("include_archive") or "0").strip().lower() in {"1", "true", "yes", "on"}
 
     if kind == "scan":
         rows, total, warning = _collect_scan_backtest_rows(limit=limit, offset=offset)
@@ -1808,7 +1813,12 @@ def list_traditional_backtest_runs(request):
             payload["warning"] = warning
         return Response(payload)
 
-    rows, total = _collect_manual_backtest_rows(limit=limit, offset=offset, account_only=account_only)
+    rows, total = _collect_manual_backtest_rows(
+        limit=limit,
+        offset=offset,
+        account_only=account_only,
+        include_archive=include_archive,
+    )
     return Response({"ok": True, "data": rows, "total": total})
 
 
