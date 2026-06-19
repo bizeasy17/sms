@@ -72,3 +72,24 @@ No backend API contract change is required.
 - Favorites tab shows only favorited runs across manual/scan.
 - Existing manual/scan tabs behavior remains unchanged.
 - No new compile/type errors in touched frontend file.
+
+## 9. Follow-up UI Adjustment (2026-06-19)
+
+History dialog list columns are adjusted for faster metric comparison:
+
+1. Move these metric columns to immediately after `Run ID` in all three tabs (manual/scan/favorites):
+   - `交易数`
+   - `平均收益%`
+   - `胜率%`
+   - `总收益%`
+   - `最大回撤%`
+2. Hide these columns from history lists:
+   - `Run Key`
+   - `来源类型`
+   - `模式`
+3. Favorites tab also shows these performance/risk metrics:
+   - `Sharpe`
+   - `Sortino`
+   - `Calmar`
+   - `盈亏比`
+   - `期望收益%`

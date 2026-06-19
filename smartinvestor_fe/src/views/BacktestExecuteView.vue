@@ -743,8 +743,11 @@
                 </template>
               </el-table-column>
               <el-table-column prop="run_id" label="Run ID" width="90" fixed="left" />
-              <el-table-column prop="run_key" label="Run Key" min-width="220" fixed="left" />
-              <el-table-column prop="mode" label="模式" width="90" />
+              <el-table-column prop="trade_count" label="交易数" width="90" />
+              <el-table-column prop="avg_return_pct" label="平均收益%" width="110" />
+              <el-table-column prop="win_rate_pct" label="胜率%" width="90" />
+              <el-table-column prop="total_return_pct" label="总收益%" width="100" />
+              <el-table-column prop="max_drawdown_pct" label="最大回撤%" width="110" />
               <el-table-column prop="start_date" label="开始日期" width="110" />
               <el-table-column prop="end_date" label="结束日期" width="110" />
               <el-table-column prop="source" label="来源" width="90" />
@@ -766,12 +769,7 @@
                   </div>
                 </template>
               </el-table-column>
-              <el-table-column prop="trade_count" label="交易数" width="90" />
-              <el-table-column prop="avg_return_pct" label="平均收益%" width="110" />
-              <el-table-column prop="win_rate_pct" label="胜率%" width="90" />
               <el-table-column prop="avg_holding_days" label="平均持有" width="100" />
-              <el-table-column prop="total_return_pct" label="总收益%" width="100" />
-              <el-table-column prop="max_drawdown_pct" label="最大回撤%" width="110" />
               <el-table-column prop="sharpe_ratio" label="Sharpe" width="90" />
               <el-table-column prop="sortino_ratio" label="Sortino" width="90" />
               <el-table-column prop="calmar_ratio" label="Calmar" width="90" />
@@ -819,8 +817,11 @@
               <el-table-column prop="task_id" label="Task ID" width="90" fixed="left" />
               <el-table-column prop="combo_index" label="组合#" width="80" />
               <el-table-column prop="run_id" label="Run ID" width="90" />
-              <el-table-column prop="run_key" label="Run Key" min-width="220" />
-              <el-table-column prop="mode" label="模式" width="90" />
+              <el-table-column prop="trade_count" label="交易数" width="90" />
+              <el-table-column prop="avg_return_pct" label="平均收益%" width="110" />
+              <el-table-column prop="win_rate_pct" label="胜率%" width="90" />
+              <el-table-column prop="total_return_pct" label="总收益%" width="100" />
+              <el-table-column prop="max_drawdown_pct" label="最大回撤%" width="110" />
               <el-table-column prop="start_date" label="开始日期" width="110" />
               <el-table-column prop="end_date" label="结束日期" width="110" />
               <el-table-column prop="task_key" label="任务Key" min-width="180" />
@@ -840,11 +841,6 @@
                   </div>
                 </template>
               </el-table-column>
-              <el-table-column prop="trade_count" label="交易数" width="90" />
-              <el-table-column prop="avg_return_pct" label="平均收益%" width="110" />
-              <el-table-column prop="win_rate_pct" label="胜率%" width="90" />
-              <el-table-column prop="total_return_pct" label="总收益%" width="100" />
-              <el-table-column prop="max_drawdown_pct" label="最大回撤%" width="110" />
               <el-table-column prop="sharpe_ratio" label="Sharpe" width="90" />
               <el-table-column prop="sortino_ratio" label="Sortino" width="90" />
               <el-table-column prop="calmar_ratio" label="Calmar" width="90" />
@@ -899,9 +895,11 @@
                 </template>
               </el-table-column>
               <el-table-column prop="run_id" label="Run ID" width="90" fixed="left" />
-              <el-table-column prop="run_key" label="Run Key" min-width="220" fixed="left" />
-              <el-table-column prop="source_kind_label" label="来源类型" width="100" />
-              <el-table-column prop="mode" label="模式" width="90" />
+              <el-table-column prop="trade_count" label="交易数" width="90" />
+              <el-table-column prop="avg_return_pct" label="平均收益%" width="110" />
+              <el-table-column prop="win_rate_pct" label="胜率%" width="90" />
+              <el-table-column prop="total_return_pct" label="总收益%" width="100" />
+              <el-table-column prop="max_drawdown_pct" label="最大回撤%" width="110" />
               <el-table-column prop="start_date" label="开始日期" width="110" />
               <el-table-column prop="end_date" label="结束日期" width="110" />
               <el-table-column label="参数设置" min-width="320">
@@ -920,11 +918,11 @@
                   </div>
                 </template>
               </el-table-column>
-              <el-table-column prop="trade_count" label="交易数" width="90" />
-              <el-table-column prop="avg_return_pct" label="平均收益%" width="110" />
-              <el-table-column prop="win_rate_pct" label="胜率%" width="90" />
-              <el-table-column prop="total_return_pct" label="总收益%" width="100" />
-              <el-table-column prop="max_drawdown_pct" label="最大回撤%" width="110" />
+              <el-table-column prop="sharpe_ratio" label="Sharpe" width="90" />
+              <el-table-column prop="sortino_ratio" label="Sortino" width="90" />
+              <el-table-column prop="calmar_ratio" label="Calmar" width="90" />
+              <el-table-column prop="profit_factor" label="盈亏比" width="90" />
+              <el-table-column prop="expectancy_pct" label="期望收益%" width="110" />
               <el-table-column prop="created_at" label="记录时间" min-width="160" />
             </el-table>
 
