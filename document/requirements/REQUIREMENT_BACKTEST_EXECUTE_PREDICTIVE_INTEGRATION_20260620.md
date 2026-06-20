@@ -111,3 +111,50 @@
 
 - 预测回测股票池定义：全市场中满足回测条件的股票，不使用手工给定 ts_codes。
 - batch_key 规则：永远自动生成，不允许页面手填或透传外部固定值。
+
+## 9. 本轮新增约束（2026-06-20 停止语义修复）
+
+- 用户在执行页点击停止后，后端任务必须在运行中可中断，不允许继续跑到自然结束。
+- 任务状态从 running 进入 cancel_requested 后，前端停止按钮应禁用，不允许重复点击。
+- 单次执行按钮 loading 必须在 cancel_requested 或 canceled 状态下及时释放。
+- 扫描任务事件流需要记录取消轨迹（cancel requested / run canceled / task finished）。
+
+## 10. 预测扫描任务最小改动接口合同（2026-06-20）
+
+目标：仅为 predictive 新增独立扫描编排接口，不修改 traditional 已有接口和执行逻辑。
+
+### 10.1 新增接口（smartinvestor_be）
+
+- `POST /api/backtest/predictive/scan/tasks/`
+  - 用途：创建并异步启动预测扫描任务。
+  - 请求体：沿用执行页 predictive 现有参数（不接受外部 `batch_key/ts_codes/report_type/persist`）。
+  - 返回：`{ ok, data: { task_id, task_key, status } }`
+
+- `GET /api/backtest/predictive/scan/tasks/`
+  - 用途：查询预测扫描任务列表。
+  - 返回：`{ ok, data: { rows: [{ id, task_key, status, total_jobs, completed_jobs, failed_jobs, created_at, updated_at }] } }`
+
+- `GET /api/backtest/predictive/scan/tasks/{task_id}/`
+  - 用途：查询任务详情与阶段事件。
+  - 返回：`{ ok, data: { id, task_key, status, error_message, result: { runs, failures, events } } }`
+
+- `POST /api/backtest/predictive/scan/tasks/{task_id}/cancel/`
+  - 用途：请求停止任务。
+  - 返回：`{ ok, task_id, status }`
+
+### 10.2 状态合同
+
+- 状态枚举：`pending | running | cancel_requested | canceled | success | partial_success | failed`
+- 前端按钮语义：仅 `pending/running` 可点击停止；`cancel_requested/canceled` 均视为执行态结束。
+
+### 10.3 执行与中断语义
+
+- 扫描编排在 smartinvestor_be 内执行；每个组合调用预测服务 `POST /api/forecast/backtest/run/`。
+- 每次提交新组合前必须检查任务状态；命中 `cancel_requested/canceled` 立即短路。
+- 若上游预测服务未来提供 cancel 接口，可在本合同上增加“在途子任务取消”增强能力；当前最小版本不要求强制硬中断在途 HTTP 调用。
+
+### 10.4 兼容性保护
+
+- 不修改 `traditional/scan/*` 的任何 URL、请求体、响应体和状态流转逻辑。
+- 不修改 traditional 前端分支逻辑；仅在 predictive 分支新增调用路径。
+- 预测任务模型与传统任务模型物理隔离，避免相互污染。

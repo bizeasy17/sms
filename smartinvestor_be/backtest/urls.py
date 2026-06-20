@@ -4,6 +4,21 @@ from backtest import views
 
 urlpatterns = [
     path(
+        "predictive/scan/tasks/",
+        views.submit_predictive_backtest_scan,
+        name="predictive-backtest-scan-submit",
+    ),
+    path(
+        "predictive/scan/tasks/<int:task_id>/",
+        views.get_predictive_backtest_scan_task_detail,
+        name="predictive-backtest-scan-task-detail",
+    ),
+    path(
+        "predictive/scan/tasks/<int:task_id>/cancel/",
+        views.cancel_predictive_backtest_scan_task,
+        name="predictive-backtest-scan-task-cancel",
+    ),
+    path(
         "predictive/run/",
         views.execute_predictive_backtest,
         name="predictive-backtest-run-execute",

@@ -425,10 +425,10 @@
         </div>
       </el-card>
 
-      <el-card shadow="never" v-if="showScanTaskDetails && isTraditionalSource">
+      <el-card shadow="never" v-if="showScanTaskDetails">
         <template #header>
           <div class="card-header">
-            <span>批量任务执行过程</span>
+            <span>{{ isTraditionalSource ? '传统批量任务执行过程' : '预测任务执行过程' }}</span>
             <div class="actions-left">
               <span class="muted" v-if="activeTaskId">当前 task_id={{ activeTaskId }}</span>
               <el-button size="small" :loading="loadingTasks" @click="refreshTaskListAndDetail">刷新</el-button>
@@ -467,7 +467,7 @@
           </el-table-column>
         </el-table>
 
-        <div v-if="bestScanRun" class="row-gap" style="margin-top: 10px;">
+        <div v-if="isTraditionalSource && bestScanRun" class="row-gap" style="margin-top: 10px;">
           <el-alert
             :type="bestScanRunTieCount > 1 ? 'warning' : 'success'"
             :closable="false"
@@ -639,7 +639,10 @@
             <el-table :data="predictiveMetrics" stripe border size="small" max-height="280">
               <el-table-column prop="year" label="年份" width="90" />
               <el-table-column prop="trade_count" label="交易数" width="90" />
-              <el-table-column prop="annualized_return" label="年化收益" width="110" />
+              <el-table-column prop="annualized_return" label="年化收益%" width="110" :formatter="formatRatioPercentColumn" />
+              <el-table-column prop="cumulative_return" label="累计收益%" width="110" :formatter="formatRatioPercentColumn" />
+              <el-table-column prop="avg_daily_return" label="平均日收益%" width="120" :formatter="formatRatioPercentColumn" />
+              <el-table-column prop="active_ratio" label="活跃度%" width="100" :formatter="formatRatioPercentColumn" />
               <el-table-column prop="avg_return_pct" label="平均收益%" width="110" />
               <el-table-column prop="win_rate_pct" label="胜率%" width="90" />
               <el-table-column prop="max_drawdown_pct" label="最大回撤%" width="110" />
@@ -690,7 +693,8 @@
             <el-descriptions-item label="胜率%">{{ predictiveSummary.win_rate_pct ?? '-' }}</el-descriptions-item>
             <el-descriptions-item label="中位收益%">{{ predictiveSummary.median_return_pct ?? '-' }}</el-descriptions-item>
             <el-descriptions-item label="年数">{{ predictiveSummary.years ?? '-' }}</el-descriptions-item>
-            <el-descriptions-item label="平均年化">{{ predictiveSummary.avg_annualized_return ?? '-' }}</el-descriptions-item>
+            <el-descriptions-item label="平均年化%">{{ formatRatioPercentValue(predictiveSummary.avg_annualized_return) }}</el-descriptions-item>
+            <el-descriptions-item label="回测性能参数">{{ predictiveBacktestingPerfSummary }}</el-descriptions-item>
             <el-descriptions-item label="参考参数(经验)">{{ predictiveReferenceParams }}</el-descriptions-item>
             <el-descriptions-item label="一句点评">{{ predictiveBacktestComment }}</el-descriptions-item>
           </el-descriptions>
@@ -1059,7 +1063,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, inject, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
+import { computed, inject, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import axios from 'axios'
 import { useRouter } from 'vue-router'
 import {
@@ -1188,6 +1192,7 @@ const loadingFavoritesHistory = ref(false)
 const historyParamsExpanded = ref<Record<string, boolean>>({})
 const submittedScanTaskIds = ref<number[]>([])
 const singleRunTaskId = ref<number | null>(null)
+const singleRunTaskSource = ref<'traditional' | 'predictive' | null>(null)
 let singleRunPollTimer: number | null = null
 const favoriteRunIds = ref<number[]>([])
 const saveWeeklyStrategyDialogVisible = ref(false)
@@ -1707,6 +1712,18 @@ function styleLabel(styleValue: string): string {
 function formatPct(value: unknown): string {
   const parsed = Number(value)
   return Number.isFinite(parsed) ? `${parsed}%` : '-'
+}
+
+function formatRatioPercentValue(value: unknown, digits = 2): string {
+  const parsed = Number(value)
+  if (!Number.isFinite(parsed)) {
+    return '-'
+  }
+  return `${(parsed * 100).toFixed(digits)}%`
+}
+
+function formatRatioPercentColumn(_row: Record<string, any>, _column: unknown, cellValue: unknown): string {
+  return formatRatioPercentValue(cellValue)
 }
 
 function formatNegativeDrawdownCell(_row: StockSummaryRow, _column: unknown, cellValue: unknown): string {
@@ -2616,6 +2633,22 @@ const predictiveBacktestComment = computed(() => buildBacktestComment({
   return_pct: predictiveSummary.value?.avg_return_pct,
   max_drawdown_pct: predictiveSummary.value?.max_drawdown_pct,
 }))
+const predictiveBacktestingPerfSummary = computed(() => {
+  if (!predictiveMetrics.value.length) {
+    return '-'
+  }
+  const metrics = predictiveMetrics.value
+  const annualizedAvg = metrics.reduce((sum, item) => sum + Number(item?.annualized_return || 0), 0) / metrics.length
+  const cumulativeAvg = metrics.reduce((sum, item) => sum + Number(item?.cumulative_return || 0), 0) / metrics.length
+  const dailyAvg = metrics.reduce((sum, item) => sum + Number(item?.avg_daily_return || 0), 0) / metrics.length
+  const activeAvg = metrics.reduce((sum, item) => sum + Number(item?.active_ratio || 0), 0) / metrics.length
+  return [
+    `年化均值=${formatRatioPercentValue(annualizedAvg)}`,
+    `累计收益均值=${formatRatioPercentValue(cumulativeAvg)}`,
+    `日收益均值=${formatRatioPercentValue(dailyAvg, 4)}`,
+    `活跃度均值=${formatRatioPercentValue(activeAvg)}`,
+  ].join('，')
+})
 
 const trendMaLineStyles: Record<string, { width: number; color: string }> = {
   MA6: { width: 1, color: '#5470C6' },
@@ -2901,6 +2934,7 @@ async function executeSingleRun() {
   message.value = ''
   lastRunId.value = null
   singleRunTaskId.value = null
+  singleRunTaskSource.value = null
   executeBuyableStockRows.value = []
   executeBuyableRowsRunId.value = null
   try {
@@ -2914,48 +2948,38 @@ async function executeSingleRun() {
 
     const endpoint = isTraditionalSource.value
       ? `${apiBase()}/backtest/traditional/scan/submit/`
-      : `${apiBase()}/backtest/predictive/run/`
+      : `${apiBase()}/backtest/predictive/scan/tasks/`
     const requestBody = isTraditionalSource.value
       ? {
           template_id: selectedTemplateId.value || undefined,
           base_params: { ...payload },
           scan_grid: {},
         }
-      : payload
+      : {
+          base_params: { ...payload },
+          scan_grid: {},
+        }
 
     const resp = await axios.post(endpoint, requestBody)
     const data = resp?.data || {}
     if (!isTraditionalSource.value) {
-      const runId = Number(data?.run_id)
-      if (!Number.isFinite(runId) || runId <= 0) {
+      activeTaskId.value = data?.task_id ? Number(data.task_id) : null
+      if (!activeTaskId.value) {
         messageType.value = 'error'
-        message.value = data?.error || '预测回测执行失败：未返回run_id'
+        message.value = data?.error || '预测任务提交失败：未返回 task_id。'
         runningSingle.value = false
         return
       }
-      lastPredictiveRunId.value = runId
-      predictiveSummary.value = (data?.summary && typeof data.summary === 'object') ? data.summary : {}
-      const resultPayload = (data?.result && typeof data.result === 'object') ? data.result : {}
-      predictiveMetrics.value = Array.isArray(resultPayload.metrics)
-        ? resultPayload.metrics.map((item: any) => ({
-            year: item?.year,
-            trade_count: item?.trade_count,
-            annualized_return: item?.annualized_return,
-            avg_return_pct: item?.avg_return_pct,
-            win_rate_pct: item?.win_rate_pct,
-            max_drawdown_pct: item?.max_drawdown_pct,
-          }))
-        : []
-      predictiveSampleTrades.value = Array.isArray(resultPayload.sample_trades) ? resultPayload.sample_trades : []
-      syncPredictiveDetailDefaultSelection()
+      singleRunTaskId.value = activeTaskId.value
+      singleRunTaskSource.value = 'predictive'
       messageType.value = 'success'
-      const summary = predictiveSummary.value || {}
-      const metricSummary = buildBacktestingMetricSummary({
-        total_return_pct: summary.avg_return_pct,
-        max_drawdown_pct: summary.max_drawdown_pct,
-      })
-      message.value = `预测回测执行完成，run_id=${runId}，交易数=${summary.trade_count ?? '-'}，胜率=${summary.win_rate_pct ?? '-'}%，平均收益=${summary.avg_return_pct ?? '-'}%，中位收益=${summary.median_return_pct ?? '-'}%，年数=${summary.years ?? '-'}，平均年化=${summary.avg_annualized_return ?? '-'}${metricSummary ? `，评价指标：${metricSummary}` : ''}`
-      runningSingle.value = false
+      message.value = `预测回测任务已提交，task_id=${activeTaskId.value}`
+      const status = await fetchTaskDetail(singleRunTaskId.value || undefined, 'predictive')
+      if (!status || !['success', 'partial_success', 'failed', 'cancel_requested', 'canceled'].includes(status)) {
+        messageType.value = 'info'
+        message.value = `预测任务执行中，task_id=${activeTaskId.value}。完成前按钮将保持禁用。`
+        startSingleRunPolling(singleRunTaskId.value || undefined, 'predictive')
+      }
     } else {
       activeTaskId.value = data?.task_id ? Number(data.task_id) : null
       if (!activeTaskId.value) {
@@ -2968,6 +2992,7 @@ async function executeSingleRun() {
         submittedScanTaskIds.value.push(activeTaskId.value)
       }
       singleRunTaskId.value = activeTaskId.value
+      singleRunTaskSource.value = 'traditional'
       messageType.value = 'success'
       message.value = `单次异步回测已提交，task_id=${activeTaskId.value}`
       await fetchTasks()
@@ -2984,6 +3009,7 @@ async function executeSingleRun() {
     stopSingleRunPolling()
     runningSingle.value = false
     singleRunTaskId.value = null
+    singleRunTaskSource.value = null
   }
 }
 
@@ -3268,10 +3294,17 @@ async function submitScanTask() {
   }
 }
 
-async function fetchTasks() {
+function getScanTaskBasePath(source: 'traditional' | 'predictive'): string {
+  return source === 'predictive'
+    ? `${apiBase()}/backtest/predictive/scan/tasks`
+    : `${apiBase()}/backtest/traditional/scan/tasks`
+}
+
+async function fetchTasks(source?: 'traditional' | 'predictive') {
+  const scanSource = source || (isTraditionalSource.value ? 'traditional' : 'predictive')
   loadingTasks.value = true
   try {
-    const resp = await axios.get(`${apiBase()}/backtest/traditional/scan/tasks/`, {
+    const resp = await axios.get(`${getScanTaskBasePath(scanSource)}/`, {
       params: { limit: 20 },
     })
     const warningText = String(resp?.data?.warning || '').trim()
@@ -3302,15 +3335,16 @@ async function fetchTasks() {
   }
 }
 
-async function fetchTaskDetail(taskId?: number): Promise<string> {
+async function fetchTaskDetail(taskId?: number, source?: 'traditional' | 'predictive'): Promise<string> {
   const resolvedTaskId = Number(taskId ?? activeTaskId.value ?? 0)
   if (!resolvedTaskId) {
     return ''
   }
+  const scanSource = source || singleRunTaskSource.value || (isTraditionalSource.value ? 'traditional' : 'predictive')
   activeTaskId.value = resolvedTaskId
   loadingTaskDetail.value = true
   try {
-    const resp = await axios.get(`${apiBase()}/backtest/traditional/scan/tasks/${resolvedTaskId}/`)
+    const resp = await axios.get(`${getScanTaskBasePath(scanSource)}/${resolvedTaskId}/`)
     const payload = resp?.data?.data || {}
     taskRuns.value = Array.isArray(payload?.result?.runs) ? payload.result.runs : []
     taskEvents.value = Array.isArray(payload?.result?.events) ? payload.result.events : []
@@ -3329,6 +3363,23 @@ async function fetchTaskDetail(taskId?: number): Promise<string> {
     const status = String(payload?.status || '')
     const isSingleRunTask = singleRunTaskId.value && Number(resolvedTaskId) === Number(singleRunTaskId.value)
     if (isSingleRunTask && ['success', 'partial_success'].includes(status)) {
+      if (singleRunTaskSource.value === 'predictive') {
+        const firstRun = taskRuns.value.find((item) => Number(item?.run_id) > 0)
+        const runId = Number(firstRun?.run_id || 0)
+        if (runId > 0) {
+          lastPredictiveRunId.value = runId
+          await switchToRunDetail(runId, {
+            applyParams: false,
+            messagePrefix: '预测回测执行完成',
+            source: 'predictive',
+          })
+        }
+        stopSingleRunPolling()
+        runningSingle.value = false
+        singleRunTaskId.value = null
+        singleRunTaskSource.value = null
+        return status
+      }
       const firstRun = taskRuns.value.find((item) => Number(item?.run_id) > 0)
       if (firstRun && Number(firstRun.run_id) > 0) {
         lastRunId.value = Number(firstRun.run_id)
@@ -3346,12 +3397,21 @@ async function fetchTaskDetail(taskId?: number): Promise<string> {
       stopSingleRunPolling()
       runningSingle.value = false
       singleRunTaskId.value = null
-    } else if (isSingleRunTask && status === 'failed') {
-      messageType.value = 'error'
-      message.value = payload?.error_message || '单次异步回测失败'
+      singleRunTaskSource.value = null
+    } else if (isSingleRunTask && ['cancel_requested', 'canceled'].includes(status)) {
+      messageType.value = 'warning'
+      message.value = `任务已停止，task_id=${resolvedTaskId}`
       stopSingleRunPolling()
       runningSingle.value = false
       singleRunTaskId.value = null
+      singleRunTaskSource.value = null
+    } else if (isSingleRunTask && status === 'failed') {
+      messageType.value = 'error'
+      message.value = payload?.error_message || (scanSource === 'predictive' ? '预测异步回测失败' : '单次异步回测失败')
+      stopSingleRunPolling()
+      runningSingle.value = false
+      singleRunTaskId.value = null
+      singleRunTaskSource.value = null
     }
     return status
   } finally {
@@ -3359,14 +3419,15 @@ async function fetchTaskDetail(taskId?: number): Promise<string> {
   }
 }
 
-function startSingleRunPolling(taskId?: number) {
+function startSingleRunPolling(taskId?: number, source?: 'traditional' | 'predictive') {
   stopSingleRunPolling()
   const targetTaskId = Number(taskId ?? singleRunTaskId.value ?? 0)
+  const pollSource = source || singleRunTaskSource.value || (isTraditionalSource.value ? 'traditional' : 'predictive')
   if (!targetTaskId) {
     return
   }
   singleRunPollTimer = window.setInterval(() => {
-    void fetchTaskDetail(targetTaskId)
+    void fetchTaskDetail(targetTaskId, pollSource)
   }, 4000)
 }
 
@@ -3387,6 +3448,7 @@ function handleTaskRowClick(row: TaskItem) {
     void switchToRunDetail(firstRunId, {
       applyParams: false,
       messagePrefix: '已从批量任务加载明细',
+      source: isTraditionalSource.value ? 'traditional' : 'predictive',
     })
   }
 }
@@ -3431,6 +3493,9 @@ async function switchToRunDetail(
             year: item?.year,
             trade_count: item?.trade_count,
             annualized_return: item?.annualized_return,
+            cumulative_return: item?.cumulative_return,
+            avg_daily_return: item?.avg_daily_return,
+            active_ratio: item?.active_ratio,
             avg_return_pct: item?.avg_return_pct,
             win_rate_pct: item?.win_rate_pct,
             max_drawdown_pct: item?.max_drawdown_pct,
@@ -3470,7 +3535,7 @@ async function refreshTaskListAndDetail() {
 
 function canCancelTask(row: TaskItem): boolean {
   const status = String(row?.status || '').trim().toLowerCase()
-  return status === 'pending' || status === 'running' || status === 'cancel_requested'
+  return status === 'pending' || status === 'running'
 }
 
 async function cancelScanTask(row: TaskItem) {
@@ -3478,12 +3543,19 @@ async function cancelScanTask(row: TaskItem) {
   if (!taskId) {
     return
   }
+  const scanSource = singleRunTaskSource.value || (isTraditionalSource.value ? 'traditional' : 'predictive')
   try {
-    await axios.post(`${apiBase()}/backtest/traditional/scan/tasks/${taskId}/cancel/`)
+    await axios.post(`${getScanTaskBasePath(scanSource)}/${taskId}/cancel/`)
     messageType.value = 'warning'
     message.value = `已请求停止 task_id=${taskId}`
-    await fetchTasks()
-    await fetchTaskDetail(taskId)
+    if (singleRunTaskId.value && Number(singleRunTaskId.value) === taskId) {
+      stopSingleRunPolling()
+      runningSingle.value = false
+      singleRunTaskId.value = null
+      singleRunTaskSource.value = null
+    }
+    await fetchTasks(scanSource)
+    await fetchTaskDetail(taskId, scanSource)
   } catch (error: any) {
     messageType.value = 'error'
     message.value = error?.response?.data?.error || error?.message || '停止任务失败'
@@ -3812,6 +3884,13 @@ onMounted(async () => {
   await fetchTemplates()
   await fetchTasks()
   await fetchLatestRunStocks()
+})
+
+watch(backtestSource, async () => {
+  activeTaskId.value = null
+  taskRuns.value = []
+  taskEvents.value = []
+  await fetchTasks()
 })
 
 onBeforeUnmount(() => {

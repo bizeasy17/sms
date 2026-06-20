@@ -18,7 +18,7 @@ from django.utils import timezone
 from rest_framework.decorators import api_view
 from rest_framework.response import Response
 
-from backtest.models import TraditionalBacktestRun, TraditionalBacktestScanTask
+from backtest.models import TraditionalBacktestRun, TraditionalBacktestScanTask, PredictiveBacktestScanTask
 from backtest.services import (
     run_traditional_value_exit_account_backtest,
     run_traditional_value_exit_backtest,
@@ -49,8 +49,10 @@ else:
 
 
 _SCAN_EXECUTOR = ThreadPoolExecutor(max_workers=1)
+_PREDICTIVE_SCAN_EXECUTOR = ThreadPoolExecutor(max_workers=1)
 
 _SCAN_TASK_TABLE_MISSING_HINT = "scan task table missing; run `python manage.py migrate backtest`"
+_PREDICTIVE_SCAN_TASK_TABLE_MISSING_HINT = "predictive scan task table missing; run `python manage.py migrate backtest`"
 
 TRADITIONAL_TEMPLATE_MAP = {
     "baseline": {
@@ -372,8 +374,9 @@ def _validate_take_profit_allocation(*, take_profit_mode, take_profit_tiers, tre
         raise ValueError("止盈配置总和必须为100%")
 
 
-def _build_task_key():
-    return f"traditional_scan_{datetime.now().strftime('%Y%m%d_%H%M%S_%f')}"
+def _build_task_key(prefix: str = "traditional_scan"):
+    safe_prefix = str(prefix or "scan").strip() or "scan"
+    return f"{safe_prefix}_{datetime.now().strftime('%Y%m%d_%H%M%S_%f')}"
 
 
 def _parse_scan_grid(scan_grid):
@@ -493,7 +496,7 @@ def _normalize_run_request(raw_params):
     return parsed
 
 
-def _run_one_task_item(params, output_json=None):
+def _run_one_task_item(params, output_json=None, cancel_checker=None):
     common_kwargs = {
         "scope": params["scope"],
         "market": params["market"],
@@ -551,10 +554,12 @@ def _run_one_task_item(params, output_json=None):
         summary, output_path = run_traditional_value_exit_account_backtest(
             **common_kwargs,
             **account_kwargs,
+            cancel_checker=cancel_checker,
         )
     else:
         summary, output_path = run_traditional_value_exit_backtest(
             **common_kwargs,
+            cancel_checker=cancel_checker,
         )
 
     run_key = output_path.stem
@@ -1210,7 +1215,7 @@ def _compute_backtesting_stats(kline_rows, trades):
         }
 
 
-def _serialize_scan_task(task_obj: TraditionalBacktestScanTask):
+def _serialize_scan_task(task_obj):
     total = int(task_obj.total_jobs or 0)
     completed = int(task_obj.completed_jobs or 0)
     failed = int(task_obj.failed_jobs or 0)
@@ -1361,6 +1366,12 @@ def _extract_scan_events_from_run_file(output_file):
     return out
 
 
+def _is_scan_task_canceled(task_id: int) -> bool:
+    row = TraditionalBacktestScanTask.objects.filter(id=task_id).values("status").first() or {}
+    status_text = str(row.get("status") or "").strip().lower()
+    return status_text in {"cancel_requested", "canceled"}
+
+
 def _execute_scan_task(task_id, base_params, combo_overrides):
     task = TraditionalBacktestScanTask.objects.filter(id=task_id).first()
     if task is None:
@@ -1401,6 +1412,9 @@ def _execute_scan_task(task_id, base_params, combo_overrides):
 
         merged_params = dict(base_params)
         merged_params.update(override or {})
+
+        cancel_checker = lambda: _is_scan_task_canceled(task_id)
+
         _append_scan_event(
             events,
             step_type="run_started",
@@ -1412,7 +1426,7 @@ def _execute_scan_task(task_id, base_params, combo_overrides):
             normalized = _normalize_run_request(merged_params)
             output_file = Path(settings.BASE_DIR) / "output" / "backtests" / "traditional_value_exit_scan" / task.task_key / f"{task.task_key}_run_{idx:03d}.json"
             output_file.parent.mkdir(parents=True, exist_ok=True)
-            run_payload = _run_one_task_item(normalized, output_json=str(output_file))
+            run_payload = _run_one_task_item(normalized, output_json=str(output_file), cancel_checker=cancel_checker)
             _append_scan_event(
                 events,
                 step_type="run_finished",
@@ -1438,6 +1452,19 @@ def _execute_scan_task(task_id, base_params, combo_overrides):
                 **run_payload,
             })
             completed += 1
+        except InterruptedError:
+            _append_scan_event(
+                events,
+                step_type="run_canceled",
+                message="run #{}/{} canceled by user".format(idx, len(combo_overrides)),
+                index=idx,
+                level="warning",
+            )
+            TraditionalBacktestScanTask.objects.filter(id=task_id).update(
+                status="canceled",
+                updated_at=timezone.now(),
+            )
+            break
         except (ValueError, TypeError) as exc:
             _append_scan_event(
                 events,
@@ -2156,6 +2183,296 @@ def get_predictive_backtest_run_detail(_request, run_id: int):
         method="GET",
         path=f"/api/forecast/backtest/runs/{int(run_id)}/",
     )
+
+
+def _extract_predictive_run_payload(proxy_data):
+    payload = proxy_data if isinstance(proxy_data, dict) else {}
+    if isinstance(payload.get("data"), dict):
+        payload = payload.get("data") or {}
+    if not isinstance(payload, dict):
+        payload = {}
+    run_id_raw = payload.get("run_id") if payload.get("run_id") is not None else payload.get("id")
+    run_id = 0
+    try:
+        run_id = int(run_id_raw or 0)
+    except (TypeError, ValueError):
+        run_id = 0
+    return {
+        "run_id": run_id,
+        "run_key": str(payload.get("run_key") or ""),
+        "summary": payload.get("summary") if isinstance(payload.get("summary"), dict) else {},
+        "result": payload.get("result") if isinstance(payload.get("result"), dict) else {},
+    }
+
+
+def _is_predictive_scan_task_canceled(task_id: int) -> bool:
+    row = PredictiveBacktestScanTask.objects.filter(id=task_id).values("status").first() or {}
+    status_text = str(row.get("status") or "").strip().lower()
+    return status_text in {"cancel_requested", "canceled"}
+
+
+def _execute_predictive_scan_task(task_id, base_params, combo_overrides):
+    task = PredictiveBacktestScanTask.objects.filter(id=task_id).first()
+    if task is None:
+        return
+
+    if str(task.status or "").strip().lower() in {"cancel_requested", "canceled"}:
+        task.status = "canceled"
+        task.error_message = "task canceled before execution"
+        task.save(update_fields=["status", "error_message", "updated_at"])
+        return
+
+    task.status = "running"
+    task.error_message = ""
+    task.completed_jobs = 0
+    task.failed_jobs = 0
+    events = []
+    task.result_json = {"runs": [], "failures": [], "events": events}
+    task.save(update_fields=["status", "error_message", "completed_jobs", "failed_jobs", "result_json", "updated_at"])
+
+    run_rows = []
+    failures = []
+    completed = 0
+    failed = 0
+    max_events = 800
+
+    for idx, override in enumerate(combo_overrides, 1):
+        if _is_predictive_scan_task_canceled(task_id):
+            _append_scan_event(
+                events,
+                step_type="task_canceled",
+                message="task canceled by user at run #{}/{}".format(idx, len(combo_overrides)),
+                index=idx,
+                level="warning",
+            )
+            break
+
+        merged_params = dict(base_params)
+        merged_params.update(override or {})
+        _append_scan_event(
+            events,
+            step_type="run_started",
+            message="predictive run #{}/{} started".format(idx, len(combo_overrides)),
+            index=idx,
+            extra={
+                "start_year": merged_params.get("start_year"),
+                "end_year": merged_params.get("end_year"),
+                "min_score": merged_params.get("min_score"),
+            },
+        )
+
+        try:
+            if _is_predictive_scan_task_canceled(task_id):
+                raise InterruptedError("predictive scan task canceled")
+
+            effective_payload = _build_effective_predictive_payload(merged_params)
+            if not str(effective_payload.get("batch_key") or "").strip():
+                raise ValueError("predictive batch_key auto-resolve failed")
+            if not isinstance(effective_payload.get("ts_codes"), list) or not effective_payload.get("ts_codes"):
+                raise ValueError("predictive market ts_codes auto-resolve failed")
+
+            proxy_response = _proxy_predictive_backtest_request(
+                method="POST",
+                path="/api/forecast/backtest/run/",
+                payload=effective_payload,
+            )
+            if int(getattr(proxy_response, "status_code", 500) or 500) >= 400:
+                proxy_payload = proxy_response.data if isinstance(proxy_response.data, dict) else {}
+                raise ValueError(str(proxy_payload.get("error") or "predictive run failed"))
+
+            proxy_payload = proxy_response.data if isinstance(proxy_response.data, dict) else {}
+            run_payload = _extract_predictive_run_payload(proxy_payload)
+            if int(run_payload.get("run_id") or 0) <= 0:
+                raise ValueError("predictive run_id missing")
+
+            _append_scan_event(
+                events,
+                step_type="run_finished",
+                message="predictive run #{}/{} finished run_id={}".format(idx, len(combo_overrides), run_payload.get("run_id")),
+                index=idx,
+                extra={"run_id": run_payload.get("run_id"), "run_key": run_payload.get("run_key")},
+            )
+
+            run_rows.append(
+                {
+                    "index": idx,
+                    "params": merged_params,
+                    "effective_payload": {
+                        "batch_key": effective_payload.get("batch_key"),
+                        "ts_codes_count": len(effective_payload.get("ts_codes") or []),
+                        "start_year": effective_payload.get("start_year"),
+                        "end_year": effective_payload.get("end_year"),
+                        "min_score": effective_payload.get("min_score"),
+                        "max_risk": effective_payload.get("max_risk"),
+                    },
+                    **run_payload,
+                }
+            )
+            completed += 1
+        except InterruptedError:
+            _append_scan_event(
+                events,
+                step_type="run_canceled",
+                message="predictive run #{}/{} canceled by user".format(idx, len(combo_overrides)),
+                index=idx,
+                level="warning",
+            )
+            PredictiveBacktestScanTask.objects.filter(id=task_id).update(status="canceled", updated_at=timezone.now())
+            break
+        except (ValueError, TypeError) as exc:
+            _append_scan_event(
+                events,
+                step_type="run_failed",
+                message="predictive run #{}/{} failed: {}".format(idx, len(combo_overrides), str(exc)),
+                index=idx,
+                level="error",
+            )
+            failures.append(
+                {
+                    "index": idx,
+                    "params": merged_params,
+                    "error": str(exc),
+                }
+            )
+            failed += 1
+
+        PredictiveBacktestScanTask.objects.filter(id=task_id).update(
+            completed_jobs=completed,
+            failed_jobs=failed,
+            result_json={"runs": run_rows, "failures": failures, "events": events[-max_events:]},
+            updated_at=timezone.now(),
+        )
+
+    final = PredictiveBacktestScanTask.objects.filter(id=task_id).first()
+    if final is None:
+        return
+
+    final_status_text = str(final.status or "").strip().lower()
+    if final_status_text in {"cancel_requested", "canceled"}:
+        final.status = "canceled"
+    elif completed > 0 and failed == 0:
+        final.status = "success"
+    elif completed > 0 and failed > 0:
+        final.status = "partial_success"
+    else:
+        final.status = "failed"
+
+    if failed > 0 and completed == 0 and failures:
+        final.error_message = failures[0].get("error") or "scan failed"
+
+    _append_scan_event(
+        events,
+        step_type="task_finished",
+        message="task finished status={} completed={} failed={}".format(final.status, completed, failed),
+        extra={"status": final.status, "completed": completed, "failed": failed},
+    )
+    final.result_json = {"runs": run_rows, "failures": failures, "events": events[-max_events:]}
+    final.completed_jobs = completed
+    final.failed_jobs = failed
+    final.save(update_fields=["status", "result_json", "completed_jobs", "failed_jobs", "error_message", "updated_at"])
+
+
+@api_view(["GET", "POST"])
+def submit_predictive_backtest_scan(request):
+    if request.method == "GET":
+        try:
+            limit = int(request.GET.get("limit", 20))
+        except (TypeError, ValueError):
+            limit = 20
+        limit = max(1, min(limit, 100))
+        try:
+            queryset = PredictiveBacktestScanTask.objects.order_by("-updated_at", "-id")[:limit]
+            rows = [_serialize_scan_task(item) for item in queryset]
+        except (ProgrammingError, OperationalError):
+            return Response({"ok": True, "data": [], "total": 0, "warning": _PREDICTIVE_SCAN_TASK_TABLE_MISSING_HINT})
+        return Response({"ok": True, "data": rows, "total": len(rows)})
+
+    payload = request.data if isinstance(request.data, dict) else {}
+    base_params = payload.get("base_params") if isinstance(payload.get("base_params"), dict) else dict(payload)
+    scan_grid = payload.get("scan_grid") if isinstance(payload.get("scan_grid"), dict) else {}
+    combos = _parse_scan_grid(scan_grid)
+
+    max_jobs = 120
+    if len(combos) > max_jobs:
+        return Response(
+            {
+                "ok": False,
+                "error": f"scan combinations too many: {len(combos)} > {max_jobs}",
+            },
+            status=400,
+        )
+
+    try:
+        task = PredictiveBacktestScanTask.objects.create(
+            task_key=_build_task_key(prefix="predictive_scan"),
+            status="pending",
+            strategy_name="predictive_backtest",
+            total_jobs=len(combos),
+            completed_jobs=0,
+            failed_jobs=0,
+            params_json={
+                "base_params": base_params,
+                "scan_grid": scan_grid,
+                "combinations": len(combos),
+            },
+            result_json={"runs": [], "failures": []},
+            error_message="",
+        )
+    except (ProgrammingError, OperationalError):
+        return Response({"ok": False, "error": _PREDICTIVE_SCAN_TASK_TABLE_MISSING_HINT}, status=503)
+
+    _PREDICTIVE_SCAN_EXECUTOR.submit(_execute_predictive_scan_task, int(task.id), base_params, combos)
+
+    return Response(
+        {
+            "ok": True,
+            "task_id": int(task.id),
+            "task_key": task.task_key,
+            "status": task.status,
+            "total_jobs": int(task.total_jobs),
+        }
+    )
+
+@api_view(["GET"])
+def get_predictive_backtest_scan_task_detail(_request, task_id: int):
+    try:
+        task = PredictiveBacktestScanTask.objects.filter(id=task_id).first()
+    except (ProgrammingError, OperationalError):
+        return Response({"ok": False, "error": _PREDICTIVE_SCAN_TASK_TABLE_MISSING_HINT}, status=503)
+    if task is None:
+        return Response({"ok": False, "error": "task not found"}, status=404)
+    return Response({"ok": True, "data": _serialize_scan_task(task)})
+
+
+@api_view(["POST"])
+def cancel_predictive_backtest_scan_task(_request, task_id: int):
+    try:
+        task = PredictiveBacktestScanTask.objects.filter(id=task_id).first()
+    except (ProgrammingError, OperationalError):
+        return Response({"ok": False, "error": _PREDICTIVE_SCAN_TASK_TABLE_MISSING_HINT}, status=503)
+
+    if task is None:
+        return Response({"ok": False, "error": "task not found"}, status=404)
+
+    status_text = str(task.status or "").strip().lower()
+    if status_text in {"success", "failed", "partial_success", "canceled"}:
+        return Response({"ok": True, "task_id": int(task.id), "status": task.status, "message": "task already finished"})
+
+    result_payload = task.result_json if isinstance(task.result_json, dict) else {}
+    events = result_payload.get("events") if isinstance(result_payload.get("events"), list) else []
+    _append_scan_event(
+        events,
+        step_type="task_cancel_requested",
+        message="predictive task cancel requested by user",
+        level="warning",
+    )
+    result_payload["events"] = events[-800:]
+
+    task.status = "cancel_requested"
+    task.result_json = result_payload
+    task.save(update_fields=["status", "result_json", "updated_at"])
+
+    return Response({"ok": True, "task_id": int(task.id), "status": task.status})
 
 
 def _resolve_predictive_run_payload(run_id: int):

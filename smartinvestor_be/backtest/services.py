@@ -1255,6 +1255,7 @@ def run_traditional_value_exit_backtest(
     progress_every=50,
     output_json=None,
     stdout=None,
+    cancel_checker=None,
 ):
     project_root = Path(__file__).resolve().parents[1]
     strategy_name = "traditional_value_exit"
@@ -1359,6 +1360,8 @@ def run_traditional_value_exit_backtest(
     moneyflow_missing_count = 0
 
     for idx, trade_date in enumerate(sorted(entry_dates), 1):
+        if callable(cancel_checker) and cancel_checker():
+            raise InterruptedError("scan task canceled")
         date_prices = date_price_map.get(trade_date, {})
         if not date_prices:
             continue
@@ -1822,6 +1825,7 @@ def run_traditional_value_exit_account_backtest(
     disable_eop_exit=False,
     disable_target_hit=False,
     priority_policy="score_desc",
+    cancel_checker=None,
 ):
     project_root = Path(__file__).resolve().parents[1]
     strategy_name = "traditional_value_exit_account"
@@ -2011,6 +2015,8 @@ def run_traditional_value_exit_account_backtest(
     account_stop_trigger_date = None
 
     for idx, trade_date in enumerate(all_trade_dates, 1):
+        if callable(cancel_checker) and cancel_checker():
+            raise InterruptedError("scan task canceled")
         date_prices = date_price_map.get(trade_date, {})
 
         for ts_code in list(open_positions.keys()):
