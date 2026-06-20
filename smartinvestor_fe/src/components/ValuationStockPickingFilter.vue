@@ -326,8 +326,8 @@ const selectedValuationBandNumber = computed<number>({
     },
 });
 const selectedValuationPickStrategy = ref("VPS:BASELINE");
-const selectedMinNetprofitYoy = ref<number | null>(null);
-const selectedMinEbitYoy = ref<number | null>(null);
+const selectedMinNetprofitYoy = ref<number | null>(2);
+const selectedMinEbitYoy = ref<number | null>(2);
 const selectedRequirePositivePrevNetprofit = ref(true);
 const selectedRequirePositivePrevEbit = ref(true);
 const selectedApplyFinancialFilters = ref(false);
@@ -458,8 +458,8 @@ function applyTraditionalQuickStrategy() {
     selectedValuationStatus.value = firstOfMulti(profile.valuation_status, "VS:UNDER");
     selectedValuationBand.value = String(profile.valuation_band_pct ?? "0.1");
     selectedValuationPickStrategy.value = profile.valuation_pick_strategy || "VPS:BASELINE";
-    selectedMinNetprofitYoy.value = profile.min_netprofit_yoy === null || profile.min_netprofit_yoy === undefined ? null : Number(profile.min_netprofit_yoy);
-    selectedMinEbitYoy.value = profile.min_ebit_yoy === null || profile.min_ebit_yoy === undefined ? null : Number(profile.min_ebit_yoy);
+    selectedMinNetprofitYoy.value = profile.min_netprofit_yoy === null || profile.min_netprofit_yoy === undefined ? 2 : Number(profile.min_netprofit_yoy);
+    selectedMinEbitYoy.value = profile.min_ebit_yoy === null || profile.min_ebit_yoy === undefined ? 2 : Number(profile.min_ebit_yoy);
     selectedRequirePositivePrevNetprofit.value = Boolean(profile.require_positive_prev_netprofit ?? true);
     selectedRequirePositivePrevEbit.value = Boolean(profile.require_positive_prev_ebit ?? true);
     selectedApplyFinancialFilters.value = Boolean(profile.apply_financial_filters ?? false);
@@ -484,8 +484,8 @@ function applyPredictiveQuickStrategy() {
     selectedValuationStatus.value = profile.valuation_status || "VS:UNDER";
     selectedValuationBand.value = String(profile.valuation_band_pct ?? "0.1");
     selectedValuationPickStrategy.value = profile.valuation_pick_strategy || "VPS:BASELINE";
-    selectedMinNetprofitYoy.value = profile.min_netprofit_yoy === null || profile.min_netprofit_yoy === undefined ? null : Number(profile.min_netprofit_yoy);
-    selectedMinEbitYoy.value = profile.min_ebit_yoy === null || profile.min_ebit_yoy === undefined ? null : Number(profile.min_ebit_yoy);
+    selectedMinNetprofitYoy.value = profile.min_netprofit_yoy === null || profile.min_netprofit_yoy === undefined ? 2 : Number(profile.min_netprofit_yoy);
+    selectedMinEbitYoy.value = profile.min_ebit_yoy === null || profile.min_ebit_yoy === undefined ? 2 : Number(profile.min_ebit_yoy);
     selectedRequirePositivePrevNetprofit.value = Boolean(profile.require_positive_prev_netprofit ?? true);
     selectedRequirePositivePrevEbit.value = Boolean(profile.require_positive_prev_ebit ?? true);
     selectedApplyFinancialFilters.value = Boolean(profile.apply_financial_filters ?? false);
