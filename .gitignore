@@ -30,3 +30,6 @@ __pycache__/
 # Local settings
 smartinvestor_etl/smartinvestor_etl/settings.py
 
+# Earning training local env
+earning_training/.env
+
