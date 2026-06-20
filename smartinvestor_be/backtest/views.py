@@ -4,6 +4,9 @@ import re
 import zlib
 import importlib
 import math
+from urllib import parse as urllib_parse
+from urllib import request as urllib_request
+from urllib.error import HTTPError, URLError
 from collections import defaultdict
 from datetime import datetime, date, timedelta
 from pathlib import Path
@@ -1978,6 +1981,258 @@ def run_traditional_backtest(request):
 
 
 execute_traditional_backtest = run_traditional_backtest
+
+
+def _predictive_service_base_url() -> str:
+    return str(getattr(settings, "EARNINGS_SERVICE_BASE_URL", "http://127.0.0.1:5002") or "http://127.0.0.1:5002").strip().rstrip("/")
+
+
+def _predictive_service_timeout(default_seconds: float = 12.0) -> float:
+    try:
+        value = float(getattr(settings, "EARNINGS_SERVICE_PREDICT_TIMEOUT_SECONDS", default_seconds) or default_seconds)
+        return max(1.0, value)
+    except (TypeError, ValueError):
+        return default_seconds
+
+
+def _fetch_latest_predictive_batch_key() -> str:
+    base_url = _predictive_service_base_url()
+    endpoint = f"{base_url}/api/forecast/backtest/runs/?limit=1"
+    headers = {"Accept": "application/json"}
+    request = urllib_request.Request(endpoint, method="GET", headers=headers)
+    timeout_seconds = _predictive_service_timeout()
+
+    try:
+        with urllib_request.urlopen(request, timeout=timeout_seconds) as response:
+            raw = response.read().decode("utf-8", errors="replace")
+    except (HTTPError, URLError, TimeoutError, ValueError, json.JSONDecodeError, OSError):
+        return ""
+
+    try:
+        data = json.loads(raw)
+    except json.JSONDecodeError:
+        return ""
+
+    runs = []
+    if isinstance(data, dict):
+        if isinstance(data.get("runs"), list):
+            runs = data.get("runs") or []
+        elif isinstance(data.get("data"), list):
+            runs = data.get("data") or []
+
+    for row in runs:
+        if not isinstance(row, dict):
+            continue
+        batch_key = str(row.get("batch_key") or "").strip()
+        if batch_key:
+            return batch_key
+    return ""
+
+
+def _build_predictive_market_universe_ts_codes() -> list[str]:
+    queryset = (
+        Corporation.objects
+        .filter(list_status="L")
+        .exclude(ts_code__isnull=True)
+        .exclude(ts_code="")
+        .values_list("ts_code", flat=True)
+    )
+    codes = sorted({str(code or "").strip().upper() for code in queryset if str(code or "").strip()})
+    return codes
+
+
+def _build_effective_predictive_payload(raw_payload: dict | None) -> dict:
+    payload = dict(raw_payload or {})
+
+    auto_batch_key = _fetch_latest_predictive_batch_key()
+    if not auto_batch_key:
+        auto_batch_key = str(getattr(settings, "PREDICTIVE_BACKTEST_DEFAULT_BATCH_KEY", "") or "").strip()
+
+    ts_codes = _build_predictive_market_universe_ts_codes()
+
+    effective = {
+        "batch_key": auto_batch_key,
+        "ts_codes": ts_codes,
+        "start_year": payload.get("start_year"),
+        "end_year": payload.get("end_year"),
+        "min_score": payload.get("min_score"),
+        "max_risk": payload.get("max_risk"),
+        "stop_mode": payload.get("stop_mode"),
+        "global_stop_dd": payload.get("global_stop_dd"),
+        "single_stop_dd": payload.get("single_stop_dd"),
+        "sell_strategy": payload.get("sell_strategy"),
+        "take_profit_pct": payload.get("take_profit_pct"),
+        "stop_loss_pct": payload.get("stop_loss_pct"),
+        "max_holding_days": payload.get("max_holding_days"),
+        "report_type": "ALL",
+        "persist": True,
+    }
+
+    # Drop keys with None so upstream defaults still apply where needed.
+    return {key: value for key, value in effective.items() if value is not None}
+
+
+def _proxy_predictive_backtest_request(*, method: str, path: str, payload: dict | None = None, query: dict | None = None):
+    base_url = _predictive_service_base_url()
+    endpoint = f"{base_url}{path}"
+    if query:
+        pairs = []
+        for key, value in query.items():
+            if value in (None, ""):
+                continue
+            if isinstance(value, (list, tuple)):
+                for item in value:
+                    if item in (None, ""):
+                        continue
+                    pairs.append((key, item))
+            else:
+                pairs.append((key, value))
+        if pairs:
+            endpoint = f"{endpoint}?{urllib_parse.urlencode(pairs, doseq=True)}"
+
+    body = None
+    headers = {"Accept": "application/json"}
+    if payload is not None:
+        body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+        headers["Content-Type"] = "application/json"
+
+    request = urllib_request.Request(endpoint, data=body, method=method.upper(), headers=headers)
+    timeout_seconds = _predictive_service_timeout()
+
+    try:
+        with urllib_request.urlopen(request, timeout=timeout_seconds) as response:
+            raw = response.read().decode("utf-8", errors="replace")
+            try:
+                data = json.loads(raw)
+            except json.JSONDecodeError:
+                data = {"ok": True, "data": raw}
+            return Response(data, status=getattr(response, "status", 200) or 200)
+    except HTTPError as err:
+        raw = err.read().decode("utf-8", errors="replace") if hasattr(err, "read") else ""
+        try:
+            data = json.loads(raw) if raw else {}
+        except json.JSONDecodeError:
+            data = {"ok": False, "error": raw or str(err)}
+        if not isinstance(data, dict):
+            data = {"ok": False, "error": str(data)}
+        data.setdefault("ok", False)
+        data.setdefault("error", str(err))
+        return Response(data, status=int(getattr(err, "code", 502) or 502))
+    except (URLError, TimeoutError, ValueError) as err:
+        return Response({"ok": False, "error": f"predictive service unavailable: {err}"}, status=502)
+
+
+@api_view(["POST"])
+def execute_predictive_backtest(request):
+    payload = request.data if isinstance(request.data, dict) else {}
+    effective_payload = _build_effective_predictive_payload(payload)
+    if not str(effective_payload.get("batch_key") or "").strip():
+        return Response({"ok": False, "error": "predictive batch_key auto-resolve failed"}, status=400)
+    if not isinstance(effective_payload.get("ts_codes"), list) or not effective_payload.get("ts_codes"):
+        return Response({"ok": False, "error": "predictive market ts_codes auto-resolve failed"}, status=400)
+    return _proxy_predictive_backtest_request(
+        method="POST",
+        path="/api/forecast/backtest/run/",
+        payload=effective_payload,
+    )
+
+
+@api_view(["GET"])
+def list_predictive_backtest_runs(request):
+    return _proxy_predictive_backtest_request(
+        method="GET",
+        path="/api/forecast/backtest/runs/",
+        query={
+            "limit": request.GET.get("limit"),
+            "offset": request.GET.get("offset"),
+            "batch_key": request.GET.get("batch_key"),
+        },
+    )
+
+
+@api_view(["GET"])
+def get_predictive_backtest_run_detail(_request, run_id: int):
+    return _proxy_predictive_backtest_request(
+        method="GET",
+        path=f"/api/forecast/backtest/runs/{int(run_id)}/",
+    )
+
+
+def _resolve_predictive_run_payload(run_id: int):
+    response = _proxy_predictive_backtest_request(
+        method="GET",
+        path=f"/api/forecast/backtest/runs/{int(run_id)}/",
+    )
+    if int(getattr(response, "status_code", 500) or 500) >= 400:
+        return None, response
+
+    payload = response.data if isinstance(response.data, dict) else {}
+    if isinstance(payload.get("data"), dict):
+        payload = payload.get("data") or {}
+    if not isinstance(payload, dict):
+        payload = {}
+    return payload, None
+
+
+@api_view(["GET"])
+def get_predictive_backtest_run_stock_detail(request, run_id: int, ts_code: str):
+    payload, error_response = _resolve_predictive_run_payload(run_id=run_id)
+    if payload is None:
+        if error_response is not None:
+            return error_response
+        return Response({"ok": False, "error": "run not found"}, status=404)
+
+    normalized_code = str(ts_code or "").strip().upper()
+    if not normalized_code:
+        return Response({"ok": False, "error": "ts_code is required"}, status=400)
+
+    result_payload = payload.get("result") if isinstance(payload, dict) else {}
+    sample_trades = result_payload.get("sample_trades") if isinstance(result_payload, dict) else []
+    trade_rows = [
+        item for item in (sample_trades if isinstance(sample_trades, list) else [])
+        if str((item or {}).get("ts_code") or "").strip().upper() == normalized_code
+    ]
+    trade_rows.sort(key=lambda item: (str(item.get("entry_date") or ""), str(item.get("exit_date") or "")))
+    if not trade_rows:
+        return Response({"ok": False, "error": "no trades for ts_code"}, status=404)
+
+    entry_dates = [_parse_iso_date_optional(item.get("entry_date")) for item in trade_rows]
+    exit_dates = [_parse_iso_date_optional(item.get("exit_date")) for item in trade_rows]
+    valid_entry_dates = [d for d in entry_dates if d is not None]
+    valid_exit_dates = [d for d in exit_dates if d is not None]
+    if not valid_entry_dates or not valid_exit_dates:
+        return Response({"ok": False, "error": "invalid trade dates in sample_trades"}, status=400)
+
+    lookback_days = max(10, min(180, int(request.GET.get("lookback_days", 40))))
+    forward_days = max(5, min(120, int(request.GET.get("forward_days", 20))))
+    start_date = min(valid_entry_dates) - timedelta(days=lookback_days)
+    end_date = max(valid_exit_dates) + timedelta(days=forward_days)
+    end_date = max(end_date, date(2025, 12, 31))
+
+    kline_rows = _load_kline_rows(normalized_code, start_date=start_date, end_date=end_date)
+    markers = _build_trade_markers(trade_rows)
+    stats = _compute_backtesting_stats(kline_rows=kline_rows, trades=trade_rows)
+    valuation_history = _build_valuation_history(normalized_code, start_date=start_date, end_date=end_date)
+    stock_name = _load_stock_name(normalized_code)
+
+    return Response(
+        {
+            "ok": True,
+            "run_id": int(payload.get("id") or run_id),
+            "run_key": payload.get("run_key"),
+            "ts_code": normalized_code,
+            "stock_name": stock_name,
+            "range": {
+                "start_date": start_date.isoformat(),
+                "end_date": end_date.isoformat(),
+            },
+            "kline": kline_rows,
+            "trades": trade_rows,
+            "markers": markers,
+            "stats": {**(stats or {}), "mode": "predictive"},
+            "valuation_history": valuation_history,
+        }
+    )
 
 
 @api_view(["POST"])

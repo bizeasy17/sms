@@ -4,6 +4,26 @@ from backtest import views
 
 urlpatterns = [
     path(
+        "predictive/run/",
+        views.execute_predictive_backtest,
+        name="predictive-backtest-run-execute",
+    ),
+    path(
+        "predictive/runs/",
+        views.list_predictive_backtest_runs,
+        name="predictive-backtest-runs",
+    ),
+    path(
+        "predictive/runs/<int:run_id>/",
+        views.get_predictive_backtest_run_detail,
+        name="predictive-backtest-run-detail",
+    ),
+    path(
+        "predictive/runs/<int:run_id>/stocks/<str:ts_code>/",
+        views.get_predictive_backtest_run_stock_detail,
+        name="predictive-backtest-run-stock-detail",
+    ),
+    path(
         "traditional/templates/",
         views.list_traditional_backtest_templates,
         name="traditional-backtest-templates",

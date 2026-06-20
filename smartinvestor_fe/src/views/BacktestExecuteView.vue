@@ -5,6 +5,13 @@
         <template #header>
           <div class="card-header">
             <span>回测执行（模板 + 批量扫描）</span>
+            <div class="header-source-switch">
+              <span class="muted">回测来源</span>
+              <el-radio-group v-model="backtestSource" size="small">
+                <el-radio-button label="traditional">传统估值</el-radio-button>
+                <el-radio-button label="predictive">预测估值</el-radio-button>
+              </el-radio-group>
+            </div>
           </div>
         </template>
 
@@ -21,10 +28,13 @@
             </el-select>
           </el-col>
           <el-col :xs="24" :md="16" class="actions-left">
-            <el-button type="primary" :loading="runningSingle" :disabled="runningSingle" @click="executeSingleRun">执行单次回测（异步日志）</el-button>
-            <el-button type="warning" :loading="submittingScan" :disabled="submittingScan" @click="submitScanTask">提交批量扫描</el-button>
+            <el-button type="primary" :loading="runningSingle" :disabled="runningSingle" @click="executeSingleRun">
+              {{ isTraditionalSource ? '执行单次回测（异步日志）' : '执行预测回测' }}
+            </el-button>
+            <el-button type="warning" :loading="submittingScan" :disabled="submittingScan || !isTraditionalSource" @click="submitScanTask">提交批量扫描</el-button>
             <el-button
               type="primary"
+              :disabled="!isTraditionalSource"
               @click="openSaveWeeklyStrategyDialog"
             >
               保存为周选股策略
@@ -415,7 +425,7 @@
         </div>
       </el-card>
 
-      <el-card shadow="never" v-if="showScanTaskDetails">
+      <el-card shadow="never" v-if="showScanTaskDetails && isTraditionalSource">
         <template #header>
           <div class="card-header">
             <span>批量任务执行过程</span>
@@ -503,7 +513,7 @@
         </el-table>
       </el-card>
 
-      <el-card shadow="never" v-if="lastRunId">
+      <el-card shadow="never" v-if="lastRunId && isTraditionalSource">
         <template #header>
           <div class="card-header">
             <span>本次执行股票结果（单击下方加载，双击弹窗查看）</span>
@@ -586,6 +596,103 @@
             <el-descriptions-item label="Sharpe">{{ executeStockStats.sharpe_ratio ?? '-' }}</el-descriptions-item>
             <el-descriptions-item label="Profit Factor">{{ executeStockStats.profit_factor ?? '-' }}</el-descriptions-item>
             <el-descriptions-item label="Expectancy%">{{ executeStockStats.expectancy_pct ?? '-' }}</el-descriptions-item>
+          </el-descriptions>
+        </div>
+      </el-card>
+
+      <el-card shadow="never" v-if="lastPredictiveRunId && !isTraditionalSource">
+        <template #header>
+          <div class="card-header">
+            <span>本次执行股票结果（单击下方加载，双击弹窗查看）</span>
+            <div class="actions-left">
+              <span class="muted">run_id={{ lastPredictiveRunId }}，{{ predictiveStockActiveTab === 'traded' ? '已交易' : '年度指标' }}共 {{ predictiveActiveTabCount }} 条</span>
+              <el-button size="small" :loading="loadingPredictiveResult" @click="refreshPredictiveResult">刷新</el-button>
+            </div>
+          </div>
+        </template>
+
+        <el-tabs v-model="predictiveStockActiveTab">
+          <el-tab-pane label="已交易" name="traded">
+            <el-table
+              :data="predictiveTradedRows"
+              stripe
+              border
+              size="small"
+              v-loading="loadingPredictiveResult"
+              height="280"
+              @row-click="handlePredictiveStockRowClick"
+              @row-dblclick="handlePredictiveStockRowDoubleClick"
+            >
+              <el-table-column prop="ts_code" label="代码" width="120" />
+              <el-table-column prop="stock_name" label="名称" width="140" />
+              <el-table-column prop="trade_count" label="交易数" width="90" />
+              <el-table-column prop="win_rate_pct" label="胜率%" width="90" />
+              <el-table-column prop="avg_return_pct" label="平均收益%" width="110" />
+              <el-table-column prop="total_return_pct" label="总收益%" width="110" />
+              <el-table-column prop="max_drawdown_pct" label="最大跌幅%" width="110" :formatter="formatNegativeDrawdownCell" />
+              <el-table-column prop="avg_holding_days" label="平均持有天数" width="130" />
+              <el-table-column prop="first_entry_date" label="首次买入" min-width="120" />
+              <el-table-column prop="last_exit_date" label="最后卖出" min-width="120" />
+            </el-table>
+          </el-tab-pane>
+          <el-tab-pane label="年度指标" name="metrics">
+            <el-table :data="predictiveMetrics" stripe border size="small" max-height="280">
+              <el-table-column prop="year" label="年份" width="90" />
+              <el-table-column prop="trade_count" label="交易数" width="90" />
+              <el-table-column prop="annualized_return" label="年化收益" width="110" />
+              <el-table-column prop="avg_return_pct" label="平均收益%" width="110" />
+              <el-table-column prop="win_rate_pct" label="胜率%" width="90" />
+              <el-table-column prop="max_drawdown_pct" label="最大回撤%" width="110" />
+            </el-table>
+          </el-tab-pane>
+        </el-tabs>
+
+        <div v-if="predictiveStockTradeRows.length" class="table-section">
+          <div class="card-header">
+            <span>
+              详细交易
+              <template v-if="predictiveSelectedStockCode">
+                ：{{ predictiveSelectedStockCode }}
+              </template>
+            </span>
+            <span class="muted">
+              样本交易（前100）
+            </span>
+          </div>
+
+          <el-table :data="predictiveStockTradeRows" stripe border size="small" max-height="260" class="trade-table">
+            <el-table-column prop="entry_date" label="买入日" width="110" />
+            <el-table-column prop="entry_price" label="买入价" width="100" />
+            <el-table-column prop="exit_date" label="卖出日" width="110" />
+            <el-table-column prop="exit_price" label="卖出价" width="100" />
+            <el-table-column prop="return_pct" label="收益%" width="100" />
+            <el-table-column prop="holding_days" label="持有天数" width="100" />
+            <el-table-column prop="exit_reason" label="卖出原因" min-width="140" />
+          </el-table>
+
+          <el-descriptions :column="4" border size="small" class="trade-table">
+            <el-descriptions-item label="回测模式">predictive</el-descriptions-item>
+            <el-descriptions-item label="交易数">{{ predictiveStockStats.trade_count ?? '-' }}</el-descriptions-item>
+            <el-descriptions-item label="收益%">{{ predictiveStockStats.avg_return_pct ?? '-' }}</el-descriptions-item>
+            <el-descriptions-item label="胜率%">{{ predictiveStockStats.win_rate_pct ?? '-' }}</el-descriptions-item>
+            <el-descriptions-item label="最大回撤%">{{ predictiveStockStats.max_drawdown_pct ?? '-' }}</el-descriptions-item>
+            <el-descriptions-item label="Sharpe">-</el-descriptions-item>
+            <el-descriptions-item label="Profit Factor">-</el-descriptions-item>
+            <el-descriptions-item label="Expectancy%">-</el-descriptions-item>
+          </el-descriptions>
+        </div>
+
+        <div class="table-section">
+          <el-descriptions :column="4" border size="small" class="trade-table">
+            <el-descriptions-item label="样本池">{{ predictiveSummary.pool_size ?? '-' }}</el-descriptions-item>
+            <el-descriptions-item label="交易数">{{ predictiveSummary.trade_count ?? '-' }}</el-descriptions-item>
+            <el-descriptions-item label="平均收益%">{{ predictiveSummary.avg_return_pct ?? '-' }}</el-descriptions-item>
+            <el-descriptions-item label="胜率%">{{ predictiveSummary.win_rate_pct ?? '-' }}</el-descriptions-item>
+            <el-descriptions-item label="中位收益%">{{ predictiveSummary.median_return_pct ?? '-' }}</el-descriptions-item>
+            <el-descriptions-item label="年数">{{ predictiveSummary.years ?? '-' }}</el-descriptions-item>
+            <el-descriptions-item label="平均年化">{{ predictiveSummary.avg_annualized_return ?? '-' }}</el-descriptions-item>
+            <el-descriptions-item label="参考参数(经验)">{{ predictiveReferenceParams }}</el-descriptions-item>
+            <el-descriptions-item label="一句点评">{{ predictiveBacktestComment }}</el-descriptions-item>
           </el-descriptions>
         </div>
       </el-card>
@@ -716,8 +823,15 @@
       </el-dialog>
 
       <el-dialog v-model="runHistoryDialogVisible" width="88%" top="8vh" title="回测历史">
+        <div class="history-toolbar row-gap" style="margin-bottom: 8px;">
+          <span class="muted">历史来源</span>
+          <el-radio-group v-model="historySource" size="small" @change="handleHistorySourceChanged">
+            <el-radio-button label="traditional">传统估值</el-radio-button>
+            <el-radio-button label="predictive">预测估值</el-radio-button>
+          </el-radio-group>
+        </div>
         <el-tabs v-model="historyActiveTab" @tab-change="handleHistoryTabChanged">
-          <el-tab-pane label="手动回测" name="manual">
+          <el-tab-pane :label="historySource === 'traditional' ? '手动回测' : '预测回测'" name="manual">
             <div class="history-toolbar row-gap">
               <span class="muted">共 {{ manualHistoryTotal }} 条</span>
               <span class="muted">收藏 {{ favoriteRunIds.length }} 条</span>
@@ -790,7 +904,7 @@
             </div>
           </el-tab-pane>
 
-          <el-tab-pane label="网格搜索" name="scan">
+          <el-tab-pane v-if="historySource === 'traditional'" label="网格搜索" name="scan">
             <div class="history-toolbar row-gap">
               <span class="muted">共 {{ scanHistoryTotal }} 条组合结果</span>
               <div class="actions-left">
@@ -895,6 +1009,7 @@
                 </template>
               </el-table-column>
               <el-table-column prop="run_id" label="Run ID" width="90" fixed="left" />
+              <el-table-column prop="history_source_label" label="来源" width="90" />
               <el-table-column prop="trade_count" label="交易数" width="90" />
               <el-table-column prop="avg_return_pct" label="平均收益%" width="110" />
               <el-table-column prop="win_rate_pct" label="胜率%" width="90" />
@@ -1018,6 +1133,7 @@ const router = useRouter()
 
 const templates = ref<TemplateItem[]>([])
 const selectedTemplateId = ref('')
+const backtestSource = ref<'traditional' | 'predictive'>('traditional')
 
 const runningSingle = ref(false)
 const submittingScan = ref(false)
@@ -1027,6 +1143,7 @@ const loadingTaskDetail = ref(false)
 const message = ref('')
 const messageType = ref<'success' | 'error' | 'info' | 'warning'>('info')
 const lastRunId = ref<number | null>(null)
+const lastPredictiveRunId = ref<number | null>(null)
 const fieldErrors = reactive<Record<string, string>>({})
 
 const tasks = ref<TaskItem[]>([])
@@ -1051,6 +1168,7 @@ const executeStockTradeRows = ref<Array<Record<string, any>>>([])
 const executeStockValuationRows = ref<Array<Record<string, any>>>([])
 const executeStockStats = ref<Record<string, any>>({})
 const runHistoryDialogVisible = ref(false)
+const historySource = ref<'traditional' | 'predictive'>('traditional')
 const historyActiveTab = ref<'manual' | 'scan' | 'favorites'>('manual')
 const manualHistoryRows = ref<Array<Record<string, any>>>([])
 const manualHistoryTotal = ref(0)
@@ -1135,9 +1253,23 @@ const DEFAULT_FORM = {
   priority_policy: 'score_desc',
   buy_weight_ladder_text: '',
   max_holding_days: 0,
+  predictive_batch_key: '',
+  predictive_report_type: 'ALL',
+  predictive_ts_codes_text: '',
+  predictive_persist: true,
 }
 
 const form = reactive({ ...DEFAULT_FORM })
+const predictiveSummary = ref<Record<string, any>>({})
+const predictiveMetrics = ref<Array<Record<string, any>>>([])
+const predictiveSampleTrades = ref<Array<Record<string, any>>>([])
+const predictiveStockActiveTab = ref<'traded' | 'metrics'>('traded')
+const loadingPredictiveResult = ref(false)
+const predictiveSelectedStockCode = ref('')
+const predictiveStockTradeRows = ref<Array<Record<string, any>>>([])
+const predictiveStockStats = ref<Record<string, any>>({})
+
+const isTraditionalSource = computed(() => backtestSource.value === 'traditional')
 
 const scanGrid = reactive({
   min_score: '85,90,95',
@@ -1184,6 +1316,63 @@ const activeStockTabCount = computed(() => {
     return executeBuyableStockRows.value.length
   }
   return executeStockRows.value.length
+})
+
+const predictiveTradedRows = computed<Array<Record<string, any>>>(() => {
+  const grouped = new Map<string, Array<Record<string, any>>>()
+  for (const item of predictiveSampleTrades.value) {
+    const tsCode = String(item?.ts_code || '').trim().toUpperCase()
+    if (!tsCode) {
+      continue
+    }
+    if (!grouped.has(tsCode)) {
+      grouped.set(tsCode, [])
+    }
+    grouped.get(tsCode)!.push(item)
+  }
+
+  const rows = Array.from(grouped.entries()).map(([tsCode, trades]) => {
+    const returns = trades
+      .map((row) => toFiniteNumber(row?.return_pct))
+      .filter((value): value is number => value !== null)
+    const holdingDays = trades
+      .map((row) => toFiniteNumber(row?.holding_days))
+      .filter((value): value is number => value !== null)
+    const winCount = returns.filter((value) => value > 0).length
+    const avgReturn = returns.length ? (returns.reduce((sum, value) => sum + value, 0) / returns.length) : 0
+    const totalReturn = returns.length ? returns.reduce((sum, value) => sum + value, 0) : 0
+    const avgHoldingDays = holdingDays.length ? (holdingDays.reduce((sum, value) => sum + value, 0) / holdingDays.length) : 0
+
+    const entryDates = trades
+      .map((row) => String(row?.entry_date || row?.trade_date || '').trim())
+      .filter((value) => value)
+      .sort()
+    const exitDates = trades
+      .map((row) => String(row?.exit_date || row?.trade_date || '').trim())
+      .filter((value) => value)
+      .sort()
+
+    return {
+      ts_code: tsCode,
+      stock_name: '-',
+      trade_count: trades.length,
+      win_rate_pct: trades.length ? Number(((winCount / trades.length) * 100).toFixed(2)) : 0,
+      avg_return_pct: Number(avgReturn.toFixed(3)),
+      total_return_pct: Number(totalReturn.toFixed(3)),
+      max_drawdown_pct: null,
+      avg_holding_days: Number(avgHoldingDays.toFixed(2)),
+      first_entry_date: entryDates.length ? entryDates[0] : '-',
+      last_exit_date: exitDates.length ? exitDates[exitDates.length - 1] : '-',
+    }
+  })
+
+  return rows.sort((a, b) => Number(b.total_return_pct || 0) - Number(a.total_return_pct || 0))
+})
+
+const predictiveActiveTabCount = computed(() => {
+  return predictiveStockActiveTab.value === 'metrics'
+    ? predictiveMetrics.value.length
+    : predictiveTradedRows.value.length
 })
 
 const pagedFavoritesHistoryRows = computed(() => {
@@ -1367,6 +1556,9 @@ const topScanRunRows = computed(() => {
 })
 
 const currentDetailStockList = computed<Array<Record<string, any>>>(() => {
+  if (!isTraditionalSource.value) {
+    return predictiveTradedRows.value as Array<Record<string, any>>
+  }
   if (executeStockActiveTab.value === 'buyable') {
     return executeBuyableStockRows.value as Array<Record<string, any>>
   }
@@ -2102,7 +2294,11 @@ function upsertGeneratedRunHistory(row: Record<string, any>) {
   }
 }
 
-function normalizeRunHistoryRow(item: Record<string, any>, sourceLabel = 'all_history') {
+function normalizeRunHistoryRow(
+  item: Record<string, any>,
+  sourceLabel = 'all_history',
+  historySourceValue: 'traditional' | 'predictive' = 'traditional',
+) {
   const summary = (item?.summary && typeof item.summary === 'object') ? item.summary : {}
   const params = (item?.params && typeof item.params === 'object') ? item.params : {}
   const avgReturnPct = summary.avg_return_pct ?? summary.avg_trade_return_pct ?? summary.return_pct ?? '-'
@@ -2120,6 +2316,8 @@ function normalizeRunHistoryRow(item: Record<string, any>, sourceLabel = 'all_hi
     run_key: String(item?.run_key || ''),
     batch_key: String(item?.batch_key || ''),
     source: String(item?.source || sourceLabel),
+    history_source: historySourceValue,
+    history_source_label: historySourceValue === 'traditional' ? '传统' : '预测',
     source_kind: sourceKind,
     source_kind_label: sourceKind === 'scan' ? '网格' : '手动',
     mode,
@@ -2150,6 +2348,23 @@ function normalizeRunHistoryRow(item: Record<string, any>, sourceLabel = 'all_hi
 
 function buildExecutePayload() {
   const payload: Record<string, any> = { ...form }
+  if (!isTraditionalSource.value) {
+    return {
+      start_year: Number(String(form.start_date || '').slice(0, 4) || 2024),
+      end_year: Number(String(form.end_date || '').slice(0, 4) || 2025),
+      min_score: Number(form.min_score ?? 90),
+      max_risk: String(form.risk_level || 'MEDIUM').split(',')[0]?.trim().toUpperCase() || 'MEDIUM',
+      stop_mode: String(form.stop_loss_scope || 'position').trim().toLowerCase() === 'account' ? 'global' : 'single',
+      global_stop_dd: Number(form.stop_loss_pct ?? 0),
+      single_stop_dd: Number(form.stop_loss_pct ?? 0.1),
+      sell_strategy: String(form.take_profit_mode || '').trim().toLowerCase() === 'fixed' ? 'take_profit_pct' : 'optimistic_price',
+      take_profit_pct: Number(form.take_profit_pct ?? 0),
+      stop_loss_pct: Number(form.stop_loss_pct ?? 0),
+      max_holding_days: Number(form.max_holding_days ?? 0),
+      report_type: 'ALL',
+      persist: true,
+    }
+  }
   const buyWeightLadder = toNumberList(form.buy_weight_ladder_text)
   payload.take_profit_tiers = parseTakeProfitTiersText(form.take_profit_tiers_text)
   const technicalFactor = String(form.technical_factors || '').trim()
@@ -2202,6 +2417,18 @@ function clearFieldErrors() {
 
 function validateExecutePayload(payload: Record<string, any>): boolean {
   clearFieldErrors()
+
+  if (!isTraditionalSource.value) {
+    const startYear = Number(payload.start_year)
+    const endYear = Number(payload.end_year)
+    if (!Number.isFinite(startYear) || !Number.isFinite(endYear)) {
+      fieldErrors.start_date = '预测回测年份无效'
+      fieldErrors.end_date = '预测回测年份无效'
+    } else if (startYear > endYear) {
+      fieldErrors.end_date = '结束年份必须大于等于开始年份'
+    }
+    return Object.keys(fieldErrors).length === 0
+  }
 
   const startDate = String(payload.start_date || '').trim()
   const endDate = String(payload.end_date || '').trim()
@@ -2373,6 +2600,22 @@ function buildReferenceParams(stats: Record<string, any>): string {
 
 const executeStockReferenceParams = computed(() => buildReferenceParams(executeStockStats.value || {}))
 const executeStockBacktestComment = computed(() => buildBacktestComment(executeStockStats.value || {}))
+const predictiveReferenceParams = computed(() => buildReferenceParams({
+  mode: 'predictive',
+  trade_count: predictiveSummary.value?.trade_count,
+  avg_return_pct: predictiveSummary.value?.avg_return_pct,
+  win_rate_pct: predictiveSummary.value?.win_rate_pct,
+  return_pct: predictiveSummary.value?.avg_return_pct,
+  max_drawdown_pct: predictiveSummary.value?.max_drawdown_pct,
+}))
+const predictiveBacktestComment = computed(() => buildBacktestComment({
+  mode: 'predictive',
+  trade_count: predictiveSummary.value?.trade_count,
+  avg_return_pct: predictiveSummary.value?.avg_return_pct,
+  win_rate_pct: predictiveSummary.value?.win_rate_pct,
+  return_pct: predictiveSummary.value?.avg_return_pct,
+  max_drawdown_pct: predictiveSummary.value?.max_drawdown_pct,
+}))
 
 const trendMaLineStyles: Record<string, { width: number; color: string }> = {
   MA6: { width: 1, color: '#5470C6' },
@@ -2669,31 +2912,71 @@ async function executeSingleRun() {
       return
     }
 
-    const resp = await axios.post(`${apiBase()}/backtest/traditional/scan/submit/`, {
-      template_id: selectedTemplateId.value || undefined,
-      base_params: { ...payload },
-      scan_grid: {},
-    })
+    const endpoint = isTraditionalSource.value
+      ? `${apiBase()}/backtest/traditional/scan/submit/`
+      : `${apiBase()}/backtest/predictive/run/`
+    const requestBody = isTraditionalSource.value
+      ? {
+          template_id: selectedTemplateId.value || undefined,
+          base_params: { ...payload },
+          scan_grid: {},
+        }
+      : payload
+
+    const resp = await axios.post(endpoint, requestBody)
     const data = resp?.data || {}
-    activeTaskId.value = data?.task_id ? Number(data.task_id) : null
-    if (!activeTaskId.value) {
-      messageType.value = 'error'
-      message.value = '任务提交失败：未返回 task_id。'
+    if (!isTraditionalSource.value) {
+      const runId = Number(data?.run_id)
+      if (!Number.isFinite(runId) || runId <= 0) {
+        messageType.value = 'error'
+        message.value = data?.error || '预测回测执行失败：未返回run_id'
+        runningSingle.value = false
+        return
+      }
+      lastPredictiveRunId.value = runId
+      predictiveSummary.value = (data?.summary && typeof data.summary === 'object') ? data.summary : {}
+      const resultPayload = (data?.result && typeof data.result === 'object') ? data.result : {}
+      predictiveMetrics.value = Array.isArray(resultPayload.metrics)
+        ? resultPayload.metrics.map((item: any) => ({
+            year: item?.year,
+            trade_count: item?.trade_count,
+            annualized_return: item?.annualized_return,
+            avg_return_pct: item?.avg_return_pct,
+            win_rate_pct: item?.win_rate_pct,
+            max_drawdown_pct: item?.max_drawdown_pct,
+          }))
+        : []
+      predictiveSampleTrades.value = Array.isArray(resultPayload.sample_trades) ? resultPayload.sample_trades : []
+      syncPredictiveDetailDefaultSelection()
+      messageType.value = 'success'
+      const summary = predictiveSummary.value || {}
+      const metricSummary = buildBacktestingMetricSummary({
+        total_return_pct: summary.avg_return_pct,
+        max_drawdown_pct: summary.max_drawdown_pct,
+      })
+      message.value = `预测回测执行完成，run_id=${runId}，交易数=${summary.trade_count ?? '-'}，胜率=${summary.win_rate_pct ?? '-'}%，平均收益=${summary.avg_return_pct ?? '-'}%，中位收益=${summary.median_return_pct ?? '-'}%，年数=${summary.years ?? '-'}，平均年化=${summary.avg_annualized_return ?? '-'}${metricSummary ? `，评价指标：${metricSummary}` : ''}`
       runningSingle.value = false
-      return
-    }
-    if (activeTaskId.value && !submittedScanTaskIds.value.includes(activeTaskId.value)) {
-      submittedScanTaskIds.value.push(activeTaskId.value)
-    }
-    singleRunTaskId.value = activeTaskId.value
-    messageType.value = 'success'
-    message.value = `单次异步回测已提交，task_id=${activeTaskId.value}`
-    await fetchTasks()
-    const status = await fetchTaskDetail(singleRunTaskId.value || undefined)
-    if (!status || !['success', 'partial_success', 'failed'].includes(status)) {
-      messageType.value = 'info'
-      message.value = `任务执行中，task_id=${activeTaskId.value}。完成前按钮将保持禁用。`
-      startSingleRunPolling(singleRunTaskId.value || undefined)
+    } else {
+      activeTaskId.value = data?.task_id ? Number(data.task_id) : null
+      if (!activeTaskId.value) {
+        messageType.value = 'error'
+        message.value = '任务提交失败：未返回 task_id。'
+        runningSingle.value = false
+        return
+      }
+      if (activeTaskId.value && !submittedScanTaskIds.value.includes(activeTaskId.value)) {
+        submittedScanTaskIds.value.push(activeTaskId.value)
+      }
+      singleRunTaskId.value = activeTaskId.value
+      messageType.value = 'success'
+      message.value = `单次异步回测已提交，task_id=${activeTaskId.value}`
+      await fetchTasks()
+      const status = await fetchTaskDetail(singleRunTaskId.value || undefined)
+      if (!status || !['success', 'partial_success', 'failed'].includes(status)) {
+        messageType.value = 'info'
+        message.value = `任务执行中，task_id=${activeTaskId.value}。完成前按钮将保持禁用。`
+        startSingleRunPolling(singleRunTaskId.value || undefined)
+      }
     }
   } catch (error: any) {
     messageType.value = 'error'
@@ -2752,6 +3035,124 @@ function refreshActiveStockTab() {
   void fetchLatestRunStocks()
 }
 
+function updatePredictiveStockDetail(tsCode: string) {
+  const normalizedCode = String(tsCode || '').trim().toUpperCase()
+  if (!normalizedCode) {
+    predictiveSelectedStockCode.value = ''
+    predictiveStockTradeRows.value = []
+    predictiveStockStats.value = {}
+    return
+  }
+  const rows = predictiveSampleTrades.value
+    .filter((row) => String(row?.ts_code || '').trim().toUpperCase() === normalizedCode)
+    .map((row) => ({
+      entry_date: row?.entry_date || row?.trade_date || '-',
+      entry_price: row?.entry_price ?? '-',
+      exit_date: row?.exit_date || row?.trade_date || '-',
+      exit_price: row?.exit_price ?? '-',
+      return_pct: row?.return_pct ?? '-',
+      holding_days: row?.holding_days ?? '-',
+      exit_reason: row?.exit_reason || '-',
+    }))
+
+  const returns = rows
+    .map((item) => toFiniteNumber(item?.return_pct))
+    .filter((value): value is number => value !== null)
+  const wins = returns.filter((value) => value > 0).length
+
+  predictiveSelectedStockCode.value = normalizedCode
+  predictiveStockTradeRows.value = rows
+  predictiveStockStats.value = {
+    trade_count: rows.length,
+    avg_return_pct: returns.length ? Number((returns.reduce((sum, value) => sum + value, 0) / returns.length).toFixed(3)) : 0,
+    win_rate_pct: rows.length ? Number(((wins / rows.length) * 100).toFixed(2)) : 0,
+    max_drawdown_pct: '-',
+  }
+}
+
+function syncPredictiveDetailDefaultSelection() {
+  const rows = predictiveTradedRows.value
+  if (!rows.length) {
+    updatePredictiveStockDetail('')
+    return
+  }
+  const current = String(predictiveSelectedStockCode.value || '').trim().toUpperCase()
+  const stillExists = rows.some((row) => String(row?.ts_code || '').trim().toUpperCase() === current)
+  if (stillExists) {
+    updatePredictiveStockDetail(current)
+    return
+  }
+  updatePredictiveStockDetail(String(rows[0]?.ts_code || ''))
+}
+
+async function fetchPredictiveRunStockDetail(tsCode: string, options?: { openDialog?: boolean }) {
+  const runId = Number(lastPredictiveRunId.value || 0)
+  const normalizedCode = String(tsCode || '').trim().toUpperCase()
+  if (!runId || !normalizedCode) {
+    return
+  }
+  const openDialog = options?.openDialog !== false
+  loadingLatestStockDetail.value = true
+  if (openDialog) {
+    executeStockDialogVisible.value = true
+    executeStockDialogTitle.value = `${normalizedCode} - 加载中...`
+  }
+  executeStockCode.value = normalizedCode
+  executeStockName.value = ''
+  executeStockRange.value = {}
+  executeStockTradeRows.value = []
+  executeStockMarkers.value = []
+  executeStockKlineRows.value = []
+  executeStockValuationRows.value = []
+  executeStockStats.value = {}
+  try {
+    const encodedCode = encodeURIComponent(normalizedCode)
+    const resp = await axios.get(`${apiBase()}/backtest/predictive/runs/${runId}/stocks/${encodedCode}/`)
+    const data = resp?.data || {}
+    executeStockCode.value = String(data.ts_code || normalizedCode)
+    executeStockName.value = String(data.stock_name || '')
+    executeStockRange.value = (data.range && typeof data.range === 'object') ? data.range : {}
+    executeStockKlineRows.value = Array.isArray(data.kline) ? data.kline : []
+    executeStockMarkers.value = Array.isArray(data.markers) ? data.markers : []
+    executeStockTradeRows.value = Array.isArray(data.trades) ? data.trades : []
+    executeStockValuationRows.value = Array.isArray(data.valuation_history) ? data.valuation_history : []
+    executeStockStats.value = data.stats || {}
+    if (openDialog) {
+      executeStockDialogTitle.value = `${executeStockCode.value}${executeStockName.value ? ` ${executeStockName.value}` : ''} - K线与触发点`
+    }
+  } catch (error: any) {
+    executeStockStats.value = { mode: 'predictive', warning: error?.response?.data?.error || error?.message || '查询预测单股详情失败' }
+  } finally {
+    loadingLatestStockDetail.value = false
+  }
+}
+
+function handlePredictiveStockRowClick(row: Record<string, any>) {
+  void fetchPredictiveRunStockDetail(String(row?.ts_code || ''), { openDialog: true })
+}
+
+function handlePredictiveStockRowDoubleClick(row: Record<string, any>) {
+  void fetchPredictiveRunStockDetail(String(row?.ts_code || ''), { openDialog: true })
+}
+
+async function refreshPredictiveResult() {
+  const runId = Number(lastPredictiveRunId.value || 0)
+  if (!Number.isFinite(runId) || runId <= 0) {
+    return
+  }
+  loadingPredictiveResult.value = true
+  try {
+    await switchToRunDetail(runId, {
+      applyParams: false,
+      messagePrefix: '已刷新预测回测结果',
+      source: 'predictive',
+    })
+    syncPredictiveDetailDefaultSelection()
+  } finally {
+    loadingPredictiveResult.value = false
+  }
+}
+
 function handleExecuteStockTabChange(name: string | number) {
   if (String(name) === 'buyable' && (executeBuyableRowsRunId.value !== lastRunId.value || !executeBuyableStockRows.value.length)) {
     void fetchLatestRunBuyableStocks()
@@ -2776,6 +3177,10 @@ function navigateStockDetail(step: number) {
   }
   const tsCode = String(list[targetIdx]?.ts_code || '').trim()
   if (!tsCode) {
+    return
+  }
+  if (!isTraditionalSource.value) {
+    void fetchPredictiveRunStockDetail(tsCode, { openDialog: true })
     return
   }
   void fetchLatestRunStockDetail(tsCode)
@@ -2991,21 +3396,54 @@ async function switchToRunDetail(
   options?: {
     applyParams?: boolean
     messagePrefix?: string
+    source?: 'traditional' | 'predictive'
   },
 ) {
   if (!Number.isFinite(runId) || runId <= 0) {
     return
   }
-  lastRunId.value = runId
+  const detailSource = options?.source || (isTraditionalSource.value ? 'traditional' : 'predictive')
+  if (detailSource === 'traditional') {
+    lastRunId.value = runId
+  } else {
+    lastPredictiveRunId.value = runId
+  }
   executeBuyableStockRows.value = []
   executeBuyableRowsRunId.value = null
 
   const shouldApplyParams = options?.applyParams === true
   const paramsLoaded = shouldApplyParams ? await applyRunParamsToForm(runId) : false
 
-  await fetchLatestRunStocks()
-  if (executeStockActiveTab.value === 'buyable') {
-    await fetchLatestRunBuyableStocks()
+  if (detailSource === 'traditional') {
+    await fetchLatestRunStocks()
+    if (executeStockActiveTab.value === 'buyable') {
+      await fetchLatestRunBuyableStocks()
+    }
+  } else {
+    try {
+      const resp = await axios.get(`${apiBase()}/backtest/predictive/runs/${runId}/`)
+      const payload = (resp?.data?.data && typeof resp.data.data === 'object') ? resp.data.data : (resp?.data || {})
+      const summary = (payload?.summary && typeof payload.summary === 'object') ? payload.summary : {}
+      const result = (payload?.result && typeof payload.result === 'object') ? payload.result : {}
+      predictiveSummary.value = summary
+      predictiveMetrics.value = Array.isArray(result.metrics)
+        ? result.metrics.map((item: any) => ({
+            year: item?.year,
+            trade_count: item?.trade_count,
+            annualized_return: item?.annualized_return,
+            avg_return_pct: item?.avg_return_pct,
+            win_rate_pct: item?.win_rate_pct,
+            max_drawdown_pct: item?.max_drawdown_pct,
+          }))
+        : []
+      predictiveSampleTrades.value = Array.isArray(result.sample_trades) ? result.sample_trades : []
+      syncPredictiveDetailDefaultSelection()
+    } catch {
+      predictiveSummary.value = {}
+      predictiveMetrics.value = []
+      predictiveSampleTrades.value = []
+      syncPredictiveDetailDefaultSelection()
+    }
   }
 
   messageType.value = 'info'
@@ -3067,8 +3505,28 @@ function toNullableNumber(value: unknown): number | null {
 
 async function applyRunParamsToForm(runId: number): Promise<boolean> {
   try {
-    const resp = await axios.get(`${apiBase()}/backtest/traditional/runs/${runId}/`)
+    const detailPath = (historySource.value === 'traditional')
+      ? `/backtest/traditional/runs/${runId}/`
+      : `/backtest/predictive/runs/${runId}/`
+    const resp = await axios.get(`${apiBase()}${detailPath}`)
     const detail = resp?.data || {}
+    if (historySource.value !== 'traditional') {
+      const params = (detail?.params && typeof detail.params === 'object') ? detail.params : ((detail?.data?.params && typeof detail.data.params === 'object') ? detail.data.params : {})
+      const startYear = Number(params.start_year)
+      const endYear = Number(params.end_year)
+      if (Number.isFinite(startYear) && startYear > 0) {
+        form.start_date = `${startYear}-01-01`
+      }
+      if (Number.isFinite(endYear) && endYear > 0) {
+        form.end_date = `${endYear}-12-31`
+      }
+      form.min_score = toNumberOrFallback(params.min_score, DEFAULT_FORM.min_score)
+      form.risk_level = String(params.max_risk || form.risk_level || 'MEDIUM')
+      form.stop_loss_pct = toNumberOrFallback(params.stop_loss_pct, DEFAULT_FORM.stop_loss_pct)
+      form.take_profit_pct = toNumberOrFallback(params.take_profit_pct, DEFAULT_FORM.take_profit_pct)
+      form.max_holding_days = toNumberOrFallback(params.max_holding_days, DEFAULT_FORM.max_holding_days)
+      return true
+    }
     const replayParams = (detail?.replay_params && typeof detail.replay_params === 'object') ? detail.replay_params : {}
     const strategy = (detail?.result?.strategy && typeof detail.result.strategy === 'object') ? detail.result.strategy : {}
     const params = (detail?.params && typeof detail.params === 'object') ? detail.params : {}
@@ -3147,14 +3605,19 @@ async function handleRunHistoryRowDoubleClick(row: Record<string, any>) {
   if (!Number.isFinite(runId) || runId <= 0) {
     return
   }
+  const rowSource = String(row?.history_source || historySource.value || 'traditional').trim().toLowerCase() === 'predictive'
+    ? 'predictive'
+    : 'traditional'
   runHistoryDialogVisible.value = false
   await switchToRunDetail(runId, {
     applyParams: true,
     messagePrefix: '已切换到回测结果',
+    source: rowSource,
   })
 }
 
 async function openRunHistoryDialog() {
+  historySource.value = isTraditionalSource.value ? 'traditional' : 'predictive'
   historyActiveTab.value = 'manual'
   manualHistoryPage.value = 1
   scanHistoryPage.value = 1
@@ -3163,6 +3626,18 @@ async function openRunHistoryDialog() {
   await Promise.all([
     fetchManualHistoryPage(1),
     fetchScanHistoryPage(1),
+    fetchFavoriteHistoryRows(),
+  ])
+}
+
+async function handleHistorySourceChanged() {
+  historyActiveTab.value = 'manual'
+  manualHistoryPage.value = 1
+  scanHistoryPage.value = 1
+  favoritesHistoryPage.value = 1
+  await Promise.all([
+    fetchManualHistoryPage(1),
+    historySource.value === 'traditional' ? fetchScanHistoryPage(1) : Promise.resolve(),
     fetchFavoriteHistoryRows(),
   ])
 }
@@ -3177,15 +3652,26 @@ async function fetchHistoryPage(kind: 'manual' | 'scan', page: number): Promise<
 
   loadingRef.value = true
   try {
-    const resp = await axios.get(`${apiBase()}/backtest/traditional/runs/`, {
+    const historyBasePath = historySource.value === 'traditional'
+      ? '/backtest/traditional/runs/'
+      : '/backtest/predictive/runs/'
+    const params = historySource.value === 'traditional'
+      ? {
+          kind,
+          limit: pageSize,
+          offset,
+        }
+      : {
+          limit: pageSize,
+          offset,
+        }
+    const resp = await axios.get(`${apiBase()}${historyBasePath}`, {
       params: {
-        kind,
-        limit: pageSize,
-        offset,
+        ...params,
       },
     })
     const rows = Array.isArray(resp?.data?.data) ? resp.data.data : []
-    rowsRef.value = rows.map((item: Record<string, any>) => normalizeRunHistoryRow(item, `${kind}_history`))
+    rowsRef.value = rows.map((item: Record<string, any>) => normalizeRunHistoryRow(item, `${kind}_history`, historySource.value))
     totalRef.value = Number(resp?.data?.total || rowsRef.value.length || 0)
     if (kind === 'manual') {
       manualHistoryPage.value = safePage
@@ -3212,7 +3698,7 @@ async function handleHistoryTabChanged(tabName: string | number) {
   if (String(tabName) === 'manual' && !manualHistoryRows.value.length && !loadingManualHistory.value) {
     await fetchManualHistoryPage(manualHistoryPage.value)
   }
-  if (String(tabName) === 'scan' && !scanHistoryRows.value.length && !loadingScanHistory.value) {
+  if (historySource.value === 'traditional' && String(tabName) === 'scan' && !scanHistoryRows.value.length && !loadingScanHistory.value) {
     await fetchScanHistoryPage(scanHistoryPage.value)
   }
   if (String(tabName) === 'favorites' && !loadingFavoritesHistory.value) {
@@ -3244,28 +3730,33 @@ async function fetchFavoriteHistoryRows() {
   try {
     const rows: Array<Record<string, any>> = []
     const seenRunIds = new Set<number>()
-    const queryKinds: Array<'manual' | 'scan'> = ['manual', 'scan']
+    const queryKinds: Array<'manual' | 'scan'> = historySource.value === 'traditional' ? ['manual', 'scan'] : ['manual']
     const pageSize = 200
     const maxPagesPerKind = 20
+    const historyBasePath = historySource.value === 'traditional' ? '/backtest/traditional/runs/' : '/backtest/predictive/runs/'
 
     for (const kind of queryKinds) {
       let page = 1
       while (page <= maxPagesPerKind) {
         const offset = (page - 1) * pageSize
-        const resp = await axios.get(`${apiBase()}/backtest/traditional/runs/`, {
-          params: {
-            kind,
-            limit: pageSize,
-            offset,
-          },
-        })
+        const params = historySource.value === 'traditional'
+          ? {
+              kind,
+              limit: pageSize,
+              offset,
+            }
+          : {
+              limit: pageSize,
+              offset,
+            }
+        const resp = await axios.get(`${apiBase()}${historyBasePath}`, { params })
         const rawRows = Array.isArray(resp?.data?.data) ? resp.data.data : []
         if (!rawRows.length) {
           break
         }
 
         for (const item of rawRows) {
-          const normalized = normalizeRunHistoryRow(item, `${kind}_history`)
+          const normalized = normalizeRunHistoryRow(item, `${kind}_history`, historySource.value)
           const runId = toRunId(normalized.run_id)
           if (!runId || !favoriteIdSet.has(runId) || seenRunIds.has(runId)) {
             continue
@@ -3339,6 +3830,12 @@ onBeforeUnmount(() => {
   display: flex;
   align-items: center;
   justify-content: space-between;
+}
+
+.header-source-switch {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
 }
 
 .row-gap {
