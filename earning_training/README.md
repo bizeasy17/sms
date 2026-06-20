@@ -20,6 +20,12 @@ python manage.py runserver 0.0.0.0:9100
 
 项目会自动加载根目录 `.env`（通过 `python-dotenv`）。
 
+环境文件说明：
+
+- 仓库只跟踪 `.env.example`，不跟踪 `.env`。
+- 首次使用请执行 `Copy-Item .env.example .env`，并在本机填写真实配置。
+- 不要把真实 token/password 写回版本库。
+
 默认预测配置文件：`configs/default.yaml`
 
 可通过环境变量覆盖：
