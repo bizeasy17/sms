@@ -4,7 +4,8 @@ setlocal EnableExtensions EnableDelayedExpansion
 set "BASE_DIR=%~dp0"
 cd /d "%BASE_DIR%"
 
-set "PYTHON_CMD=C:\Users\HANJ29\Development\vdev1\Scripts\python.exe"
+if not defined PYTHON_CMD set "PYTHON_CMD=C:\Users\HANJ29\Development\code\JIUCAI_DEV\.venv\Scripts\python.exe"
+if not exist "%PYTHON_CMD%" set "PYTHON_CMD=C:\Users\HANJ29\Development\vdev1\Scripts\python.exe"
 if not exist "%PYTHON_CMD%" set "PYTHON_CMD=python"
 
 set "START_DATE=%~1"

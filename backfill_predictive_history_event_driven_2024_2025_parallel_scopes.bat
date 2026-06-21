@@ -4,6 +4,10 @@ setlocal EnableExtensions
 set "BASE_DIR=%~dp0"
 cd /d "%BASE_DIR%"
 
+set "PYTHON_CMD=C:\Users\HANJ29\Development\code\JIUCAI_DEV\.venv\Scripts\python.exe"
+if not exist "%PYTHON_CMD%" set "PYTHON_CMD=C:\Users\HANJ29\Development\vdev1\Scripts\python.exe"
+if not exist "%PYTHON_CMD%" set "PYTHON_CMD=python"
+
 set "START_DATE=%~1"
 if "%START_DATE%"=="" set "START_DATE=2024-01-01"
 set "END_DATE=%~2"
@@ -20,7 +24,7 @@ echo [INFO] start_date=%START_DATE% end_date=%END_DATE% report_types=%REPORT_TYP
 
 for %%S in (60 00 30 68) do (
   echo [INFO] start scope=%%S
-  start "pred_backfill_%%S" cmd /c "cd /d %BASE_DIR% && set BACKFILL_RUN_TAG=scope_%%S && call backfill_predictive_history_event_driven_2024_2025.bat %START_DATE% %END_DATE% %%S %REPORT_TYPES% %STORE_MODE% %ENABLE_REGIME_SWITCH%"
+  start "pred_backfill_%%S" cmd /c "cd /d %BASE_DIR% && set BACKFILL_RUN_TAG=scope_%%S && set PYTHON_CMD=%PYTHON_CMD% && call backfill_predictive_history_event_driven_2024_2025.bat %START_DATE% %END_DATE% %%S %REPORT_TYPES% %STORE_MODE% %ENABLE_REGIME_SWITCH%"
 )
 
 echo [INFO] all scope jobs launched.

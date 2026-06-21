@@ -4,7 +4,8 @@ setlocal EnableExtensions EnableDelayedExpansion
 set "BASE_DIR=%~dp0"
 cd /d "%BASE_DIR%"
 
-set "PYTHON_CMD=C:\Users\HANJ29\Development\vdev1\Scripts\python.exe"
+if not defined PYTHON_CMD set "PYTHON_CMD=C:\Users\HANJ29\Development\code\JIUCAI_DEV\.venv\Scripts\python.exe"
+if not exist "%PYTHON_CMD%" set "PYTHON_CMD=C:\Users\HANJ29\Development\vdev1\Scripts\python.exe"
 if not exist "%PYTHON_CMD%" set "PYTHON_CMD=python"
 
 set "START_DATE=%~1"
@@ -116,11 +117,13 @@ if defined RESUME_FROM (
 )
 
 echo [STEP] asof_date=%CUR_DATE%>>"%LOG_FILE%"
+set "STEP_LOG=logs\_tmp_backfill_pred_event_%CUR_DATE%%RUN_TAG%.log"
+if exist "%STEP_LOG%" del /q "%STEP_LOG%" >nul 2>&1
 
 findstr /x /c:"%CUR_DATE%" "%FULL_REFRESH_DATES_FILE%" >nul 2>&1
 if "%ERRORLEVEL%"=="0" (
   echo [MODE] full_refresh_by_regime_switch date=%CUR_DATE%>>"%LOG_FILE%"
-  "%PYTHON_CMD%" "tushare_earnings_service\manage.py" refresh_signal_snapshot --full-refresh --scope %SCOPE% --asof-date %CUR_DATE% --store-mode %STORE_MODE% --report-types %REPORT_TYPES% --serving-slot production --anchor-mode ann --batch-key backfill_pred_event_%CUR_DATE% >> "%LOG_FILE%" 2>&1
+  "%PYTHON_CMD%" "tushare_earnings_service\manage.py" refresh_signal_snapshot --full-refresh --scope %SCOPE% --asof-date %CUR_DATE% --store-mode %STORE_MODE% --report-types %REPORT_TYPES% --serving-slot production --anchor-mode ann --batch-key backfill_pred_event_%CUR_DATE% >> "%STEP_LOG%" 2>&1
 ) else (
   set "DAY_CODES_FILE=%FINANCIAL_CODES_DIR%\%CUR_DATE%.txt"
   if exist "!DAY_CODES_FILE!" (
@@ -130,19 +133,32 @@ if "%ERRORLEVEL%"=="0" (
       exit /b 0
     )
     echo [MODE] partial_refresh_by_financial_events date=%CUR_DATE% file=!DAY_CODES_FILE!>>"%LOG_FILE%"
-    "%PYTHON_CMD%" "tushare_earnings_service\manage.py" refresh_signal_snapshot --tscodes-file "!DAY_CODES_FILE!" --asof-date %CUR_DATE% --store-mode %STORE_MODE% --report-types %REPORT_TYPES% --serving-slot production --anchor-mode ann --batch-key backfill_pred_event_%CUR_DATE% >> "%LOG_FILE%" 2>&1
+    "%PYTHON_CMD%" "tushare_earnings_service\manage.py" refresh_signal_snapshot --tscodes-file "!DAY_CODES_FILE!" --asof-date %CUR_DATE% --store-mode %STORE_MODE% --report-types %REPORT_TYPES% --serving-slot production --anchor-mode ann --batch-key backfill_pred_event_%CUR_DATE% >> "%STEP_LOG%" 2>&1
   ) else (
     echo [SKIP] asof_date=%CUR_DATE% no financial event codes file>>"%LOG_FILE%"
     exit /b 0
   )
 )
 set "ERR=%ERRORLEVEL%"
+if exist "%STEP_LOG%" type "%STEP_LOG%" >> "%LOG_FILE%"
 if not "%ERR%"=="0" (
+  findstr /I /C:"No rows for ts_code=" "%STEP_LOG%" >nul 2>&1
+  if "%ERRORLEVEL%"=="0" (
+    findstr /I /C:"all predictions failed (ok=0, fail=1)" "%STEP_LOG%" >nul 2>&1
+    if "%ERRORLEVEL%"=="0" (
+      echo [SKIP] asof_date=%CUR_DATE% all candidates returned no rows>>"%LOG_FILE%"
+      > "%CHECKPOINT_FILE%" echo %CUR_DATE%
+      if exist "%STEP_LOG%" del /q "%STEP_LOG%" >nul 2>&1
+      exit /b 0
+    )
+  )
   echo [ERROR] asof_date=%CUR_DATE% failed code=%ERR%>>"%LOG_FILE%"
+  if exist "%STEP_LOG%" del /q "%STEP_LOG%" >nul 2>&1
   exit /b %ERR%
 )
 > "%CHECKPOINT_FILE%" echo %CUR_DATE%
 echo [OK] asof_date=%CUR_DATE%>>"%LOG_FILE%"
+if exist "%STEP_LOG%" del /q "%STEP_LOG%" >nul 2>&1
 exit /b 0
 
 :FAILED
