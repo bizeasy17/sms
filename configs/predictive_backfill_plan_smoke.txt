@@ -1,0 +1,2 @@
+# Smoke acceptance plan
+2025|LATEST

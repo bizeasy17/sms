@@ -20,8 +20,8 @@ set "STORE_MODE=%~5"
 if "%STORE_MODE%"=="" set "STORE_MODE=both"
 
 if not exist logs mkdir logs
-set "LOG_FILE=logs\backfill_predictive_history_2024_2025.log"
-set "CHECKPOINT_FILE=logs\backfill_predictive_history_2024_2025.checkpoint"
+set "LOG_FILE=logs\backfill_predictive_history.log"
+set "CHECKPOINT_FILE=logs\backfill_predictive_history.checkpoint"
 set "RESUME_FROM="
 if exist "%CHECKPOINT_FILE%" (
   set /p RESUME_FROM=<"%CHECKPOINT_FILE%"

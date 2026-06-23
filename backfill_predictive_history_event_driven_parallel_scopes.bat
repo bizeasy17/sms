@@ -24,9 +24,9 @@ echo [INFO] start_date=%START_DATE% end_date=%END_DATE% report_types=%REPORT_TYP
 
 for %%S in (60 00 30 68) do (
   echo [INFO] start scope=%%S
-  start "pred_backfill_%%S" cmd /c "cd /d %BASE_DIR% && set BACKFILL_RUN_TAG=scope_%%S && set PYTHON_CMD=%PYTHON_CMD% && call backfill_predictive_history_event_driven_2024_2025.bat %START_DATE% %END_DATE% %%S %REPORT_TYPES% %STORE_MODE% %ENABLE_REGIME_SWITCH%"
+  start "pred_backfill_%%S" cmd /c "cd /d %BASE_DIR% && set BACKFILL_RUN_TAG=scope_%%S && set PYTHON_CMD=%PYTHON_CMD% && call backfill_predictive_history_event_driven.bat %START_DATE% %END_DATE% %%S %REPORT_TYPES% %STORE_MODE% %ENABLE_REGIME_SWITCH%"
 )
 
 echo [INFO] all scope jobs launched.
-echo [INFO] logs are separated by run tag under logs\, e.g. backfill_predictive_history_event_driven_2024_2025_scope_60.log
+echo [INFO] logs are separated by run tag under logs\, e.g. backfill_predictive_history_event_driven_scope_60.log
 exit /b 0

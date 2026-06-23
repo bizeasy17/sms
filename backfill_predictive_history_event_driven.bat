@@ -14,46 +14,58 @@ set "END_DATE=%~2"
 if "%END_DATE%"=="" set "END_DATE=2025-12-31"
 set "SCOPE=%~3"
 if "%SCOPE%"=="" set "SCOPE=ALL"
-set "REPORT_TYPES=%~4"
-if "%REPORT_TYPES%"=="" set "REPORT_TYPES=LATEST"
-set "STORE_MODE=%~5"
-if "%STORE_MODE%"=="" set "STORE_MODE=history"
-set "ENABLE_REGIME_SWITCH=%~6"
-if "%ENABLE_REGIME_SWITCH%"=="" set "ENABLE_REGIME_SWITCH=1"
-set "ARG7=%~7"
+set "PLAN_FILE=%~4"
+set "PLAN_MODE=0"
+if not "%PLAN_FILE%"=="" if exist "%PLAN_FILE%" set "PLAN_MODE=1"
 
-rem Rebuild scope when PowerShell splits comma-separated stock list into extra args.
-set "IDX=4"
-:collect_scope_tokens
-call set "CUR=%%%IDX%%"
-if "%CUR%"=="" goto scope_collect_done
-  echo %CUR%| findstr /R /I "^[0-9][0-9][0-9][0-9][0-9][0-9]\.[A-Z][A-Z]$" >nul 2>&1
-if errorlevel 1 goto scope_collect_done
-if /I not "%SCOPE%"=="ALL" set "SCOPE=%SCOPE%,%CUR%"
-set /a IDX+=1
-goto collect_scope_tokens
-
-:scope_collect_done
-if not "%IDX%"=="4" (
-  call set "REPORT_TYPES=%%%IDX%%"
-  if "%REPORT_TYPES%"=="" set "REPORT_TYPES=LATEST"
-  set /a IDX+=1
-  call set "STORE_MODE=%%%IDX%%"
+if "%PLAN_MODE%"=="1" (
+  set "REPORT_TYPES="
+  set "STORE_MODE=%~5"
   if "%STORE_MODE%"=="" set "STORE_MODE=history"
-  set /a IDX+=1
-  call set "ENABLE_REGIME_SWITCH=%%%IDX%%"
+  set "ENABLE_REGIME_SWITCH=%~6"
   if "%ENABLE_REGIME_SWITCH%"=="" set "ENABLE_REGIME_SWITCH=1"
-  set /a IDX+=1
-  call set "ARG7=%%%IDX%%"
-)
+) else (
+  set "REPORT_TYPES=%~4"
+  if "%REPORT_TYPES%"=="" set "REPORT_TYPES=LATEST"
+  set "STORE_MODE=%~5"
+  if "%STORE_MODE%"=="" set "STORE_MODE=history"
+  set "ENABLE_REGIME_SWITCH=%~6"
+  if "%ENABLE_REGIME_SWITCH%"=="" set "ENABLE_REGIME_SWITCH=1"
+  set "ARG7=%~7"
 
-rem PowerShell can split LATEST,FUSION into two positional args (LATEST FUSION).
-rem Auto-rejoin and shift params so users don't need to remember quoting rules.
-if /I "%REPORT_TYPES%"=="LATEST" if /I "%STORE_MODE%"=="FUSION" (
-  if /I "%ENABLE_REGIME_SWITCH%"=="history" (
-    set "REPORT_TYPES=LATEST,FUSION"
-    set "STORE_MODE=history"
-    if not "%ARG7%"=="" set "ENABLE_REGIME_SWITCH=%ARG7%"
+  rem Rebuild scope when PowerShell splits comma-separated stock list into extra args.
+  set "IDX=4"
+  :collect_scope_tokens
+  call set "CUR=%%%IDX%%"
+  if "%CUR%"=="" goto scope_collect_done
+    echo %CUR%| findstr /R /I "^[0-9][0-9][0-9][0-9][0-9][0-9]\.[A-Z][A-Z]$" >nul 2>&1
+  if errorlevel 1 goto scope_collect_done
+  if /I not "%SCOPE%"=="ALL" set "SCOPE=%SCOPE%,%CUR%"
+  set /a IDX+=1
+  goto collect_scope_tokens
+
+  :scope_collect_done
+  if not "%IDX%"=="4" (
+    call set "REPORT_TYPES=%%%IDX%%"
+    if "%REPORT_TYPES%"=="" set "REPORT_TYPES=LATEST"
+    set /a IDX+=1
+    call set "STORE_MODE=%%%IDX%%"
+    if "%STORE_MODE%"=="" set "STORE_MODE=history"
+    set /a IDX+=1
+    call set "ENABLE_REGIME_SWITCH=%%%IDX%%"
+    if "%ENABLE_REGIME_SWITCH%"=="" set "ENABLE_REGIME_SWITCH=1"
+    set /a IDX+=1
+    call set "ARG7=%%%IDX%%"
+  )
+
+  rem PowerShell can split LATEST,FUSION into two positional args (LATEST FUSION).
+  rem Auto-rejoin and shift params so users don't need to remember quoting rules.
+  if /I "%REPORT_TYPES%"=="LATEST" if /I "%STORE_MODE%"=="FUSION" (
+    if /I "%ENABLE_REGIME_SWITCH%"=="history" (
+      set "REPORT_TYPES=LATEST,FUSION"
+      set "STORE_MODE=history"
+      if not "%ARG7%"=="" set "ENABLE_REGIME_SWITCH=%ARG7%"
+    )
   )
 )
 
@@ -71,12 +83,12 @@ if not exist logs mkdir logs
 set "RUN_TAG=%BACKFILL_RUN_TAG%"
 if defined RUN_TAG set "RUN_TAG=_%RUN_TAG%"
 if defined RUN_TAG set "RUN_TAG=%RUN_TAG: =%"
-set "LOG_FILE=logs\backfill_predictive_history_event_driven_2024_2025%RUN_TAG%.log"
-set "CHECKPOINT_FILE=logs\backfill_predictive_history_event_driven_2024_2025%RUN_TAG%.checkpoint"
-set "EVENT_DATES_FILE=logs\event_dates_predictive_2024_2025%RUN_TAG%.txt"
-set "EVENT_REASONS_FILE=logs\event_dates_predictive_2024_2025_reasons%RUN_TAG%.csv"
-set "FULL_REFRESH_DATES_FILE=logs\event_dates_predictive_full_refresh_2024_2025%RUN_TAG%.txt"
-set "FINANCIAL_CODES_DIR=logs\event_codes_predictive_2024_2025%RUN_TAG%"
+set "LOG_FILE=logs\backfill_predictive_history_event_driven%RUN_TAG%.log"
+set "CHECKPOINT_FILE=logs\backfill_predictive_history_event_driven%RUN_TAG%.checkpoint"
+set "EVENT_DATES_FILE=logs\event_dates_predictive%RUN_TAG%.txt"
+set "EVENT_REASONS_FILE=logs\event_dates_predictive_reasons%RUN_TAG%.csv"
+set "FULL_REFRESH_DATES_FILE=logs\event_dates_predictive_full_refresh%RUN_TAG%.txt"
+set "FINANCIAL_CODES_DIR=logs\event_codes_predictive%RUN_TAG%"
 
 set "RESUME_FROM="
 if exist "%CHECKPOINT_FILE%" (
@@ -85,6 +97,8 @@ if exist "%CHECKPOINT_FILE%" (
 
 set "REGIME_FLAG="
 if "%ENABLE_REGIME_SWITCH%"=="1" set "REGIME_FLAG=--enable-regime-switch"
+
+if "%PLAN_MODE%"=="1" goto :run_plan
 
 echo [INFO] predictive event-driven backfill start %DATE% %TIME%>>"%LOG_FILE%"
 echo [INFO] start_date=%START_DATE% end_date=%END_DATE% scope=%SCOPE% report_types=%REPORT_TYPES% store_mode=%STORE_MODE% enable_regime_switch=%ENABLE_REGIME_SWITCH% resume_from=%RESUME_FROM%>>"%LOG_FILE%"
@@ -105,6 +119,74 @@ for /f "usebackq delims=" %%D in ("%EVENT_DATES_FILE%") do (
 
 echo [INFO] predictive event-driven backfill completed %DATE% %TIME%>>"%LOG_FILE%"
 echo predictive event-driven backfill completed. log=%LOG_FILE%
+exit /b 0
+
+:run_plan
+if not exist logs mkdir logs
+set "PLAN_LOG=logs\backfill_predictive_history_event_driven_plan.log"
+
+set "TAIL_ARGS="
+set /a IDX=5
+:collect_plan_tail_args
+call set "CUR=%%%IDX%%"
+if "%CUR%"=="" goto plan_tail_done
+set "TAIL_ARGS=%TAIL_ARGS% %CUR%"
+set /a IDX+=1
+goto collect_plan_tail_args
+
+:plan_tail_done
+set /a PLAN_TOTAL=0
+set /a PLAN_OK=0
+set /a PLAN_FAIL=0
+echo [INFO] plan mode start %DATE% %TIME% file=%PLAN_FILE% start_date=%START_DATE% end_date=%END_DATE% scope=%SCOPE% tail_args=%TAIL_ARGS%>>"%PLAN_LOG%"
+
+for /f "usebackq tokens=1,2 delims=," %%A in (`powershell -NoProfile -Command "$ErrorActionPreference='Stop'; $lines=Get-Content -LiteralPath '%PLAN_FILE%'; foreach($line in $lines){ $raw=$line.Trim(); if(-not $raw){ continue }; if($raw.StartsWith('#')){ continue }; foreach($seg in ($raw -split ',')){ $s=$seg.Trim(); if(-not $s){ continue }; $parts=$s -split '\|',2; if($parts.Count -lt 2){ continue }; $year=$parts[0].Trim(); $reports=$parts[1].Trim().ToUpper(); if(-not $year -or -not $reports){ continue }; if($reports -eq 'ALL'){ $reports='LATEST,FUSION' }; Write-Output ($year + ',' + $reports) } }"`) do (
+  call :run_plan_task %%~A %%~B
+)
+
+echo [INFO] plan mode done total=!PLAN_TOTAL! ok=!PLAN_OK! fail=!PLAN_FAIL! %DATE% %TIME%>>"%PLAN_LOG%"
+if not "!PLAN_FAIL!"=="0" (
+  echo predictive event-driven backfill plan failed partially. see %PLAN_LOG%
+  exit /b 1
+)
+echo predictive event-driven backfill plan completed. log=%PLAN_LOG%
+exit /b 0
+
+:run_plan_task
+set "TASK_YEAR=%~1"
+set "TASK_REPORT_TYPES=%~2"
+
+echo %TASK_YEAR%| findstr /R "^[0-9][0-9][0-9][0-9]$" >nul 2>&1
+if errorlevel 1 (
+  echo [WARN] skip invalid plan year=%TASK_YEAR%>>"%PLAN_LOG%"
+  exit /b 0
+)
+if "%TASK_REPORT_TYPES%"=="" (
+  echo [WARN] skip empty report_types for year=%TASK_YEAR%>>"%PLAN_LOG%"
+  exit /b 0
+)
+
+set "TASK_START=%TASK_YEAR%-01-01"
+set "TASK_END=%TASK_YEAR%-12-31"
+if "%START_DATE%" GTR "%TASK_START%" set "TASK_START=%START_DATE%"
+if "%END_DATE%" LSS "%TASK_END%" set "TASK_END=%END_DATE%"
+if "%TASK_START%" GTR "%TASK_END%" (
+  echo [SKIP] out-of-range year=%TASK_YEAR% start=%TASK_START% end=%TASK_END%>>"%PLAN_LOG%"
+  exit /b 0
+)
+
+set /a PLAN_TOTAL+=1
+set "BACKFILL_RUN_TAG=plan_%TASK_YEAR%"
+echo [TASK] start idx=!PLAN_TOTAL! year=%TASK_YEAR% report_types=%TASK_REPORT_TYPES% start=%TASK_START% end=%TASK_END% run_tag=!BACKFILL_RUN_TAG!>>"%PLAN_LOG%"
+call "%~f0" "%TASK_START%" "%TASK_END%" "%SCOPE%" "%TASK_REPORT_TYPES%"%TAIL_ARGS%
+set "TASK_ERR=!ERRORLEVEL!"
+if not "%TASK_ERR%"=="0" (
+  set /a PLAN_FAIL+=1
+  echo [TASK] fail idx=!PLAN_TOTAL! year=%TASK_YEAR% report_types=%TASK_REPORT_TYPES% code=%TASK_ERR%>>"%PLAN_LOG%"
+) else (
+  set /a PLAN_OK+=1
+  echo [TASK] ok idx=!PLAN_TOTAL! year=%TASK_YEAR% report_types=%TASK_REPORT_TYPES%>>"%PLAN_LOG%"
+)
 exit /b 0
 
 :process_date
