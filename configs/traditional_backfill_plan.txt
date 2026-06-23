@@ -1,0 +1,6 @@
+# Traditional valuation event-driven backfill plan
+# Format: YYYY|ALL or YYYY|Q1|H1|Q3|FY
+
+2023|ALL
+2024|ALL
+2025|ALL
