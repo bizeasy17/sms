@@ -9,6 +9,36 @@ RISK_ORDER = {"LOW": 1, "MEDIUM": 2, "HIGH": 3}
 REPORT_RANK = {"Q1": 1, "H1": 2, "Q3": 3, "FY": 4, "FUSION": 5}
 
 
+def _normalize_batch_key_map(batch_key_map: dict[str, Any] | None) -> dict[str, str]:
+    normalized: dict[str, str] = {}
+    if not isinstance(batch_key_map, dict):
+        return normalized
+
+    for raw_key, raw_value in batch_key_map.items():
+        report_type = str(raw_key or "").strip().upper()
+        batch_key = str(raw_value or "").strip()
+        if not report_type or not batch_key:
+            continue
+        if report_type not in {"Q1", "H1", "Q3", "FY", "FUSION"}:
+            continue
+        normalized[report_type] = batch_key
+    return normalized
+
+
+def _resolve_batch_key_for_report_type(
+    report_type: str,
+    *,
+    default_batch_key: str,
+    batch_key_map: dict[str, str],
+) -> str | None:
+    rt = str(report_type or "").strip().upper()
+    if batch_key_map:
+        # Per requirement: if a report_type is missing in batch_key_map, skip it directly.
+        mapped = batch_key_map.get(rt)
+        return mapped if mapped else None
+    return default_batch_key or None
+
+
 def _to_date(value: Any) -> date | None:
     if value is None:
         return None
@@ -108,6 +138,7 @@ def _build_trade_row(
     entry_price: float,
     exit_price: float,
     ret: float,
+    max_drawdown: float,
     holding_days: int,
     exit_reason: str,
 ) -> dict[str, Any]:
@@ -115,11 +146,13 @@ def _build_trade_row(
     quant = raw.get("quantitative_target") if isinstance(raw.get("quantitative_target"), dict) else {}
     return {
         "ts_code": str(chosen.ts_code or "").upper(),
+        "stock_name": "",
         "entry_date": entry_date.isoformat(),
         "exit_date": exit_date.isoformat(),
         "entry_price": round(float(entry_price), 4),
         "exit_price": round(float(exit_price), 4),
         "return_pct": round(float(ret) * 100.0, 4),
+        "max_drawdown_pct": round(float(max_drawdown) * 100.0, 4),
         "holding_days": int(holding_days),
         "exit_reason": exit_reason,
         "signal_score": round(float(chosen.signal_score), 4) if chosen.signal_score is not None else None,
@@ -255,6 +288,11 @@ def _simulate_year(
     price_map: dict[str, dict[date, float]],
     min_score: float,
     max_risk: str,
+    mode: str,
+    starting_capital: float,
+    max_position_pct: float,
+    first_entry_pct: float,
+    max_buy_per_day: int,
     stop_mode: str,
     single_stop_dd: float,
     sell_strategy: str,
@@ -271,16 +309,27 @@ def _simulate_year(
     stock_nav: dict[str, float] = {}
     stock_peak: dict[str, float] = {}
     open_positions: dict[str, dict[str, Any]] = {}
+    mode_normalized = str(mode or "signal").strip().lower()
+    if mode_normalized not in {"signal", "account"}:
+        mode_normalized = "signal"
+    account_cash = float(starting_capital or 0.0) if mode_normalized == "account" else 0.0
+    account_prev_nav = max(1.0, float(starting_capital or 0.0)) if mode_normalized == "account" else 1.0
 
     for idx, asof_date in enumerate(year_dates):
         is_last_day = idx == len(year_dates) - 1
         current_returns: list[float] = []
         to_close: list[tuple[str, float, str]] = []
+        buys_today = 0
 
         for code, position in list(open_positions.items()):
             current_price = price_map.get(code, {}).get(asof_date)
             if current_price is None or current_price <= 0:
                 continue
+
+            trade_min_price = float(position.get("trade_min_price") or 0.0)
+            if trade_min_price <= 0:
+                trade_min_price = float(current_price)
+            position["trade_min_price"] = min(trade_min_price, float(current_price))
 
             prev_price = float(position.get("last_mark_price") or 0.0)
             if prev_price > 0:
@@ -334,10 +383,12 @@ def _simulate_year(
 
         if current_returns:
             daily_ret = sum(current_returns) / len(current_returns)
-            active_days += 1
         else:
             daily_ret = 0.0
-        daily_returns.append(daily_ret)
+        if mode_normalized == "signal":
+            daily_returns.append(daily_ret)
+            if current_returns:
+                active_days += 1
 
         for code, exit_price, exit_reason in to_close:
             position = open_positions.pop(code, None)
@@ -347,6 +398,14 @@ def _simulate_year(
             if entry_price <= 0:
                 continue
             total_ret = (float(exit_price) / entry_price) - 1.0
+            min_price = float(position.get("trade_min_price") or entry_price)
+            if min_price <= 0:
+                min_price = entry_price
+            max_drawdown = min(0.0, (min_price / entry_price) - 1.0)
+            if mode_normalized == "account":
+                shares = float(position.get("shares") or 0.0)
+                if shares > 0:
+                    account_cash += shares * float(exit_price)
             sample_trades.append(
                 _build_trade_row(
                     chosen=position["chosen"],
@@ -355,6 +414,7 @@ def _simulate_year(
                     entry_price=entry_price,
                     exit_price=float(exit_price),
                     ret=total_ret,
+                    max_drawdown=max_drawdown,
                     holding_days=int(position.get("holding_days") or 0),
                     exit_reason=exit_reason,
                 )
@@ -365,6 +425,8 @@ def _simulate_year(
                 continue
             if stop_mode == "single" and code in stopped_codes:
                 continue
+            if mode_normalized == "account" and int(max_buy_per_day or 0) > 0 and buys_today >= int(max_buy_per_day or 0):
+                break
 
             rows = by_date_code.get((asof_date, code), [])
             if not rows:
@@ -392,14 +454,54 @@ def _simulate_year(
                 continue
 
             optimistic_price = _resolve_optimistic_price(chosen)
+            shares = 0.0
+            if mode_normalized == "account":
+                nav_reference = account_cash
+                for hold_code, hold_position in open_positions.items():
+                    hold_price = price_map.get(hold_code, {}).get(asof_date)
+                    if hold_price is None or hold_price <= 0:
+                        hold_price = float(hold_position.get("last_mark_price") or 0.0)
+                    if hold_price is None or hold_price <= 0:
+                        continue
+                    nav_reference += float(hold_position.get("shares") or 0.0) * float(hold_price)
+
+                per_position_capital = nav_reference * float(max_position_pct or 0.0)
+                first_entry_capital = nav_reference * float(first_entry_pct or 0.0)
+                buy_budget = min(account_cash, per_position_capital, first_entry_capital)
+                if buy_budget <= 0:
+                    continue
+                shares = buy_budget / float(entry_price)
+                if shares <= 0:
+                    continue
+                account_cash -= shares * float(entry_price)
+                buys_today += 1
+
             open_positions[code] = {
                 "chosen": chosen,
                 "entry_date": asof_date,
                 "entry_price": float(entry_price),
                 "last_mark_price": float(entry_price),
+                "trade_min_price": float(entry_price),
                 "holding_days": 0,
                 "optimistic_price": optimistic_price,
+                "shares": float(shares) if mode_normalized == "account" else 0.0,
             }
+
+        if mode_normalized == "account":
+            account_nav = account_cash
+            for hold_code, hold_position in open_positions.items():
+                hold_price = price_map.get(hold_code, {}).get(asof_date)
+                if hold_price is None or hold_price <= 0:
+                    hold_price = float(hold_position.get("last_mark_price") or 0.0)
+                if hold_price is None or hold_price <= 0:
+                    continue
+                account_nav += float(hold_position.get("shares") or 0.0) * float(hold_price)
+
+            account_daily_ret = (account_nav / account_prev_nav) - 1.0 if account_prev_nav > 0 else 0.0
+            daily_returns.append(account_daily_ret)
+            if open_positions:
+                active_days += 1
+            account_prev_nav = account_nav if account_nav > 0 else account_prev_nav
 
     return daily_returns, active_days, sorted(stopped_codes), sample_trades
 
@@ -407,7 +509,13 @@ def _simulate_year(
 def run_predictive_valuation_backtest(
     *,
     batch_key: str,
+    batch_key_map: dict[str, Any] | None = None,
     ts_codes: list[str],
+    mode: str = "signal",
+    starting_capital: float = 200000.0,
+    max_position_pct: float = 0.2,
+    first_entry_pct: float = 0.1,
+    max_buy_per_day: int = 3,
     start_year: int = 2024,
     end_year: int = 2025,
     min_score: float = 90.0,
@@ -444,6 +552,17 @@ def run_predictive_valuation_backtest(
     if risk_level not in {"LOW", "MEDIUM", "HIGH"}:
         risk_level = "MEDIUM"
 
+    mode_normalized = str(mode or "signal").strip().lower()
+    if mode_normalized not in {"signal", "account"}:
+        mode_normalized = "signal"
+
+    starting_capital_value = float(starting_capital or 200000.0)
+    if starting_capital_value <= 0:
+        starting_capital_value = 200000.0
+    max_position_pct_value = min(1.0, max(0.0, float(max_position_pct or 0.2)))
+    first_entry_pct_value = min(1.0, max(0.0, float(first_entry_pct or 0.1)))
+    max_buy_per_day_value = max(1, int(max_buy_per_day or 3))
+
     sell_strategy_normalized = str(sell_strategy or "optimistic_price").strip().lower()
     if sell_strategy_normalized not in {"next_day", "optimistic_price", "take_profit_pct", "optimistic_or_take_profit"}:
         sell_strategy_normalized = "optimistic_price"
@@ -452,8 +571,15 @@ def run_predictive_valuation_backtest(
     stop_loss_pct_value = max(0.0, float(stop_loss_pct or 0.0))
     max_holding_days_value = max(0, int(max_holding_days or 0))
 
+    default_batch_key = str(batch_key or "").strip()
+    normalized_batch_key_map = _normalize_batch_key_map(batch_key_map)
+    candidate_batch_keys = set(normalized_batch_key_map.values()) if normalized_batch_key_map else {default_batch_key}
+    candidate_batch_keys = {item for item in candidate_batch_keys if item}
+    if not candidate_batch_keys:
+        raise ValueError("batch_key or batch_key_map is required")
+
     qs = EarningsSignalSnapshotHistory.objects.filter(
-        batch_key=str(batch_key or "").strip(),
+        batch_key__in=list(candidate_batch_keys),
         ts_code__in=normalized_codes,
         asof_date__gte=date(int(start_year), 1, 1),
         asof_date__lte=date(int(end_year), 12, 31),
@@ -471,6 +597,15 @@ def run_predictive_valuation_backtest(
 
     by_date_code: dict[tuple[date, str], list[EarningsSignalSnapshotHistory]] = {}
     for row in qs.iterator(chunk_size=5000):
+        expected_batch_key = _resolve_batch_key_for_report_type(
+            str(row.report_type or ""),
+            default_batch_key=default_batch_key,
+            batch_key_map=normalized_batch_key_map,
+        )
+        if not expected_batch_key:
+            continue
+        if str(row.batch_key or "").strip() != expected_batch_key:
+            continue
         key = (row.asof_date, row.ts_code)
         by_date_code.setdefault(key, []).append(row)
 
@@ -489,6 +624,11 @@ def run_predictive_valuation_backtest(
             price_map=price_map,
             min_score=float(min_score),
             max_risk=risk_level,
+            mode=mode_normalized,
+            starting_capital=starting_capital_value,
+            max_position_pct=max_position_pct_value,
+            first_entry_pct=first_entry_pct_value,
+            max_buy_per_day=max_buy_per_day_value,
             stop_mode=stop_mode_normalized,
             single_stop_dd=float(single_stop_dd),
             sell_strategy=sell_strategy_normalized,
@@ -515,12 +655,18 @@ def run_predictive_valuation_backtest(
         sample_trades.extend(year_trades)
 
     return {
-        "batch_key": str(batch_key or "").strip(),
+        "batch_key": default_batch_key,
+        "effective_batch_key_map": normalized_batch_key_map,
+        "mode": mode_normalized,
         "pool_size": len(normalized_codes),
         "min_score": float(min_score),
         "max_risk": risk_level,
         "report_type": report_filter,
         "stop_mode": stop_mode_normalized,
+        "starting_capital": starting_capital_value,
+        "max_position_pct": max_position_pct_value,
+        "first_entry_pct": first_entry_pct_value,
+        "max_buy_per_day": max_buy_per_day_value,
         "global_stop_dd": float(global_stop_dd),
         "single_stop_dd": float(single_stop_dd),
         "sell_strategy": sell_strategy_normalized,

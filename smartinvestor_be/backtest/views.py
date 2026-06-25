@@ -51,8 +51,17 @@ else:
 _SCAN_EXECUTOR = ThreadPoolExecutor(max_workers=1)
 _PREDICTIVE_SCAN_EXECUTOR = ThreadPoolExecutor(max_workers=1)
 
+_ST_RISK_NAME_PREFIXES = ("*ST", "ST", "S*ST", "SST")
+
 _SCAN_TASK_TABLE_MISSING_HINT = "scan task table missing; run `python manage.py migrate backtest`"
 _PREDICTIVE_SCAN_TASK_TABLE_MISSING_HINT = "predictive scan task table missing; run `python manage.py migrate backtest`"
+
+
+def _is_st_risk_stock_name(stock_name: str) -> bool:
+    normalized = str(stock_name or "").strip().upper().replace(" ", "")
+    if not normalized:
+        return False
+    return any(normalized.startswith(prefix) for prefix in _ST_RISK_NAME_PREFIXES)
 
 TRADITIONAL_TEMPLATE_MAP = {
     "baseline": {
@@ -2022,6 +2031,14 @@ def _predictive_service_timeout(default_seconds: float = 12.0) -> float:
         return default_seconds
 
 
+def _predictive_backtest_run_timeout(default_seconds: float = 180.0) -> float:
+    try:
+        value = float(getattr(settings, "EARNINGS_SERVICE_BACKTEST_TIMEOUT_SECONDS", default_seconds) or default_seconds)
+        return max(5.0, value)
+    except (TypeError, ValueError):
+        return default_seconds
+
+
 def _fetch_latest_predictive_batch_key() -> str:
     base_url = _predictive_service_base_url()
     endpoint = f"{base_url}/api/forecast/backtest/runs/?limit=1"
@@ -2062,9 +2079,17 @@ def _build_predictive_market_universe_ts_codes() -> list[str]:
         .filter(list_status="L")
         .exclude(ts_code__isnull=True)
         .exclude(ts_code="")
-        .values_list("ts_code", flat=True)
+        .values("ts_code", "name")
     )
-    codes = sorted({str(code or "").strip().upper() for code in queryset if str(code or "").strip()})
+    codes = sorted(
+        {
+            ts_code
+            for row in queryset.iterator(chunk_size=2000)
+            for ts_code in [str((row or {}).get("ts_code") or "").strip().upper()]
+            for stock_name in [str((row or {}).get("name") or "")]
+            if ts_code and not ts_code.endswith(".BJ") and not _is_st_risk_stock_name(stock_name)
+        }
+    )
     return codes
 
 
@@ -2079,7 +2104,13 @@ def _build_effective_predictive_payload(raw_payload: dict | None) -> dict:
 
     effective = {
         "batch_key": auto_batch_key,
+        "batch_key_map": payload.get("batch_key_map") if isinstance(payload.get("batch_key_map"), dict) else None,
         "ts_codes": ts_codes,
+        "mode": payload.get("mode"),
+        "starting_capital": payload.get("starting_capital"),
+        "max_position_pct": payload.get("max_position_pct"),
+        "first_entry_pct": payload.get("first_entry_pct"),
+        "max_buy_per_day": payload.get("max_buy_per_day"),
         "start_year": payload.get("start_year"),
         "end_year": payload.get("end_year"),
         "min_score": payload.get("min_score"),
@@ -2099,7 +2130,14 @@ def _build_effective_predictive_payload(raw_payload: dict | None) -> dict:
     return {key: value for key, value in effective.items() if value is not None}
 
 
-def _proxy_predictive_backtest_request(*, method: str, path: str, payload: dict | None = None, query: dict | None = None):
+def _proxy_predictive_backtest_request(
+    *,
+    method: str,
+    path: str,
+    payload: dict | None = None,
+    query: dict | None = None,
+    timeout_seconds: float | None = None,
+):
     base_url = _predictive_service_base_url()
     endpoint = f"{base_url}{path}"
     if query:
@@ -2124,10 +2162,10 @@ def _proxy_predictive_backtest_request(*, method: str, path: str, payload: dict 
         headers["Content-Type"] = "application/json"
 
     request = urllib_request.Request(endpoint, data=body, method=method.upper(), headers=headers)
-    timeout_seconds = _predictive_service_timeout()
+    resolved_timeout_seconds = float(timeout_seconds) if timeout_seconds is not None else _predictive_service_timeout()
 
     try:
-        with urllib_request.urlopen(request, timeout=timeout_seconds) as response:
+        with urllib_request.urlopen(request, timeout=resolved_timeout_seconds) as response:
             raw = response.read().decode("utf-8", errors="replace")
             try:
                 data = json.loads(raw)
@@ -2161,6 +2199,7 @@ def execute_predictive_backtest(request):
         method="POST",
         path="/api/forecast/backtest/run/",
         payload=effective_payload,
+        timeout_seconds=_predictive_backtest_run_timeout(),
     )
 
 
@@ -2173,6 +2212,20 @@ def list_predictive_backtest_runs(request):
             "limit": request.GET.get("limit"),
             "offset": request.GET.get("offset"),
             "batch_key": request.GET.get("batch_key"),
+        },
+    )
+
+
+@api_view(["GET"])
+def list_predictive_backtest_batch_candidates(request):
+    return _proxy_predictive_backtest_request(
+        method="GET",
+        path="/api/forecast/backtest/batch-candidates/",
+        query={
+            "start_year": request.GET.get("start_year"),
+            "end_year": request.GET.get("end_year"),
+            "report_type": request.GET.get("report_type"),
+            "limit_per_report_type": request.GET.get("limit_per_report_type"),
         },
     )
 
@@ -2203,6 +2256,46 @@ def _extract_predictive_run_payload(proxy_data):
         "summary": payload.get("summary") if isinstance(payload.get("summary"), dict) else {},
         "result": payload.get("result") if isinstance(payload.get("result"), dict) else {},
     }
+
+
+def _build_corporation_name_map(ts_codes: list[str]) -> dict[str, str]:
+    normalized_codes = sorted({str(code or "").strip().upper() for code in ts_codes if str(code or "").strip()})
+    if not normalized_codes:
+        return {}
+    rows = Corporation.objects.filter(ts_code__in=normalized_codes).values("ts_code", "name")
+    return {
+        str(row.get("ts_code") or "").strip().upper(): str(row.get("name") or "").strip()
+        for row in rows
+        if str(row.get("ts_code") or "").strip()
+    }
+
+
+def _attach_predictive_sample_trade_names(payload: dict):
+    if not isinstance(payload, dict):
+        return
+    result_payload = payload.get("result")
+    if not isinstance(result_payload, dict):
+        return
+    sample_trades = result_payload.get("sample_trades")
+    if not isinstance(sample_trades, list):
+        return
+
+    ts_codes = [
+        str(item.get("ts_code") or "").strip().upper()
+        for item in sample_trades
+        if isinstance(item, dict)
+    ]
+    name_map = _build_corporation_name_map(ts_codes)
+    if not name_map:
+        return
+
+    for item in sample_trades:
+        if not isinstance(item, dict):
+            continue
+        code = str(item.get("ts_code") or "").strip().upper()
+        if not code:
+            continue
+        item["stock_name"] = name_map.get(code, str(item.get("stock_name") or "").strip())
 
 
 def _is_predictive_scan_task_canceled(task_id: int) -> bool:
@@ -2275,6 +2368,7 @@ def _execute_predictive_scan_task(task_id, base_params, combo_overrides):
                 method="POST",
                 path="/api/forecast/backtest/run/",
                 payload=effective_payload,
+                timeout_seconds=_predictive_backtest_run_timeout(),
             )
             if int(getattr(proxy_response, "status_code", 500) or 500) >= 400:
                 proxy_payload = proxy_response.data if isinstance(proxy_response.data, dict) else {}
@@ -2488,6 +2582,7 @@ def _resolve_predictive_run_payload(run_id: int):
         payload = payload.get("data") or {}
     if not isinstance(payload, dict):
         payload = {}
+    _attach_predictive_sample_trade_names(payload)
     return payload, None
 
 

@@ -29,6 +29,11 @@ urlpatterns = [
         name="predictive-backtest-runs",
     ),
     path(
+        "predictive/batch-candidates/",
+        views.list_predictive_backtest_batch_candidates,
+        name="predictive-backtest-batch-candidates",
+    ),
+    path(
         "predictive/runs/<int:run_id>/",
         views.get_predictive_backtest_run_detail,
         name="predictive-backtest-run-detail",

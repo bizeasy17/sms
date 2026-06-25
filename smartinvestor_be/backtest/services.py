@@ -41,6 +41,32 @@ TECHNICAL_FACTOR_ALIAS_MAP = {
 
 MONEYFLOW_WINDOW_OPTIONS = (5, 10, 15, 30, 60)
 
+_ST_RISK_NAME_PREFIXES = ("*ST", "ST", "S*ST", "SST")
+
+
+def _is_st_risk_stock_name(stock_name):
+    normalized = str(stock_name or "").strip().upper().replace(" ", "")
+    if not normalized:
+        return False
+    return any(normalized.startswith(prefix) for prefix in _ST_RISK_NAME_PREFIXES)
+
+
+def _build_st_risk_ts_code_set(ts_codes):
+    normalized_codes = {
+        str(code or "").strip().upper()
+        for code in (ts_codes or [])
+        if str(code or "").strip()
+    }
+    if not normalized_codes:
+        return set()
+
+    rows = Corporation.objects.filter(ts_code__in=sorted(normalized_codes)).values("ts_code", "name")
+    return {
+        str(row.get("ts_code") or "").strip().upper()
+        for row in rows.iterator(chunk_size=2000)
+        if _is_st_risk_stock_name(row.get("name"))
+    }
+
 
 def _normalize_moneyflow_window_days(value):
     try:
@@ -1350,6 +1376,7 @@ def run_traditional_value_exit_backtest(
     open_positions = {}
     closed_trades = []
     buy_signal_count = 0
+    st_filtered_count = 0
     risk_filtered_count = 0
     score_filtered_count = 0
     financial_filtered_count = 0
@@ -1358,6 +1385,7 @@ def run_traditional_value_exit_backtest(
     technical_missing_count = 0
     moneyflow_filtered_count = 0
     moneyflow_missing_count = 0
+    st_risk_ts_codes = _build_st_risk_ts_code_set(price_history.keys())
 
     for idx, trade_date in enumerate(sorted(entry_dates), 1):
         if callable(cancel_checker) and cancel_checker():
@@ -1366,7 +1394,10 @@ def run_traditional_value_exit_backtest(
         if not date_prices:
             continue
 
-        ts_codes = sorted(date_prices.keys())
+        raw_ts_codes = sorted(date_prices.keys())
+        if st_risk_ts_codes:
+            st_filtered_count += sum(1 for code in raw_ts_codes if code in st_risk_ts_codes)
+        ts_codes = [code for code in raw_ts_codes if code not in st_risk_ts_codes]
         method_map = _build_snapshot_method_map(ts_codes=ts_codes, trade_date=trade_date, market=market)
         moneyflow_sum_map = (
             _load_moneyflow_feature_map(
@@ -1701,6 +1732,7 @@ def run_traditional_value_exit_backtest(
         "diagnostics": {
             "entry_dates": len(entry_dates),
             "buy_signal_count_before_score_and_risk": buy_signal_count,
+            "st_filtered_count": st_filtered_count,
             "score_filtered_count": score_filtered_count,
             "risk_filtered_count": risk_filtered_count,
             "financial_filtered_count": financial_filtered_count,
@@ -2000,6 +2032,7 @@ def run_traditional_value_exit_account_backtest(
     last_price_cache = {}
 
     buy_signal_count = 0
+    st_filtered_count = 0
     score_filtered_count = 0
     risk_filtered_count = 0
     financial_filtered_count = 0
@@ -2008,6 +2041,7 @@ def run_traditional_value_exit_account_backtest(
     technical_missing_count = 0
     moneyflow_filtered_count = 0
     moneyflow_missing_count = 0
+    st_risk_ts_codes = _build_st_risk_ts_code_set(price_history.keys())
     buy_executed_count = 0
     take_profit_partial_count = 0
     exposure_days = 0
@@ -2418,7 +2452,10 @@ def run_traditional_value_exit_account_backtest(
                                     last_price_cache[ts_code] = float(current_price)
 
         if trade_date in entry_date_set and (not account_stop_triggered):
-            ts_codes = sorted(date_prices.keys())
+            raw_ts_codes = sorted(date_prices.keys())
+            if st_risk_ts_codes:
+                st_filtered_count += sum(1 for code in raw_ts_codes if code in st_risk_ts_codes)
+            ts_codes = [code for code in raw_ts_codes if code not in st_risk_ts_codes]
             if valuation_source == "history":
                 method_map = _build_history_method_map(ts_codes=ts_codes, trade_date=trade_date, market=market)
             else:
@@ -2857,6 +2894,7 @@ def run_traditional_value_exit_account_backtest(
         "diagnostics": {
             "entry_dates": len(entry_dates),
             "buy_signal_count_before_score_and_risk": buy_signal_count,
+            "st_filtered_count": st_filtered_count,
             "score_filtered_count": score_filtered_count,
             "risk_filtered_count": risk_filtered_count,
             "financial_filtered_count": financial_filtered_count,

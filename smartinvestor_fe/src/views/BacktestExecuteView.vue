@@ -90,6 +90,74 @@
           </el-col>
         </el-row>
 
+        <el-divider v-if="!isTraditionalSource" content-position="left">预测批次映射（按记录数倒序）</el-divider>
+        <el-row v-if="!isTraditionalSource" :gutter="12" class="row-gap">
+          <el-col :xs="24" :md="6">
+            <el-form-item label="Q1 Batch" label-position="top">
+              <el-select v-model="predictiveBatchKeyMapForm.Q1" filterable clearable placeholder="请选择Q1批次" style="width: 100%" :loading="loadingPredictiveBatchCandidates">
+                <el-option
+                  v-for="item in predictiveBatchCandidateBuckets.Q1"
+                  :key="`Q1-${item.batch_key}`"
+                  :label="formatPredictiveBatchOptionLabel(item)"
+                  :value="item.batch_key"
+                />
+              </el-select>
+            </el-form-item>
+          </el-col>
+          <el-col :xs="24" :md="6">
+            <el-form-item label="H1 Batch" label-position="top">
+              <el-select v-model="predictiveBatchKeyMapForm.H1" filterable clearable placeholder="请选择H1批次" style="width: 100%" :loading="loadingPredictiveBatchCandidates">
+                <el-option
+                  v-for="item in predictiveBatchCandidateBuckets.H1"
+                  :key="`H1-${item.batch_key}`"
+                  :label="formatPredictiveBatchOptionLabel(item)"
+                  :value="item.batch_key"
+                />
+              </el-select>
+            </el-form-item>
+          </el-col>
+          <el-col :xs="24" :md="6">
+            <el-form-item label="Q3 Batch" label-position="top">
+              <el-select v-model="predictiveBatchKeyMapForm.Q3" filterable clearable placeholder="请选择Q3批次" style="width: 100%" :loading="loadingPredictiveBatchCandidates">
+                <el-option
+                  v-for="item in predictiveBatchCandidateBuckets.Q3"
+                  :key="`Q3-${item.batch_key}`"
+                  :label="formatPredictiveBatchOptionLabel(item)"
+                  :value="item.batch_key"
+                />
+              </el-select>
+            </el-form-item>
+          </el-col>
+          <el-col :xs="24" :md="6">
+            <el-form-item label="FY Batch" label-position="top">
+              <el-select v-model="predictiveBatchKeyMapForm.FY" filterable clearable placeholder="请选择FY批次" style="width: 100%" :loading="loadingPredictiveBatchCandidates">
+                <el-option
+                  v-for="item in predictiveBatchCandidateBuckets.FY"
+                  :key="`FY-${item.batch_key}`"
+                  :label="formatPredictiveBatchOptionLabel(item)"
+                  :value="item.batch_key"
+                />
+              </el-select>
+            </el-form-item>
+          </el-col>
+          <el-col :xs="24" :md="6">
+            <el-form-item label="FUSION Batch" label-position="top">
+              <el-select v-model="predictiveBatchKeyMapForm.FUSION" filterable clearable placeholder="请选择FUSION批次" style="width: 100%" :loading="loadingPredictiveBatchCandidates">
+                <el-option
+                  v-for="item in predictiveBatchCandidateBuckets.FUSION"
+                  :key="`FUSION-${item.batch_key}`"
+                  :label="formatPredictiveBatchOptionLabel(item)"
+                  :value="item.batch_key"
+                />
+              </el-select>
+            </el-form-item>
+          </el-col>
+          <el-col :xs="24" :md="6" class="actions-left">
+            <el-button :loading="loadingPredictiveBatchCandidates" @click="fetchPredictiveBatchCandidates">刷新候选</el-button>
+            <span class="muted">未选择的报告期将按缺项直接跳过</span>
+          </el-col>
+        </el-row>
+
         <el-divider content-position="left">止盈策略</el-divider>
 
         <el-row :gutter="12" class="row-gap">
@@ -1132,6 +1200,17 @@ type StockSummaryRow = {
   last_exit_date?: string
 }
 
+type PredictiveBatchCandidate = {
+  report_type: string
+  batch_key: string
+  record_count: number
+  first_asof_date?: string | null
+  last_asof_date?: string | null
+  latest_created_at?: string | null
+}
+
+const PREDICTIVE_REPORT_TYPES = ['Q1', 'H1', 'Q3', 'FY', 'FUSION'] as const
+
 const baseURL = inject<string>('baseURL', 'http://127.0.0.1:5001/api')
 const router = useRouter()
 
@@ -1149,6 +1228,21 @@ const messageType = ref<'success' | 'error' | 'info' | 'warning'>('info')
 const lastRunId = ref<number | null>(null)
 const lastPredictiveRunId = ref<number | null>(null)
 const fieldErrors = reactive<Record<string, string>>({})
+const loadingPredictiveBatchCandidates = ref(false)
+const predictiveBatchCandidateBuckets = reactive<Record<string, PredictiveBatchCandidate[]>>({
+  Q1: [],
+  H1: [],
+  Q3: [],
+  FY: [],
+  FUSION: [],
+})
+const predictiveBatchKeyMapForm = reactive<Record<string, string>>({
+  Q1: '',
+  H1: '',
+  Q3: '',
+  FY: '',
+  FUSION: '',
+})
 
 const tasks = ref<TaskItem[]>([])
 const activeTaskId = ref<number | null>(null)
@@ -1347,6 +1441,11 @@ const predictiveTradedRows = computed<Array<Record<string, any>>>(() => {
     const avgReturn = returns.length ? (returns.reduce((sum, value) => sum + value, 0) / returns.length) : 0
     const totalReturn = returns.length ? returns.reduce((sum, value) => sum + value, 0) : 0
     const avgHoldingDays = holdingDays.length ? (holdingDays.reduce((sum, value) => sum + value, 0) / holdingDays.length) : 0
+    const tradeDrawdowns = trades
+      .map((row) => toFiniteNumber(row?.max_drawdown_pct))
+      .filter((value): value is number => value !== null)
+    const minDrawdown = tradeDrawdowns.length ? Math.min(...tradeDrawdowns) : null
+    const firstNamedTrade = trades.find((row) => String(row?.stock_name || '').trim())
 
     const entryDates = trades
       .map((row) => String(row?.entry_date || row?.trade_date || '').trim())
@@ -1359,12 +1458,12 @@ const predictiveTradedRows = computed<Array<Record<string, any>>>(() => {
 
     return {
       ts_code: tsCode,
-      stock_name: '-',
+      stock_name: String(firstNamedTrade?.stock_name || '-').trim() || '-',
       trade_count: trades.length,
       win_rate_pct: trades.length ? Number(((winCount / trades.length) * 100).toFixed(2)) : 0,
       avg_return_pct: Number(avgReturn.toFixed(3)),
       total_return_pct: Number(totalReturn.toFixed(3)),
-      max_drawdown_pct: null,
+      max_drawdown_pct: minDrawdown !== null ? Number(minDrawdown.toFixed(3)) : null,
       avg_holding_days: Number(avgHoldingDays.toFixed(2)),
       first_entry_date: entryDates.length ? entryDates[0] : '-',
       last_exit_date: exitDates.length ? exitDates[exitDates.length - 1] : '-',
@@ -1607,6 +1706,57 @@ const detailStockPositionText = computed(() => {
 
 function apiBase(): string {
   return String(baseURL || '').replace(/\/+$/, '')
+}
+
+function parseYearFromDateText(value: unknown, fallback: number): number {
+  const text = String(value || '').trim()
+  const matched = text.match(/^(\d{4})/)
+  if (!matched) {
+    return fallback
+  }
+  const parsed = Number(matched[1])
+  return Number.isFinite(parsed) ? parsed : fallback
+}
+
+function resetPredictiveBatchCandidateBuckets() {
+  for (const reportType of PREDICTIVE_REPORT_TYPES) {
+    predictiveBatchCandidateBuckets[reportType] = []
+  }
+}
+
+function normalizePredictiveBatchCandidate(item: any): PredictiveBatchCandidate | null {
+  const reportType = String(item?.report_type || '').trim().toUpperCase()
+  const batchKey = String(item?.batch_key || '').trim()
+  if (!reportType || !batchKey || !PREDICTIVE_REPORT_TYPES.includes(reportType as typeof PREDICTIVE_REPORT_TYPES[number])) {
+    return null
+  }
+  return {
+    report_type: reportType,
+    batch_key: batchKey,
+    record_count: Number(item?.record_count || 0),
+    first_asof_date: item?.first_asof_date || null,
+    last_asof_date: item?.last_asof_date || null,
+    latest_created_at: item?.latest_created_at || null,
+  }
+}
+
+function formatPredictiveBatchOptionLabel(item: PredictiveBatchCandidate): string {
+  const countText = Number.isFinite(Number(item.record_count)) ? String(Number(item.record_count)) : '0'
+  const start = String(item.first_asof_date || '').trim() || '-'
+  const end = String(item.last_asof_date || '').trim() || '-'
+  return `${item.batch_key} (${countText}) ${start}~${end}`
+}
+
+function buildPredictiveBatchKeyMapPayload(): Record<string, string> {
+  const out: Record<string, string> = {}
+  for (const reportType of PREDICTIVE_REPORT_TYPES) {
+    const batchKey = String(predictiveBatchKeyMapForm[reportType] || '').trim()
+    if (!batchKey) {
+      continue
+    }
+    out[reportType] = batchKey
+  }
+  return out
 }
 
 function toRunId(value: unknown): number | null {
@@ -2366,7 +2516,12 @@ function normalizeRunHistoryRow(
 function buildExecutePayload() {
   const payload: Record<string, any> = { ...form }
   if (!isTraditionalSource.value) {
-    return {
+    const predictivePayload: Record<string, any> = {
+      mode: String(form.mode || 'signal').trim().toLowerCase(),
+      starting_capital: Number(form.starting_capital ?? 200000),
+      max_position_pct: Number(form.max_position_pct ?? 0.2),
+      first_entry_pct: Number(form.first_entry_pct ?? 0.1),
+      max_buy_per_day: Number(form.max_buy_per_day ?? 3),
       start_year: Number(String(form.start_date || '').slice(0, 4) || 2024),
       end_year: Number(String(form.end_date || '').slice(0, 4) || 2025),
       min_score: Number(form.min_score ?? 90),
@@ -2381,6 +2536,11 @@ function buildExecutePayload() {
       report_type: 'ALL',
       persist: true,
     }
+    const batchKeyMap = buildPredictiveBatchKeyMapPayload()
+    if (Object.keys(batchKeyMap).length > 0) {
+      predictivePayload.batch_key_map = batchKeyMap
+    }
+    return predictivePayload
   }
   const buyWeightLadder = toNumberList(form.buy_weight_ladder_text)
   payload.take_profit_tiers = parseTakeProfitTiersText(form.take_profit_tiers_text)
@@ -2897,6 +3057,61 @@ async function fetchTemplates() {
   }
 }
 
+async function fetchPredictiveBatchCandidates() {
+  if (isTraditionalSource.value) {
+    return
+  }
+  loadingPredictiveBatchCandidates.value = true
+  const fallbackStartYear = 2024
+  const fallbackEndYear = 2025
+  const startYear = parseYearFromDateText(form.start_date, fallbackStartYear)
+  const endYear = parseYearFromDateText(form.end_date, fallbackEndYear)
+  const safeStartYear = Math.min(startYear, endYear)
+  const safeEndYear = Math.max(startYear, endYear)
+
+  try {
+    const resp = await axios.get(`${apiBase()}/backtest/predictive/batch-candidates/`, {
+      params: {
+        start_year: safeStartYear,
+        end_year: safeEndYear,
+        report_type: 'ALL',
+        limit_per_report_type: 50,
+      },
+    })
+    const payload = resp?.data || {}
+    const bucketsRaw = (payload?.buckets && typeof payload.buckets === 'object')
+      ? payload.buckets
+      : ((payload?.data?.buckets && typeof payload.data.buckets === 'object') ? payload.data.buckets : {})
+
+    const previousSelections: Record<string, string> = {}
+    for (const reportType of PREDICTIVE_REPORT_TYPES) {
+      previousSelections[reportType] = String(predictiveBatchKeyMapForm[reportType] || '')
+    }
+
+    resetPredictiveBatchCandidateBuckets()
+
+    for (const reportType of PREDICTIVE_REPORT_TYPES) {
+      const sourceRows = Array.isArray((bucketsRaw as any)?.[reportType]) ? (bucketsRaw as any)[reportType] : []
+      const normalizedRows = sourceRows
+        .map((item: any) => normalizePredictiveBatchCandidate(item))
+        .filter((item: PredictiveBatchCandidate | null): item is PredictiveBatchCandidate => !!item)
+      predictiveBatchCandidateBuckets[reportType] = normalizedRows
+
+      const selected = previousSelections[reportType]
+      if (!selected) {
+        predictiveBatchKeyMapForm[reportType] = ''
+        continue
+      }
+      const exists = normalizedRows.some((item: PredictiveBatchCandidate) => item.batch_key === selected)
+      predictiveBatchKeyMapForm[reportType] = exists ? selected : ''
+    }
+  } catch {
+    resetPredictiveBatchCandidateBuckets()
+  } finally {
+    loadingPredictiveBatchCandidates.value = false
+  }
+}
+
 function applyTemplate(templateId: string) {
   const target = templates.value.find((item) => item.template_id === templateId)
   if (!target || !target.params) {
@@ -2974,6 +3189,7 @@ async function executeSingleRun() {
       singleRunTaskSource.value = 'predictive'
       messageType.value = 'success'
       message.value = `预测回测任务已提交，task_id=${activeTaskId.value}`
+      await fetchTasks('predictive')
       const status = await fetchTaskDetail(singleRunTaskId.value || undefined, 'predictive')
       if (!status || !['success', 'partial_success', 'failed', 'cancel_requested', 'canceled'].includes(status)) {
         messageType.value = 'info'
@@ -3884,6 +4100,9 @@ onMounted(async () => {
   await fetchTemplates()
   await fetchTasks()
   await fetchLatestRunStocks()
+  if (!isTraditionalSource.value) {
+    await fetchPredictiveBatchCandidates()
+  }
 })
 
 watch(backtestSource, async () => {
@@ -3891,7 +4110,27 @@ watch(backtestSource, async () => {
   taskRuns.value = []
   taskEvents.value = []
   await fetchTasks()
+  if (!isTraditionalSource.value) {
+    await fetchPredictiveBatchCandidates()
+  }
 })
+
+watch(
+  () => [form.start_date, form.end_date],
+  async () => {
+    if (isTraditionalSource.value) {
+      return
+    }
+    await fetchPredictiveBatchCandidates()
+  }
+)
+
+watch(
+  () => [predictiveBatchKeyMapForm.Q1, predictiveBatchKeyMapForm.H1, predictiveBatchKeyMapForm.Q3, predictiveBatchKeyMapForm.FY, predictiveBatchKeyMapForm.FUSION],
+  () => {
+    clearFieldErrors()
+  }
+)
 
 onBeforeUnmount(() => {
   stopSingleRunPolling()

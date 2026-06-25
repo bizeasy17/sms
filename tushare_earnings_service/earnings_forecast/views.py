@@ -6,6 +6,7 @@ from pathlib import Path
 from uuid import uuid4
 
 from django.conf import settings
+from django.db.models import Count, Max, Min
 from django.http import JsonResponse
 from django.utils import timezone
 from django.views.decorators.http import require_GET, require_POST
@@ -686,6 +687,20 @@ def _normalize_backtest_payload(payload: dict) -> tuple[dict, str | None]:
     if not batch_key:
         return {}, "batch_key is required"
 
+    raw_batch_key_map = payload.get("batch_key_map")
+    batch_key_map = {}
+    if raw_batch_key_map is not None:
+        if not isinstance(raw_batch_key_map, dict):
+            return {}, "batch_key_map must be an object"
+        for raw_key, raw_value in raw_batch_key_map.items():
+            report_type_key = str(raw_key or "").strip().upper()
+            mapped_batch_key = str(raw_value or "").strip()
+            if not report_type_key or not mapped_batch_key:
+                continue
+            if report_type_key not in {"Q1", "H1", "Q3", "FY", "FUSION"}:
+                continue
+            batch_key_map[report_type_key] = mapped_batch_key
+
     raw_codes = payload.get("ts_codes") or []
     if isinstance(raw_codes, str):
         raw_codes = [item.strip() for item in raw_codes.split(",") if item.strip()]
@@ -717,13 +732,21 @@ def _normalize_backtest_payload(payload: dict) -> tuple[dict, str | None]:
         single_stop_dd = float(payload.get("single_stop_dd", 0.1))
         take_profit_pct = float(payload.get("take_profit_pct", 0.0))
         stop_loss_pct = float(payload.get("stop_loss_pct", 0.0))
+        starting_capital = float(payload.get("starting_capital", 200000.0))
+        max_position_pct = float(payload.get("max_position_pct", 0.2))
+        first_entry_pct = float(payload.get("first_entry_pct", 0.1))
     except (TypeError, ValueError):
-        return {}, "min_score/global_stop_dd/single_stop_dd/take_profit_pct/stop_loss_pct must be numeric"
+        return {}, "min_score/global_stop_dd/single_stop_dd/take_profit_pct/stop_loss_pct/starting_capital/max_position_pct/first_entry_pct must be numeric"
 
     try:
         max_holding_days = int(payload.get("max_holding_days", 0))
+        max_buy_per_day = int(payload.get("max_buy_per_day", 3))
     except (TypeError, ValueError):
-        return {}, "max_holding_days must be an integer"
+        return {}, "max_holding_days/max_buy_per_day must be integers"
+
+    mode = str(payload.get("mode", "signal") or "signal").strip().lower()
+    if mode not in {"signal", "account"}:
+        mode = "signal"
 
     max_risk = str(payload.get("max_risk", "MEDIUM") or "MEDIUM").strip().upper()
     if max_risk not in {"LOW", "MEDIUM", "HIGH"}:
@@ -743,7 +766,13 @@ def _normalize_backtest_payload(payload: dict) -> tuple[dict, str | None]:
 
     return {
         "batch_key": batch_key,
+        "batch_key_map": batch_key_map,
         "ts_codes": ts_codes,
+        "mode": mode,
+        "starting_capital": max(1.0, starting_capital),
+        "max_position_pct": min(1.0, max(0.0, max_position_pct)),
+        "first_entry_pct": min(1.0, max(0.0, first_entry_pct)),
+        "max_buy_per_day": max(1, max_buy_per_day),
         "start_year": start_year,
         "end_year": end_year,
         "min_score": min_score,
@@ -782,6 +811,114 @@ def _infer_backtest_ts_codes(batch_key: str, start_year: int, end_year: int) -> 
         queryset.order_by()
         .values_list("ts_code", flat=True)
         .distinct()
+    )
+
+
+def _parse_year_param(value, field_name: str) -> tuple[int | None, str | None]:
+    try:
+        year = int(value)
+    except (TypeError, ValueError):
+        return None, f"{field_name} must be an integer"
+    if year < 1990 or year > 2100:
+        return None, f"{field_name} out of range"
+    return year, None
+
+
+@require_GET
+def list_backtest_batch_candidates(request):
+    start_year_raw = request.GET.get("start_year")
+    end_year_raw = request.GET.get("end_year")
+    if start_year_raw in (None, "") or end_year_raw in (None, ""):
+        return JsonResponse({"ok": False, "error": "start_year and end_year are required"}, status=400)
+
+    start_year, start_year_error = _parse_year_param(start_year_raw, "start_year")
+    if start_year_error:
+        return JsonResponse({"ok": False, "error": start_year_error}, status=400)
+    end_year, end_year_error = _parse_year_param(end_year_raw, "end_year")
+    if end_year_error:
+        return JsonResponse({"ok": False, "error": end_year_error}, status=400)
+    if start_year is None or end_year is None:
+        return JsonResponse({"ok": False, "error": "invalid year range"}, status=400)
+    if start_year > end_year:
+        return JsonResponse({"ok": False, "error": "start_year cannot be greater than end_year"}, status=400)
+
+    report_type = str(request.GET.get("report_type") or "ALL").strip().upper()
+    valid_report_types = {"Q1", "H1", "Q3", "FY", "FUSION"}
+    if report_type in {"", "*"}:
+        report_type = "ALL"
+    if report_type != "ALL" and report_type not in valid_report_types:
+        return JsonResponse({"ok": False, "error": "report_type must be ALL/Q1/H1/Q3/FY/FUSION"}, status=400)
+
+    try:
+        limit_per_report_type = int(request.GET.get("limit_per_report_type", 30))
+    except (TypeError, ValueError):
+        limit_per_report_type = 30
+    limit_per_report_type = max(1, min(limit_per_report_type, 200))
+
+    queryset = EarningsSignalSnapshotHistory.objects.filter(
+        asof_date__gte=date(start_year, 1, 1),
+        asof_date__lte=date(end_year, 12, 31),
+    ).exclude(
+        asof_date__isnull=True,
+    ).exclude(
+        batch_key__isnull=True,
+    ).exclude(
+        batch_key="",
+    )
+
+    if report_type != "ALL":
+        queryset = queryset.filter(report_type=report_type)
+    else:
+        queryset = queryset.filter(report_type__in=valid_report_types)
+
+    grouped_rows = list(
+        queryset.values("report_type", "batch_key")
+        .annotate(
+            record_count=Count("id"),
+            first_asof_date=Min("asof_date"),
+            last_asof_date=Max("asof_date"),
+            latest_created_at=Max("created_at"),
+        )
+        .order_by("report_type", "-record_count", "-latest_created_at", "batch_key")
+    )
+
+    buckets: dict[str, list[dict[str, object]]] = {key: [] for key in sorted(valid_report_types)}
+    bucket_counts: dict[str, int] = {key: 0 for key in valid_report_types}
+    options: list[dict[str, object]] = []
+
+    for row in grouped_rows:
+        rt = str(row.get("report_type") or "").strip().upper()
+        if rt not in valid_report_types:
+            continue
+        if bucket_counts[rt] >= limit_per_report_type:
+            continue
+
+        candidate = {
+            "report_type": rt,
+            "batch_key": str(row.get("batch_key") or "").strip(),
+            "record_count": int(row.get("record_count") or 0),
+            "first_asof_date": row.get("first_asof_date").isoformat() if row.get("first_asof_date") else None,
+            "last_asof_date": row.get("last_asof_date").isoformat() if row.get("last_asof_date") else None,
+            "latest_created_at": row.get("latest_created_at").isoformat() if row.get("latest_created_at") else None,
+        }
+        buckets[rt].append(candidate)
+        options.append(candidate)
+        bucket_counts[rt] += 1
+
+    if report_type != "ALL":
+        buckets = {report_type: buckets.get(report_type, [])}
+
+    return JsonResponse(
+        {
+            "ok": True,
+            "start_year": start_year,
+            "end_year": end_year,
+            "report_type": report_type,
+            "limit_per_report_type": limit_per_report_type,
+            "buckets": buckets,
+            "options": options,
+            "count": len(options),
+        }
     )
 
 
@@ -826,7 +963,13 @@ def _build_effective_backtest_params(row: EarningsBacktestRun) -> dict[str, obje
 
     return {
         "batch_key": batch_key,
+        "batch_key_map": payload.get("batch_key_map") if isinstance(payload.get("batch_key_map"), dict) else {},
         "ts_codes": ts_codes,
+        "mode": str(payload.get("mode", "signal") or "signal").strip().lower(),
+        "starting_capital": max(1.0, float(payload.get("starting_capital", 200000.0) or 200000.0)),
+        "max_position_pct": min(1.0, max(0.0, float(payload.get("max_position_pct", 0.2) or 0.2))),
+        "first_entry_pct": min(1.0, max(0.0, float(payload.get("first_entry_pct", 0.1) or 0.1))),
+        "max_buy_per_day": max(1, int(payload.get("max_buy_per_day", 3) or 3)),
         "start_year": start_year_value,
         "end_year": end_year_value,
         "min_score": max(90.0, float(payload.get("min_score", 90.0) or 90.0)),
