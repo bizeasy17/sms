@@ -5544,13 +5544,14 @@ def _pick_stocks_by_valuation_fast(request, trade_date, scope, freq="D", from_in
         if min_valuation_score is not None and (valuation_score is None or float(valuation_score) < float(min_valuation_score)):
             continue
 
-        if valuation_status and valuation_payload.get("valuation_status") != valuation_status:
-            continue
-        if buy_candidate_only and (
-            (not buy_candidate_payload.get("buy_candidate"))
-            or (not buy_candidate_payload.get("buy_candidate_backtest_aligned"))
-        ):
-            continue
+        if picking_mode != "predictive":
+            if valuation_status and valuation_payload.get("valuation_status") != valuation_status:
+                continue
+            if buy_candidate_only and (
+                (not buy_candidate_payload.get("buy_candidate"))
+                or (not buy_candidate_payload.get("buy_candidate_backtest_aligned"))
+            ):
+                continue
 
         traditional_metric_payload = {}
         if picking_mode != "predictive":
@@ -5864,8 +5865,31 @@ def _pick_stocks_by_valuation_fast(request, trade_date, scope, freq="D", from_in
             if bool(apply_financial_filters) and min_netprofit_growth is not None and prev_year_netprofit_non_negative is not True:
                 continue
 
+            predictive_valuation_status = _classify_predictive_valuation_status(
+                earnings_target_return_pct,
+                band_pct=valuation_band_pct,
+            )
+            predictive_buy_candidate = _is_predictive_buy_candidate(
+                action=earnings_action_value,
+                signal_score=earnings_signal_score,
+                risk_level=earnings_risk_value,
+                target_return_pct=earnings_target_return_pct,
+            )
+
+            if valuation_status and predictive_valuation_status != valuation_status:
+                continue
+            if buy_candidate_only and not predictive_buy_candidate:
+                continue
+
             merged_row = {
                 **row,
+                "traditional_valuation_status": row.get("valuation_status"),
+                "traditional_buy_candidate": bool(row.get("buy_candidate")),
+                "traditional_buy_candidate_backtest_aligned": bool(row.get("buy_candidate_backtest_aligned")),
+                "predictive_valuation_status": predictive_valuation_status,
+                "predictive_buy_candidate": bool(predictive_buy_candidate),
+                "valuation_status": predictive_valuation_status,
+                "buy_candidate": bool(predictive_buy_candidate),
                 "earnings_report_type": earnings_report_type_value,
                 "pred_earnings_growth": pred_earnings_growth,
                 "prev_year_netprofit_non_negative": prev_year_netprofit_non_negative,
@@ -14920,6 +14944,73 @@ def _fetch_earnings_signal_batch(ts_codes, report_type="ALL", return_stats=False
 
     stats["failed_code_count"] = len(failed_codes)
     return _finalize(merged_results)
+
+
+def _classify_predictive_valuation_status(target_return_pct, band_pct=0.1):
+    target_return = _to_float_or_none(target_return_pct)
+    if target_return is None:
+        return "unknown"
+
+    band = _to_float_or_none(band_pct)
+    if band is None or float(band) <= 0:
+        band = 0.1
+    threshold_pct = float(band) * 100.0
+
+    if float(target_return) >= threshold_pct:
+        return "under"
+    if float(target_return) <= -threshold_pct:
+        return "over"
+    return "fair"
+
+
+def _is_predictive_buy_candidate(action, signal_score, risk_level, target_return_pct):
+    action_value = str(action or "").strip().upper()
+    risk_value = _canonicalize_risk_level(risk_level) or "MEDIUM"
+    score_value = _to_float_or_none(signal_score)
+    target_return_value = _to_float_or_none(target_return_pct)
+
+    try:
+        min_signal_score = float(
+            getattr(settings, "PREDICTIVE_BUY_CANDIDATE_MIN_SIGNAL_SCORE", 85.0) or 85.0
+        )
+    except (TypeError, ValueError):
+        min_signal_score = 85.0
+    try:
+        min_target_return_pct = float(
+            getattr(settings, "PREDICTIVE_BUY_CANDIDATE_MIN_TARGET_RETURN_PCT", 10.0) or 10.0
+        )
+    except (TypeError, ValueError):
+        min_target_return_pct = 10.0
+
+    allowed_risk_levels_raw = getattr(
+        settings,
+        "PREDICTIVE_BUY_CANDIDATE_ALLOWED_RISK_LEVELS",
+        ("LOW", "MEDIUM"),
+    )
+    if isinstance(allowed_risk_levels_raw, str):
+        allowed_risk_levels = {
+            _canonicalize_risk_level(item)
+            for item in allowed_risk_levels_raw.split(",")
+            if str(item or "").strip()
+        }
+    else:
+        allowed_risk_levels = {
+            _canonicalize_risk_level(item)
+            for item in (allowed_risk_levels_raw or ("LOW", "MEDIUM"))
+            if str(item or "").strip()
+        }
+    allowed_risk_levels.discard(None)
+    if not allowed_risk_levels:
+        allowed_risk_levels = {"LOW", "MEDIUM"}
+
+    return (
+        action_value == "BUY"
+        and score_value is not None
+        and float(score_value) >= float(min_signal_score)
+        and risk_value in allowed_risk_levels
+        and target_return_value is not None
+        and float(target_return_value) >= float(min_target_return_pct)
+    )
 
 
 def _compute_predictive_pick_score(row):
