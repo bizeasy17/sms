@@ -906,7 +906,7 @@
           <el-tab-pane :label="historySource === 'traditional' ? '手动回测' : '预测回测'" name="manual">
             <div class="history-toolbar row-gap">
               <span class="muted">共 {{ manualHistoryTotal }} 条</span>
-              <span class="muted">收藏 {{ favoriteRunIds.length }} 条</span>
+              <span class="muted">当前可见收藏 {{ visibleFavoriteRunCount }} 条（本地总收藏 {{ favoriteRunIds.length }} 条）</span>
               <div class="actions-left">
                 <el-button size="small" :loading="loadingManualHistory" @click="fetchManualHistoryPage(manualHistoryPage)">刷新</el-button>
               </div>
@@ -1485,6 +1485,18 @@ const pagedFavoritesHistoryRows = computed(() => {
   const start = (safePage - 1) * pageSize
   const end = start + pageSize
   return favoritesHistoryRows.value.slice(start, end)
+})
+
+const visibleFavoriteRunCount = computed(() => {
+  const manualIds = new Set(
+    manualHistoryRows.value
+      .map((item) => toRunId(item?.run_id))
+      .filter((item): item is number => item !== null)
+  )
+  return favoriteRunIds.value
+    .map((item) => toRunId(item))
+    .filter((item): item is number => item !== null)
+    .filter((runId) => manualIds.has(runId)).length
 })
 
 function formatLocalDateTime(value: unknown): string {
@@ -2333,8 +2345,19 @@ function buildScanGridPayload() {
 
 function compactParams(params: Record<string, any>) {
   const selectedKeys = [
+    'batch_key',
+    'batch_key_map',
+    'ts_codes',
+    'start_year',
+    'end_year',
+    'report_type',
     'mode',
     'min_score',
+    'max_risk',
+    'stop_mode',
+    'sell_strategy',
+    'global_stop_dd',
+    'single_stop_dd',
     'band_pct',
     'take_profit_pct',
     'stop_loss_pct',
@@ -2506,9 +2529,9 @@ function normalizeRunHistoryRow(
     total_return_pct: summary.total_return_pct ?? '-',
     max_drawdown_pct: summary.max_drawdown_pct ?? '-',
     sharpe_ratio: summary.sharpe_ratio ?? '-',
-    sortino_ratio: summary.sortino_ratio ?? '-',
+    sortino_ratio: summary.sortino_ratio ?? 0,
     calmar_ratio: summary.calmar_ratio ?? '-',
-    profit_factor: summary.profit_factor ?? '-',
+    profit_factor: summary.profit_factor ?? 0,
     expectancy_pct: summary.expectancy_pct ?? '-',
   }
 }

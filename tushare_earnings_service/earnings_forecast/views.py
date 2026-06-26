@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import math
 from datetime import date, datetime
 from pathlib import Path
 from uuid import uuid4
@@ -788,6 +789,49 @@ def _normalize_backtest_payload(payload: dict) -> tuple[dict, str | None]:
     }, None
 
 
+def _sanitize_backtest_param_value(value, *, depth: int = 0):
+    if depth > 4:
+        return None
+    if value is None or isinstance(value, (bool, int, float, str)):
+        return value
+    if isinstance(value, list):
+        return [_sanitize_backtest_param_value(item, depth=depth + 1) for item in value]
+    if isinstance(value, dict):
+        out = {}
+        for key, item in value.items():
+            normalized_key = str(key or "").strip()
+            if not normalized_key:
+                continue
+            out[normalized_key] = _sanitize_backtest_param_value(item, depth=depth + 1)
+        return out
+    return str(value)
+
+
+def _build_persisted_backtest_params(raw_payload: dict, effective_params: dict) -> dict:
+    # Keep full replay context from request payload while forcing canonical execution params.
+    persisted = {}
+    source = raw_payload if isinstance(raw_payload, dict) else {}
+    for key, value in source.items():
+        normalized_key = str(key or "").strip()
+        if not normalized_key:
+            continue
+        persisted[normalized_key] = _sanitize_backtest_param_value(value)
+
+    for key, value in (effective_params or {}).items():
+        persisted[key] = _sanitize_backtest_param_value(value)
+
+    if isinstance(persisted.get("batch_key_map"), dict):
+        normalized_batch_key_map = {}
+        for report_type, mapped_key in persisted["batch_key_map"].items():
+            report_type_key = str(report_type or "").strip().upper()
+            mapped_batch_key = str(mapped_key or "").strip()
+            if report_type_key and mapped_batch_key:
+                normalized_batch_key_map[report_type_key] = mapped_batch_key
+        persisted["batch_key_map"] = normalized_batch_key_map
+
+    return persisted
+
+
 def _infer_backtest_year_range(batch_key: str) -> tuple[int, int] | None:
     years = list(
         EarningsSignalSnapshotHistory.objects.filter(batch_key=batch_key)
@@ -986,16 +1030,17 @@ def _build_effective_backtest_params(row: EarningsBacktestRun) -> dict[str, obje
 
 
 def _ensure_backtest_result_details(row: EarningsBacktestRun) -> tuple[dict, dict]:
-    params = _build_effective_backtest_params(row)
+    effective_params = _build_effective_backtest_params(row)
+    persisted_params = dict(row.params or {})
     result = dict(row.result or {})
     if result.get("sample_trades"):
-        return params, result
+        return persisted_params, result
     if row.status != "success":
-        return params, result
-    if not params.get("batch_key") or not params.get("ts_codes"):
-        return params, result
+        return persisted_params, result
+    if not effective_params.get("batch_key") or not effective_params.get("ts_codes"):
+        return persisted_params, result
 
-    rebuilt = run_predictive_valuation_backtest(**params)
+    rebuilt = run_predictive_valuation_backtest(**effective_params)
     row.result = rebuilt
     rebuilt_combined = rebuilt.get("combined") if isinstance(rebuilt, dict) else {}
     if not isinstance(rebuilt_combined, dict):
@@ -1018,7 +1063,195 @@ def _ensure_backtest_result_details(row: EarningsBacktestRun) -> tuple[dict, dic
         row.save(update_fields=["result", "summary", "updated_at"])
     else:
         row.save(update_fields=["result", "updated_at"])
-    return params, rebuilt
+    return persisted_params, rebuilt
+
+
+def _coalesce_metric(summary: dict, candidates: list[object], *, cast_int: bool = False):
+    if not isinstance(summary, dict):
+        return
+    for candidate in candidates:
+        value = _to_float_or_none(candidate)
+        if value is None:
+            continue
+        summary_value = int(value) if cast_int else float(value)
+        return summary_value
+    return None
+
+
+def _derive_total_return_pct_from_metrics(result_payload: dict) -> float | None:
+    metrics = result_payload.get("metrics") if isinstance(result_payload, dict) else None
+    if not isinstance(metrics, list) or not metrics:
+        return None
+
+    growth = 1.0
+    has_value = False
+    for item in metrics:
+        if not isinstance(item, dict):
+            continue
+        cumulative = _to_float_or_none(item.get("cumulative_return"))
+        if cumulative is None:
+            continue
+        growth *= (1.0 + cumulative)
+        has_value = True
+    if not has_value:
+        return None
+    return round((growth - 1.0) * 100.0, 4)
+
+
+def _derive_trade_level_metrics(result_payload: dict) -> dict:
+    sample_trades = result_payload.get("sample_trades") if isinstance(result_payload, dict) else None
+    if not isinstance(sample_trades, list) or not sample_trades:
+        return {}
+
+    returns_pct = []
+    drawdowns_pct = []
+    entry_dates = []
+    exit_dates = []
+    for item in sample_trades:
+        if not isinstance(item, dict):
+            continue
+        ret = _to_float_or_none(item.get("return_pct"))
+        if ret is not None:
+            returns_pct.append(ret)
+        dd = _to_float_or_none(item.get("max_drawdown_pct"))
+        if dd is not None:
+            drawdowns_pct.append(dd)
+        entry = str(item.get("entry_date") or "").strip()
+        if entry:
+            entry_dates.append(entry)
+        exit_ = str(item.get("exit_date") or "").strip()
+        if exit_:
+            exit_dates.append(exit_)
+
+    out: dict[str, object] = {}
+    if entry_dates:
+        out["start_date"] = min(entry_dates)
+    if exit_dates:
+        out["end_date"] = max(exit_dates)
+
+    if not returns_pct:
+        return out
+
+    mean_pct = sum(returns_pct) / len(returns_pct)
+    negative_returns = [value for value in returns_pct if value < 0]
+    sum_profit = sum(value for value in returns_pct if value > 0)
+    sum_loss = abs(sum(value for value in returns_pct if value < 0))
+    max_drawdown_pct = min(drawdowns_pct) if drawdowns_pct else None
+
+    variance = sum((value - mean_pct) ** 2 for value in returns_pct) / len(returns_pct)
+    std_dev = math.sqrt(variance)
+    sharpe = (mean_pct / std_dev) if std_dev > 0 else None
+
+    downside_variance = sum((value - 0.0) ** 2 for value in negative_returns) / len(negative_returns) if negative_returns else 0.0
+    downside_std = math.sqrt(downside_variance)
+    sortino = (mean_pct / downside_std) if downside_std > 0 else None
+
+    if sum_loss > 0:
+        out["profit_factor"] = round(sum_profit / sum_loss, 4)
+    out["expectancy_pct"] = round(mean_pct, 4)
+    if max_drawdown_pct is not None:
+        out["max_drawdown_pct"] = round(max_drawdown_pct, 4)
+    if sharpe is not None:
+        out["sharpe_ratio"] = round(sharpe, 4)
+    if sortino is not None:
+        out["sortino_ratio"] = round(sortino, 4)
+    return out
+
+
+def _enrich_backtest_list_summary(summary_payload: dict, result_payload: dict) -> dict:
+    summary = dict(summary_payload or {})
+    result = result_payload if isinstance(result_payload, dict) else {}
+    combined = result.get("combined") if isinstance(result.get("combined"), dict) else {}
+
+    if summary.get("trade_count") is None:
+        summary["trade_count"] = _coalesce_metric(
+            summary,
+            [combined.get("trade_count"), result.get("trade_count")],
+            cast_int=True,
+        )
+
+    fallback_mapping = {
+        "avg_return_pct": [combined.get("avg_return_pct"), summary.get("avg_trade_return_pct"), summary.get("return_pct")],
+        "median_return_pct": [combined.get("median_return_pct")],
+        "win_rate_pct": [combined.get("win_rate_pct")],
+        "avg_holding_days": [combined.get("avg_holding_days")],
+        "total_return_pct": [
+            summary.get("total_return_pct"),
+            result.get("total_return_pct"),
+            result.get("account_return_pct"),
+            combined.get("total_return_pct"),
+        ],
+        "max_drawdown_pct": [
+            summary.get("max_drawdown_pct"),
+            result.get("max_drawdown_pct"),
+            combined.get("max_drawdown_pct"),
+        ],
+        "sharpe_ratio": [summary.get("sharpe_ratio"), result.get("sharpe_ratio"), combined.get("sharpe_ratio")],
+        "sortino_ratio": [summary.get("sortino_ratio"), result.get("sortino_ratio"), combined.get("sortino_ratio")],
+        "calmar_ratio": [summary.get("calmar_ratio"), result.get("calmar_ratio"), combined.get("calmar_ratio")],
+        "profit_factor": [summary.get("profit_factor"), result.get("profit_factor"), combined.get("profit_factor")],
+        "expectancy_pct": [summary.get("expectancy_pct"), result.get("expectancy_pct"), combined.get("expectancy_pct")],
+    }
+
+    for key, candidates in fallback_mapping.items():
+        if summary.get(key) is not None:
+            continue
+        resolved = _coalesce_metric(summary, candidates)
+        if resolved is not None:
+            summary[key] = resolved
+
+    for key, candidates in {
+        "starting_capital": [
+            summary.get("starting_capital"),
+            summary.get("initial_capital"),
+            summary.get("initial_cash"),
+            result.get("starting_capital"),
+        ],
+        "ending_capital": [
+            summary.get("ending_capital"),
+            summary.get("final_capital"),
+            summary.get("final_asset"),
+            result.get("ending_capital"),
+            result.get("final_capital"),
+            result.get("final_asset"),
+        ],
+    }.items():
+        if summary.get(key) is not None:
+            continue
+        resolved = _coalesce_metric(summary, candidates)
+        if resolved is not None:
+            summary[key] = resolved
+
+    derived_trade_metrics = _derive_trade_level_metrics(result)
+    for key in ["profit_factor", "expectancy_pct", "max_drawdown_pct", "sharpe_ratio", "sortino_ratio"]:
+        if summary.get(key) is not None:
+            continue
+        if derived_trade_metrics.get(key) is not None:
+            summary[key] = derived_trade_metrics.get(key)
+
+    if summary.get("total_return_pct") is None:
+        derived_total = _derive_total_return_pct_from_metrics(result)
+        if derived_total is not None:
+            summary["total_return_pct"] = derived_total
+
+    if summary.get("calmar_ratio") is None:
+        total_ret = _to_float_or_none(summary.get("total_return_pct"))
+        max_dd = _to_float_or_none(summary.get("max_drawdown_pct"))
+        if total_ret is not None and max_dd is not None and max_dd < 0:
+            summary["calmar_ratio"] = round(total_ret / abs(max_dd), 4)
+
+    if summary.get("ending_capital") is None:
+        start_capital = _to_float_or_none(summary.get("starting_capital"))
+        total_ret = _to_float_or_none(summary.get("total_return_pct"))
+        if start_capital is not None and total_ret is not None:
+            summary["ending_capital"] = round(start_capital * (1.0 + total_ret / 100.0), 4)
+
+    if summary.get("start_date") is None and derived_trade_metrics.get("start_date") is not None:
+        summary["start_date"] = derived_trade_metrics.get("start_date")
+    if summary.get("end_date") is None and derived_trade_metrics.get("end_date") is not None:
+        summary["end_date"] = derived_trade_metrics.get("end_date")
+
+    return summary
 
 
 @require_POST
@@ -1032,6 +1265,7 @@ def run_backtest(request):
     params, error = _normalize_backtest_payload(payload if isinstance(payload, dict) else {})
     if error:
         return JsonResponse({"ok": False, "error": error}, status=400)
+    persisted_params = _build_persisted_backtest_params(payload, params)
 
     persist = str(payload.get("persist", "true")).strip().lower() not in {"0", "false", "no", "off"}
     run_record = None
@@ -1040,7 +1274,7 @@ def run_backtest(request):
             run_key=f"btr_{uuid4().hex[:24]}",
             batch_key=params["batch_key"],
             status="running",
-            params=params,
+            params=persisted_params,
             summary={},
             result={},
         )
@@ -1094,42 +1328,62 @@ def list_backtest_runs(request):
     except (TypeError, ValueError):
         limit = 20
     limit = max(1, min(limit, 200))
+    try:
+        offset = int(request.GET.get("offset", 0))
+    except (TypeError, ValueError):
+        offset = 0
+    offset = max(0, offset)
 
     batch_key = str(request.GET.get("batch_key") or "").strip()
     qs = EarningsBacktestRun.objects.all().order_by("-started_at")
     if batch_key:
         qs = qs.filter(batch_key=batch_key)
+    total = qs.count()
 
     rows = []
-    for row in qs[:limit]:
-        summary = dict(row.summary or {})
-        combined = row.result.get("combined") if isinstance(row.result, dict) else {}
-        if not isinstance(combined, dict):
-            combined = {}
+    for row in qs[offset:offset + limit]:
+        params = dict(row.params or {})
+        result_payload = row.result if isinstance(row.result, dict) else {}
+        summary = _enrich_backtest_list_summary(dict(row.summary or {}), result_payload)
 
-        if summary.get("trade_count") is None:
-            summary["trade_count"] = int(combined.get("trade_count") or 0)
-        if summary.get("avg_return_pct") is None and combined.get("avg_return_pct") is not None:
-            summary["avg_return_pct"] = float(combined.get("avg_return_pct") or 0.0)
-        if summary.get("median_return_pct") is None and combined.get("median_return_pct") is not None:
-            summary["median_return_pct"] = float(combined.get("median_return_pct") or 0.0)
-        if summary.get("win_rate_pct") is None and combined.get("win_rate_pct") is not None:
-            summary["win_rate_pct"] = float(combined.get("win_rate_pct") or 0.0)
+        start_date = str(params.get("start_date") or summary.get("start_date") or "").strip()
+        end_date = str(params.get("end_date") or summary.get("end_date") or "").strip()
+        if not start_date:
+            start_year = params.get("start_year")
+            if start_year is not None:
+                start_date = f"{int(start_year)}-01-01"
+        if not end_date:
+            end_year = params.get("end_year")
+            if end_year is not None:
+                end_date = f"{int(end_year)}-12-31"
 
         rows.append(
             {
                 "id": row.id,
+                "run_id": row.id,
                 "run_key": row.run_key,
                 "batch_key": row.batch_key,
                 "status": row.status,
+                "params": params,
                 "summary": summary,
+                "start_date": start_date,
+                "end_date": end_date,
                 "created_at": row.started_at.isoformat() if row.started_at else None,
                 "updated_at": row.updated_at.isoformat() if row.updated_at else None,
                 "started_at": row.started_at.isoformat() if row.started_at else None,
                 "finished_at": row.finished_at.isoformat() if row.finished_at else None,
             }
         )
-    return JsonResponse({"ok": True, "count": len(rows), "data": rows})
+    return JsonResponse(
+        {
+            "ok": True,
+            "count": len(rows),
+            "total": total,
+            "limit": limit,
+            "offset": offset,
+            "data": rows,
+        }
+    )
 
 
 @require_GET
