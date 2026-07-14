@@ -256,6 +256,7 @@ const stockCode = ref('')
 const stockName = ref('')
 const stockRange = ref<Record<string, any>>({})
 const stockKlineRows = ref<Array<Record<string, any>>>([])
+const stockMarkers = ref<Array<Record<string, any>>>([])
 const stockTradeRows = ref<Array<Record<string, any>>>([])
 const stockValuationRows = ref<Array<Record<string, any>>>([])
 const stockStats = ref<Record<string, any>>({})
@@ -469,6 +470,7 @@ async function fetchStockDetail(tsCode: string) {
   stockName.value = ''
   stockRange.value = {}
   stockDialogTitle.value = `${tsCode} - 加载中...`
+  stockMarkers.value = []
   stockTradeRows.value = []
   stockKlineRows.value = []
   stockValuationRows.value = []
@@ -483,6 +485,7 @@ async function fetchStockDetail(tsCode: string) {
     stockName.value = String(data.stock_name || '')
     stockRange.value = (data.range && typeof data.range === 'object') ? data.range : {}
     stockKlineRows.value = Array.isArray(data.kline) ? data.kline : []
+    stockMarkers.value = Array.isArray(data.markers) ? data.markers : []
     stockTradeRows.value = Array.isArray(data.trades) ? data.trades : []
     stockValuationRows.value = Array.isArray(data.valuation_history) ? data.valuation_history : []
     stockStats.value = data.stats || {}
@@ -551,6 +554,21 @@ function buildFlatQuantileSeries(rows: Array<Record<string, any>>, quantile: num
   return rows.map(() => rounded)
 }
 
+function buildSparsePriceSeries(rows: Array<Record<string, any>>, markers: Array<Record<string, any>>, field: string) {
+  const valueMap = new Map<string, number>()
+  markers.forEach((marker) => {
+    const tradeDate = String(marker?.trade_date || '').trim()
+    const value = toFiniteNumber(marker?.[field])
+    if (tradeDate && value !== null) {
+      valueMap.set(tradeDate, value)
+    }
+  })
+  return rows.map((row) => {
+    const tradeDate = String(row?.trade_date || '').trim()
+    return tradeDate && valueMap.has(tradeDate) ? valueMap.get(tradeDate) ?? null : null
+  })
+}
+
 function formatKlineTooltip(rows: Array<Record<string, any>>, axisValue: unknown): string {
   const tradeDate = String(axisValue ?? '')
   const index = rows.findIndex((row) => String(row?.trade_date || '') === tradeDate)
@@ -561,7 +579,12 @@ function formatKlineTooltip(rows: Array<Record<string, any>>, axisValue: unknown
     ? `${(((close - prevClose) / prevClose) * 100).toFixed(2)}%`
     : '-'
   const closeText = close !== null ? close.toFixed(4) : '-'
-  return `${tradeDate}<br/>收盘价: ${closeText}<br/>涨跌幅: ${pctChange}`
+  const currentMarker = stockMarkers.value.find((item) => String(item?.trade_date || '') === tradeDate && item?.type === 'buy_candidate')
+  const compositePrice = toFiniteNumber(currentMarker?.composite_price)
+  const conservativePrice = toFiniteNumber(currentMarker?.conservative_price)
+  const compositeText = compositePrice !== null ? compositePrice.toFixed(4) : '-'
+  const conservativeText = conservativePrice !== null ? conservativePrice.toFixed(4) : '-'
+  return `${tradeDate}<br/>收盘价: ${closeText}<br/>涨跌幅: ${pctChange}<br/>组合估值价: ${compositeText}<br/>保守估值价: ${conservativeText}`
 }
 
 const stockKlineOption = computed(() => {
@@ -587,6 +610,9 @@ const stockKlineOption = computed(() => {
     }))
     .filter((item) => item.tradeDate && item.price !== undefined && item.price !== null)
 
+  const buyCandidateCompositeSeries = buildSparsePriceSeries(stockKlineRows.value, stockMarkers.value, 'composite_price')
+  const buyCandidateConservativeSeries = buildSparsePriceSeries(stockKlineRows.value, stockMarkers.value, 'conservative_price')
+
   const maPeriods = [6, 10, 25, 43, 60, 120, 200]
   const maSeries = maPeriods.map((period) => {
     const name = `MA${period}`
@@ -610,7 +636,7 @@ const stockKlineOption = computed(() => {
 
   return {
     animation: false,
-    legend: { data: ['K线', ...maPeriods.map((period) => `MA${period}`), '收盘价 90%分位', '收盘价 10%分位', 'SL1', 'SL2', 'TP1', 'TP2', '买点', '卖点'] },
+    legend: { data: ['K线', ...maPeriods.map((period) => `MA${period}`), '收盘价 90%分位', '收盘价 10%分位', 'SL1', 'SL2', 'TP1', 'TP2', '组合估值价', '保守估值价', '买点', '卖点'] },
     tooltip: {
       trigger: 'axis',
       formatter: (params: any) => formatKlineTooltip(stockKlineRows.value, Array.isArray(params) && params.length ? params[0]?.axisValue : ''),
@@ -685,6 +711,26 @@ const stockKlineOption = computed(() => {
         smooth: true,
         showSymbol: false,
         lineStyle: { color: 'rgba(3, 105, 161, 0.5)', width: 1 },
+      },
+      {
+        name: '组合估值价',
+        type: 'line',
+        data: buyCandidateCompositeSeries,
+        smooth: true,
+        showSymbol: true,
+        connectNulls: false,
+        lineStyle: { color: '#7c3aed', width: 1.5, type: 'dashed' },
+        itemStyle: { color: '#7c3aed' },
+      },
+      {
+        name: '保守估值价',
+        type: 'line',
+        data: buyCandidateConservativeSeries,
+        smooth: true,
+        showSymbol: true,
+        connectNulls: false,
+        lineStyle: { color: '#ea580c', width: 1.5, type: 'dashed' },
+        itemStyle: { color: '#ea580c' },
       },
       {
         name: '买点',
