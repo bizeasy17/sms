@@ -568,11 +568,18 @@ async function pollPickingJob(jobId: string) {
                 ? "计算中"
                 : status === "done"
                     ? "已完成"
+                    : status === "canceled"
+                        ? "已取消"
                     : status === "failed"
                         ? "失败"
                         : "处理中";
         applyPickingJobState(payload);
         if (status === "done") {
+            isJobLoading.value = false;
+            stopPickingJobPolling();
+            return;
+        }
+        if (status === "canceled") {
             isJobLoading.value = false;
             stopPickingJobPolling();
             return;

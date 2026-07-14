@@ -24,6 +24,7 @@ from datastore.models import (
 )
 from django.conf import settings
 from django.core.cache import cache
+from django.db import connections
 from django.db.models import Q, Max, Count
 from django.http import FileResponse, Http404
 from django.views.decorators.cache import never_cache
@@ -741,6 +742,10 @@ def _build_valuation_pick_job_cache_key(job_id):
     return f"valuation_pick_job:v1:{str(job_id or '').strip()}"
 
 
+def _build_valuation_pick_active_job_cache_key(owner_key):
+    return f"valuation_pick_job_active:v1:{str(owner_key or '').strip()}"
+
+
 def _get_valuation_pick_job_state(job_id):
     cache_key = _build_valuation_pick_job_cache_key(job_id)
     try:
@@ -761,6 +766,78 @@ def _set_valuation_pick_job_state(job_id, payload):
     except Exception as cache_err:
         logger.debug("valuation pick job cache set failed: %s", cache_err)
     return data
+
+
+def _resolve_valuation_pick_job_owner(request):
+    user = getattr(request, "user", None)
+    if user is not None and getattr(user, "is_authenticated", False):
+        return f"user:{getattr(user, 'id', '')}"
+
+    fallback_user = User.get_admin_user()
+    if fallback_user is not None and getattr(fallback_user, "id", None) is not None:
+        return f"user:{fallback_user.id}"
+    return "user:anonymous"
+
+
+def _get_valuation_pick_active_job_id(owner_key):
+    cache_key = _build_valuation_pick_active_job_cache_key(owner_key)
+    try:
+        value = cache.get(cache_key)
+    except Exception as cache_err:
+        logger.debug("valuation pick active job cache get failed: %s", cache_err)
+        value = None
+    return str(value).strip() if value else ""
+
+
+def _set_valuation_pick_active_job_id(owner_key, job_id):
+    cache_key = _build_valuation_pick_active_job_cache_key(owner_key)
+    try:
+        cache.set(cache_key, str(job_id or "").strip(), timeout=VALUATION_PICK_JOB_CACHE_TTL_SECONDS)
+    except Exception as cache_err:
+        logger.debug("valuation pick active job cache set failed: %s", cache_err)
+
+
+def _clear_valuation_pick_active_job_id(owner_key, job_id):
+    cache_key = _build_valuation_pick_active_job_cache_key(owner_key)
+    try:
+        active_job_id = cache.get(cache_key)
+    except Exception as cache_err:
+        logger.debug("valuation pick active job cache clear read failed: %s", cache_err)
+        active_job_id = None
+
+    if str(active_job_id or "").strip() != str(job_id or "").strip():
+        return
+
+    try:
+        cache.delete(cache_key)
+    except Exception as cache_err:
+        logger.debug("valuation pick active job cache clear delete failed: %s", cache_err)
+
+
+def _is_valuation_pick_job_canceled(job_id):
+    state = _get_valuation_pick_job_state(job_id)
+    return isinstance(state, dict) and str(state.get("status") or "").strip().lower() == "canceled"
+
+
+def _cancel_valuation_pick_job(job_id, message):
+    state = _get_valuation_pick_job_state(job_id)
+    if not isinstance(state, dict):
+        return None
+
+    status = str(state.get("status") or "").strip().lower()
+    if status in {"done", "failed", "canceled"}:
+        return state
+
+    canceled_payload = dict(state)
+    canceled_payload.update(
+        {
+            "status": "canceled",
+            "has_more": False,
+            "message": str(message or "任务已取消"),
+            "poll_interval_seconds": VALUATION_PICK_JOB_POLL_INTERVAL_SECONDS,
+        }
+    )
+    return _set_valuation_pick_job_state(job_id, canceled_payload)
 
 
 def _resolve_active_variant_from_method_map(method_map, requested_variant=""):
@@ -918,7 +995,12 @@ def _run_valuation_pick_job(job_id, payload):
     base_query["from_index"] = "0"
     base_query["to_index"] = "25"
 
+    owner_key = str(raw_payload.get("owner_key") or "").strip()
+
     try:
+        if _is_valuation_pick_job_canceled(job_id):
+            return
+
         _set_valuation_pick_job_state(
             job_id,
             {
@@ -939,6 +1021,9 @@ def _run_valuation_pick_job(job_id, payload):
         final_total = 0
         total_candidates = None
         for index, scan_limit in enumerate(step_limits):
+            if _is_valuation_pick_job_canceled(job_id):
+                return
+
             step_query = dict(base_query)
             if scan_limit is not None:
                 step_query["scan_limit"] = str(scan_limit)
@@ -961,6 +1046,9 @@ def _run_valuation_pick_job(job_id, payload):
             final_total = int(meta.get("total_filtered") or len(rows))
             total_candidates = meta.get("total_candidates")
 
+            if _is_valuation_pick_job_canceled(job_id):
+                return
+
             is_final_step = scan_limit is None
             progress_pct = 100 if is_final_step else min(95, int(((index + 1) / len(step_limits)) * 100))
             _set_valuation_pick_job_state(
@@ -982,6 +1070,8 @@ def _run_valuation_pick_job(job_id, payload):
                 },
             )
     except Exception as err:
+        if _is_valuation_pick_job_canceled(job_id):
+            return
         logger.exception("valuation pick job failed: %s", err)
         _set_valuation_pick_job_state(
             job_id,
@@ -997,6 +1087,9 @@ def _run_valuation_pick_job(job_id, payload):
                 "poll_interval_seconds": VALUATION_PICK_JOB_POLL_INTERVAL_SECONDS,
             },
         )
+    finally:
+        if owner_key:
+            _clear_valuation_pick_active_job_id(owner_key, job_id)
 
 
 def _load_latest_indicator_profile(ts_code):
@@ -10238,6 +10331,11 @@ def create_stock_pick_valuation_job(request):
     if not trade_date or not scope:
         return Response({"error": "trade_date and scope are required"}, status=400)
 
+    owner_key = _resolve_valuation_pick_job_owner(request)
+    superseded_job_id = _get_valuation_pick_active_job_id(owner_key)
+    if superseded_job_id:
+        _cancel_valuation_pick_job(superseded_job_id, "任务已取消（被新任务抢占）")
+
     job_id = uuid.uuid4().hex
     state = _set_valuation_pick_job_state(
         job_id,
@@ -10253,11 +10351,14 @@ def create_stock_pick_valuation_job(request):
             "poll_interval_seconds": VALUATION_PICK_JOB_POLL_INTERVAL_SECONDS,
             "trade_date": trade_date,
             "freq": freq,
+            "owner_key": owner_key,
+            "superseded_job_id": superseded_job_id or None,
         },
     )
+    _set_valuation_pick_active_job_id(owner_key, job_id)
     worker = threading.Thread(
         target=_run_valuation_pick_job,
-        args=(job_id, {"trade_date": trade_date, "scope": scope, "query": query, "freq": freq}),
+        args=(job_id, {"trade_date": trade_date, "scope": scope, "query": query, "freq": freq, "owner_key": owner_key}),
         daemon=True,
     )
     worker.start()
@@ -10783,6 +10884,19 @@ def get_tushare_data(request, ts_code, data_type):
                 return Response({"error": "No data found."}, status=404)
         # Define fields to include based on data_type
         fields_map = {
+            "INDEX_DAILY": [
+                "ts_code",
+                "trade_date",
+                "open",
+                "high",
+                "low",
+                "close",
+                "pre_close",
+                "change",
+                "pct_chg",
+                "vol",
+                "amount",
+            ],
             "INDEX_DAILYBASIC": [
                 "ts_code",
                 "trade_date",
@@ -11011,6 +11125,28 @@ def get_tushare_data(request, ts_code, data_type):
                 df["trade_date"] = df["trade_date"].astype(str)
             df = df.sort_values(["trade_date", "price"], ascending=[False, False])
             records = df.to_dict(orient="records")
+            return Response(
+                {
+                    "data": records,
+                    "meta": {
+                        "ts_code": ts_code,
+                        "data_type": data_type,
+                        "count": len(records),
+                    },
+                }
+            )
+
+        if data_type == "INDEX_DAILY":
+            if df.empty:
+                return Response({"error": "No data found."}, status=404)
+            records_df = df.copy()
+            if "trade_date" in records_df.columns:
+                records_df["trade_date"] = records_df["trade_date"].astype(str)
+                records_df = records_df.sort_values("trade_date", ascending=True)
+            for metric_col in ["open", "high", "low", "close", "pre_close", "change", "pct_chg", "vol", "amount"]:
+                if metric_col in records_df.columns:
+                    records_df[metric_col] = pd.to_numeric(records_df[metric_col], errors="coerce")
+            records = records_df.to_dict(orient="records")
             return Response(
                 {
                     "data": records,
@@ -11796,6 +11932,313 @@ def get_stock_valuation_methods(request, ts_code):
         return Response({"error": str(e)}, status=400)
     except Exception as e:
         return Response({"error": str(e)}, status=500)
+
+
+@api_view(["GET"])
+def get_market_index_simple_valuation(request):
+    """Return simplified valuation summary for a market index."""
+
+    try:
+        raw_index_code = str(request.query_params.get("index_code") or "000001.SH").strip().upper()
+        freq = str(request.query_params.get("freq") or "D").strip().upper() or "D"
+        start_date = _parse_date_like(request.query_params.get("start_date"))
+        if start_date is None:
+            start_date = datetime.date(2004, 1, 1)
+
+        band_pct = _parse_optional_float(
+            request.query_params.get("band_pct"),
+            default=0.1,
+        )
+        if band_pct is None:
+            band_pct = 0.1
+
+        index_code = str(raw_index_code or "").strip().upper()
+        if not index_code:
+            return Response({"error": "index_code is required"}, status=400)
+        if "." not in index_code and re.fullmatch(r"\d{6}", index_code):
+            index_code = _normalize_ts_code(index_code)
+        def _build_index_code_candidates(input_code):
+            raw = str(input_code or "").strip().upper()
+            if not raw:
+                return []
+            candidates = [raw]
+            if "." in raw:
+                base, suffix = raw.split(".", 1)
+                base = base.strip()
+                suffix = suffix.strip().upper()
+                if re.fullmatch(r"\d{6}", base):
+                    candidates.append(base)
+                    if suffix == "SH":
+                        candidates.append(f"{base}.SZ")
+                    elif suffix == "SZ":
+                        candidates.append(f"{base}.SH")
+            elif re.fullmatch(r"\d{6}", raw):
+                candidates.extend([f"{raw}.SH", f"{raw}.SZ", f"{raw}.BJ"])
+
+            seen = set()
+            output = []
+            for item in candidates:
+                key = str(item or "").strip().upper()
+                if not key or key in seen:
+                    continue
+                seen.add(key)
+                output.append(key)
+            return output
+
+        def _load_latest_index_trade_close(input_code):
+            for candidate in _build_index_code_candidates(input_code):
+                latest_trade_row = (
+                    StockTradingHistory.objects.filter(ts_code=candidate, freq=freq)
+                    .order_by("-trade_date")
+                    .values("trade_date", "close_qfq", "close")
+                    .first()
+                )
+                if not latest_trade_row:
+                    continue
+                trade_close = _to_float_or_none(latest_trade_row.get("close_qfq"))
+                if trade_close is None or trade_close <= 0:
+                    trade_close = _to_float_or_none(latest_trade_row.get("close"))
+                if trade_close is None or trade_close <= 0:
+                    continue
+                return candidate, float(trade_close), latest_trade_row.get("trade_date")
+            return None, None, None
+
+        def _load_index_dailybasic_from_earnings_table(input_code):
+            table_name = getattr(
+                settings,
+                "VALUATION_MARKET_INDEX_DAILYBASIC_TABLE",
+                "earnings_mkt_index_dailybasic",
+            )
+            start_date_text = start_date.strftime("%Y%m%d")
+            for candidate in _build_index_code_candidates(input_code):
+                try:
+                    with connections["earnings"].cursor() as cur:
+                        cur.execute(
+                            f"""
+                            SELECT ts_code, trade_date, pe, pe_ttm, pb
+                            FROM {table_name}
+                            WHERE ts_code = %s AND trade_date >= %s
+                            ORDER BY trade_date ASC
+                            """,
+                            [candidate, start_date_text],
+                        )
+                        rows = cur.fetchall()
+                except Exception:
+                    rows = []
+                if not rows:
+                    continue
+
+                basic_table_df = pd.DataFrame(
+                    rows,
+                    columns=["ts_code", "trade_date", "pe", "pe_ttm", "pb"],
+                )
+                if basic_table_df.empty:
+                    continue
+
+                basic_table_df["trade_date"] = basic_table_df["trade_date"].astype(str)
+                for metric_col in ["pe", "pe_ttm", "pb"]:
+                    if metric_col in basic_table_df.columns:
+                        basic_table_df[metric_col] = pd.to_numeric(
+                            basic_table_df[metric_col], errors="coerce"
+                        )
+
+                latest_trade_date = str(basic_table_df.iloc[-1].get("trade_date") or "")
+                return candidate, basic_table_df.sort_values("trade_date"), latest_trade_date
+
+            return None, pd.DataFrame(), None
+        basic_source_mode = "earnings_table_latest"
+        basic_source_note = None
+        basic_source_code, basic_df_from_table, latest_basic_table_trade_date = _load_index_dailybasic_from_earnings_table(index_code)
+        if basic_df_from_table is not None and not basic_df_from_table.empty:
+            basic_df = basic_df_from_table
+            basic_source_note = f"Primary source earnings table INDEX_DAILYBASIC ({basic_source_code}) latest trade_date={latest_basic_table_trade_date}."
+        else:
+            realtime_basic_df = fetch_tushare_data(index_code, "INDEX_DAILYBASIC", start_date=start_date)
+            if realtime_basic_df is not None and not realtime_basic_df.empty:
+                basic_df = realtime_basic_df.copy()
+                basic_source_mode = "tushare_realtime"
+                basic_source_note = f"Earnings table missing local data for {index_code}; fallback to Tushare INDEX_DAILYBASIC."
+            else:
+                return Response({"error": f"No INDEX_DAILYBASIC data found for {index_code}."}, status=404)
+
+        if "trade_date" not in basic_df.columns:
+            return Response({"error": "INDEX_DAILYBASIC payload missing trade_date."}, status=500)
+
+        basic_df["trade_date"] = basic_df["trade_date"].astype(str)
+        for metric_col in ["pe", "pe_ttm", "pb"]:
+            if metric_col in basic_df.columns:
+                basic_df[metric_col] = pd.to_numeric(basic_df[metric_col], errors="coerce")
+        basic_df = basic_df.sort_values("trade_date")
+
+        current_price_mode = "trading_history"
+        price_mode_note = None
+        resolved_trade_code, trade_close, trade_date = _load_latest_index_trade_close(index_code)
+        if trade_close is not None and trade_close > 0:
+            current_price = float(trade_close)
+            asof_trade_date = _parse_date_like(trade_date)
+            asof_trade_date_text = (
+                asof_trade_date.strftime("%Y-%m-%d")
+                if asof_trade_date is not None
+                else str(trade_date or "")
+            )
+            price_mode_note = (
+                f"Primary source StockTradingHistory close ({resolved_trade_code}) latest trade_date={asof_trade_date_text}."
+            )
+        else:
+            daily_df = fetch_tushare_data(index_code, "INDEX_DAILY", start_date=start_date)
+            if daily_df is None or daily_df.empty:
+                current_price_mode = "relative_base_100"
+                current_price = 100.0
+                latest_basic_trade_date = str(basic_df.iloc[-1].get("trade_date") or "") if not basic_df.empty else ""
+                asof_trade_date = _parse_date_like(latest_basic_trade_date)
+                asof_trade_date_text = (
+                    asof_trade_date.strftime("%Y-%m-%d")
+                    if asof_trade_date is not None
+                    else latest_basic_trade_date
+                )
+                price_mode_note = f"StockTradingHistory/INDEX_DAILY missing for {index_code}; fallback to relative base-100 mode."
+            else:
+                daily_df = daily_df.copy()
+                if "trade_date" not in daily_df.columns or "close" not in daily_df.columns:
+                    return Response({"error": "INDEX_DAILY payload missing trade_date/close."}, status=500)
+
+                daily_df["trade_date"] = daily_df["trade_date"].astype(str)
+                daily_df["close"] = pd.to_numeric(daily_df["close"], errors="coerce")
+                daily_df = daily_df.dropna(subset=["trade_date", "close"]).sort_values("trade_date")
+                if daily_df.empty:
+                    current_price_mode = "relative_base_100"
+                    current_price = 100.0
+                    latest_basic_trade_date = str(basic_df.iloc[-1].get("trade_date") or "") if not basic_df.empty else ""
+                    asof_trade_date = _parse_date_like(latest_basic_trade_date)
+                    asof_trade_date_text = (
+                        asof_trade_date.strftime("%Y-%m-%d")
+                        if asof_trade_date is not None
+                        else latest_basic_trade_date
+                    )
+                    price_mode_note = f"StockTradingHistory/INDEX_DAILY invalid for {index_code}; fallback to relative base-100 mode."
+                else:
+                    latest_daily = daily_df.iloc[-1]
+                    current_price = _to_float_or_none(latest_daily.get("close"))
+                    if current_price is None or current_price <= 0:
+                        current_price_mode = "relative_base_100"
+                        current_price = 100.0
+                        latest_basic_trade_date = str(basic_df.iloc[-1].get("trade_date") or "") if not basic_df.empty else ""
+                        asof_trade_date = _parse_date_like(latest_basic_trade_date)
+                        asof_trade_date_text = (
+                            asof_trade_date.strftime("%Y-%m-%d")
+                            if asof_trade_date is not None
+                            else latest_basic_trade_date
+                        )
+                        price_mode_note = f"StockTradingHistory/INDEX_DAILY close invalid for {index_code}; fallback to relative base-100 mode."
+                    else:
+                        current_price_mode = "index_daily"
+                        asof_trade_date = _parse_date_like(latest_daily.get("trade_date"))
+                        asof_trade_date_text = (
+                            asof_trade_date.strftime("%Y-%m-%d")
+                            if asof_trade_date is not None
+                            else str(latest_daily.get("trade_date") or "")
+                        )
+                        price_mode_note = f"StockTradingHistory missing local data for {index_code}; fallback to INDEX_DAILY close."
+
+        metric_defs = [
+            ("pe", "pe"),
+            ("pe_ttm", "pe_ttm"),
+            ("pb", "pb"),
+        ]
+
+        methods = []
+        method_map = {}
+        for method_name, metric_col in metric_defs:
+            if metric_col not in basic_df.columns:
+                continue
+
+            metric_series = pd.to_numeric(basic_df[metric_col], errors="coerce")
+            valid_metric = basic_df.assign(_metric=metric_series).dropna(subset=["_metric"])
+            valid_metric = valid_metric[valid_metric["_metric"] > 0]
+            if valid_metric.empty:
+                continue
+
+            current_metric = _to_float_or_none(valid_metric.iloc[-1].get("_metric"))
+            if current_metric is None or current_metric <= 0:
+                continue
+
+            metric_values = [
+                float(val)
+                for val in valid_metric["_metric"].tolist()
+                if val is not None and float(val) > 0
+            ]
+            p50_metric = _compute_quantile(metric_values, 0.5)
+            if p50_metric is None or p50_metric <= 0:
+                continue
+
+            implied_price = float(current_price) * float(p50_metric) / float(current_metric)
+            status, gap_pct = _classify_valuation(current_price, implied_price, band_pct)
+
+            methods.append(
+                {
+                    "method": method_name,
+                    "current_metric": round(float(current_metric), 4),
+                    "p50_metric": round(float(p50_metric), 4),
+                    "implied_index_price": round(float(implied_price), 4),
+                    "implied_index_price_mode": current_price_mode,
+                    "valuation_status": status,
+                    "valuation_gap_pct": round(gap_pct * 100, 2) if gap_pct is not None else None,
+                    "sample_size": len(metric_values),
+                }
+            )
+            method_map[method_name] = {
+                "valuation_price": float(implied_price),
+                "candidate_count": 1,
+            }
+
+        if not method_map:
+            return Response(
+                {
+                    "error": f"No valid valuation methods for {index_code}.",
+                    "index_code": index_code,
+                    "asof_trade_date": asof_trade_date_text,
+                    "current_index_price": round(float(current_price), 4),
+                },
+                status=404,
+            )
+
+        summary = _summarize_buy_candidate(
+            current_price=current_price,
+            method_map=method_map,
+            band_pct=band_pct,
+        )
+        composite_price = _to_float_or_none(summary.get("composite_valuation_price"))
+        conservative_price = _to_float_or_none(summary.get("conservative_valuation_price"))
+        composite_status, composite_gap_pct = _classify_valuation(current_price, composite_price, band_pct)
+        conservative_status, conservative_gap_pct = _classify_valuation(current_price, conservative_price, band_pct)
+
+        return Response(
+            {
+                "index_code": index_code,
+                "freq": freq,
+                "asof_trade_date": asof_trade_date_text,
+                "current_index_price": round(float(current_price), 4),
+                "current_index_price_mode": current_price_mode,
+                "note": price_mode_note,
+                "basic_source_mode": basic_source_mode,
+                "basic_source_note": basic_source_note,
+                "valuation_band_pct": round(float(band_pct), 4),
+                "methods": methods,
+                "summary": {
+                    **summary,
+                    "composite_valuation_status": composite_status,
+                    "composite_valuation_gap_pct": round(composite_gap_pct * 100, 2)
+                    if composite_gap_pct is not None
+                    else None,
+                    "conservative_valuation_status": conservative_status,
+                    "conservative_valuation_gap_pct": round(conservative_gap_pct * 100, 2)
+                    if conservative_gap_pct is not None
+                    else None,
+                },
+            }
+        )
+    except Exception as exc:
+        return Response({"error": str(exc)}, status=500)
 
 
 @api_view(["GET"])

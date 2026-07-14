@@ -34,6 +34,15 @@
                             SW行业
                         </router-link>
                     </el-menu-item>
+                    <el-menu-item index="supply-chain-graph">
+                        <router-link to="/supply-chain"
+                            style="display: flex; align-items: center; text-decoration: none; color: inherit;">
+                            <el-icon style="vertical-align: middle; margin-right: 6px;">
+                                <DataAnalysis />
+                            </el-icon>
+                            供应链图谱
+                        </router-link>
+                    </el-menu-item>
                     <el-sub-menu index="backtest">
                         <template #title>
                             <div style="display: flex; align-items: center;">
@@ -150,13 +159,21 @@
                     </el-radio-button>
                 </el-radio-group>
             </div>
-            <div class="header-market-quantile-dialog-summary" v-if="headerMarketQuantileChartRows.length">
+            <div class="header-market-quantile-dialog-summary" v-if="headerMarketQuantileChartRows.length || headerSimpleValuationLoading || headerSimpleCompositePrice !== null || headerSimpleConservativePrice !== null || Boolean(headerSimpleValuationError)">
                 <span>{{ headerMarketQuantileDialogMarketLabel }} {{ headerMarketQuantileDialogMetricLabel }} 最新值 {{ formatMetricValue(headerMarketQuantileSummary.latestValue) }}</span>
                 <span>日期 {{ headerMarketQuantileSummary.latestDate || headerMarketQuantileDialogAsOfText || '-' }}</span>
                 <span>{{ headerMarketQuantileDialogPeriodLabel }}分位 {{ formatPercent(headerMarketQuantilePeriodPercentilePct) }}%</span>
                 <span>P10 {{ formatMetricValue(headerMarketQuantileDynamicLevels.p10) }}</span>
                 <span>P50 {{ formatMetricValue(headerMarketQuantileDynamicLevels.p50) }}</span>
                 <span>P90 {{ formatMetricValue(headerMarketQuantileDynamicLevels.p90) }}</span>
+                <span v-if="headerSimpleValuationLoading">简化估值计算中...</span>
+                <span v-if="!headerSimpleValuationLoading && headerSimpleValuationError">简化估值不可用：{{ headerSimpleValuationError }}</span>
+                <span v-else-if="headerSimpleCompositePrice !== null">
+                    组合估值 {{ formatMetricValue(headerSimpleCompositePrice) }} ({{ formatValuationStatusLabel(headerSimpleCompositeStatus) }} {{ formatSignedPercent(headerSimpleCompositeGapPct) }}%)
+                </span>
+                <span v-if="!headerSimpleValuationLoading && headerSimpleConservativePrice !== null">
+                    保守估值 {{ formatMetricValue(headerSimpleConservativePrice) }} ({{ formatValuationStatusLabel(headerSimpleConservativeStatus) }} {{ formatSignedPercent(headerSimpleConservativeGapPct) }}%)
+                </span>
             </div>
             <v-chart v-if="headerMarketQuantileChartOption" :option="headerMarketQuantileChartOption" autoresize class="header-market-quantile-chart" />
             <el-empty v-else description="当前市场没有可展示的分位历史" />
@@ -205,6 +222,9 @@ const headerMarketQuantileDialogMarket = ref<'market' | 'shanghai'>('market')
 const headerMarketQuantileDialogMetric = ref<'pe' | 'pe_ttm' | 'pb'>('pe')
 const headerMarketQuantileDialogStyle = ref<'overall' | 'defensive' | 'balanced' | 'aggressive'>('overall')
 const headerMarketQuantileDialogPeriod = ref<'30D' | '60D' | '90D' | '1Y' | '3Y' | '5Y' | '10Y' | 'ALL'>('5Y')
+const headerSimpleValuation = ref<any | null>(null)
+const headerSimpleValuationLoading = ref(false)
+const headerSimpleValuationError = ref('')
 
 const HEADER_MARKET_METRIC_OPTIONS = [
     { key: 'pe', label: 'PE' },
@@ -557,6 +577,18 @@ const headerMarketQuantileSummary = computed(() => {
     }
 })
 
+const headerSimpleSummary = computed(() => {
+    const summary = headerSimpleValuation.value?.summary
+    return summary && typeof summary === 'object' ? summary : null
+})
+
+const headerSimpleCompositePrice = computed(() => toNullableNumber(headerSimpleSummary.value?.composite_valuation_price))
+const headerSimpleCompositeStatus = computed(() => String(headerSimpleSummary.value?.composite_valuation_status || '').trim().toLowerCase())
+const headerSimpleCompositeGapPct = computed(() => toNullableNumber(headerSimpleSummary.value?.composite_valuation_gap_pct))
+const headerSimpleConservativePrice = computed(() => toNullableNumber(headerSimpleSummary.value?.conservative_valuation_price))
+const headerSimpleConservativeStatus = computed(() => String(headerSimpleSummary.value?.conservative_valuation_status || '').trim().toLowerCase())
+const headerSimpleConservativeGapPct = computed(() => toNullableNumber(headerSimpleSummary.value?.conservative_valuation_gap_pct))
+
 const headerMarketQuantilePeriodPercentilePct = computed(() => {
     return computeLatestPercentile(headerMarketQuantileChartRows.value, null)
 })
@@ -679,6 +711,65 @@ function formatPercent(value: number | null | undefined): string {
     return Number(value).toFixed(1)
 }
 
+function toNullableNumber(value: unknown): number | null {
+    if (value === null || value === undefined || value === '') return null
+    const num = Number(value)
+    return Number.isFinite(num) ? num : null
+}
+
+function formatSignedPercent(value: number | null | undefined): string {
+    if (value === null || value === undefined || !Number.isFinite(Number(value))) return '-'
+    const num = Number(value)
+    return `${num >= 0 ? '+' : ''}${num.toFixed(2)}`
+}
+
+function formatValuationStatusLabel(status: string | null | undefined): string {
+    const normalized = String(status || '').trim().toLowerCase()
+    if (normalized === 'under') return '低估'
+    if (normalized === 'over') return '高估'
+    if (normalized === 'fair') return '合理'
+    return '未知'
+}
+
+function resolveHeaderSimpleValuationIndexCode(kind: 'market' | 'shanghai'): string {
+    if (kind === 'shanghai') {
+        return '000001.SH'
+    }
+    return '399300.SZ'
+}
+
+async function fetchHeaderSimpleValuation(kind: 'market' | 'shanghai') {
+    if (!baseURL) {
+        headerSimpleValuation.value = null
+        headerSimpleValuationError.value = '未配置 baseURL'
+        return
+    }
+    headerSimpleValuationLoading.value = true
+    headerSimpleValuationError.value = ''
+    try {
+        const indexCode = resolveHeaderSimpleValuationIndexCode(kind)
+        const resp = await axios.get(`${baseURL}/market-index/valuation-simple/`, {
+            params: {
+                index_code: indexCode,
+                start_date: HEADER_INDEX_START_DATE,
+                freq: 'D',
+                band_pct: 0.1,
+            },
+        })
+        const payload = resp?.data
+        headerSimpleValuation.value = payload && typeof payload === 'object' ? payload : null
+    } catch (err: any) {
+        headerSimpleValuation.value = null
+        headerSimpleValuationError.value = String(
+            err?.response?.data?.error
+            || err?.message
+            || '请求失败'
+        )
+    } finally {
+        headerSimpleValuationLoading.value = false
+    }
+}
+
 function buildMarketQuantileSummaryText(
     label: string,
     asof: string,
@@ -749,7 +840,15 @@ async function openHeaderMarketQuantileDialog(kind: 'market' | 'shanghai') {
     await fetchHeaderIndexHistories()
     headerMarketQuantileDialogMarket.value = kind
     headerMarketQuantileDialogVisible.value = true
+    void fetchHeaderSimpleValuation(kind)
 }
+
+watch(() => headerMarketQuantileDialogMarket.value, (kind) => {
+    if (!headerMarketQuantileDialogVisible.value) {
+        return
+    }
+    void fetchHeaderSimpleValuation(kind)
+})
 
 const loadSearchHistory = (): CorporationSuggestion[] => {
     if (typeof window === 'undefined') {

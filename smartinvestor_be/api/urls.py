@@ -176,6 +176,11 @@ urlpatterns = [
         name="industry-universe-rotation-run-delete",
     ),
     path(
+        "market-index/valuation-simple/",
+        views.get_market_index_simple_valuation,
+        name="market-index-valuation-simple",
+    ),
+    path(
         "stock-pick-valuation/weekly-downloads/",
         views.get_weekly_undervalued_downloads,
         name="weekly-undervalued-downloads",

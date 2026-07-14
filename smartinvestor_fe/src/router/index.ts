@@ -28,6 +28,11 @@ const routes: Array<RouteRecordRaw> = [
         component: () => import('../views/SwIndustryView.vue'),
     },
     {
+        path: '/supply-chain',
+        name: 'SupplyChainGraph',
+        component: () => import('../views/SupplyChainGraphView.vue'),
+    },
+    {
         path: '/backtest-execute',
         name: 'BacktestExecute',
         component: () => import('../views/BacktestExecuteView.vue'),

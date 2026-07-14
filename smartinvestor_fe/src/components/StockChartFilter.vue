@@ -147,12 +147,22 @@
                         </el-radio-button>
                     </el-radio-group>
                 </div>
-                <div class="market-quantile-dialog-summary" v-if="marketQuantileChartRows.length">
-                    <span>{{ marketQuantileDialogMetricLabel }} 最新值 {{ formatMetricValue(marketQuantileSummary.latestValue) }}</span>
-                    <span>日期 {{ marketQuantileSummary.latestDate || marketQuantileDialogAsOfText || '-' }}</span>
-                    <span>90分位 {{ formatMetricValue(marketQuantileSummary.q90) }}</span>
-                    <span>50分位 {{ formatMetricValue(marketQuantileSummary.q50) }}</span>
-                    <span>10分位 {{ formatMetricValue(marketQuantileSummary.q10) }}</span>
+                <div class="market-quantile-dialog-summary" v-if="marketQuantileChartRows.length || marketSimpleValuationLoading || marketSimpleCompositePrice !== null || marketSimpleConservativePrice !== null || Boolean(marketSimpleValuationError)">
+                    <template v-if="marketQuantileChartRows.length">
+                        <span>{{ marketQuantileDialogMetricLabel }} 最新值 {{ formatMetricValue(marketQuantileSummary.latestValue) }}</span>
+                        <span>日期 {{ marketQuantileSummary.latestDate || marketQuantileDialogAsOfText || '-' }}</span>
+                        <span>90分位 {{ formatMetricValue(marketQuantileSummary.q90) }}</span>
+                        <span>50分位 {{ formatMetricValue(marketQuantileSummary.q50) }}</span>
+                        <span>10分位 {{ formatMetricValue(marketQuantileSummary.q10) }}</span>
+                    </template>
+                    <span v-if="marketSimpleValuationLoading">简化估值计算中...</span>
+                    <span v-if="!marketSimpleValuationLoading && marketSimpleValuationError">简化估值不可用：{{ marketSimpleValuationError }}</span>
+                    <span v-else-if="marketSimpleCompositePrice !== null">
+                        组合估值 {{ formatMetricValue(marketSimpleCompositePrice) }} ({{ formatValuationStatusLabel(marketSimpleCompositeStatus) }} {{ formatSignedPercent(marketSimpleCompositeGapPct) }}%)
+                    </span>
+                    <span v-if="!marketSimpleValuationLoading && marketSimpleConservativePrice !== null">
+                        保守估值 {{ formatMetricValue(marketSimpleConservativePrice) }} ({{ formatValuationStatusLabel(marketSimpleConservativeStatus) }} {{ formatSignedPercent(marketSimpleConservativeGapPct) }}%)
+                    </span>
                 </div>
                 <v-chart v-if="marketQuantileChartOption" :option="marketQuantileChartOption" autoresize class="market-quantile-chart" />
                 <el-empty v-else description="当前市场没有可展示的分位历史" />
@@ -214,6 +224,9 @@ const marketQuantileDialogVisible = ref(false)
 const marketQuantileDialogMarket = ref<'market' | 'shanghai'>('market')
 const marketQuantileDialogMetric = ref<'pe' | 'pe_ttm' | 'pb'>('pe')
 const marketQuantileDialogPeriod = ref<'30D' | '90D' | '1Y' | '3Y' | '5Y' | '10Y' | 'ALL'>('5Y')
+const marketSimpleValuation = ref<any | null>(null)
+const marketSimpleValuationLoading = ref(false)
+const marketSimpleValuationError = ref('')
 
 const baseURL = inject<string>('baseURL', '');
 
@@ -328,6 +341,10 @@ function alignMetricSelection() {
 
 watch(() => marketQuantileDialogMarket.value, () => {
     alignMetricSelection()
+    if (!marketQuantileDialogVisible.value) {
+        return
+    }
+    void fetchMarketSimpleValuation(marketQuantileDialogMarket.value)
 })
 
 watch(() => marketOverallValuation.value, () => {
@@ -341,6 +358,46 @@ async function openMarketQuantileDialog(kind: 'market' | 'shanghai') {
     marketQuantileDialogMarket.value = kind
     alignMetricSelection()
     marketQuantileDialogVisible.value = true
+    void fetchMarketSimpleValuation(kind)
+}
+
+function resolveSimpleValuationIndexCode(kind: 'market' | 'shanghai'): string {
+    if (kind === 'shanghai') {
+        return '000001.SH'
+    }
+    return '399300.SZ'
+}
+
+async function fetchMarketSimpleValuation(kind: 'market' | 'shanghai') {
+    if (!baseURL) {
+        marketSimpleValuation.value = null
+        marketSimpleValuationError.value = '未配置 baseURL'
+        return
+    }
+    marketSimpleValuationLoading.value = true
+    marketSimpleValuationError.value = ''
+    try {
+        const indexCode = resolveSimpleValuationIndexCode(kind)
+        const resp = await axios.get(`${baseURL}/market-index/valuation-simple/`, {
+            params: {
+                index_code: indexCode,
+                start_date: '20040101',
+                freq: 'D',
+                band_pct: 0.1,
+            },
+        })
+        const payload = resp?.data
+        marketSimpleValuation.value = payload && typeof payload === 'object' ? payload : null
+    } catch (err: any) {
+        marketSimpleValuation.value = null
+        marketSimpleValuationError.value = String(
+            err?.response?.data?.error
+            || err?.message
+            || '请求失败'
+        )
+    } finally {
+        marketSimpleValuationLoading.value = false
+    }
 }
 
 function onOpenMarketQuantileChartDialog(event: Event) {
@@ -416,6 +473,18 @@ const marketQuantileSummary = computed(() => {
         q10: computeQuantileValue(rows, 0.1),
     }
 })
+
+const marketSimpleSummary = computed(() => {
+    const summary = marketSimpleValuation.value?.summary
+    return summary && typeof summary === 'object' ? summary : null
+})
+
+const marketSimpleCompositePrice = computed(() => toNullableNumber(marketSimpleSummary.value?.composite_valuation_price))
+const marketSimpleCompositeStatus = computed(() => String(marketSimpleSummary.value?.composite_valuation_status || '').trim().toLowerCase())
+const marketSimpleCompositeGapPct = computed(() => toNullableNumber(marketSimpleSummary.value?.composite_valuation_gap_pct))
+const marketSimpleConservativePrice = computed(() => toNullableNumber(marketSimpleSummary.value?.conservative_valuation_price))
+const marketSimpleConservativeStatus = computed(() => String(marketSimpleSummary.value?.conservative_valuation_status || '').trim().toLowerCase())
+const marketSimpleConservativeGapPct = computed(() => toNullableNumber(marketSimpleSummary.value?.conservative_valuation_gap_pct))
 
 const marketQuantileChartOption = computed(() => {
     const rows = marketQuantileChartRows.value
@@ -513,6 +582,20 @@ function formatMetricValue(value: number | null | undefined): string {
 function formatPercent(value: number | null | undefined): string {
     if (value === null || value === undefined || !Number.isFinite(Number(value))) return '-'
     return Number(value).toFixed(1)
+}
+
+function formatSignedPercent(value: number | null | undefined): string {
+    if (value === null || value === undefined || !Number.isFinite(Number(value))) return '-'
+    const num = Number(value)
+    return `${num >= 0 ? '+' : ''}${num.toFixed(2)}`
+}
+
+function formatValuationStatusLabel(status: string | null | undefined): string {
+    const normalized = String(status || '').trim().toLowerCase()
+    if (normalized === 'under') return '低估'
+    if (normalized === 'over') return '高估'
+    if (normalized === 'fair') return '合理'
+    return '未知'
 }
 
 function formatTopPrice(value: number | null | undefined): string {

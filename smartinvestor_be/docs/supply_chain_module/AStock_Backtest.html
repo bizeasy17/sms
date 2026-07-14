@@ -1,0 +1,431 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>历史回溯 — A股洞察平台</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif; background: #F8FAFC; color: #0F172A; }
+nav { background: #0F172A; padding: 0 24px; height: 60px; display: flex; align-items: center; justify-content: space-between; box-shadow: 0 1px 3px rgba(0,0,0,0.3); position: sticky; top: 0; z-index: 100; }
+.nav-left { display: flex; align-items: center; gap: 12px; }
+.logo-icon { width: 32px; height: 32px; background: #2563EB; border-radius: 8px; display: flex; align-items: center; justify-content: center; font-weight: 700; color: white; font-size: 14px; }
+.brand-name { font-size: 18px; font-weight: 700; color: white; }
+.brand-sub { font-size: 12px; color: #94A3B8; margin-left: 4px; }
+.nav-right { display: flex; align-items: center; gap: 20px; }
+.nav-link { font-size: 13px; color: #CBD5E1; text-decoration: none; cursor: pointer; padding: 4px 0; }
+.nav-link.active { color: white; border-bottom: 2px solid #2563EB; }
+.btn-pro { background: #2563EB; color: white; border: none; padding: 7px 16px; border-radius: 8px; font-size: 13px; cursor: pointer; }
+.avatar { width: 32px; height: 32px; background: #475569; border-radius: 50%; display: flex; align-items: center; justify-content: center; color: white; font-size: 12px; }
+.page-header { background: linear-gradient(135deg, #0F172A 0%, #1E3A5F 100%); padding: 28px 24px; }
+.page-header-inner { max-width: 1280px; margin: 0 auto; display: flex; justify-content: space-between; align-items: flex-end; }
+.page-title { font-size: 24px; font-weight: 700; color: white; margin-bottom: 4px; }
+.page-sub { font-size: 13px; color: #94A3B8; }
+.pro-badge { background: rgba(37,99,235,0.3); border: 1px solid #3B82F6; color: #93C5FD; font-size: 11px; padding: 4px 12px; border-radius: 999px; }
+.main { max-width: 1280px; margin: 0 auto; padding: 28px 24px; }
+.layout { display: grid; grid-template-columns: 320px 1fr; gap: 24px; }
+.card { background: white; border-radius: 16px; padding: 20px; border: 1px solid #F1F5F9; box-shadow: 0 1px 2px rgba(0,0,0,0.04); }
+.card-title { font-size: 14px; font-weight: 600; color: #0F172A; margin-bottom: 14px; display: flex; align-items: center; gap: 8px; }
+.section-label { font-size: 11px; font-weight: 600; color: #94A3B8; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 8px; margin-top: 16px; }
+.section-label:first-child { margin-top: 0; }
+.range-row { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 4px; }
+.input-group { display: flex; flex-direction: column; gap: 4px; }
+.input-label { font-size: 11px; color: #64748B; }
+.input-field { padding: 7px 10px; border: 1px solid #E2E8F0; border-radius: 8px; font-size: 12px; color: #0F172A; background: white; outline: none; }
+.input-field:focus { border-color: #2563EB; box-shadow: 0 0 0 2px rgba(37,99,235,0.1); }
+.select-field { padding: 7px 10px; border: 1px solid #E2E8F0; border-radius: 8px; font-size: 12px; color: #0F172A; background: white; outline: none; width: 100%; }
+.checkbox-row { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+.checkbox-row input { accent-color: #2563EB; }
+.checkbox-row label { font-size: 12px; color: #334155; }
+.btn-run { width: 100%; background: #2563EB; color: white; border: none; padding: 11px; border-radius: 10px; font-size: 13px; font-weight: 600; cursor: pointer; margin-top: 16px; }
+.btn-save { width: 100%; background: white; color: #334155; border: 1px solid #E2E8F0; padding: 9px; border-radius: 10px; font-size: 13px; cursor: pointer; margin-top: 8px; }
+.result-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
+.result-meta { font-size: 12px; color: #64748B; }
+.result-meta strong { color: #0F172A; }
+.stats-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 20px; }
+.stat-mini { background: #F8FAFC; border-radius: 10px; padding: 12px; border: 1px solid #F1F5F9; text-align: center; }
+.stat-mini-val { font-size: 20px; font-weight: 700; margin-bottom: 2px; }
+.stat-mini-label { font-size: 11px; color: #64748B; }
+.green { color: #059669; }
+.red { color: #DC2626; }
+.blue { color: #2563EB; }
+.amber { color: #D97706; }
+.chart-area { background: #F8FAFC; border-radius: 12px; padding: 16px; margin-bottom: 16px; border: 1px solid #F1F5F9; }
+.chart-title { font-size: 13px; font-weight: 600; color: #334155; margin-bottom: 12px; }
+.table-wrap { overflow-x: auto; }
+table { width: 100%; border-collapse: collapse; font-size: 12px; }
+thead tr { background: #F8FAFC; }
+th { padding: 10px 12px; text-align: left; font-size: 11px; font-weight: 600; color: #64748B; border-bottom: 1px solid #E2E8F0; white-space: nowrap; }
+td { padding: 10px 12px; border-bottom: 1px solid #F1F5F9; color: #334155; }
+tr:hover td { background: #F8FAFC; }
+.badge { display: inline-flex; align-items: center; padding: 1px 8px; border-radius: 999px; font-size: 10px; font-weight: 500; }
+.badge-green { background: #ECFDF5; color: #059669; }
+.badge-red { background: #FEF2F2; color: #DC2626; }
+.badge-blue { background: #EFF6FF; color: #2563EB; }
+.tag { font-size: 11px; color: #64748B; background: #F1F5F9; padding: 2px 7px; border-radius: 4px; }
+.tabs { display: flex; gap: 4px; background: #F1F5F9; padding: 3px; border-radius: 10px; margin-bottom: 16px; width: fit-content; }
+.tab { padding: 6px 16px; border-radius: 8px; font-size: 12px; cursor: pointer; color: #64748B; border: none; background: none; }
+.tab.active { background: white; color: #0F172A; font-weight: 600; box-shadow: 0 1px 2px rgba(0,0,0,0.06); }
+footer { border-top: 1px solid #E2E8F0; margin-top: 40px; padding: 24px; }
+.footer-inner { max-width: 1280px; margin: 0 auto; display: flex; justify-content: space-between; align-items: center; }
+.footer-copy { font-size: 12px; color: #94A3B8; }
+.footer-links { display: flex; gap: 20px; }
+.footer-link { font-size: 12px; color: #94A3B8; text-decoration: none; }
+.divider { height: 1px; background: #F1F5F9; margin: 12px 0; }
+</style>
+</head>
+<body>
+
+<nav>
+  <div class="nav-left">
+    <div class="logo-icon">A</div>
+    <span class="brand-name">A股洞察</span>
+    <span class="brand-sub">读懂每一家公司</span>
+  </div>
+  <div class="nav-right">
+    <a class="nav-link" href="AStock_UI_Preview.html">财务体检</a>
+    <a class="nav-link active">历史回溯</a>
+    <a class="nav-link" href="AStock_Gene.html">基因图谱</a>
+    <a class="nav-link" href="AStock_Alerts.html">预警中心</a>
+    <a class="nav-link" href="AStock_Portfolio.html">我的组合</a>
+    <button class="btn-pro">升级 Pro</button>
+    <div class="avatar">用</div>
+  </div>
+</nav>
+
+<div class="page-header">
+  <div class="page-header-inner">
+    <div>
+      <div class="page-title">📊 历史情景回溯引擎</div>
+      <div class="page-sub">自定义多维度筛选条件，回溯历史上所有满足条件的股票，验证策略有效性</div>
+    </div>
+    <div class="pro-badge">⚡ Pro 功能</div>
+  </div>
+</div>
+
+<div class="main">
+  <div class="layout">
+
+    <!-- LEFT: FILTER PANEL -->
+    <div>
+      <div class="card">
+        <div class="card-title">🔍 筛选条件</div>
+
+        <div class="section-label">估值区间</div>
+        <div class="range-row">
+          <div class="input-group">
+            <span class="input-label">PE 最小值</span>
+            <input class="input-field" type="number" value="5">
+          </div>
+          <div class="input-group">
+            <span class="input-label">PE 最大值</span>
+            <input class="input-field" type="number" value="25">
+          </div>
+        </div>
+        <div class="range-row">
+          <div class="input-group">
+            <span class="input-label">PB 最小值</span>
+            <input class="input-field" type="number" value="1">
+          </div>
+          <div class="input-group">
+            <span class="input-label">PB 最大值</span>
+            <input class="input-field" type="number" value="5">
+          </div>
+        </div>
+
+        <div class="section-label">盈利能力</div>
+        <div class="range-row">
+          <div class="input-group">
+            <span class="input-label">ROE 最小值 (%)</span>
+            <input class="input-field" type="number" value="15">
+          </div>
+          <div class="input-group">
+            <span class="input-label">ROE 最大值 (%)</span>
+            <input class="input-field" type="number" value="50">
+          </div>
+        </div>
+        <div class="range-row">
+          <div class="input-group">
+            <span class="input-label">净利率 最小 (%)</span>
+            <input class="input-field" type="number" value="10">
+          </div>
+          <div class="input-group">
+            <span class="input-label">净利率 最大 (%)</span>
+            <input class="input-field" type="number" value="60">
+          </div>
+        </div>
+
+        <div class="section-label">成长性</div>
+        <div class="range-row">
+          <div class="input-group">
+            <span class="input-label">营收增速 最小 (%)</span>
+            <input class="input-field" type="number" value="10">
+          </div>
+          <div class="input-group">
+            <span class="input-label">营收增速 最大 (%)</span>
+            <input class="input-field" type="number" value="50">
+          </div>
+        </div>
+
+        <div class="section-label">财务质量</div>
+        <div class="checkbox-row"><input type="checkbox" id="c1" checked><label for="c1">现金流/净利润 &gt; 0.8</label></div>
+        <div class="checkbox-row"><input type="checkbox" id="c2" checked><label for="c2">资产负债率 &lt; 60%</label></div>
+        <div class="checkbox-row"><input type="checkbox" id="c3"><label for="c3">无商誉风险预警</label></div>
+        <div class="checkbox-row"><input type="checkbox" id="c4"><label for="c4">审计意见标准</label></div>
+
+        <div class="section-label">回溯时间范围</div>
+        <div class="range-row">
+          <div class="input-group">
+            <span class="input-label">开始年份</span>
+            <input class="input-field" type="number" value="2010">
+          </div>
+          <div class="input-group">
+            <span class="input-label">结束年份</span>
+            <input class="input-field" type="number" value="2023">
+          </div>
+        </div>
+
+        <div class="section-label">行业过滤</div>
+        <select class="select-field">
+          <option>全部行业</option>
+          <option>消费品</option>
+          <option>医药生物</option>
+          <option>科技</option>
+          <option>金融</option>
+          <option>工业制造</option>
+        </select>
+
+        <div class="section-label">持有周期</div>
+        <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:4px;">
+          <span style="padding:5px 12px;background:#EFF6FF;color:#2563EB;border:1px solid #BFDBFE;border-radius:8px;font-size:12px;cursor:pointer;">1年</span>
+          <span style="padding:5px 12px;background:#F8FAFC;color:#64748B;border:1px solid #E2E8F0;border-radius:8px;font-size:12px;cursor:pointer;">3年</span>
+          <span style="padding:5px 12px;background:#F8FAFC;color:#64748B;border:1px solid #E2E8F0;border-radius:8px;font-size:12px;cursor:pointer;">5年</span>
+        </div>
+
+        <button class="btn-run">▶ 开始回溯</button>
+        <button class="btn-save">💾 保存条件</button>
+      </div>
+
+      <!-- SAVED CONDITIONS -->
+      <div class="card" style="margin-top:16px;">
+        <div class="card-title">📁 已保存条件</div>
+        <div style="display:flex;flex-direction:column;gap:8px;">
+          <div style="display:flex;justify-content:space-between;align-items:center;padding:8px 10px;background:#F8FAFC;border-radius:8px;border:1px solid #F1F5F9;">
+            <div>
+              <div style="font-size:12px;font-weight:600;color:#334155;">高ROE低估值策略</div>
+              <div style="font-size:11px;color:#94A3B8;">ROE>20% · PE<20 · 2010-2023</div>
+            </div>
+            <span style="font-size:11px;color:#2563EB;cursor:pointer;">加载</span>
+          </div>
+          <div style="display:flex;justify-content:space-between;align-items:center;padding:8px 10px;background:#F8FAFC;border-radius:8px;border:1px solid #F1F5F9;">
+            <div>
+              <div style="font-size:12px;font-weight:600;color:#334155;">消费白马筛选</div>
+              <div style="font-size:11px;color:#94A3B8;">消费行业 · ROE>15% · 2015-2023</div>
+            </div>
+            <span style="font-size:11px;color:#2563EB;cursor:pointer;">加载</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- RIGHT: RESULTS -->
+    <div style="display:flex;flex-direction:column;gap:20px;">
+
+      <!-- SUMMARY STATS -->
+      <div class="card">
+        <div class="result-header">
+          <div class="card-title" style="margin-bottom:0;">回溯结果</div>
+          <div class="result-meta">共找到 <strong>847</strong> 个历史案例 · 覆盖 <strong>2010—2023</strong></div>
+        </div>
+        <div class="stats-row">
+          <div class="stat-mini">
+            <div class="stat-mini-val green">+68.3%</div>
+            <div class="stat-mini-label">平均1年收益</div>
+          </div>
+          <div class="stat-mini">
+            <div class="stat-mini-val green">+142.7%</div>
+            <div class="stat-mini-label">平均3年收益</div>
+          </div>
+          <div class="stat-mini">
+            <div class="stat-mini-val blue">72.4%</div>
+            <div class="stat-mini-label">1年胜率</div>
+          </div>
+          <div class="stat-mini">
+            <div class="stat-mini-val amber">-18.2%</div>
+            <div class="stat-mini-label">平均最大回撤</div>
+          </div>
+        </div>
+
+        <!-- BOX PLOT SVG -->
+        <div class="chart-area">
+          <div class="chart-title">1年收益率分布（箱线图）</div>
+          <svg viewBox="0 0 680 140" width="100%" height="140">
+            <!-- Axis -->
+            <line x1="60" y1="110" x2="650" y2="110" stroke="#E2E8F0" stroke-width="1"/>
+            <!-- X labels -->
+            <text x="100" y="125" font-size="10" fill="#94A3B8" text-anchor="middle">-50%</text>
+            <text x="190" y="125" font-size="10" fill="#94A3B8" text-anchor="middle">-20%</text>
+            <text x="280" y="125" font-size="10" fill="#94A3B8" text-anchor="middle">0%</text>
+            <text x="370" y="125" font-size="10" fill="#94A3B8" text-anchor="middle">+30%</text>
+            <text x="460" y="125" font-size="10" fill="#94A3B8" text-anchor="middle">+80%</text>
+            <text x="550" y="125" font-size="10" fill="#94A3B8" text-anchor="middle">+150%</text>
+            <!-- Zero line -->
+            <line x1="280" y1="15" x2="280" y2="110" stroke="#E2E8F0" stroke-width="1" stroke-dasharray="3,3"/>
+            <!-- Box plot: whisker left -->
+            <line x1="130" y1="55" x2="200" y2="55" stroke="#2563EB" stroke-width="2"/>
+            <line x1="130" y1="48" x2="130" y2="62" stroke="#2563EB" stroke-width="2"/>
+            <!-- Box -->
+            <rect x="200" y="35" width="180" height="40" fill="#BFDBFE" stroke="#2563EB" stroke-width="1.5" rx="3"/>
+            <!-- Median line -->
+            <line x1="330" y1="35" x2="330" y2="75" stroke="#1D4ED8" stroke-width="2.5"/>
+            <!-- Whisker right -->
+            <line x1="380" y1="55" x2="490" y2="55" stroke="#2563EB" stroke-width="2"/>
+            <line x1="490" y1="48" x2="490" y2="62" stroke="#2563EB" stroke-width="2"/>
+            <!-- Outliers -->
+            <circle cx="540" cy="55" r="3" fill="none" stroke="#2563EB" stroke-width="1.5"/>
+            <circle cx="570" cy="55" r="3" fill="none" stroke="#2563EB" stroke-width="1.5"/>
+            <circle cx="100" cy="55" r="3" fill="none" stroke="#EF4444" stroke-width="1.5"/>
+            <!-- Labels -->
+            <text x="200" y="28" font-size="9" fill="#64748B">Q1: +12%</text>
+            <text x="320" y="28" font-size="9" fill="#1D4ED8" font-weight="600">中位: +52%</text>
+            <text x="380" y="28" font-size="9" fill="#64748B">Q3: +98%</text>
+            <text x="55" y="58" font-size="9" fill="#94A3B8" text-anchor="end">全部</text>
+          </svg>
+        </div>
+
+        <!-- HISTOGRAM -->
+        <div class="chart-area">
+          <div class="chart-title">收益率频率分布</div>
+          <svg viewBox="0 0 680 120" width="100%" height="120">
+            <line x1="60" y1="95" x2="650" y2="95" stroke="#E2E8F0" stroke-width="1"/>
+            <line x1="60" y1="10" x2="60" y2="95" stroke="#E2E8F0" stroke-width="1"/>
+            <!-- bars -->
+            <rect x="70" y="88" width="28" height="7" fill="#EF4444" rx="2 2 0 0"/>
+            <rect x="102" y="80" width="28" height="15" fill="#FCA5A5" rx="2 2 0 0"/>
+            <rect x="134" y="72" width="28" height="23" fill="#BFDBFE" rx="2 2 0 0"/>
+            <rect x="166" y="55" width="28" height="40" fill="#93C5FD" rx="2 2 0 0"/>
+            <rect x="198" y="35" width="28" height="60" fill="#2563EB" rx="2 2 0 0"/>
+            <rect x="230" y="25" width="28" height="70" fill="#2563EB" rx="2 2 0 0"/>
+            <rect x="262" y="40" width="28" height="55" fill="#3B82F6" rx="2 2 0 0"/>
+            <rect x="294" y="52" width="28" height="43" fill="#60A5FA" rx="2 2 0 0"/>
+            <rect x="326" y="62" width="28" height="33" fill="#93C5FD" rx="2 2 0 0"/>
+            <rect x="358" y="72" width="28" height="23" fill="#BFDBFE" rx="2 2 0 0"/>
+            <rect x="390" y="80" width="28" height="15" fill="#DBEAFE" rx="2 2 0 0"/>
+            <rect x="422" y="86" width="28" height="9" fill="#EFF6FF" rx="2 2 0 0"/>
+            <!-- X labels -->
+            <text x="84" y="108" font-size="9" fill="#94A3B8" text-anchor="middle">-50%</text>
+            <text x="196" y="108" font-size="9" fill="#94A3B8" text-anchor="middle">0%</text>
+            <text x="276" y="108" font-size="9" fill="#94A3B8" text-anchor="middle">+50%</text>
+            <text x="356" y="108" font-size="9" fill="#94A3B8" text-anchor="middle">+100%</text>
+            <text x="436" y="108" font-size="9" fill="#94A3B8" text-anchor="middle">+150%</text>
+            <!-- Mean line -->
+            <line x1="290" y1="10" x2="290" y2="95" stroke="#F59E0B" stroke-width="1.5" stroke-dasharray="4,3"/>
+            <text x="292" y="18" font-size="9" fill="#D97706">均值 +68%</text>
+          </svg>
+        </div>
+      </div>
+
+      <!-- CASE TABLE -->
+      <div class="card">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;">
+          <div class="card-title" style="margin-bottom:0;">典型案例列表</div>
+          <div style="display:flex;gap:8px;">
+            <select style="padding:6px 10px;border:1px solid #E2E8F0;border-radius:8px;font-size:12px;color:#334155;background:white;outline:none;">
+              <option>按1年收益排序</option>
+              <option>按3年收益排序</option>
+              <option>按ROE排序</option>
+            </select>
+            <button style="padding:6px 12px;background:white;border:1px solid #E2E8F0;border-radius:8px;font-size:12px;color:#334155;cursor:pointer;">导出CSV</button>
+          </div>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>股票</th><th>行业</th><th>入场年份</th><th>PE</th><th>ROE</th><th>净利率</th><th>1年收益</th><th>3年收益</th><th>最大回撤</th><th>操作</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><div style="font-weight:600;">贵州茅台</div><div style="font-size:10px;color:#94A3B8;">600519</div></td>
+                <td><span class="tag">白酒</span></td>
+                <td>2014</td><td>16.2x</td><td style="color:#059669;font-weight:600;">28.5%</td><td>46.2%</td>
+                <td style="color:#059669;font-weight:600;">+89.3%</td>
+                <td style="color:#059669;font-weight:600;">+312.5%</td>
+                <td style="color:#DC2626;">-22.1%</td>
+                <td><span style="font-size:11px;color:#2563EB;cursor:pointer;">详情</span></td>
+              </tr>
+              <tr>
+                <td><div style="font-weight:600;">恒瑞医药</div><div style="font-size:10px;color:#94A3B8;">600276</div></td>
+                <td><span class="tag">医药</span></td>
+                <td>2015</td><td>22.1x</td><td style="color:#059669;font-weight:600;">22.3%</td><td>18.7%</td>
+                <td style="color:#059669;font-weight:600;">+76.4%</td>
+                <td style="color:#059669;font-weight:600;">+198.2%</td>
+                <td style="color:#DC2626;">-18.5%</td>
+                <td><span style="font-size:11px;color:#2563EB;cursor:pointer;">详情</span></td>
+              </tr>
+              <tr>
+                <td><div style="font-weight:600;">格力电器</div><div style="font-size:10px;color:#94A3B8;">000651</div></td>
+                <td><span class="tag">家电</span></td>
+                <td>2013</td><td>9.8x</td><td style="color:#059669;font-weight:600;">31.2%</td><td>12.4%</td>
+                <td style="color:#059669;font-weight:600;">+124.7%</td>
+                <td style="color:#059669;font-weight:600;">+267.3%</td>
+                <td style="color:#DC2626;">-28.3%</td>
+                <td><span style="font-size:11px;color:#2563EB;cursor:pointer;">详情</span></td>
+              </tr>
+              <tr>
+                <td><div style="font-weight:600;">招商银行</div><div style="font-size:10px;color:#94A3B8;">600036</div></td>
+                <td><span class="tag">银行</span></td>
+                <td>2016</td><td>7.2x</td><td style="color:#059669;font-weight:600;">17.8%</td><td>28.1%</td>
+                <td style="color:#059669;font-weight:600;">+52.1%</td>
+                <td style="color:#059669;font-weight:600;">+143.6%</td>
+                <td style="color:#DC2626;">-15.2%</td>
+                <td><span style="font-size:11px;color:#2563EB;cursor:pointer;">详情</span></td>
+              </tr>
+              <tr>
+                <td><div style="font-weight:600;">海天味业</div><div style="font-size:10px;color:#94A3B8;">603288</div></td>
+                <td><span class="tag">食品</span></td>
+                <td>2017</td><td>18.4x</td><td style="color:#059669;font-weight:600;">26.7%</td><td>22.3%</td>
+                <td style="color:#059669;font-weight:600;">+63.8%</td>
+                <td style="color:#059669;font-weight:600;">+187.4%</td>
+                <td style="color:#DC2626;">-20.7%</td>
+                <td><span style="font-size:11px;color:#2563EB;cursor:pointer;">详情</span></td>
+              </tr>
+              <tr>
+                <td><div style="font-weight:600;">东方财富</div><div style="font-size:10px;color:#94A3B8;">300059</div></td>
+                <td><span class="tag">金融科技</span></td>
+                <td>2018</td><td>24.6x</td><td style="color:#059669;font-weight:600;">19.2%</td><td>35.8%</td>
+                <td style="color:#059669;font-weight:600;">+148.2%</td>
+                <td style="color:#059669;font-weight:600;">+423.1%</td>
+                <td style="color:#DC2626;">-32.1%</td>
+                <td><span style="font-size:11px;color:#2563EB;cursor:pointer;">详情</span></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-top:12px;">
+          <span style="font-size:12px;color:#94A3B8;">显示 6 / 847 条结果</span>
+          <div style="display:flex;gap:6px;">
+            <button style="padding:5px 12px;border:1px solid #E2E8F0;border-radius:6px;font-size:12px;background:white;cursor:pointer;color:#64748B;">上一页</button>
+            <button style="padding:5px 12px;border:1px solid #2563EB;border-radius:6px;font-size:12px;background:#EFF6FF;cursor:pointer;color:#2563EB;">1</button>
+            <button style="padding:5px 12px;border:1px solid #E2E8F0;border-radius:6px;font-size:12px;background:white;cursor:pointer;color:#64748B;">2</button>
+            <button style="padding:5px 12px;border:1px solid #E2E8F0;border-radius:6px;font-size:12px;background:white;cursor:pointer;color:#64748B;">下一页</button>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<footer>
+  <div class="footer-inner">
+    <div class="footer-copy">© 2026 A股洞察平台 · 数据仅供参考，不构成投资建议</div>
+    <div class="footer-links">
+      <a class="footer-link">关于我们</a><a class="footer-link">数据说明</a>
+      <a class="footer-link">隐私政策</a><a class="footer-link">联系我们</a>
+    </div>
+  </div>
+</footer>
+</body>
+</html>

@@ -57,6 +57,7 @@ INSTALLED_APPS = [
     "backtest.apps.BacktestConfig",
     "valuation.apps.ValuationConfig",
     "valuation_risk.apps.ValuationRiskConfig",
+    "supply_chain.apps.SupplyChainConfig",
 ]
 
 MIDDLEWARE = [

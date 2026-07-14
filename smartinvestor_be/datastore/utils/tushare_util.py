@@ -38,6 +38,7 @@ MAP_TSCODE_SDATE_EDATE = {
     "CASHFLOW": "cashflow",
     "INCOME": "income",
     "MAINBIZ": "fina_mainbz",
+    "INDEX_DAILY": "index_daily",
     "INDEX_DAILYBASIC": "index_dailybasic",
 }
 
@@ -113,8 +114,8 @@ def fetch_tushare_data(ts_code, dtype="INDICATOR", start_date=None, end_date=Non
             print(
                 f"Fetching {dtype} for {ts_code} (start_date={start_date}, end_date={end_date})"
             )
-            if dtype == "INDEX_DAILYBASIC":
-                # Tushare index_dailybasic can be truncated by per-call row cap.
+            if dtype in {"INDEX_DAILYBASIC", "INDEX_DAILY"}:
+                # Tushare index_daily/index_dailybasic can be truncated by per-call row cap.
                 # Page backward by end_date until we cover start_date.
                 frames = []
                 cursor_end = end_date

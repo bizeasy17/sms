@@ -1,0 +1,1512 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>上下游拆解（拖放图）— A股洞察平台</title>
+  <style>
+    /* ===== Base / Theme (match existing AStock look) ===== */
+    * { box-sizing: border-box; }
+    :root{
+      --bg: #F8FAFC;          /* slate-50 */
+      --card: #FFFFFF;
+      --text: #0F172A;        /* slate-900 */
+      --muted: #64748B;       /* slate-500 */
+      --muted2:#94A3B8;       /* slate-400 */
+      --border:#E2E8F0;       /* slate-200 */
+      --border2:#F1F5F9;      /* slate-100 */
+      --nav:#0F172A;          /* slate-900 */
+      --blue:#2563EB;         /* blue-600 */
+      --blue2:#1E40AF;        /* blue-800 */
+      --blueBg:#EFF6FF;       /* blue-50 */
+      --green:#10B981;        /* emerald-500 */
+      --red:#EF4444;          /* red-500 */
+      --amber:#F59E0B;        /* amber-500 */
+      --shadow: 0 1px 2px rgba(0,0,0,.04);
+      --shadow2: 0 8px 24px rgba(15,23,42,.10);
+      --r16: 16px;
+      --r12: 12px;
+      --r10: 10px;
+      --mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono","Courier New", monospace;
+    }
+
+    body{
+      margin:0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC","Microsoft YaHei", sans-serif;
+      background: var(--bg);
+      color: var(--text);
+    }
+
+    /* ===== Nav ===== */
+    nav{
+      height:60px;
+      background: var(--nav);
+      padding:0 24px;
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.3);
+      position: sticky;
+      top:0;
+      z-index: 50;
+    }
+    .nav-left{ display:flex; align-items:center; gap:12px; }
+    .logo{
+      width:32px; height:32px; border-radius:8px;
+      background: var(--blue);
+      display:flex; align-items:center; justify-content:center;
+      font-weight:800; color:#fff; font-size:14px;
+    }
+    .brand{ color:#fff; font-weight:800; font-size:18px; }
+    .sub{ color:#94A3B8; font-size:12px; margin-left:6px; }
+    .nav-right{ display:flex; align-items:center; gap:18px; }
+    .nav-link{ color:#CBD5E1; font-size:13px; text-decoration:none; }
+    .nav-link:hover{ color:#fff; }
+    .btn-pro{
+      background: var(--blue);
+      color:#fff;
+      border:0;
+      padding:7px 14px;
+      border-radius:8px;
+      font-size:13px;
+      cursor:pointer;
+      font-weight:600;
+    }
+    .avatar{
+      width:32px; height:32px; border-radius:50%;
+      background:#475569;
+      display:flex; align-items:center; justify-content:center;
+      color:#fff; font-size:12px;
+    }
+
+    /* ===== Header ===== */
+    .page-header{
+      background: linear-gradient(135deg, #0F172A 0%, #1E3A5F 100%);
+      padding: 22px 24px;
+    }
+    .page-header-inner{
+      max-width: 1280px;
+      margin: 0 auto;
+      display:flex;
+      justify-content: space-between;
+      align-items: flex-end;
+      gap: 16px;
+    }
+    .title{
+      color:#fff;
+      font-size:22px;
+      font-weight:800;
+      margin:0 0 6px 0;
+      letter-spacing: .2px;
+    }
+    .desc{
+      color:#A5B4FC;
+      font-size:13px;
+      margin:0;
+      line-height:1.6;
+    }
+    .header-actions{
+      display:flex; gap:10px; align-items:center; flex-wrap:wrap;
+    }
+    .pill{
+      display:inline-flex; align-items:center; gap:8px;
+      background: rgba(255,255,255,.08);
+      border: 1px solid rgba(148,163,184,.25);
+      color:#E2E8F0;
+      padding:8px 10px;
+      border-radius: 999px;
+      font-size:12px;
+      white-space:nowrap;
+    }
+    .kbd{
+      font-family: var(--mono);
+      font-size:11px;
+      padding:1px 6px;
+      border-radius: 6px;
+      border:1px solid rgba(226,232,240,.25);
+      background: rgba(15,23,42,.35);
+      color:#E2E8F0;
+    }
+
+    /* ===== Main Layout ===== */
+    .main{
+      max-width: 1280px;
+      margin: 0 auto;
+      padding: 22px 24px 40px;
+    }
+    .layout{
+      display:grid;
+      grid-template-columns: 320px 1fr 340px;
+      gap: 16px;
+      align-items: start;
+    }
+
+    .card{
+      background: var(--card);
+      border: 1px solid var(--border2);
+      border-radius: var(--r16);
+      box-shadow: var(--shadow);
+      padding: 16px;
+    }
+    .card-title{
+      font-size: 14px;
+      font-weight: 800;
+      margin: 0 0 12px;
+    }
+    .muted{ color: var(--muted); font-size: 12px; }
+    .row{ display:flex; gap:10px; align-items:center; }
+    .col{ display:flex; flex-direction:column; gap:10px; }
+
+    /* ===== Controls ===== */
+    select, input[type="text"], textarea{
+      width:100%;
+      border: 1px solid var(--border);
+      background:#fff;
+      border-radius: 12px;
+      padding: 10px 12px;
+      font-size: 13px;
+      outline:none;
+    }
+    textarea{ min-height: 120px; font-family: var(--mono); font-size: 12px; }
+    input:focus, select:focus, textarea:focus{
+      border-color: rgba(37,99,235,.45);
+      box-shadow: 0 0 0 4px rgba(37,99,235,.12);
+    }
+    .btn{
+      border: 1px solid var(--border);
+      background:#fff;
+      color: var(--text);
+      padding: 10px 12px;
+      border-radius: 12px;
+      font-size: 13px;
+      cursor:pointer;
+      font-weight:700;
+    }
+    .btn:hover{ box-shadow: var(--shadow2); transform: translateY(-1px); }
+    .btn.primary{
+      background: var(--blue);
+      border-color: var(--blue);
+      color:#fff;
+    }
+    .btn.primary:hover{ background: #1D4ED8; }
+    .btn.ghost{
+      background: transparent;
+      border-color: rgba(226,232,240,.5);
+      color:#E2E8F0;
+    }
+    .btn.small{ padding:8px 10px; font-size:12px; border-radius: 10px; }
+    .btn.danger{
+      background: #FEF2F2;
+      border-color: #FECACA;
+      color:#991B1B;
+    }
+
+    .seg{
+      display:flex;
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      overflow:hidden;
+      background:#fff;
+    }
+    .seg button{
+      flex:1;
+      border:0;
+      background: transparent;
+      padding: 9px 10px;
+      font-size: 12px;
+      cursor:pointer;
+      color: var(--muted);
+      font-weight:800;
+    }
+    .seg button.active{
+      background: var(--blueBg);
+      color: var(--blue2);
+    }
+
+    /* ===== Company List (drag source) ===== */
+    .list{
+      display:flex;
+      flex-direction:column;
+      gap:8px;
+      max-height: 420px;
+      overflow:auto;
+      padding-right: 4px;
+    }
+    .item{
+      border: 1px solid var(--border);
+      background: #fff;
+      border-radius: 12px;
+      padding: 10px 10px;
+      cursor: grab;
+      display:flex;
+      gap:10px;
+      align-items:flex-start;
+    }
+    .item:active{ cursor: grabbing; }
+    .badge{
+      font-size: 11px;
+      padding: 2px 8px;
+      border-radius: 999px;
+      border: 1px solid;
+      white-space: nowrap;
+      margin-left:auto;
+      margin-top:2px;
+    }
+    .b-up{ background:#ECFDF5; color:#059669; border-color:#A7F3D0; }
+    .b-down{ background:#EFF6FF; color:#2563EB; border-color:#BFDBFE; }
+    .b-peer{ background:#FFFBEB; color:#B45309; border-color:#FDE68A; }
+    .item-title{ font-weight:900; font-size:13px; line-height:1.2; }
+    .item-sub{ font-size:12px; color: var(--muted); margin-top: 4px; }
+    .dot{
+      width:10px; height:10px; border-radius:50%;
+      margin-top:4px;
+      flex: 0 0 auto;
+      background: var(--blue);
+    }
+    .dot.up{ background: var(--green); }
+    .dot.down{ background: var(--blue); }
+    .dot.peer{ background: var(--amber); }
+
+    /* ===== Canvas ===== */
+    .canvas-card{ padding: 0; overflow:hidden; }
+    .canvas-topbar{
+      padding: 12px 14px;
+      border-bottom: 1px solid var(--border2);
+      display:flex;
+      justify-content: space-between;
+      align-items:center;
+      gap: 10px;
+      background: #fff;
+    }
+    .canvas-title{
+      display:flex; flex-direction:column; gap:2px;
+    }
+    .canvas-title h3{ margin:0; font-size: 14px; font-weight: 900; }
+    .canvas-title p{ margin:0; font-size: 12px; color: var(--muted); }
+
+    .canvas-wrap{
+      position: relative;
+      height: 640px;
+      background:
+        radial-gradient(circle at 1px 1px, rgba(148,163,184,.25) 1px, transparent 0) 0 0/18px 18px,
+        linear-gradient(#fff, #fff);
+      overflow:hidden;
+      user-select: none;
+    }
+    .canvas-viewport{
+      position:absolute;
+      inset:0;
+      transform-origin: 0 0;
+    }
+    svg#links{
+      position:absolute; inset:0;
+      width:100%; height:100%;
+      pointer-events:none;
+    }
+
+    .node{
+      position:absolute;
+      min-width: 170px;
+      max-width: 240px;
+      background:#fff;
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 10px 10px;
+      box-shadow: var(--shadow);
+      cursor: move;
+    }
+    .node.selected{
+      border-color: rgba(37,99,235,.8);
+      box-shadow: 0 0 0 4px rgba(37,99,235,.12), var(--shadow2);
+    }
+    .node-head{
+      display:flex;
+      gap:10px;
+      align-items:flex-start;
+    }
+    .node-name{
+      font-weight: 900;
+      font-size: 13px;
+      line-height:1.2;
+    }
+    .node-meta{
+      font-size: 11px;
+      color: var(--muted);
+      margin-top: 4px;
+      line-height:1.4;
+    }
+    .node-actions{
+      margin-left:auto;
+      display:flex;
+      gap:6px;
+    }
+    .icon-btn{
+      width:28px; height:28px;
+      border-radius: 10px;
+      border: 1px solid var(--border);
+      background: #fff;
+      cursor:pointer;
+      font-size: 12px;
+      font-weight: 900;
+      color: var(--muted);
+    }
+    .icon-btn:hover{ color: var(--text); box-shadow: var(--shadow2); }
+    .tag{
+      display:inline-flex;
+      font-size: 10px;
+      padding: 2px 8px;
+      border-radius: 999px;
+      border: 1px solid;
+      margin-top: 8px;
+    }
+    .tag.up{ background:#ECFDF5; color:#059669; border-color:#A7F3D0; }
+    .tag.down{ background:#EFF6FF; color:#2563EB; border-color:#BFDBFE; }
+    .tag.peer{ background:#FFFBEB; color:#B45309; border-color:#FDE68A; }
+
+    .drop-hint{
+      position:absolute;
+      left: 14px;
+      bottom: 14px;
+      background: rgba(15,23,42,.72);
+      color:#E2E8F0;
+      border: 1px solid rgba(226,232,240,.15);
+      padding: 10px 12px;
+      border-radius: 12px;
+      font-size: 12px;
+      line-height: 1.5;
+      max-width: 520px;
+    }
+    .drop-hint strong{ color:#fff; }
+
+    /* ===== Right panel details ===== */
+    .kv{
+      display:grid;
+      grid-template-columns: 90px 1fr;
+      gap: 8px 10px;
+      font-size: 12px;
+      align-items:center;
+    }
+    .kv .k{ color: var(--muted); }
+    .kv .v{ font-weight: 800; color: var(--text); }
+    .divider{ height:1px; background: var(--border2); margin: 12px 0; }
+
+    .relation-row{
+      display:grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+    }
+
+    .toast{
+      position: fixed;
+      right: 18px;
+      bottom: 18px;
+      background: #0F172A;
+      color:#E2E8F0;
+      border: 1px solid rgba(226,232,240,.15);
+      padding: 10px 12px;
+      border-radius: 12px;
+      font-size: 12px;
+      box-shadow: var(--shadow2);
+      opacity: 0;
+      transform: translateY(8px);
+      transition: all .18s ease;
+      pointer-events:none;
+      z-index: 200;
+      max-width: 420px;
+      line-height:1.5;
+    }
+    .toast.show{
+      opacity:1;
+      transform: translateY(0px);
+    }
+
+    /* Responsive */
+    @media (max-width: 1180px){
+      .layout{ grid-template-columns: 1fr; }
+      .canvas-wrap{ height: 560px; }
+    }
+  </style>
+</head>
+
+<body>
+  <nav>
+    <div class="nav-left">
+      <div class="logo">A</div>
+      <div>
+        <span class="brand">A股洞察</span>
+        <span class="sub">读懂每一家公司</span>
+      </div>
+    </div>
+    <div class="nav-right">
+      <a class="nav-link" href="#">财务体检</a>
+      <a class="nav-link" href="#">历史回溯</a>
+      <a class="nav-link" href="#" style="color:#fff;border-bottom:2px solid var(--blue);padding-bottom:2px;">产业链拆解</a>
+      <a class="nav-link" href="#">预警中心</a>
+      <a class="nav-link" href="#">我的组合</a>
+      <button class="btn-pro">升级 Pro</button>
+      <div class="avatar">用</div>
+    </div>
+  </nav>
+
+  <section class="page-header">
+    <div class="page-header-inner">
+      <div>
+        <h1 class="title">🔗 产业链上下游拆解（拖放图）</h1>
+        <p class="desc">
+          选中公司后，系统生成上下游候选公司列表。你可以把公司卡片<strong>拖到画布</strong>，自由编排关系、连线与备注。
+        </p>
+      </div>
+      <div class="header-actions">
+        <span class="pill">拖入画布：<span class="kbd">Drag</span></span>
+        <span class="pill">画布缩放：<span class="kbd">Ctrl</span> + <span class="kbd">滚轮</span></span>
+        <span class="pill">快速删除节点：<span class="kbd">Del</span></span>
+        <button class="btn ghost small" id="btnDemo">载入演示</button>
+      </div>
+    </div>
+  </section>
+
+  <main class="main">
+    <div class="layout">
+      <!-- Left: selection + list -->
+      <aside class="card">
+        <h2 class="card-title">公司选择 & 拆解范围</h2>
+
+        <div class="col">
+          <div>
+            <div class="muted" style="margin-bottom:6px;">目标公司</div>
+            <select id="companySelect"></select>
+          </div>
+
+          <div>
+            <div class="muted" style="margin-bottom:6px;">搜索（上下游候选）</div>
+            <input id="searchInput" type="text" placeholder="例如：电解液 / 碳酸锂 / 包装 / 渠道…" />
+          </div>
+
+          <div>
+            <div class="muted" style="margin-bottom:6px;">筛选</div>
+            <div class="seg" role="tablist" aria-label="筛选上下游">
+              <button id="filterAll" class="active" data-filter="all">全部</button>
+              <button id="filterUp" data-filter="up">上游</button>
+              <button id="filterDown" data-filter="down">下游</button>
+              <button id="filterPeer" data-filter="peer">相关</button>
+            </div>
+          </div>
+
+          <div>
+            <div class="row" style="justify-content:space-between;">
+              <div class="muted">候选公司（可拖拽到画布）</div>
+              <button class="btn small" id="btnRefresh">重新生成</button>
+            </div>
+            <div class="list" id="candidateList" aria-label="候选公司列表"></div>
+          </div>
+
+          <div class="divider"></div>
+
+          <div class="col">
+            <div class="muted">
+              说明：这里用<strong>示例数据</strong>模拟“上下游拆解 + 相关公司推荐”。
+              你接入真实数据后，只要输出同结构 JSON 即可驱动页面。
+            </div>
+          </div>
+        </div>
+      </aside>
+
+      <!-- Center: canvas -->
+      <section class="card canvas-card">
+        <div class="canvas-topbar">
+          <div class="canvas-title">
+            <h3>拖放画布</h3>
+            <p>拖入候选公司形成节点；拖动节点改变布局；连线表示供需/合作关系。</p>
+          </div>
+          <div class="row" style="gap:8px; flex-wrap:wrap; justify-content:flex-end;">
+            <button class="btn small" id="btnFit">适配视图</button>
+            <button class="btn small" id="btnZoomIn">放大</button>
+            <button class="btn small" id="btnZoomOut">缩小</button>
+            <button class="btn small danger" id="btnClear">清空画布</button>
+          </div>
+        </div>
+
+        <div class="canvas-wrap" id="canvasWrap">
+          <div class="canvas-viewport" id="viewport">
+            <svg id="links"></svg>
+            <div id="nodesLayer"></div>
+          </div>
+
+          <div class="drop-hint">
+            <strong>操作提示：</strong>
+            从左侧拖一个公司到画布即可创建节点；点击节点选中后，可在右侧添加/删除连线。<br/>
+            也可点击节点右上角 <strong>+</strong> 快速与“目标公司”建立一条默认关系。
+          </div>
+        </div>
+      </section>
+
+      <!-- Right: details / relations / import export -->
+      <aside class="card">
+        <h2 class="card-title">节点详情 & 关系编辑</h2>
+
+        <div class="col">
+          <div class="card" style="padding:14px;border-radius:14px;background:var(--blueBg);border-color:#BFDBFE;">
+            <div class="row" style="justify-content:space-between;align-items:flex-start;">
+              <div>
+                <div style="font-size:12px;color:#1E40AF;font-weight:900;">当前选中</div>
+                <div id="selTitle" style="font-size:14px;color:#1E3A8A;font-weight:900;margin-top:4px;">未选中节点</div>
+                <div id="selSub" style="font-size:12px;color:#1D4ED8;margin-top:4px;line-height:1.6;">
+                  点击画布中的节点以查看信息与编辑关系
+                </div>
+              </div>
+              <button class="btn small" id="btnCenterOn" title="将视图移动到选中节点">定位</button>
+            </div>
+          </div>
+
+          <div class="kv" id="selKV" style="display:none;">
+            <div class="k">代码</div><div class="v" id="selCode">-</div>
+            <div class="k">行业</div><div class="v" id="selIndustry">-</div>
+            <div class="k">类型</div><div class="v" id="selType">-</div>
+            <div class="k">环节</div><div class="v" id="selSegment">-</div>
+          </div>
+
+          <div class="divider"></div>
+
+          <div>
+            <div class="muted" style="margin-bottom:6px;">添加关系（从 → 到）</div>
+            <div class="relation-row">
+              <select id="relFrom"></select>
+              <select id="relTo"></select>
+            </div>
+            <div class="row" style="margin-top:8px;">
+              <select id="relKind">
+                <option value="supply">供给/原材料</option>
+                <option value="demand">需求/客户</option>
+                <option value="coop">合作/联盟</option>
+                <option value="compete">竞争/替代</option>
+              </select>
+              <button class="btn primary" id="btnAddLink" style="flex:1;">+ 添加连线</button>
+            </div>
+
+            <div class="row" style="margin-top:8px;">
+              <button class="btn" id="btnRemoveSelectedLink" style="flex:1;">删除选中连线</button>
+            </div>
+
+            <div class="muted" style="margin-top:8px;">
+              小技巧：点击连线可选中（高亮），再点“删除选中连线”。
+            </div>
+          </div>
+
+          <div class="divider"></div>
+
+          <div>
+            <div class="row" style="justify-content:space-between; align-items:center;">
+              <div class="muted">导出/导入（JSON）</div>
+              <div class="row" style="gap:6px;">
+                <button class="btn small" id="btnExport">导出</button>
+                <button class="btn small" id="btnImport">导入</button>
+              </div>
+            </div>
+            <textarea id="jsonBox" spellcheck="false" placeholder='点击“导出”后会生成 JSON；也可粘贴 JSON 点击“导入”。'></textarea>
+          </div>
+        </div>
+      </aside>
+    </div>
+  </main>
+
+  <div class="toast" id="toast"></div>
+
+<script>
+/* ===========================
+   Demo data model
+   =========================== */
+const DATASETS = {
+  "宁德时代 (300750)": {
+    focus: { id:"c_CATL", name:"宁德时代", code:"300750", industry:"锂电/动力电池", type:"focus", segment:"电池制造" },
+    candidates: [
+      // Upstream
+      { id:"u_TIANQI", name:"天齐锂业", code:"002466", industry:"锂资源", type:"up", segment:"锂矿/盐湖" },
+      { id:"u_GANFENG", name:"赣锋锂业", code:"002460", industry:"锂资源", type:"up", segment:"锂盐" },
+      { id:"u_YONGXING", name:"永兴材料", code:"002756", industry:"锂盐/特钢", type:"up", segment:"碳酸锂" },
+      { id:"u_ENCHEM", name:"恩捷股份", code:"002812", industry:"锂电材料", type:"up", segment:"隔膜" },
+      { id:"u_TINCI", name:"天赐材料", code:"002709", industry:"锂电材料", type:"up", segment:"电解液" },
+      { id:"u_EVE", name:"亿纬锂能", code:"300014", industry:"锂电", type:"up", segment:"电芯/储能" },
+
+      // Downstream
+      { id:"d_BYD", name:"比亚迪", code:"002594", industry:"新能源汽车", type:"down", segment:"整车/电池" },
+      { id:"d_SAIC", name:"上汽集团", code:"600104", industry:"汽车", type:"down", segment:"整车" },
+      { id:"d_GWM", name:"长城汽车", code:"601633", industry:"汽车", type:"down", segment:"整车" },
+      { id:"d_GUOXUAN", name:"国轩高科", code:"002074", industry:"锂电", type:"down", segment:"电池/客户" },
+
+      // Related/peer
+      { id:"p_SUNWODA", name:"欣旺达", code:"300207", industry:"锂电", type:"peer", segment:"消费电池/储能" },
+      { id:"p_CALEB", name:"中创新航", code:"03931", industry:"动力电池", type:"peer", segment:"电池制造" },
+      { id:"p_EC", name:"当升科技", code:"300073", industry:"锂电材料", type:"peer", segment:"正极材料" },
+    ],
+    // Suggested edges among them (optional)
+    edges: [
+      ["u_TIANQI","c_CATL","supply"],
+      ["u_GANFENG","c_CATL","supply"],
+      ["u_TINCI","c_CATL","supply"],
+      ["u_ENCHEM","c_CATL","supply"],
+      ["c_CATL","d_BYD","demand"],
+      ["c_CATL","d_SAIC","demand"],
+      ["p_CALEB","c_CATL","compete"],
+      ["p_SUNWODA","c_CATL","compete"]
+    ]
+  },
+
+  "贵州茅台 (600519)": {
+    focus: { id:"c_MTG", name:"贵州茅台", code:"600519", industry:"白酒", type:"focus", segment:"高端白酒" },
+    candidates: [
+      { id:"u_GLASS", name:"山东药玻", code:"600529", industry:"包装", type:"up", segment:"玻璃瓶" },
+      { id:"u_PAPER", name:"裕同科技", code:"002831", industry:"包装", type:"up", segment:"纸包装" },
+      { id:"u_LOGI", name:"顺丰控股", code:"002352", industry:"物流", type:"up", segment:"仓配/冷链" },
+
+      { id:"d_CHANNEL", name:"华致酒行", code:"300755", industry:"渠道", type:"down", segment:"酒类流通" },
+      { id:"d_RETAIL", name:"永辉超市", code:"601933", industry:"零售", type:"down", segment:"商超" },
+
+      { id:"p_WLY", name:"五粮液", code:"000858", industry:"白酒", type:"peer", segment:"高端白酒" },
+      { id:"p_LZLJ", name:"泸州老窖", code:"000568", industry:"白酒", type:"peer", segment:"高端白酒" },
+      { id:"p_YANGHE", name:"洋河股份", code:"002304", industry:"白酒", type:"peer", segment:"次高端白酒" }
+    ],
+    edges: [
+      ["u_GLASS","c_MTG","supply"],
+      ["u_PAPER","c_MTG","supply"],
+      ["c_MTG","d_CHANNEL","demand"],
+      ["p_WLY","c_MTG","compete"]
+    ]
+  }
+};
+
+function typeLabel(t){
+  if(t==="focus") return "目标公司";
+  if(t==="up") return "上游";
+  if(t==="down") return "下游";
+  return "相关";
+}
+function typeTagClass(t){
+  if(t==="up") return "up";
+  if(t==="down") return "down";
+  if(t==="peer") return "peer";
+  return "down";
+}
+function linkStyle(kind){
+  // return {color, dash, width}
+  switch(kind){
+    case "supply": return { color:"#10B981", dash:"", width:2.5, label:"供给" };
+    case "demand": return { color:"#2563EB", dash:"", width:2.5, label:"需求" };
+    case "coop": return { color:"#7C3AED", dash:"6 4", width:2.2, label:"合作" };
+    case "compete": return { color:"#F59E0B", dash:"3 3", width:2.2, label:"竞争" };
+    default: return { color:"#64748B", dash:"", width:2, label:"关系" };
+  }
+}
+
+/* ===========================
+   State
+   =========================== */
+let currentKey = Object.keys(DATASETS)[0];
+let currentData = DATASETS[currentKey];
+
+let filter = "all";
+let searchText = "";
+
+// Canvas state
+let scale = 1;
+let panX = 0;
+let panY = 0;
+
+const state = {
+  focus: null,
+  nodes: new Map(),   // nodeId -> { id,name,code,industry,type,segment,x,y }
+  links: [],          // { id, from, to, kind }
+  selectedNodeId: null,
+  selectedLinkId: null
+};
+
+/* ===========================
+   DOM refs
+   =========================== */
+const companySelect = document.getElementById("companySelect");
+const candidateList = document.getElementById("candidateList");
+const searchInput = document.getElementById("searchInput");
+const canvasWrap = document.getElementById("canvasWrap");
+const viewport = document.getElementById("viewport");
+const nodesLayer = document.getElementById("nodesLayer");
+const linksSvg = document.getElementById("links");
+
+const toastEl = document.getElementById("toast");
+
+// Right panel
+const selTitle = document.getElementById("selTitle");
+const selSub = document.getElementById("selSub");
+const selKV = document.getElementById("selKV");
+const selCode = document.getElementById("selCode");
+const selIndustry = document.getElementById("selIndustry");
+const selType = document.getElementById("selType");
+const selSegment = document.getElementById("selSegment");
+
+const relFrom = document.getElementById("relFrom");
+const relTo = document.getElementById("relTo");
+const relKind = document.getElementById("relKind");
+const btnAddLink = document.getElementById("btnAddLink");
+const btnRemoveSelectedLink = document.getElementById("btnRemoveSelectedLink");
+
+const jsonBox = document.getElementById("jsonBox");
+
+/* ===========================
+   Helpers
+   =========================== */
+function toast(msg){
+  toastEl.textContent = msg;
+  toastEl.classList.add("show");
+  setTimeout(()=>toastEl.classList.remove("show"), 1800);
+}
+function uid(prefix="id"){
+  return prefix + "_" + Math.random().toString(16).slice(2) + "_" + Date.now().toString(16);
+}
+function setTransform(){
+  viewport.style.transform = `translate(${panX}px, ${panY}px) scale(${scale})`;
+}
+function screenToWorld(clientX, clientY){
+  const rect = canvasWrap.getBoundingClientRect();
+  const x = (clientX - rect.left - panX) / scale;
+  const y = (clientY - rect.top - panY) / scale;
+  return {x,y};
+}
+function clamp(v, a, b){ return Math.max(a, Math.min(b, v)); }
+
+/* ===========================
+   Init
+   =========================== */
+function init(){
+  // fill select
+  Object.keys(DATASETS).forEach(k=>{
+    const opt = document.createElement("option");
+    opt.value = k;
+    opt.textContent = k;
+    companySelect.appendChild(opt);
+  });
+  companySelect.value = currentKey;
+
+  bindUI();
+  loadDataset(currentKey, { resetCanvas:true, autoLayout:true });
+  setTransform();
+}
+function bindUI(){
+  companySelect.addEventListener("change", ()=>{
+    loadDataset(companySelect.value, { resetCanvas:true, autoLayout:true });
+  });
+
+  searchInput.addEventListener("input", (e)=>{
+    searchText = e.target.value.trim().toLowerCase();
+    renderCandidates();
+  });
+
+  document.querySelectorAll(".seg button").forEach(btn=>{
+    btn.addEventListener("click", ()=>{
+      document.querySelectorAll(".seg button").forEach(b=>b.classList.remove("active"));
+      btn.classList.add("active");
+      filter = btn.dataset.filter;
+      renderCandidates();
+    });
+  });
+
+  document.getElementById("btnRefresh").addEventListener("click", ()=>{
+    renderCandidates();
+    toast("已刷新候选列表");
+  });
+
+  document.getElementById("btnClear").addEventListener("click", ()=>{
+    if(!confirm("确认清空画布中的所有节点与连线？")) return;
+    state.nodes.clear();
+    state.links = [];
+    state.selectedNodeId = null;
+    state.selectedLinkId = null;
+    // keep focus as a node? We'll re-add focus as locked node
+    addOrUpdateNode(state.focus, { x: 520, y: 260 }, true);
+    renderAll();
+    toast("画布已清空");
+  });
+
+  document.getElementById("btnFit").addEventListener("click", fitView);
+  document.getElementById("btnZoomIn").addEventListener("click", ()=>zoomBy(1.12));
+  document.getElementById("btnZoomOut").addEventListener("click", ()=>zoomBy(1/1.12));
+
+  document.getElementById("btnCenterOn").addEventListener("click", ()=>{
+    if(!state.selectedNodeId) return toast("未选中节点");
+    centerOnNode(state.selectedNodeId);
+  });
+
+  btnAddLink.addEventListener("click", ()=>{
+    const from = relFrom.value;
+    const to = relTo.value;
+    const kind = relKind.value;
+    if(!from || !to) return toast("请选择起点/终点");
+    if(from === to) return toast("起点终点不能相同");
+    if(!state.nodes.has(from) || !state.nodes.has(to)) return toast("节点不存在（请先拖入画布）");
+
+    // dedupe
+    const exists = state.links.some(l=>l.from===from && l.to===to && l.kind===kind);
+    if(exists) return toast("该连线已存在");
+    state.links.push({ id: uid("ln"), from, to, kind });
+    state.selectedLinkId = null;
+    renderAll();
+    toast("已添加连线");
+  });
+
+  btnRemoveSelectedLink.addEventListener("click", ()=>{
+    if(!state.selectedLinkId) return toast("未选中连线");
+    state.links = state.links.filter(l=>l.id !== state.selectedLinkId);
+    state.selectedLinkId = null;
+    renderAll();
+    toast("已删除连线");
+  });
+
+  document.getElementById("btnExport").addEventListener("click", ()=>{
+    jsonBox.value = JSON.stringify(exportGraph(), null, 2);
+    toast("已导出 JSON");
+  });
+  document.getElementById("btnImport").addEventListener("click", ()=>{
+    try{
+      const obj = JSON.parse(jsonBox.value);
+      importGraph(obj);
+      toast("已导入 JSON");
+    }catch(err){
+      console.error(err);
+      toast("JSON 解析失败，请检查格式");
+    }
+  });
+
+  document.getElementById("btnDemo").addEventListener("click", ()=>{
+    // Load demo with a richer graph
+    loadDataset("宁德时代 (300750)", { resetCanvas:true, autoLayout:true, preloadEdges:true });
+    companySelect.value = "宁德时代 (300750)";
+    toast("已载入演示");
+  });
+
+  // Canvas: allow drop
+  canvasWrap.addEventListener("dragover", (e)=>{
+    e.preventDefault();
+  });
+  canvasWrap.addEventListener("drop", (e)=>{
+    e.preventDefault();
+    const raw = e.dataTransfer.getData("application/json");
+    if(!raw) return;
+    const item = JSON.parse(raw);
+    const {x,y} = screenToWorld(e.clientX, e.clientY);
+    addOrUpdateNode(item, {x, y}, false);
+    // Auto link to focus if meaningful
+    autoLinkToFocus(item);
+    renderAll();
+    toast(`已添加节点：${item.name}`);
+  });
+
+  // Pan with middle mouse or space+drag
+  let isPanning = false;
+  let panStart = null;
+
+  canvasWrap.addEventListener("mousedown", (e)=>{
+    // click blank to clear selection
+    if(e.target === canvasWrap){
+      state.selectedNodeId = null;
+      state.selectedLinkId = null;
+      renderSelection();
+      renderLinks();
+      return;
+    }
+    // pan by middle button
+    if(e.button === 1){
+      isPanning = true;
+      panStart = { x: e.clientX, y: e.clientY, panX, panY };
+      e.preventDefault();
+    }
+  });
+  window.addEventListener("mousemove", (e)=>{
+    if(!isPanning) return;
+    panX = panStart.panX + (e.clientX - panStart.x);
+    panY = panStart.panY + (e.clientY - panStart.y);
+    setTransform();
+    renderLinks();
+  });
+  window.addEventListener("mouseup", ()=>{
+    isPanning = false;
+  });
+
+  // Zoom with Ctrl + wheel
+  canvasWrap.addEventListener("wheel", (e)=>{
+    if(!e.ctrlKey) return;
+    e.preventDefault();
+    const delta = -e.deltaY;
+    const factor = delta > 0 ? 1.08 : 1/1.08;
+    zoomAt(e.clientX, e.clientY, factor);
+  }, { passive:false });
+
+  // Delete selected node
+  window.addEventListener("keydown", (e)=>{
+    if(e.key === "Delete" || e.key === "Backspace"){
+      if(state.selectedNodeId && state.selectedNodeId !== state.focus.id){
+        removeNode(state.selectedNodeId);
+        renderAll();
+        toast("已删除节点");
+      }
+    }
+  });
+
+  // Resize -> relayout svg size
+  window.addEventListener("resize", ()=>renderLinks());
+}
+
+/* ===========================
+   Dataset load
+   =========================== */
+function loadDataset(key, { resetCanvas=false, autoLayout=false, preloadEdges=false } = {}){
+  currentKey = key;
+  currentData = DATASETS[key];
+
+  state.focus = currentData.focus;
+
+  if(resetCanvas){
+    state.nodes.clear();
+    state.links = [];
+    state.selectedNodeId = null;
+    state.selectedLinkId = null;
+    // reset view
+    scale = 1;
+    panX = 0;
+    panY = 0;
+    setTransform();
+  }
+
+  // ensure focus node exists and is "locked"
+  addOrUpdateNode(state.focus, { x: 520, y: 260 }, true);
+
+  if(preloadEdges && currentData.edges){
+    // Pre-add some nodes referenced by edges for better demo
+    currentData.candidates.slice(0, 10).forEach((c, i)=>{
+      addOrUpdateNode(c, { x: 260 + (i%2)*500, y: 80 + Math.floor(i/2)*110 }, false);
+    });
+    // edges
+    currentData.edges.forEach(([from,to,kind])=>{
+      if(state.nodes.has(from) && state.nodes.has(to)){
+        state.links.push({ id: uid("ln"), from, to, kind });
+      }
+    });
+  }
+
+  if(autoLayout){
+    // optionally place a few candidates around focus (not all, keep canvas clean)
+    // We'll not auto-add nodes beyond focus unless preloadEdges is true
+  }
+
+  renderCandidates();
+  renderAll();
+  refreshRelationSelectors();
+  fitView();
+}
+
+/* ===========================
+   Candidates render / drag source
+   =========================== */
+function renderCandidates(){
+  candidateList.innerHTML = "";
+
+  const items = currentData.candidates
+    .filter(c=>{
+      if(filter === "all") return true;
+      return c.type === filter;
+    })
+    .filter(c=>{
+      if(!searchText) return true;
+      const hay = `${c.name} ${c.code} ${c.industry} ${c.segment}`.toLowerCase();
+      return hay.includes(searchText);
+    });
+
+  if(items.length === 0){
+    const empty = document.createElement("div");
+    empty.className = "muted";
+    empty.style.padding = "10px 2px";
+    empty.textContent = "无匹配候选公司。请调整筛选或搜索。";
+    candidateList.appendChild(empty);
+    return;
+  }
+
+  items.forEach(c=>{
+    const el = document.createElement("div");
+    el.className = "item";
+    el.draggable = true;
+    el.addEventListener("dragstart", (e)=>{
+      e.dataTransfer.setData("application/json", JSON.stringify(c));
+      e.dataTransfer.effectAllowed = "copy";
+    });
+
+    const dot = document.createElement("div");
+    dot.className = "dot " + (c.type==="up" ? "up" : c.type==="down" ? "down" : "peer");
+    const main = document.createElement("div");
+    main.style.flex = "1";
+
+    const t = document.createElement("div");
+    t.className = "item-title";
+    t.textContent = c.name;
+
+    const s = document.createElement("div");
+    s.className = "item-sub";
+    s.textContent = `${c.code} · ${c.industry} · ${c.segment}`;
+
+    const b = document.createElement("div");
+    b.className = "badge " + (c.type==="up" ? "b-up" : c.type==="down" ? "b-down" : "b-peer");
+    b.textContent = typeLabel(c.type);
+
+    main.appendChild(t);
+    main.appendChild(s);
+    el.appendChild(dot);
+    el.appendChild(main);
+    el.appendChild(b);
+
+    candidateList.appendChild(el);
+  });
+}
+
+/* ===========================
+   Nodes / Links
+   =========================== */
+function addOrUpdateNode(item, pos, locked){
+  const existing = state.nodes.get(item.id);
+  const base = {
+    id: item.id,
+    name: item.name,
+    code: item.code || "-",
+    industry: item.industry || "-",
+    type: item.type || "peer",
+    segment: item.segment || "-",
+    x: pos?.x ?? (existing?.x ?? 100),
+    y: pos?.y ?? (existing?.y ?? 100),
+    locked: !!locked
+  };
+  state.nodes.set(item.id, { ...(existing||{}), ...base });
+  refreshRelationSelectors();
+}
+
+function removeNode(nodeId){
+  state.nodes.delete(nodeId);
+  state.links = state.links.filter(l=>l.from!==nodeId && l.to!==nodeId);
+  if(state.selectedNodeId === nodeId) state.selectedNodeId = null;
+  if(state.selectedLinkId) {
+    const still = state.links.some(l=>l.id===state.selectedLinkId);
+    if(!still) state.selectedLinkId = null;
+  }
+  refreshRelationSelectors();
+  renderSelection();
+}
+
+function autoLinkToFocus(item){
+  if(item.id === state.focus.id) return;
+  const existsAny = state.links.some(l=> (l.from===item.id && l.to===state.focus.id) || (l.from===state.focus.id && l.to===item.id));
+  if(existsAny) return;
+
+  if(item.type === "up"){
+    state.links.push({ id: uid("ln"), from: item.id, to: state.focus.id, kind: "supply" });
+  }else if(item.type === "down"){
+    state.links.push({ id: uid("ln"), from: state.focus.id, to: item.id, kind: "demand" });
+  }else{
+    state.links.push({ id: uid("ln"), from: item.id, to: state.focus.id, kind: "coop" });
+  }
+}
+
+function quickLinkToFocus(nodeId){
+  if(nodeId === state.focus.id) return toast("目标公司无需建立到自身的关系");
+  const n = state.nodes.get(nodeId);
+  if(!n) return;
+  autoLinkToFocus(n);
+  renderAll();
+  toast("已与目标公司建立默认关系");
+}
+
+/* ===========================
+   Render canvas
+   =========================== */
+function renderAll(){
+  renderNodes();
+  renderLinks();
+  renderSelection();
+  refreshRelationSelectors();
+}
+
+function renderNodes(){
+  nodesLayer.innerHTML = "";
+
+  for(const node of state.nodes.values()){
+    const el = document.createElement("div");
+    el.className = "node" + (state.selectedNodeId === node.id ? " selected" : "");
+    el.style.left = node.x + "px";
+    el.style.top = node.y + "px";
+    el.dataset.nodeId = node.id;
+
+    const head = document.createElement("div");
+    head.className = "node-head";
+
+    const dot = document.createElement("div");
+    dot.className = "dot " + (node.type==="focus" ? "down" : typeTagClass(node.type));
+    dot.style.marginTop = "4px";
+
+    const main = document.createElement("div");
+    main.style.flex = "1";
+
+    const name = document.createElement("div");
+    name.className = "node-name";
+    name.textContent = node.name;
+
+    const meta = document.createElement("div");
+    meta.className = "node-meta";
+    meta.textContent = `${node.code} · ${node.industry}${node.segment ? " · " + node.segment : ""}`;
+
+    const tag = document.createElement("div");
+    tag.className = "tag " + (node.type==="up" ? "up" : node.type==="down" ? "down" : "peer");
+    tag.textContent = node.type==="focus" ? "目标公司" : typeLabel(node.type);
+
+    main.appendChild(name);
+    main.appendChild(meta);
+    main.appendChild(tag);
+
+    const actions = document.createElement("div");
+    actions.className = "node-actions";
+
+    const btnLink = document.createElement("button");
+    btnLink.className = "icon-btn";
+    btnLink.title = "快速与目标公司建立关系";
+    btnLink.textContent = "+";
+    btnLink.addEventListener("click", (e)=>{
+      e.stopPropagation();
+      quickLinkToFocus(node.id);
+    });
+
+    const btnX = document.createElement("button");
+    btnX.className = "icon-btn";
+    btnX.title = "删除节点";
+    btnX.textContent = "×";
+    btnX.addEventListener("click", (e)=>{
+      e.stopPropagation();
+      if(node.locked) return toast("目标公司节点不可删除");
+      removeNode(node.id);
+      renderAll();
+      toast("已删除节点");
+    });
+
+    actions.appendChild(btnLink);
+    actions.appendChild(btnX);
+
+    head.appendChild(dot);
+    head.appendChild(main);
+    head.appendChild(actions);
+
+    el.appendChild(head);
+
+    // select on click
+    el.addEventListener("mousedown", (e)=>{
+      // prevent starting drag on buttons
+      if(e.target.classList.contains("icon-btn")) return;
+      state.selectedNodeId = node.id;
+      state.selectedLinkId = null;
+      renderSelection();
+      renderLinks();
+    });
+
+    // drag node inside canvas
+    let dragging = false;
+    let start = null;
+
+    el.addEventListener("mousedown", (e)=>{
+      if(e.button !== 0) return;
+      if(node.locked) return; // lock focus node
+      if(e.target.classList.contains("icon-btn")) return;
+
+      dragging = true;
+      const world = screenToWorld(e.clientX, e.clientY);
+      start = { mx: world.x, my: world.y, nx: node.x, ny: node.y };
+      e.preventDefault();
+    });
+
+    window.addEventListener("mousemove", (e)=>{
+      if(!dragging) return;
+      const world = screenToWorld(e.clientX, e.clientY);
+      const dx = world.x - start.mx;
+      const dy = world.y - start.my;
+      const n = state.nodes.get(node.id);
+      n.x = start.nx + dx;
+      n.y = start.ny + dy;
+      el.style.left = n.x + "px";
+      el.style.top = n.y + "px";
+      renderLinks();
+    });
+
+    window.addEventListener("mouseup", ()=>{
+      if(!dragging) return;
+      dragging = false;
+    });
+
+    nodesLayer.appendChild(el);
+  }
+}
+
+function renderLinks(){
+  // Resize svg to match wrap (viewport is transformed; svg sits inside viewport)
+  // We'll draw in world coordinates, so set svg big enough.
+  const w = 4000, h = 2600; // virtual canvas
+  linksSvg.setAttribute("viewBox", `0 0 ${w} ${h}`);
+  linksSvg.setAttribute("width", w);
+  linksSvg.setAttribute("height", h);
+  linksSvg.innerHTML = "";
+
+  // Arrow marker
+  const defs = document.createElementNS("http://www.w3.org/2000/svg","defs");
+  const marker = document.createElementNS("http://www.w3.org/2000/svg","marker");
+  marker.setAttribute("id","arrow");
+  marker.setAttribute("markerWidth","10");
+  marker.setAttribute("markerHeight","10");
+  marker.setAttribute("refX","9");
+  marker.setAttribute("refY","3");
+  marker.setAttribute("orient","auto");
+  const path = document.createElementNS("http://www.w3.org/2000/svg","path");
+  path.setAttribute("d","M0,0 L10,3 L0,6 Z");
+  path.setAttribute("fill","#64748B");
+  marker.appendChild(path);
+  defs.appendChild(marker);
+  linksSvg.appendChild(defs);
+
+  // Draw each link
+  for(const link of state.links){
+    const a = state.nodes.get(link.from);
+    const b = state.nodes.get(link.to);
+    if(!a || !b) continue;
+
+    // approximate node centers
+    const ax = a.x + 110, ay = a.y + 34;
+    const bx = b.x + 110, by = b.y + 34;
+
+    const st = linkStyle(link.kind);
+    const isSel = state.selectedLinkId === link.id;
+
+    // curve control
+    const mx = (ax + bx) / 2;
+    const my = (ay + by) / 2;
+    const dx = bx - ax;
+    const dy = by - ay;
+    const norm = Math.sqrt(dx*dx + dy*dy) || 1;
+    const nx = -dy / norm;
+    const ny = dx / norm;
+    const bend = clamp(norm / 6, 22, 70);
+    const cx = mx + nx * bend;
+    const cy = my + ny * bend;
+
+    const p = document.createElementNS("http://www.w3.org/2000/svg","path");
+    p.setAttribute("d", `M ${ax} ${ay} Q ${cx} ${cy} ${bx} ${by}`);
+    p.setAttribute("fill","none");
+    p.setAttribute("stroke", st.color);
+    p.setAttribute("stroke-width", isSel ? (st.width + 1.2) : st.width);
+    p.setAttribute("stroke-dasharray", st.dash);
+    p.setAttribute("marker-end","url(#arrow)");
+    p.style.cursor = "pointer";
+    p.style.pointerEvents = "stroke";
+    p.addEventListener("click", (e)=>{
+      e.stopPropagation();
+      state.selectedLinkId = link.id;
+      state.selectedNodeId = null;
+      renderSelection();
+      renderLinks();
+    });
+    linksSvg.appendChild(p);
+
+    // label
+    const lbl = document.createElementNS("http://www.w3.org/2000/svg","text");
+    lbl.setAttribute("x", cx);
+    lbl.setAttribute("y", cy);
+    lbl.setAttribute("text-anchor","middle");
+    lbl.setAttribute("font-size","11");
+    lbl.setAttribute("font-family","-apple-system,BlinkMacSystemFont,Segoe UI,PingFang SC,Microsoft YaHei,sans-serif");
+    lbl.setAttribute("fill", isSel ? "#0F172A" : "#334155");
+    lbl.textContent = st.label;
+    linksSvg.appendChild(lbl);
+  }
+
+  // update arrow color to neutral (marker fill already set)
+}
+
+function renderSelection(){
+  const id = state.selectedNodeId;
+  if(!id){
+    selTitle.textContent = state.selectedLinkId ? "已选中连线" : "未选中节点";
+    selSub.textContent = state.selectedLinkId
+      ? "点击“删除选中连线”可移除该关系"
+      : "点击画布中的节点以查看信息与编辑关系";
+    selKV.style.display = "none";
+    return;
+  }
+
+  const n = state.nodes.get(id);
+  if(!n) return;
+
+  selTitle.textContent = n.name;
+  selSub.textContent = `${n.code} · ${n.industry} · ${n.segment}`;
+  selKV.style.display = "grid";
+  selCode.textContent = n.code;
+  selIndustry.textContent = n.industry;
+  selType.textContent = (n.type==="focus") ? "目标公司" : typeLabel(n.type);
+  selSegment.textContent = n.segment;
+
+  // prefill relation selectors
+  relFrom.value = id;
+  // best-effort pick
+  relTo.value = (id === state.focus.id) ? pickAnyOther(id) : state.focus.id;
+}
+
+function pickAnyOther(excludeId){
+  for(const k of state.nodes.keys()){
+    if(k !== excludeId) return k;
+  }
+  return excludeId;
+}
+
+function refreshRelationSelectors(){
+  const opts = Array.from(state.nodes.values())
+    .sort((a,b)=> (a.type==="focus" ? -1 : 1) - (b.type==="focus" ? -1 : 1) || a.name.localeCompare(b.name,"zh"));
+
+  const curFrom = relFrom.value;
+  const curTo = relTo.value;
+
+  relFrom.innerHTML = "";
+  relTo.innerHTML = "";
+
+  for(const n of opts){
+    const o1 = document.createElement("option");
+    o1.value = n.id;
+    o1.textContent = `${n.name} (${n.code})`;
+    relFrom.appendChild(o1);
+
+    const o2 = document.createElement("option");
+    o2.value = n.id;
+    o2.textContent = `${n.name} (${n.code})`;
+    relTo.appendChild(o2);
+  }
+
+  // restore if possible
+  if(curFrom && state.nodes.has(curFrom)) relFrom.value = curFrom;
+  if(curTo && state.nodes.has(curTo)) relTo.value = curTo;
+
+  // if empty
+  if(!relFrom.value && opts[0]) relFrom.value = opts[0].id;
+  if(!relTo.value && opts[1]) relTo.value = opts[1].id;
+}
+
+/* ===========================
+   View controls
+   =========================== */
+function zoomBy(factor){
+  const rect = canvasWrap.getBoundingClientRect();
+  zoomAt(rect.left + rect.width/2, rect.top + rect.height/2, factor);
+}
+function zoomAt(clientX, clientY, factor){
+  const before = screenToWorld(clientX, clientY);
+  scale = clamp(scale * factor, 0.45, 2.2);
+  const after = screenToWorld(clientX, clientY);
+  // adjust pan so that the point under cursor stays
+  panX += (after.x - before.x) * scale;
+  panY += (after.y - before.y) * scale;
+  setTransform();
+  renderLinks();
+}
+function fitView(){
+  // Fit bounding box of nodes into canvas
+  const nodes = Array.from(state.nodes.values());
+  if(nodes.length === 0) return;
+
+  let minX=Infinity, minY=Infinity, maxX=-Infinity, maxY=-Infinity;
+  nodes.forEach(n=>{
+    minX = Math.min(minX, n.x);
+    minY = Math.min(minY, n.y);
+    maxX = Math.max(maxX, n.x + 240);
+    maxY = Math.max(maxY, n.y + 110);
+  });
+
+  const rect = canvasWrap.getBoundingClientRect();
+  const pad = 60;
+  const bw = (maxX - minX) + pad*2;
+  const bh = (maxY - minY) + pad*2;
+
+  const sx = rect.width / bw;
+  const sy = rect.height / bh;
+  scale = clamp(Math.min(sx, sy), 0.5, 1.4);
+
+  panX = -minX * scale + pad * scale;
+  panY = -minY * scale + pad * scale;
+
+  setTransform();
+  renderLinks();
+  toast("已适配视图");
+}
+function centerOnNode(nodeId){
+  const n = state.nodes.get(nodeId);
+  if(!n) return;
+  const rect = canvasWrap.getBoundingClientRect();
+  const cx = n.x + 120;
+  const cy = n.y + 45;
+  panX = rect.width/2 - cx*scale;
+  panY = rect.height/2 - cy*scale;
+  setTransform();
+  renderLinks();
+  toast("已定位到节点");
+}
+
+/* ===========================
+   Import / Export
+   =========================== */
+function exportGraph(){
+  return {
+    version: "1.0",
+    focusKey: currentKey,
+    focus: state.focus,
+    view: { scale, panX, panY },
+    nodes: Array.from(state.nodes.values()).map(n=>({
+      id:n.id, name:n.name, code:n.code, industry:n.industry, type:n.type, segment:n.segment, x:n.x, y:n.y, locked: !!n.locked
+    })),
+    links: state.links.map(l=>({ id:l.id, from:l.from, to:l.to, kind:l.kind }))
+  };
+}
+function importGraph(obj){
+  if(!obj || !obj.nodes || !obj.links) throw new Error("Bad schema");
+
+  // keep current focus if not provided
+  if(obj.focus){
+    state.focus = obj.focus;
+  }
+  state.nodes.clear();
+  obj.nodes.forEach(n=>{
+    state.nodes.set(n.id, { ...n, locked: !!n.locked });
+  });
+
+  // ensure focus exists and locked
+  if(state.focus && !state.nodes.has(state.focus.id)){
+    state.nodes.set(state.focus.id, { ...state.focus, x: 520, y: 260, locked:true });
+  }else if(state.focus && state.nodes.has(state.focus.id)){
+    state.nodes.get(state.focus.id).locked = true;
+    state.nodes.get(state.focus.id).type = "focus";
+  }
+
+  state.links = obj.links.map(l=>({ ...l }));
+  state.selectedNodeId = null;
+  state.selectedLinkId = null;
+
+  if(obj.view){
+    scale = clamp(obj.view.scale ?? 1, 0.45, 2.2);
+    panX = obj.view.panX ?? 0;
+    panY = obj.view.panY ?? 0;
+    setTransform();
+  }else{
+    fitView();
+  }
+
+  renderAll();
+  refreshRelationSelectors();
+}
+
+/* ===========================
+   Kick off
+   =========================== */
+init();
+</script>
+</body>
+</html>

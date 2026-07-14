@@ -1,0 +1,505 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>A股洞察平台 - UI 预览</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif; background: #F8FAFC; color: #0F172A; }
+
+  /* NAV */
+  nav { background: #0F172A; padding: 0 24px; height: 60px; display: flex; align-items: center; justify-content: space-between; box-shadow: 0 1px 3px rgba(0,0,0,0.3); }
+  .nav-left { display: flex; align-items: center; gap: 12px; }
+  .logo-icon { width: 32px; height: 32px; background: #2563EB; border-radius: 8px; display: flex; align-items: center; justify-content: center; font-weight: 700; color: white; font-size: 14px; }
+  .brand-name { font-size: 18px; font-weight: 700; color: white; }
+  .brand-sub { font-size: 12px; color: #94A3B8; margin-left: 4px; }
+  .nav-right { display: flex; align-items: center; gap: 24px; }
+  .nav-link { font-size: 13px; color: #CBD5E1; text-decoration: none; cursor: pointer; }
+  .nav-link:hover { color: white; }
+  .btn-pro { background: #2563EB; color: white; border: none; padding: 7px 16px; border-radius: 8px; font-size: 13px; cursor: pointer; font-weight: 500; }
+  .avatar { width: 32px; height: 32px; background: #475569; border-radius: 50%; display: flex; align-items: center; justify-content: center; color: white; font-size: 12px; cursor: pointer; }
+
+  /* SEARCH */
+  .search-section { background: linear-gradient(135deg, #0F172A 0%, #1E3A5F 100%); padding: 40px 24px; text-align: center; }
+  .search-title { font-size: 28px; font-weight: 700; color: white; margin-bottom: 8px; }
+  .search-sub { font-size: 13px; color: #94A3B8; margin-bottom: 20px; }
+  .search-bar { display: flex; gap: 10px; max-width: 600px; margin: 0 auto 12px; }
+  .search-input { flex: 1; padding: 12px 16px; border-radius: 12px; border: none; font-size: 13px; color: #0F172A; outline: none; box-shadow: 0 4px 12px rgba(0,0,0,0.2); }
+  .search-btn { background: #2563EB; color: white; border: none; padding: 12px 24px; border-radius: 12px; font-size: 13px; font-weight: 500; cursor: pointer; white-space: nowrap; }
+  .hot-tags { display: flex; gap: 8px; justify-content: center; flex-wrap: wrap; }
+  .hot-tag { font-size: 11px; color: #94A3B8; background: #1E293B; padding: 4px 12px; border-radius: 999px; cursor: pointer; border: 1px solid #334155; }
+
+  /* MAIN */
+  .main { max-width: 1280px; margin: 0 auto; padding: 28px 24px; }
+
+  /* QUICK STATS */
+  .stats-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin-bottom: 24px; }
+  .stat-card { background: white; border-radius: 16px; padding: 20px; text-align: center; border: 1px solid #F1F5F9; box-shadow: 0 1px 2px rgba(0,0,0,0.04); }
+  .stat-value { font-size: 28px; font-weight: 700; color: #2563EB; margin-bottom: 4px; }
+  .stat-label { font-size: 13px; font-weight: 500; color: #334155; }
+  .stat-sub { font-size: 11px; color: #94A3B8; margin-top: 2px; }
+
+  /* CONTENT GRID */
+  .content-grid { display: grid; grid-template-columns: 2fr 1fr; gap: 24px; }
+  .main-col { display: flex; flex-direction: column; gap: 20px; }
+  .side-col { display: flex; flex-direction: column; gap: 20px; }
+
+  /* CARD */
+  .card { background: white; border-radius: 16px; padding: 24px; border: 1px solid #F1F5F9; box-shadow: 0 1px 2px rgba(0,0,0,0.04); }
+  .card-title { font-size: 15px; font-weight: 600; color: #0F172A; margin-bottom: 16px; }
+
+  /* HEALTH REPORT */
+  .report-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 20px; }
+  .stock-name { font-size: 22px; font-weight: 700; color: #0F172A; }
+  .stock-tags { display: flex; gap: 6px; margin-top: 6px; }
+  .stock-tag { font-size: 11px; color: #64748B; background: #F1F5F9; padding: 2px 8px; border-radius: 4px; }
+  .report-date { font-size: 12px; color: #94A3B8; margin-top: 4px; }
+  .score-box { text-align: center; }
+  .score-num { font-size: 52px; font-weight: 700; color: #2563EB; line-height: 1; }
+  .score-label { font-size: 11px; color: #94A3B8; margin-top: 4px; }
+  .badge { display: inline-flex; align-items: center; padding: 2px 10px; border-radius: 999px; font-size: 11px; font-weight: 500; margin-top: 6px; }
+  .badge-excellent { background: #ECFDF5; color: #059669; border: 1px solid #A7F3D0; }
+  .badge-good { background: #EFF6FF; color: #2563EB; border: 1px solid #BFDBFE; }
+  .badge-warn { background: #FFFBEB; color: #D97706; border: 1px solid #FDE68A; }
+  .badge-danger { background: #FEF2F2; color: #DC2626; border: 1px solid #FECACA; }
+
+  /* DIMENSIONS */
+  .dim-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 16px; }
+  .dim-card { background: #F8FAFC; border-radius: 12px; padding: 14px; border: 1px solid #F1F5F9; }
+  .dim-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
+  .dim-name { font-size: 13px; font-weight: 500; color: #334155; }
+  .dim-score { font-size: 17px; font-weight: 700; color: #0F172A; }
+  .progress-track { background: #E2E8F0; border-radius: 999px; height: 5px; margin-bottom: 6px; }
+  .progress-fill { background: #2563EB; border-radius: 999px; height: 5px; }
+  .dim-detail { font-size: 11px; color: #94A3B8; }
+
+  /* AI BOX */
+  .ai-box { background: #EFF6FF; border: 1px solid #BFDBFE; border-radius: 12px; padding: 14px; margin-bottom: 14px; }
+  .ai-header { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+  .ai-icon { width: 22px; height: 22px; background: #2563EB; border-radius: 5px; display: flex; align-items: center; justify-content: center; color: white; font-size: 10px; font-weight: 700; }
+  .ai-title { font-size: 13px; font-weight: 600; color: #1E40AF; }
+  .ai-text { font-size: 12px; color: #1D4ED8; line-height: 1.7; }
+  .ai-text strong { color: #1E40AF; }
+
+  /* REPORT FOOTER */
+  .report-footer { display: flex; align-items: center; gap: 8px; }
+  .risk-label { font-size: 11px; color: #64748B; }
+  .risk-ok { font-size: 11px; background: #ECFDF5; color: #059669; padding: 2px 10px; border-radius: 999px; }
+  .export-btn { margin-left: auto; font-size: 12px; color: #2563EB; cursor: pointer; font-weight: 500; }
+
+  /* CHARTS ROW */
+  .charts-row { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+
+  /* SVG CHARTS */
+  .chart-wrap { width: 100%; height: 180px; }
+
+  /* RADAR */
+  .radar-wrap { width: 100%; height: 200px; display: flex; align-items: center; justify-content: center; }
+
+  /* ALERTS */
+  .alert-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px; }
+  .alert-count { font-size: 11px; background: #FEE2E2; color: #DC2626; padding: 2px 10px; border-radius: 999px; font-weight: 500; }
+  .alert-list { display: flex; flex-direction: column; gap: 10px; }
+  .alert-item { border-radius: 10px; padding: 10px 12px; border: 1px solid; }
+  .alert-danger { background: #FEF2F2; border-color: #FECACA; }
+  .alert-warning { background: #FFFBEB; border-color: #FDE68A; }
+  .alert-info { background: #EFF6FF; border-color: #BFDBFE; }
+  .alert-inner { display: flex; gap: 10px; align-items: flex-start; }
+  .alert-dot { width: 8px; height: 8px; border-radius: 50%; margin-top: 5px; flex-shrink: 0; }
+  .dot-danger { background: #EF4444; }
+  .dot-warning { background: #F59E0B; }
+  .dot-info { background: #3B82F6; }
+  .alert-stock { font-size: 13px; font-weight: 600; color: #0F172A; }
+  .alert-code { font-size: 11px; color: #94A3B8; margin-left: 4px; }
+  .alert-badge { font-size: 10px; padding: 1px 7px; border-radius: 4px; margin-left: 4px; }
+  .ab-danger { background: #FEE2E2; color: #DC2626; }
+  .ab-warning { background: #FEF3C7; color: #D97706; }
+  .ab-info { background: #DBEAFE; color: #2563EB; }
+  .alert-msg { font-size: 11px; line-height: 1.5; margin-top: 3px; }
+  .msg-danger { color: #991B1B; }
+  .msg-warning { color: #92400E; }
+  .msg-info { color: #1E40AF; }
+  .alert-date { font-size: 10px; color: #94A3B8; margin-top: 3px; }
+  .alert-more { width: 100%; margin-top: 12px; font-size: 13px; color: #2563EB; font-weight: 500; text-align: center; cursor: pointer; background: none; border: none; }
+
+  /* PRO CARD */
+  .pro-card { background: linear-gradient(135deg, #2563EB 0%, #1E40AF 100%); border-radius: 16px; padding: 20px; color: white; }
+  .pro-title { font-size: 17px; font-weight: 700; margin-bottom: 4px; }
+  .pro-sub { font-size: 12px; color: #BFDBFE; margin-bottom: 14px; }
+  .pro-features { list-style: none; display: flex; flex-direction: column; gap: 6px; margin-bottom: 16px; }
+  .pro-features li { font-size: 12px; color: #BFDBFE; display: flex; align-items: center; gap: 6px; }
+  .check { color: #34D399; font-weight: 700; }
+  .pro-btn { width: 100%; background: white; color: #1E40AF; border: none; padding: 10px; border-radius: 10px; font-size: 13px; font-weight: 600; cursor: pointer; }
+  .pro-note { text-align: center; font-size: 11px; color: #93C5FD; margin-top: 8px; }
+
+  /* FOOTER */
+  footer { border-top: 1px solid #E2E8F0; margin-top: 40px; padding: 24px; }
+  .footer-inner { max-width: 1280px; margin: 0 auto; display: flex; justify-content: space-between; align-items: center; }
+  .footer-copy { font-size: 12px; color: #94A3B8; }
+  .footer-links { display: flex; gap: 20px; }
+  .footer-link { font-size: 12px; color: #94A3B8; text-decoration: none; cursor: pointer; }
+</style>
+</head>
+<body>
+
+<!-- NAV -->
+<nav>
+  <div class="nav-left">
+    <div class="logo-icon">A</div>
+    <span class="brand-name">A股洞察</span>
+    <span class="brand-sub">读懂每一家公司</span>
+  </div>
+  <div class="nav-right">
+    <a class="nav-link">财务体检</a>
+    <a class="nav-link">历史回溯</a>
+    <a class="nav-link">基因图谱</a>
+    <a class="nav-link">预警中心</a>
+    <a class="nav-link">我的组合</a>
+    <button class="btn-pro">升级 Pro</button>
+    <div class="avatar">用</div>
+  </div>
+</nav>
+
+<!-- SEARCH -->
+<div class="search-section">
+  <div class="search-title">财务体检</div>
+  <div class="search-sub">输入股票代码或名称，5秒生成专业财务健康报告</div>
+  <div class="search-bar">
+    <input class="search-input" type="text" value="600519" placeholder="输入股票代码或名称，如：600519 或 贵州茅台">
+    <button class="search-btn">开始体检</button>
+  </div>
+  <div class="hot-tags">
+    <span class="hot-tag">600519 贵州茅台</span>
+    <span class="hot-tag">000858 五粮液</span>
+    <span class="hot-tag">300750 宁德时代</span>
+    <span class="hot-tag">600036 招商银行</span>
+  </div>
+</div>
+
+<!-- MAIN -->
+<div class="main">
+
+  <!-- QUICK STATS -->
+  <div class="stats-grid">
+    <div class="stat-card">
+      <div class="stat-value">5,300+</div>
+      <div class="stat-label">覆盖上市公司</div>
+      <div class="stat-sub">A股全量</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-value">30年</div>
+      <div class="stat-label">历史财务数据</div>
+      <div class="stat-sub">最早追溯至1990</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-value">200+</div>
+      <div class="stat-label">财务指标</div>
+      <div class="stat-sub">每家公司</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-value">48条</div>
+      <div class="stat-label">预警规则</div>
+      <div class="stat-sub">持续更新</div>
+    </div>
+  </div>
+
+  <!-- CONTENT GRID -->
+  <div class="content-grid">
+
+    <!-- MAIN COL -->
+    <div class="main-col">
+
+      <!-- HEALTH REPORT CARD -->
+      <div class="card">
+        <div class="report-header">
+          <div>
+            <div class="stock-name">贵州茅台</div>
+            <div class="stock-tags">
+              <span class="stock-tag">600519</span>
+              <span class="stock-tag">白酒</span>
+              <span class="stock-tag">消费</span>
+            </div>
+            <div class="report-date">报告日期：2024年12月31日 · 数据更新于 2026-06-30</div>
+          </div>
+          <div class="score-box">
+            <div class="score-num">92</div>
+            <div class="score-label">综合健康评分</div>
+            <div><span class="badge badge-excellent">优秀</span></div>
+          </div>
+        </div>
+
+        <div class="dim-grid">
+          <div class="dim-card">
+            <div class="dim-header"><span class="dim-name">盈利能力</span><span class="dim-score">95</span></div>
+            <div class="progress-track"><div class="progress-fill" style="width:95%"></div></div>
+            <div class="dim-detail">ROE 32.1%，行业Top 2%</div>
+          </div>
+          <div class="dim-card">
+            <div class="dim-header"><span class="dim-name">成长性</span><span class="dim-score">88</span></div>
+            <div class="progress-track"><div class="progress-fill" style="width:88%"></div></div>
+            <div class="dim-detail">营收CAGR 15.2%（5年）</div>
+          </div>
+          <div class="dim-card">
+            <div class="dim-header"><span class="dim-name">财务安全</span><span class="dim-score">96</span></div>
+            <div class="progress-track"><div class="progress-fill" style="width:96%"></div></div>
+            <div class="dim-detail">资产负债率 21%，极低</div>
+          </div>
+          <div class="dim-card">
+            <div class="dim-header"><span class="dim-name">现金质量</span><span class="dim-score">91</span></div>
+            <div class="progress-track"><div class="progress-fill" style="width:91%"></div></div>
+            <div class="dim-detail">现金流/净利润 1.11</div>
+          </div>
+          <div class="dim-card">
+            <div class="dim-header"><span class="dim-name">经营效率</span><span class="dim-score">82</span></div>
+            <div class="progress-track"><div class="progress-fill" style="width:82%"></div></div>
+            <div class="dim-detail">应收账款周转 8天</div>
+          </div>
+          <div class="dim-card">
+            <div class="dim-header"><span class="dim-name">股东回报</span><span class="dim-score">90</span></div>
+            <div class="progress-track"><div class="progress-fill" style="width:90%"></div></div>
+            <div class="dim-detail">分红率 51.9%</div>
+          </div>
+        </div>
+
+        <div class="ai-box">
+          <div class="ai-header">
+            <div class="ai-icon">AI</div>
+            <span class="ai-title">AI 财务解读</span>
+          </div>
+          <div class="ai-text">
+            贵州茅台财务质量处于A股顶尖水平。ROE连续10年超过28%，且主要由净利率驱动（非杠杆），说明商业模式护城河极深。
+            现金流质量优秀（经营现金流持续高于净利润），利润含金量高。唯一需关注的是成长性有所放缓，
+            近3年营收增速从20%+降至15%左右，但在当前消费环境下仍属优秀。
+            <strong> 综合评级：高质量核心资产。</strong>
+          </div>
+        </div>
+
+        <div class="report-footer">
+          <span class="risk-label">风险提示：</span>
+          <span class="risk-ok">无重大风险信号</span>
+          <span class="export-btn">导出PDF报告 →</span>
+        </div>
+      </div>
+
+      <!-- CHARTS ROW -->
+      <div class="charts-row">
+        <!-- LINE CHART -->
+        <div class="card" style="padding:20px;">
+          <div class="card-title">ROE / ROA 趋势</div>
+          <svg viewBox="0 0 340 160" class="chart-wrap">
+            <!-- Grid -->
+            <line x1="40" y1="10" x2="40" y2="130" stroke="#F1F5F9" stroke-width="1"/>
+            <line x1="40" y1="130" x2="330" y2="130" stroke="#F1F5F9" stroke-width="1"/>
+            <line x1="40" y1="10" x2="330" y2="10" stroke="#F1F5F9" stroke-width="1" stroke-dasharray="3,3"/>
+            <line x1="40" y1="50" x2="330" y2="50" stroke="#F1F5F9" stroke-width="1" stroke-dasharray="3,3"/>
+            <line x1="40" y1="90" x2="330" y2="90" stroke="#F1F5F9" stroke-width="1" stroke-dasharray="3,3"/>
+            <!-- Y labels -->
+            <text x="32" y="14" font-size="9" fill="#94A3B8" text-anchor="end">35</text>
+            <text x="32" y="54" font-size="9" fill="#94A3B8" text-anchor="end">25</text>
+            <text x="32" y="94" font-size="9" fill="#94A3B8" text-anchor="end">15</text>
+            <text x="32" y="134" font-size="9" fill="#94A3B8" text-anchor="end">5</text>
+            <!-- X labels -->
+            <text x="58" y="145" font-size="9" fill="#94A3B8" text-anchor="middle">2019</text>
+            <text x="106" y="145" font-size="9" fill="#94A3B8" text-anchor="middle">2020</text>
+            <text x="154" y="145" font-size="9" fill="#94A3B8" text-anchor="middle">2021</text>
+            <text x="202" y="145" font-size="9" fill="#94A3B8" text-anchor="middle">2022</text>
+            <text x="250" y="145" font-size="9" fill="#94A3B8" text-anchor="middle">2023</text>
+            <text x="298" y="145" font-size="9" fill="#94A3B8" text-anchor="middle">2024</text>
+            <!-- ROE line (blue) -->
+            <polyline points="58,52 106,46 154,42 202,48 250,40 298,36" fill="none" stroke="#2563EB" stroke-width="2" stroke-linejoin="round"/>
+            <circle cx="58" cy="52" r="3" fill="#2563EB"/><circle cx="106" cy="46" r="3" fill="#2563EB"/>
+            <circle cx="154" cy="42" r="3" fill="#2563EB"/><circle cx="202" cy="48" r="3" fill="#2563EB"/>
+            <circle cx="250" cy="40" r="3" fill="#2563EB"/><circle cx="298" cy="36" r="3" fill="#2563EB"/>
+            <!-- ROA line (green) -->
+            <polyline points="58,74 106,68 154,64 202,70 250,62 298,58" fill="none" stroke="#10B981" stroke-width="2" stroke-linejoin="round"/>
+            <circle cx="58" cy="74" r="3" fill="#10B981"/><circle cx="106" cy="68" r="3" fill="#10B981"/>
+            <circle cx="154" cy="64" r="3" fill="#10B981"/><circle cx="202" cy="70" r="3" fill="#10B981"/>
+            <circle cx="250" cy="62" r="3" fill="#10B981"/><circle cx="298" cy="58" r="3" fill="#10B981"/>
+            <!-- Cash quality line (yellow) -->
+            <polyline points="58,92 106,84 154,88 202,80 250,86 298,82" fill="none" stroke="#F59E0B" stroke-width="2" stroke-linejoin="round"/>
+            <circle cx="58" cy="92" r="3" fill="#F59E0B"/><circle cx="106" cy="84" r="3" fill="#F59E0B"/>
+            <circle cx="154" cy="88" r="3" fill="#F59E0B"/><circle cx="202" cy="80" r="3" fill="#F59E0B"/>
+            <circle cx="250" cy="86" r="3" fill="#F59E0B"/><circle cx="298" cy="82" r="3" fill="#F59E0B"/>
+            <!-- Legend -->
+            <rect x="42" y="155" width="8" height="3" fill="#2563EB" rx="1"/>
+            <text x="54" y="158" font-size="9" fill="#64748B">ROE (%)</text>
+            <rect x="100" y="155" width="8" height="3" fill="#10B981" rx="1"/>
+            <text x="112" y="158" font-size="9" fill="#64748B">ROA (%)</text>
+            <rect x="155" y="155" width="8" height="3" fill="#F59E0B" rx="1"/>
+            <text x="167" y="158" font-size="9" fill="#64748B">现金质量</text>
+          </svg>
+        </div>
+
+        <!-- BAR CHART -->
+        <div class="card" style="padding:20px;">
+          <div class="card-title">营收与利润（亿元）</div>
+          <svg viewBox="0 0 340 160" class="chart-wrap">
+            <!-- Grid -->
+            <line x1="40" y1="10" x2="40" y2="130" stroke="#F1F5F9" stroke-width="1"/>
+            <line x1="40" y1="130" x2="330" y2="130" stroke="#F1F5F9" stroke-width="1"/>
+            <line x1="40" y1="10" x2="330" y2="10" stroke="#F1F5F9" stroke-width="1" stroke-dasharray="3,3"/>
+            <line x1="40" y1="50" x2="330" y2="50" stroke="#F1F5F9" stroke-width="1" stroke-dasharray="3,3"/>
+            <line x1="40" y1="90" x2="330" y2="90" stroke="#F1F5F9" stroke-width="1" stroke-dasharray="3,3"/>
+            <!-- Y labels -->
+            <text x="32" y="14" font-size="9" fill="#94A3B8" text-anchor="end">2000</text>
+            <text x="32" y="54" font-size="9" fill="#94A3B8" text-anchor="end">1200</text>
+            <text x="32" y="94" font-size="9" fill="#94A3B8" text-anchor="end">600</text>
+            <!-- X labels -->
+            <text x="62" y="145" font-size="9" fill="#94A3B8" text-anchor="middle">2019</text>
+            <text x="106" y="145" font-size="9" fill="#94A3B8" text-anchor="middle">2020</text>
+            <text x="150" y="145" font-size="9" fill="#94A3B8" text-anchor="middle">2021</text>
+            <text x="194" y="145" font-size="9" fill="#94A3B8" text-anchor="middle">2022</text>
+            <text x="238" y="145" font-size="9" fill="#94A3B8" text-anchor="middle">2023</text>
+            <text x="282" y="145" font-size="9" fill="#94A3B8" text-anchor="middle">2024</text>
+            <!-- Bars 2019 -->
+            <rect x="48" y="79" width="12" height="51" fill="#BFDBFE" rx="2 2 0 0"/>
+            <rect x="62" y="101" width="12" height="29" fill="#2563EB" rx="2 2 0 0"/>
+            <!-- 2020 -->
+            <rect x="92" y="72" width="12" height="58" fill="#BFDBFE" rx="2 2 0 0"/>
+            <rect x="106" y="96" width="12" height="34" fill="#2563EB" rx="2 2 0 0"/>
+            <!-- 2021 -->
+            <rect x="136" y="65" width="12" height="65" fill="#BFDBFE" rx="2 2 0 0"/>
+            <rect x="150" y="91" width="12" height="39" fill="#2563EB" rx="2 2 0 0"/>
+            <!-- 2022 -->
+            <rect x="180" y="55" width="12" height="75" fill="#BFDBFE" rx="2 2 0 0"/>
+            <rect x="194" y="83" width="12" height="47" fill="#2563EB" rx="2 2 0 0"/>
+            <!-- 2023 -->
+            <rect x="224" y="44" width="12" height="86" fill="#BFDBFE" rx="2 2 0 0"/>
+            <rect x="238" y="74" width="12" height="56" fill="#2563EB" rx="2 2 0 0"/>
+            <!-- 2024 -->
+            <rect x="268" y="30" width="12" height="100" fill="#BFDBFE" rx="2 2 0 0"/>
+            <rect x="282" y="65" width="12" height="65" fill="#2563EB" rx="2 2 0 0"/>
+            <!-- Legend -->
+            <rect x="42" y="155" width="8" height="8" fill="#BFDBFE" rx="1"/>
+            <text x="54" y="162" font-size="9" fill="#64748B">营业收入</text>
+            <rect x="105" y="155" width="8" height="8" fill="#2563EB" rx="1"/>
+            <text x="117" y="162" font-size="9" fill="#64748B">净利润</text>
+          </svg>
+        </div>
+      </div>
+
+    </div><!-- /main-col -->
+
+    <!-- SIDE COL -->
+    <div class="side-col">
+
+      <!-- RADAR CHART -->
+      <div class="card">
+        <div class="card-title">六维健康雷达</div>
+        <div class="radar-wrap">
+          <svg viewBox="0 0 220 200" width="220" height="200">
+            <!-- Radar background hexagons -->
+            <polygon points="110,20 185,62 185,138 110,180 35,138 35,62" fill="none" stroke="#E2E8F0" stroke-width="1"/>
+            <polygon points="110,44 167,75 167,125 110,156 53,125 53,75" fill="none" stroke="#E2E8F0" stroke-width="1"/>
+            <polygon points="110,68 149,88 149,112 110,132 71,112 71,88" fill="none" stroke="#E2E8F0" stroke-width="1"/>
+            <!-- Axis lines -->
+            <line x1="110" y1="20" x2="110" y2="180" stroke="#E2E8F0" stroke-width="1"/>
+            <line x1="35" y1="62" x2="185" y2="138" stroke="#E2E8F0" stroke-width="1"/>
+            <line x1="185" y1="62" x2="35" y2="138" stroke="#E2E8F0" stroke-width="1"/>
+            <!-- Data polygon (scores: 95,88,96,91,82,90 -> scaled) -->
+            <polygon points="110,23 181,65 183,136 110,174 40,130 37,66"
+              fill="#2563EB" fill-opacity="0.15" stroke="#2563EB" stroke-width="2"/>
+            <!-- Data points -->
+            <circle cx="110" cy="23" r="3" fill="#2563EB"/>
+            <circle cx="181" cy="65" r="3" fill="#2563EB"/>
+            <circle cx="183" cy="136" r="3" fill="#2563EB"/>
+            <circle cx="110" cy="174" r="3" fill="#2563EB"/>
+            <circle cx="40" cy="130" r="3" fill="#2563EB"/>
+            <circle cx="37" cy="66" r="3" fill="#2563EB"/>
+            <!-- Labels -->
+            <text x="110" y="13" font-size="10" fill="#64748B" text-anchor="middle">盈利能力</text>
+            <text x="196" y="62" font-size="10" fill="#64748B" text-anchor="start">成长性</text>
+            <text x="196" y="142" font-size="10" fill="#64748B" text-anchor="start">财务安全</text>
+            <text x="110" y="194" font-size="10" fill="#64748B" text-anchor="middle">现金质量</text>
+            <text x="24" y="142" font-size="10" fill="#64748B" text-anchor="end">经营效率</text>
+            <text x="24" y="62" font-size="10" fill="#64748B" text-anchor="end">股东回报</text>
+          </svg>
+        </div>
+      </div>
+
+      <!-- ALERT CENTER -->
+      <div class="card">
+        <div class="alert-header">
+          <span class="card-title" style="margin-bottom:0">财务异常预警</span>
+          <span class="alert-count">1 高风险</span>
+        </div>
+        <div class="alert-list">
+          <div class="alert-item alert-danger">
+            <div class="alert-inner">
+              <div class="alert-dot dot-danger"></div>
+              <div>
+                <div><span class="alert-stock">宁德时代</span><span class="alert-code">300750</span><span class="alert-badge ab-danger">高风险</span></div>
+                <div class="alert-msg msg-danger">商誉占净资产比例达34%，超过预警阈值30%</div>
+                <div class="alert-date">2026-06-26</div>
+              </div>
+            </div>
+          </div>
+          <div class="alert-item alert-warning">
+            <div class="alert-inner">
+              <div class="alert-dot dot-warning"></div>
+              <div>
+                <div><span class="alert-stock">海康威视</span><span class="alert-code">002415</span><span class="alert-badge ab-warning">需关注</span></div>
+                <div class="alert-msg msg-warning">经营现金流/净利润连续2年低于0.8，需关注利润质量</div>
+                <div class="alert-date">2026-06-27</div>
+              </div>
+            </div>
+          </div>
+          <div class="alert-item alert-info">
+            <div class="alert-inner">
+              <div class="alert-dot dot-info"></div>
+              <div>
+                <div><span class="alert-stock">五粮液</span><span class="alert-code">000858</span><span class="alert-badge ab-info">提示</span></div>
+                <div class="alert-msg msg-info">应收账款周转天数改善，较去年同期下降12天</div>
+                <div class="alert-date">2026-06-28</div>
+              </div>
+            </div>
+          </div>
+          <div class="alert-item alert-info">
+            <div class="alert-inner">
+              <div class="alert-dot dot-info"></div>
+              <div>
+                <div><span class="alert-stock">招商银行</span><span class="alert-code">600036</span><span class="alert-badge ab-info">提示</span></div>
+                <div class="alert-msg msg-info">ROE连续5年保持在15%以上，经营稳定性优秀</div>
+                <div class="alert-date">2026-06-25</div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <button class="alert-more">查看全部预警 →</button>
+      </div>
+
+      <!-- PRO UPSELL -->
+      <div class="pro-card">
+        <div class="pro-title">升级 Pro</div>
+        <div class="pro-sub">解锁全部专业功能，像分析师一样投资</div>
+        <ul class="pro-features">
+          <li><span class="check">✓</span> 无限财务体检报告</li>
+          <li><span class="check">✓</span> 历史情景回溯引擎</li>
+          <li><span class="check">✓</span> 企业经营基因图谱</li>
+          <li><span class="check">✓</span> 组合压力测试</li>
+          <li><span class="check">✓</span> PDF报告导出</li>
+          <li><span class="check">✓</span> 数据API访问</li>
+        </ul>
+        <button class="pro-btn">99元/月 · 立即升级</button>
+        <div class="pro-note">年付 799元，节省 389元</div>
+      </div>
+
+    </div><!-- /side-col -->
+  </div><!-- /content-grid -->
+</div><!-- /main -->
+
+<footer>
+  <div class="footer-inner">
+    <div class="footer-copy">© 2026 A股洞察平台 · 数据仅供参考，不构成投资建议</div>
+    <div class="footer-links">
+      <a class="footer-link">关于我们</a>
+      <a class="footer-link">数据说明</a>
+      <a class="footer-link">隐私政策</a>
+      <a class="footer-link">联系我们</a>
+    </div>
+  </div>
+</footer>
+
+</body>
+</html>
