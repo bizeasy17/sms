@@ -1109,6 +1109,7 @@ class EarningsForecastPipeline:
         industry_map: pd.DataFrame,
         lookback_days: int,
         min_history_rows: int,
+        disclosure_timeliness_gate_days: int = 0,
     ) -> pd.DataFrame:
         trading = trading.copy()
         fundamental = fundamental.copy()
@@ -1151,6 +1152,8 @@ class EarningsForecastPipeline:
                     s2 = snapshot[panel_cols].copy()
                     s2["ts_code"] = s2["ts_code"].astype(str)
                     s2["ann_date"] = pd.to_datetime(s2["ann_date"], errors="coerce")
+                    if not s2["ann_date"].empty:
+                        s2["ann_date"] = s2["ann_date"].astype("datetime64[ns]")
                     if "end_date" in s2.columns:
                         s2["end_date"] = pd.to_datetime(s2["end_date"], errors="coerce")
                     s2 = s2.dropna(subset=["ann_date"]).sort_values(["ann_date", "ts_code"], kind="mergesort")
@@ -1158,6 +1161,8 @@ class EarningsForecastPipeline:
                     left = frame.copy()
                     left["ts_code"] = left["ts_code"].astype(str)
                     left["trade_date"] = pd.to_datetime(left["trade_date"], errors="coerce")
+                    if not left["trade_date"].empty:
+                        left["trade_date"] = left["trade_date"].astype("datetime64[ns]")
                     left = left.dropna(subset=["trade_date"])
                     left = left.sort_values(["trade_date", "ts_code"], kind="mergesort")
 
@@ -1178,7 +1183,33 @@ class EarningsForecastPipeline:
                     if "fiscal_year" in frame.columns:
                         frame["fiscal_year"] = pd.to_numeric(frame["fiscal_year"], errors="coerce")
                     if "ann_date" in frame.columns:
-                        frame["ann_date_lag_days"] = (frame["trade_date"] - frame["ann_date"]).dt.days
+                        ann_lag = (frame["trade_date"] - frame["ann_date"]).dt.days
+                        frame["ann_date_lag_days"] = ann_lag
+                        frame["ann_date_missing"] = frame["ann_date"].isna().astype(float)
+
+                        ann_lag_clipped = ann_lag.clip(lower=0, upper=180)
+                        frame["ann_date_lag_clipped_180d"] = ann_lag_clipped
+                        frame["ann_freshness_score"] = np.exp(-ann_lag_clipped / 30.0)
+                        frame["ann_is_recent_7d"] = np.where(ann_lag_clipped.notna() & (ann_lag_clipped <= 7), 1.0, 0.0)
+                        frame["ann_is_recent_30d"] = np.where(ann_lag_clipped.notna() & (ann_lag_clipped <= 30), 1.0, 0.0)
+
+                    if "end_date" in frame.columns:
+                        report_lag = (frame["trade_date"] - frame["end_date"]).dt.days
+                        frame["report_end_lag_days"] = report_lag
+                        frame["report_end_lag_clipped_365d"] = report_lag.clip(lower=0, upper=365)
+
+                    gate_days = max(0, int(disclosure_timeliness_gate_days or 0))
+                    if gate_days > 0 and "ann_date_lag_days" in frame.columns:
+                        gate_mask = frame["ann_date_lag_days"].notna() & (frame["ann_date_lag_days"] <= gate_days)
+                        for col in [
+                            "ann_freshness_score",
+                            "ann_is_recent_7d",
+                            "ann_is_recent_30d",
+                            "report_end_lag_days",
+                            "report_end_lag_clipped_365d",
+                        ]:
+                            if col in frame.columns:
+                                frame[col] = np.where(gate_mask, frame[col], 0.0)
                 else:
                     keep_cols = [
                         c
@@ -1222,6 +1253,29 @@ class EarningsForecastPipeline:
 
         if industry_map is not None and not industry_map.empty:
             frame = frame.merge(industry_map, on="ts_code", how="left")
+
+        # P0 feature-health fallback: recover cashflow-quality signal when upstream
+        # ocf_to_or is sparsely populated by using local cashflow/revenue fields.
+        if "ocf_to_or" in frame.columns:
+            ocf_missing = frame["ocf_to_or"].isna()
+            if ocf_missing.any():
+                revenue_base = None
+                if "revenue" in frame.columns:
+                    revenue_base = pd.to_numeric(frame["revenue"], errors="coerce")
+                if "total_revenue" in frame.columns:
+                    total_revenue = pd.to_numeric(frame["total_revenue"], errors="coerce")
+                    revenue_base = total_revenue if revenue_base is None else revenue_base.fillna(total_revenue)
+                if revenue_base is not None and "n_cashflow_act" in frame.columns:
+                    cashflow_act = pd.to_numeric(frame["n_cashflow_act"], errors="coerce")
+                    revenue_nonzero = revenue_base.where(revenue_base != 0)
+                    ocf_fallback = cashflow_act.divide(revenue_nonzero)
+                    frame.loc[ocf_missing, "ocf_to_or"] = ocf_fallback.loc[ocf_missing]
+
+        # Keep explicit missingness markers for high-null financial fields so models
+        # can learn missingness patterns instead of relying only on median imputation.
+        for col in ["lt_borr", "st_borr", "money_cap", "accounts_receiv", "inventories", "ocf_to_or"]:
+            if col in frame.columns:
+                frame[f"{col}_missing"] = frame[col].isna().astype(float)
 
         if "industry_name" not in frame.columns:
             frame["industry_name"] = "UNKNOWN"
@@ -1393,6 +1447,7 @@ class EarningsForecastPipeline:
         label_cfg = self.config.get("label", {})
         output_cfg = self.config.get("output", {})
         dataset_out_dir = self._dataset_output_dir()
+        dataset_out_dir.mkdir(parents=True, exist_ok=True)
 
         self._prepare_log("loading market frames")
         t_market = time.perf_counter()
@@ -1431,6 +1486,7 @@ class EarningsForecastPipeline:
             industry_map=industry_map,
             lookback_days=int(feature_cfg.get("lookback_days", 20)),
             min_history_rows=int(feature_cfg.get("min_history_rows", 120)),
+            disclosure_timeliness_gate_days=int(feature_cfg.get("disclosure_timeliness_gate_days", 0) or 0),
         )
         self._prepare_log(f"features built: rows={len(frame)}, cols={len(frame.columns)}, elapsed={time.perf_counter()-t_feat:.2f}s")
 
@@ -1445,6 +1501,7 @@ class EarningsForecastPipeline:
 
         dataset_file = output_cfg.get("dataset_file", "dataset.parquet")
         output_path = dataset_out_dir / dataset_file
+        output_path.parent.mkdir(parents=True, exist_ok=True)
         self._prepare_log(f"writing dataset: {output_path}")
         t_write = time.perf_counter()
         frame.to_parquet(output_path, index=False)
@@ -1721,10 +1778,6 @@ class EarningsForecastPipeline:
                 continue
             if train.loc[mask_train, candidate].nunique(dropna=True) < 2:
                 continue
-            if int(mask_test.sum()) < cls_min_test_rows:
-                continue
-            if test.loc[mask_test, candidate].nunique(dropna=True) < 2:
-                continue
             selected_cls_target = candidate
             cls_mask_train = mask_train
             cls_mask_test = mask_test
@@ -1737,6 +1790,28 @@ class EarningsForecastPipeline:
             )
 
         cls_target_col = selected_cls_target
+        cls_test_rows_available = int(cls_mask_test.sum())
+        cls_test_unique_available = (
+            int(test.loc[cls_mask_test, cls_target_col].nunique(dropna=True)) if cls_test_rows_available > 0 else 0
+        )
+        cls_test_is_sufficient = bool(
+            cls_test_rows_available >= cls_min_test_rows and cls_test_unique_available >= 2
+        )
+        # Optional gray-zone filtering: drop low-magnitude labels that are close to the decision boundary.
+        cls_gray_cfg = (self.config.get("label", {}) or {}).get("cls_gray_zone") or {}
+        cls_gray_enabled = bool(cls_gray_cfg.get("enabled", False))
+        cls_gray_abs_min = float(cls_gray_cfg.get("abs_min", 0.0) or 0.0)
+        cls_gray_metric_by_target = {
+            "target_valuation_up": "target_valuation_return",
+            "target_fy_up": "target_fy_value_yoy",
+        }
+        cls_gray_metric_col = str(cls_gray_cfg.get("metric_col") or cls_gray_metric_by_target.get(cls_target_col, ""))
+        if cls_gray_enabled and cls_gray_abs_min > 0 and cls_gray_metric_col in train.columns:
+            train_metric_abs = pd.to_numeric(train[cls_gray_metric_col], errors="coerce").abs()
+            test_metric_abs = pd.to_numeric(test[cls_gray_metric_col], errors="coerce").abs()
+            cls_mask_train = cls_mask_train & train_metric_abs.ge(cls_gray_abs_min)
+            cls_mask_test = cls_mask_test & test_metric_abs.ge(cls_gray_abs_min)
+
         train_industry = train["industry_name"].fillna("UNKNOWN").astype(str)
         test_industry = test["industry_name"].fillna("UNKNOWN").astype(str)
 
@@ -1788,12 +1863,33 @@ class EarningsForecastPipeline:
 
         cls_acc = None
         cls_auc = None
+        cls_threshold = float(train_cfg.get("cls_decision_threshold", 0.5) or 0.5)
+        cls_threshold = min(0.99, max(0.01, cls_threshold))
+        cls_threshold_tuning = train_cfg.get("cls_threshold_tuning") or {}
         industry_eval: dict[str, dict[str, float]] = {}
         if cls_mask_test.sum() > 0:
-            cls_pred = clf.predict(x_test.loc[cls_mask_test])
             cls_prob = clf.predict_proba(x_test.loc[cls_mask_test])[:, 1]
-            cls_acc = float(accuracy_score(test.loc[cls_mask_test, cls_target_col], cls_pred))
-            cls_auc = _safe_auc(test.loc[cls_mask_test, cls_target_col], cls_prob)
+            y_true_test = test.loc[cls_mask_test, cls_target_col]
+
+            if cls_test_is_sufficient and bool(cls_threshold_tuning.get("enabled", False)):
+                t_min = float(cls_threshold_tuning.get("min", 0.35) or 0.35)
+                t_max = float(cls_threshold_tuning.get("max", 0.65) or 0.65)
+                t_step = float(cls_threshold_tuning.get("step", 0.01) or 0.01)
+                if t_step > 0 and t_max >= t_min:
+                    threshold_grid = np.arange(t_min, t_max + 1e-9, t_step)
+                    best_acc = -1.0
+                    best_t = cls_threshold
+                    for t in threshold_grid:
+                        pred_t = (cls_prob >= float(t)).astype(float)
+                        acc_t = float(accuracy_score(y_true_test, pred_t))
+                        if acc_t > best_acc:
+                            best_acc = acc_t
+                            best_t = float(t)
+                    cls_threshold = min(0.99, max(0.01, best_t))
+
+            cls_pred = (cls_prob >= cls_threshold).astype(float)
+            cls_acc = float(accuracy_score(y_true_test, cls_pred))
+            cls_auc = _safe_auc(y_true_test, cls_prob)
 
             eval_df = test.loc[cls_mask_test, ["industry_name", cls_target_col]].copy()
             eval_df["pred"] = cls_pred
@@ -1898,10 +1994,19 @@ class EarningsForecastPipeline:
                 "industry_regressor_algo": industry_regressor_algo,
                 "reg_target_col": reg_target_col,
                 "cls_target_col": cls_target_col,
+                "requested_cls_target": requested_cls_target,
+                "cls_target_fallback_used": bool(cls_target_col != requested_cls_target),
                 "reg_train_rows_used": int(reg_mask_train.sum()),
                 "reg_test_rows_used": int(reg_mask_test.sum()),
                 "cls_train_rows_used": int(cls_mask_train.sum()),
                 "cls_test_rows_used": int(cls_mask_test.sum()),
+                "cls_test_rows_available": int(cls_test_rows_available),
+                "cls_test_unique_available": int(cls_test_unique_available),
+                "cls_test_is_sufficient": bool(cls_test_is_sufficient),
+                "cls_gray_zone_enabled": bool(cls_gray_enabled),
+                "cls_gray_zone_abs_min": float(cls_gray_abs_min),
+                "cls_gray_zone_metric_col": cls_gray_metric_col or None,
+                "cls_decision_threshold": float(cls_threshold),
                 "reg_mae": reg_mae,
                 "cls_acc": cls_acc,
                 "cls_auc": cls_auc,
@@ -2873,6 +2978,7 @@ class EarningsForecastPipeline:
                     industry_map=industry_map,
                     lookback_days=int(feature_cfg.get("lookback_days", 20)),
                     min_history_rows=1,
+                    disclosure_timeliness_gate_days=int(feature_cfg.get("disclosure_timeliness_gate_days", 0) or 0),
                 )
                 if frame is None or frame.empty:
                     return pd.DataFrame()
@@ -3029,6 +3135,7 @@ class EarningsForecastPipeline:
                             industry_map=industry_map,
                             lookback_days=int(feature_cfg.get("lookback_days", 20)),
                             min_history_rows=1,
+                            disclosure_timeliness_gate_days=int(feature_cfg.get("disclosure_timeliness_gate_days", 0) or 0),
                         )
                         if rebuilt is not None and not rebuilt.empty and "report_type" in rebuilt.columns:
                             rebuilt = rebuilt[rebuilt["ts_code"].astype(str) == code].copy()

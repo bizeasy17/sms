@@ -1,0 +1,189 @@
+data:
+  db_url: postgresql+psycopg2://postgres:postgres@localhost:5432/smartinvestor_earnings_uat
+  financial_db_url: postgresql+psycopg2://postgres:postgres@localhost:5432/smartinvestor_earnings_uat
+  etl_db_url: postgresql+psycopg2://postgres:postgres@localhost:5432/smartinvestor_etl
+  etl_trading_table: stockdata_stocktradinghistory
+  etl_fundamental_table: stockdata_stockfundamentalhistory
+  etl_corporation_table: stockdata_corporation
+  etl_industry_table: stockdata_industry
+  trading_table: earnings_mkt_trading_history
+  fundamental_table: earnings_mkt_fundamental_history
+  financial_table: null
+  financial_endpoint_tables:
+    income: earnings_fin_income
+    balancesheet_vip: earnings_fin_balancesheet_vip
+    cashflow_vip: earnings_fin_cashflow_vip
+    forecast_vip: earnings_fin_forecast_vip
+    express_vip: earnings_fin_express_vip
+    dividend: earnings_fin_dividend
+    fina_indicator_vip: earnings_fin_fina_indicator_vip
+    fina_audit: earnings_fin_fina_audit
+    fina_mainbz_vip: earnings_fin_fina_mainbz_vip
+    disclosure_date: earnings_fin_disclosure_date
+  financial_feature_table: earnings_financial_feature_panel
+  industry_map_table: earnings_dim_corporation
+  industry_dim_table: earnings_dim_industry
+  start_date: 2015-01-01
+  end_date: null
+  financial_cache_dir: c:/Users/HANJ29/Development/code/sms/smartinvestor_etl/analysis/financial_cache
+  freq: D
+  scope_prefixes: ["60", "00", "30", "68"]
+
+feature:
+  lookback_days: 20
+  min_history_rows: 120
+  disclosure_timeliness_gate_days: 30
+  use_financial_feature_snapshot: true
+  use_financial_db: true
+  use_financial_cache: true
+  prepare_sampling:
+    enabled: true
+    recent_years_per_symbol: 5
+    max_rows_per_report_type: 0
+    report_types: [Q1, H1, Q3, FY]
+
+label:
+  horizon_days: 20
+  fy_value_col: n_income
+  fy_yoy:
+    base_abs_min: 2000000
+    clip_min: -15
+    clip_max: 15
+  reg_target: target_fy_value_yoy
+  cls_target: target_fy_up
+  cls_gray_zone:
+    enabled: true
+    abs_min: 0.08
+    metric_col: target_fy_value_yoy
+  exclude_fy_rows_for_training: true
+  risk:
+    enabled: true
+    horizon_days: 10
+    min_periods: 10
+    severe_drawdown: 0.20
+    severe_volatility: 0.05
+    weight_drawdown: 0.7
+    weight_volatility: 0.3
+    score_bands:
+      - max: 35
+        level: LOW
+        code: 0
+      - max: 65
+        level: MEDIUM
+        code: 1
+      - max: 100
+        level: HIGH
+        code: 2
+
+train:
+  train_end_date: 2024-12-31
+  random_state: 42
+  report_type: null
+  model_name: earnings_forecast
+  model_version: uat_20260719_q1_p1_f3_grayzone_threshold
+  promote_to_production: false
+  cls_decision_threshold: 0.5
+  cls_threshold_tuning:
+    enabled: true
+    min: 0.35
+    max: 0.70
+    step: 0.01
+  fy_split_by_fiscal_year: true
+  fy_test_years: 2
+  cls_min_test_rows: 1200
+  classifier_algo: hgb
+  regressor_algo: hgb
+  industry_classifier_algo: hgb
+  industry_regressor_algo: hgb
+  industry_eval_min_samples: 150
+  use_industry_models: true
+  industry_train_min_rows: 300
+  industry_reg_min_rows: 120
+  stock_median_lookback_years: 3
+  sample_weight:
+    enabled: true
+    time_decay:
+      enabled: true
+      half_life_years: 3.0
+      min_weight: 0.60
+      max_weight: 1.00
+      apply_report_types: [Q1]
+
+output:
+  dir: outputs
+  use_dataset_versioning: true
+  auto_dataset_version: false
+  dataset_version: 15y_20260719_q1_p1_f3_grayzone_threshold
+  dataset_versions_dir: datasets
+  model_versions_dir: model_versions
+  model_registry_file: model_registry.jsonl
+  serving_pointer_file: serving.yaml
+  dataset_file: datasets_by_report_type_full/dataset_Q1_full.parquet
+  split_dataset_by_report_type: true
+  split_dataset_dir: __unused__
+  split_max_rows_per_report_type: 0
+  split_report_types: []
+  model_file: models.joblib
+  metrics_file: metrics.json
+
+valuation_mapping:
+  rules_version: v1
+  weight_prob: 0.7
+  weight_earnings: 0.3
+  earnings_growth_min: -0.3
+  earnings_growth_max: 0.3
+  quant_target_max_abs_return: 0.35
+  quant_target_prob_coef: 0.10
+  quant_target_earnings_coef: 0.10
+  quant_target_industry_coef: 0.05
+  quant_target_earnings_clip: 0.40
+  quant_target_base_band: 0.04
+  quant_target_volatility_mult: 1.50
+  quant_target_risk_scales:
+    LOW: 1.15
+    MEDIUM: 1.05
+    HIGH: 0.90
+  market_regime:
+    enabled: true
+    benchmark_ts_code: 000001.SH
+    benchmark_asset: I
+    use_tushare_fallback: true
+    fallback_lookback_days: 360
+    bull_ma_ratio_min: 1.03
+    bear_ma_ratio_max: 0.97
+    bear_drawdown_max: -0.12
+    high_vol_threshold: 0.028
+    profiles:
+      bull:
+        return_scale: 1.15
+        band_scale: 1.10
+        risk_scales:
+          LOW: 1.20
+          MEDIUM: 1.10
+          HIGH: 0.95
+      balance:
+        return_scale: 1.00
+        band_scale: 1.00
+      bear:
+        return_scale: 0.75
+        band_scale: 1.20
+        risk_scales:
+          LOW: 1.00
+          MEDIUM: 0.90
+          HIGH: 0.70
+  score_bands:
+    - min: 70
+      stance: STRONG_BUY
+      confidence: HIGH
+    - min: 60
+      stance: BUY
+      confidence: MEDIUM
+    - min: 45
+      stance: HOLD
+      confidence: MEDIUM
+    - min: 30
+      stance: REDUCE
+      confidence: LOW
+    - min: 0
+      stance: SELL
+      confidence: LOW

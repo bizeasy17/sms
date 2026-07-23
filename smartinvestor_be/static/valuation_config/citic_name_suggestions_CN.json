@@ -3,7 +3,7 @@
   "sw_level": "L2",
   "total_citic_names": 384,
   "explicit_mapping_count": 350,
-  "remaining_unmapped_count": 47,
+  "remaining_unmapped_count": 48,
   "suggestions": [
     {
       "citic_name": "专用材料Ⅱ",
@@ -58,6 +58,19 @@
     {
       "citic_name": "林木及加工",
       "suggestions": []
+    },
+    {
+      "citic_name": "氨纶",
+      "suggestions": [
+        {
+          "citic_name": "氨纶",
+          "target_level": "L2",
+          "target_code": "801032.SI",
+          "target_name": "化学纤维",
+          "match_type": "keyword_rule",
+          "similarity": 1.0
+        }
+      ]
     },
     {
       "citic_name": "水产捕捞",

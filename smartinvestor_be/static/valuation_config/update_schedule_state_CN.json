@@ -2,10 +2,10 @@
   "market": "CN",
   "tasks": {
     "sw_mapping_sync": {
-      "last_attempt_at": "2026-07-03T15:08:07",
+      "last_attempt_at": "2026-07-17T11:40:44",
       "last_status": "success",
       "last_error": null,
-      "last_success": "2026-07-03"
+      "last_success": "2026-07-17"
     },
     "sw_params_refresh": {
       "last_attempt_at": "2026-07-03T15:15:29",
@@ -31,9 +31,9 @@
       "last_error": "Unknown command: 'syncdailymarketdata'"
     },
     "keyword_rules_refresh": {
-      "last_attempt_at": "2026-04-14T15:42:55",
+      "last_attempt_at": "2026-07-17T11:40:45",
       "last_status": "success",
-      "last_success": "2026-04-14",
+      "last_success": "2026-07-17",
       "last_error": null
     }
   },
@@ -485,7 +485,21 @@
       "attempt_at": "2026-07-03T21:08:57",
       "status": "success",
       "error": null
+    },
+    {
+      "task": "sw_mapping_sync",
+      "date": "2026-07-17",
+      "attempt_at": "2026-07-17T11:40:44",
+      "status": "success",
+      "error": null
+    },
+    {
+      "task": "keyword_rules_refresh",
+      "date": "2026-07-17",
+      "attempt_at": "2026-07-17T11:40:45",
+      "status": "success",
+      "error": null
     }
   ],
-  "updated_at": "2026-07-03T21:08:57"
+  "updated_at": "2026-07-17T11:40:45"
 }

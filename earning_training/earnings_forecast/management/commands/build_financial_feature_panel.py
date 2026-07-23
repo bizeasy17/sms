@@ -25,6 +25,30 @@ def _to_float(value) -> Optional[float]:
         return None
 
 
+def _resolve_ocf_to_or(
+    fina_payload: dict,
+    cashflow_payload: dict,
+    income_payload: dict,
+    express_payload: dict,
+) -> Optional[float]:
+    # Upstream fina_indicator no longer guarantees ocf_to_or; fallback to
+    # semantically-close fields first, then a derived cashflow/revenue ratio.
+    for key in ["ocf_to_or", "q_ocf_to_sales", "ocf_to_debt"]:
+        value = _to_float(fina_payload.get(key))
+        if value is not None:
+            return value
+
+    n_cashflow_act = _to_float(cashflow_payload.get("n_cashflow_act"))
+    revenue = _to_float(
+        income_payload.get("revenue")
+        or income_payload.get("total_revenue")
+        or express_payload.get("revenue")
+    )
+    if n_cashflow_act is None or revenue in (None, 0.0):
+        return None
+    return n_cashflow_act / revenue
+
+
 def _digits8(text: str) -> str:
     raw = "".join(ch for ch in str(text or "") if ch.isdigit())
     if len(raw) >= 8:
@@ -263,7 +287,12 @@ class Command(BaseCommand):
                         quick_ratio=_to_float(fina_payload.get("quick_ratio")),
                         cash_ratio=_to_float(fina_payload.get("cash_ratio")),
                         assets_turn=_to_float(fina_payload.get("assets_turn")),
-                        ocf_to_or=_to_float(fina_payload.get("ocf_to_or")),
+                        ocf_to_or=_resolve_ocf_to_or(
+                            fina_payload=fina_payload,
+                            cashflow_payload=cashflow_payload,
+                            income_payload=income_payload,
+                            express_payload=express_payload,
+                        ),
                         total_assets=_to_float(balance_payload.get("total_assets") or express_payload.get("total_assets")),
                         total_liab=_to_float(balance_payload.get("total_liab")),
                         total_hldr_eqy_exc_min_int=_to_float(balance_payload.get("total_hldr_eqy_exc_min_int")),

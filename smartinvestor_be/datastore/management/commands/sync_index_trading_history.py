@@ -17,6 +17,12 @@ class Command(BaseCommand):
     help = "Backfill index daily history from Tushare into datastore.StockTradingHistory"
 
     def add_arguments(self, parser):
+        parser.add_argument(
+            "--mode",
+            type=str,
+            default="delta",
+            help="Sync mode: delta (default) or full",
+        )
         parser.add_argument("--index-codes", type=str, default="", help="Comma-separated index codes")
         parser.add_argument(
             "--market",
@@ -26,6 +32,12 @@ class Command(BaseCommand):
         )
         parser.add_argument("--start-date", type=str, default="20000101", help="Start date YYYYMMDD")
         parser.add_argument("--end-date", type=str, default="", help="End date YYYYMMDD, default today")
+        parser.add_argument(
+            "--delta-overlap-days",
+            type=int,
+            default=3,
+            help="When mode=delta, pull with N-day overlap from latest local trade_date",
+        )
         parser.add_argument("--batch-size", type=int, default=2000)
         parser.add_argument("--limit", type=int, default=5000, help="Tushare page size")
         parser.add_argument("--sleep-ms", type=int, default=160, help="Sleep ms between calls")
@@ -36,8 +48,13 @@ class Command(BaseCommand):
 
     def handle(self, *args, **options):
         pro = ts.pro_api()
+        mode = str(options.get("mode") or "delta").strip().lower()
+        if mode not in {"delta", "full"}:
+            raise ValueError(f"Unsupported mode: {mode}")
         start_date = str(options["start_date"] or "20000101").strip()
         end_date = str(options["end_date"] or "").strip() or datetime.date.today().strftime("%Y%m%d")
+        end_dt = datetime.datetime.strptime(end_date, "%Y%m%d").date()
+        overlap_days = max(0, int(options.get("delta_overlap_days") or 0))
         batch_size = max(1, int(options["batch_size"] or 2000))
         page_limit = max(100, int(options["limit"] or 5000))
         sleep_ms = max(0, int(options["sleep_ms"] or 0))
@@ -51,6 +68,17 @@ class Command(BaseCommand):
             index_codes = [c.strip().upper() for c in index_codes_raw.split(",") if c.strip()]
         else:
             index_codes = self._load_index_codes_from_basic(pro, str(options["market"] or ""), sleep_ms=sleep_ms)
+
+        # datastore.StockTradingHistory.ts_code is varchar(10); skip codes that cannot fit.
+        overlong_codes = [c for c in index_codes if len(c) > 10]
+        if overlong_codes:
+            sample = ",".join(overlong_codes[:5])
+            self.stdout.write(
+                self.style.WARNING(
+                    f"Skip overlong index codes (>10): count={len(overlong_codes)} sample={sample}"
+                )
+            )
+            index_codes = [c for c in index_codes if len(c) <= 10]
 
         if not index_codes:
             self.stdout.write(self.style.WARNING("No index codes to sync."))
@@ -66,6 +94,9 @@ class Command(BaseCommand):
         self.stdout.write(
             f"Index count(total={len(index_codes)}, run={len(run_codes)}, start_index={start_index}, max_indexes={max_indexes})"
         )
+        self.stdout.write(
+            f"Sync params(mode={mode}, start_date={start_date}, end_date={end_date}, delta_overlap_days={overlap_days})"
+        )
 
         total_fetched = 0
         total_inserted = 0
@@ -73,10 +104,28 @@ class Command(BaseCommand):
 
         for i, code in enumerate(run_codes, start=1):
             try:
+                effective_start_date = start_date
+                if mode == "delta":
+                    latest_local = (
+                        StockTradingHistory.objects.filter(ts_code=code, freq="D")
+                        .order_by("-trade_date")
+                        .values_list("trade_date", flat=True)
+                        .first()
+                    )
+                    if latest_local is not None:
+                        overlap_start = latest_local - datetime.timedelta(days=overlap_days)
+                        if overlap_start > end_dt:
+                            if (i % log_every == 0) or i == 1 or i == len(run_codes):
+                                self.stdout.write(
+                                    f"[{i}/{len(run_codes)}] {code}: local latest={latest_local} beyond end_date={end_dt}, skip"
+                                )
+                            continue
+                        effective_start_date = overlap_start.strftime("%Y%m%d")
+
                 df = self._fetch_index_daily_paged(
                     pro=pro,
                     index_code=code,
-                    start_date=start_date,
+                    start_date=effective_start_date,
                     end_date=end_date,
                     page_limit=page_limit,
                     sleep_ms=sleep_ms,
@@ -92,7 +141,9 @@ class Command(BaseCommand):
                 total_fetched += fetched
                 total_inserted += inserted
                 if (i % log_every == 0) or i == 1 or i == len(run_codes):
-                    self.stdout.write(f"[{i}/{len(run_codes)}] {code}: fetched={fetched} inserted={inserted}")
+                    self.stdout.write(
+                        f"[{i}/{len(run_codes)}] {code}: start={effective_start_date} end={end_date} fetched={fetched} inserted={inserted}"
+                    )
             except Exception as exc:  # noqa: BLE001
                 failed.append(f"{code}: {exc}")
                 self.stderr.write(f"[{i}/{len(run_codes)}] {code}: FAILED {exc}")
@@ -102,6 +153,7 @@ class Command(BaseCommand):
 
         self.stdout.write("---- Summary ----")
         self.stdout.write(f"indexes={len(run_codes)} fetched_rows={total_fetched} inserted_rows={total_inserted}")
+        self.stdout.write(f"skipped_overlong_codes={len(overlong_codes)}")
         self.stdout.write(f"failed_indexes={len(failed)}")
         for item in failed[:50]:
             self.stderr.write(item)

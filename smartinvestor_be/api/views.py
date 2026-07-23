@@ -11990,14 +11990,12 @@ def get_market_index_simple_valuation(request):
                 latest_trade_row = (
                     StockTradingHistory.objects.filter(ts_code=candidate, freq=freq)
                     .order_by("-trade_date")
-                    .values("trade_date", "close_qfq", "close")
+                    .values("trade_date", "close")
                     .first()
                 )
                 if not latest_trade_row:
                     continue
-                trade_close = _to_float_or_none(latest_trade_row.get("close_qfq"))
-                if trade_close is None or trade_close <= 0:
-                    trade_close = _to_float_or_none(latest_trade_row.get("close"))
+                trade_close = _to_float_or_none(latest_trade_row.get("close"))
                 if trade_close is None or trade_close <= 0:
                     continue
                 return candidate, float(trade_close), latest_trade_row.get("trade_date")
@@ -12070,7 +12068,9 @@ def get_market_index_simple_valuation(request):
                 basic_df[metric_col] = pd.to_numeric(basic_df[metric_col], errors="coerce")
         basic_df = basic_df.sort_values("trade_date")
 
-        current_price_mode = "trading_history"
+        current_price_mode = "trading_history_close"
+        current_price_field = "close"
+        current_price_source_table = "datastore_stocktradinghistory"
         price_mode_note = None
         resolved_trade_code, trade_close, trade_date = _load_latest_index_trade_close(index_code)
         if trade_close is not None and trade_close > 0:
@@ -12088,6 +12088,8 @@ def get_market_index_simple_valuation(request):
             daily_df = fetch_tushare_data(index_code, "INDEX_DAILY", start_date=start_date)
             if daily_df is None or daily_df.empty:
                 current_price_mode = "relative_base_100"
+                current_price_field = "relative_base_100"
+                current_price_source_table = "synthetic"
                 current_price = 100.0
                 latest_basic_trade_date = str(basic_df.iloc[-1].get("trade_date") or "") if not basic_df.empty else ""
                 asof_trade_date = _parse_date_like(latest_basic_trade_date)
@@ -12107,6 +12109,8 @@ def get_market_index_simple_valuation(request):
                 daily_df = daily_df.dropna(subset=["trade_date", "close"]).sort_values("trade_date")
                 if daily_df.empty:
                     current_price_mode = "relative_base_100"
+                    current_price_field = "relative_base_100"
+                    current_price_source_table = "synthetic"
                     current_price = 100.0
                     latest_basic_trade_date = str(basic_df.iloc[-1].get("trade_date") or "") if not basic_df.empty else ""
                     asof_trade_date = _parse_date_like(latest_basic_trade_date)
@@ -12121,6 +12125,8 @@ def get_market_index_simple_valuation(request):
                     current_price = _to_float_or_none(latest_daily.get("close"))
                     if current_price is None or current_price <= 0:
                         current_price_mode = "relative_base_100"
+                        current_price_field = "relative_base_100"
+                        current_price_source_table = "synthetic"
                         current_price = 100.0
                         latest_basic_trade_date = str(basic_df.iloc[-1].get("trade_date") or "") if not basic_df.empty else ""
                         asof_trade_date = _parse_date_like(latest_basic_trade_date)
@@ -12132,6 +12138,8 @@ def get_market_index_simple_valuation(request):
                         price_mode_note = f"StockTradingHistory/INDEX_DAILY close invalid for {index_code}; fallback to relative base-100 mode."
                     else:
                         current_price_mode = "index_daily"
+                        current_price_field = "close"
+                        current_price_source_table = "tushare_index_daily"
                         asof_trade_date = _parse_date_like(latest_daily.get("trade_date"))
                         asof_trade_date_text = (
                             asof_trade_date.strftime("%Y-%m-%d")
@@ -12145,9 +12153,12 @@ def get_market_index_simple_valuation(request):
             ("pe_ttm", "pe_ttm"),
             ("pb", "pb"),
         ]
+        composite_metric_quantile = 0.60
+        conservative_metric_quantile = 0.25
 
         methods = []
-        method_map = {}
+        method_map_composite = {}
+        method_map_conservative = {}
         for method_name, metric_col in metric_defs:
             if metric_col not in basic_df.columns:
                 continue
@@ -12168,30 +12179,50 @@ def get_market_index_simple_valuation(request):
                 if val is not None and float(val) > 0
             ]
             p50_metric = _compute_quantile(metric_values, 0.5)
+            q60_metric = _compute_quantile(metric_values, composite_metric_quantile)
+            q25_metric = _compute_quantile(metric_values, conservative_metric_quantile)
             if p50_metric is None or p50_metric <= 0:
                 continue
+            if q60_metric is None or q60_metric <= 0:
+                continue
+            if q25_metric is None or q25_metric <= 0:
+                continue
 
-            implied_price = float(current_price) * float(p50_metric) / float(current_metric)
-            status, gap_pct = _classify_valuation(current_price, implied_price, band_pct)
+            implied_price_m50 = float(current_price) * float(p50_metric) / float(current_metric)
+            implied_price_q60 = float(current_price) * float(q60_metric) / float(current_metric)
+            implied_price_q25 = float(current_price) * float(q25_metric) / float(current_metric)
+            status_q60, gap_pct_q60 = _classify_valuation(current_price, implied_price_q60, band_pct)
+            status_q25, gap_pct_q25 = _classify_valuation(current_price, implied_price_q25, band_pct)
 
             methods.append(
                 {
                     "method": method_name,
                     "current_metric": round(float(current_metric), 4),
                     "p50_metric": round(float(p50_metric), 4),
-                    "implied_index_price": round(float(implied_price), 4),
+                    "q60_metric": round(float(q60_metric), 4),
+                    "q25_metric": round(float(q25_metric), 4),
+                    "implied_index_price": round(float(implied_price_q60), 4),
+                    "implied_index_price_q60": round(float(implied_price_q60), 4),
+                    "implied_index_price_q25": round(float(implied_price_q25), 4),
+                    "implied_index_price_m50": round(float(implied_price_m50), 4),
                     "implied_index_price_mode": current_price_mode,
-                    "valuation_status": status,
-                    "valuation_gap_pct": round(gap_pct * 100, 2) if gap_pct is not None else None,
+                    "valuation_status": status_q60,
+                    "valuation_gap_pct": round(gap_pct_q60 * 100, 2) if gap_pct_q60 is not None else None,
+                    "valuation_status_q25": status_q25,
+                    "valuation_gap_pct_q25": round(gap_pct_q25 * 100, 2) if gap_pct_q25 is not None else None,
                     "sample_size": len(metric_values),
                 }
             )
-            method_map[method_name] = {
-                "valuation_price": float(implied_price),
+            method_map_composite[method_name] = {
+                "valuation_price": float(implied_price_q60),
+                "candidate_count": 1,
+            }
+            method_map_conservative[method_name] = {
+                "valuation_price": float(implied_price_q25),
                 "candidate_count": 1,
             }
 
-        if not method_map:
+        if not method_map_composite or not method_map_conservative:
             return Response(
                 {
                     "error": f"No valid valuation methods for {index_code}.",
@@ -12202,13 +12233,18 @@ def get_market_index_simple_valuation(request):
                 status=404,
             )
 
-        summary = _summarize_buy_candidate(
+        summary_composite = _summarize_buy_candidate(
             current_price=current_price,
-            method_map=method_map,
+            method_map=method_map_composite,
             band_pct=band_pct,
         )
-        composite_price = _to_float_or_none(summary.get("composite_valuation_price"))
-        conservative_price = _to_float_or_none(summary.get("conservative_valuation_price"))
+        summary_conservative = _summarize_buy_candidate(
+            current_price=current_price,
+            method_map=method_map_conservative,
+            band_pct=band_pct,
+        )
+        composite_price = _to_float_or_none(summary_composite.get("composite_valuation_price"))
+        conservative_price = _to_float_or_none(summary_conservative.get("conservative_valuation_price"))
         composite_status, composite_gap_pct = _classify_valuation(current_price, composite_price, band_pct)
         conservative_status, conservative_gap_pct = _classify_valuation(current_price, conservative_price, band_pct)
 
@@ -12219,13 +12255,18 @@ def get_market_index_simple_valuation(request):
                 "asof_trade_date": asof_trade_date_text,
                 "current_index_price": round(float(current_price), 4),
                 "current_index_price_mode": current_price_mode,
+                "current_index_price_field": current_price_field,
+                "current_index_price_source_table": current_price_source_table,
                 "note": price_mode_note,
                 "basic_source_mode": basic_source_mode,
                 "basic_source_note": basic_source_note,
                 "valuation_band_pct": round(float(band_pct), 4),
                 "methods": methods,
                 "summary": {
-                    **summary,
+                    **summary_composite,
+                    "composite_metric_quantile": composite_metric_quantile,
+                    "conservative_metric_quantile": conservative_metric_quantile,
+                    "conservative_valuation_price": conservative_price,
                     "composite_valuation_status": composite_status,
                     "composite_valuation_gap_pct": round(composite_gap_pct * 100, 2)
                     if composite_gap_pct is not None

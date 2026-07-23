@@ -1801,6 +1801,23 @@ function bindTrendHoverSync() {
     })
 }
 
+function scheduleTrendHoverSyncBind(retryCount = 3) {
+    nextTick(() => {
+        requestAnimationFrame(() => {
+            const chart = trendChartRef.value?.chart
+            if (!chart) {
+                if (retryCount > 0) {
+                    window.setTimeout(() => {
+                        scheduleTrendHoverSyncBind(retryCount - 1)
+                    }, 50)
+                }
+                return
+            }
+            bindTrendHoverSync()
+        })
+    })
+}
+
 function refreshTrendLayout() {
     nextTick(() => {
         ;[trendChartRef, chipChartRef].forEach(refItem => {
@@ -1933,13 +1950,13 @@ async function fetchTradingHistory(stockCode = '', freq = 'D', adj = 'qfq', coun
 
                 loadLatestChipDistribution(stockCode)
                 prefetchTradingHistoryVariants(normalizedStockCode, adj, requestCount, freq)
-
-                await nextTick()
-                bindTrendHoverSync()
             } catch (error) {
                 console.error('Failed to fetch trading history:', error)
             } finally {
                 trendChartsLoading.value = false
+                if (latestTradingRenderKey.value === cacheKey) {
+                    scheduleTrendHoverSyncBind()
+                }
                 tradingHistoryRenderPending.delete(cacheKey)
             }
         })()
@@ -2360,10 +2377,6 @@ onMounted(() => {
             }
         })
     echarts.connect(chartGroup)
-
-    nextTick(() => {
-        bindTrendHoverSync()
-    })
 })
 
 onBeforeUnmount(() => {
