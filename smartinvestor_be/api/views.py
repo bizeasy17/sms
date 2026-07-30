@@ -3534,6 +3534,7 @@ def get_watch_list(request, from_index, to_index):
             }
             data.append(item_dict)
         _attach_recent_financial_report_badge(data, market="CN")
+        _attach_recent_forecast_badge(data, asof_date=signal_end_date or datetime.date.today(), window_days=60)
         if market == "RESULT":
             _attach_signal_window_returns(
                 data,
@@ -3624,8 +3625,8 @@ def get_recent_financial_updates(request):
             report_filter = "ALL"
         elif report_filter_raw in {"Q1", "H1", "Q3", "FY"}:
             report_filter = report_filter_raw
-        elif report_filter_raw in {"σ┐½", "EXP", "EXPRESS"}:
-            report_filter = "σ┐½"
+        elif report_filter_raw in {"快", "EXP", "EXPRESS"}:
+            report_filter = "快"
         elif report_filter_raw in {"ANNUAL", "YEAR", "YEARLY"}:
             report_filter = "FY"
         else:
@@ -3653,7 +3654,7 @@ def get_recent_financial_updates(request):
             return normalized_code.startswith(scope)
 
         def _build_daily_sync_summary():
-            if report_filter == "σ┐½":
+            if report_filter == "快":
                 return {
                     "daily": [],
                     "expected_total": 0,
@@ -3662,7 +3663,7 @@ def get_recent_financial_updates(request):
                     "today_expected": 0,
                     "today_synced": 0,
                     "today_missing": 0,
-                    "note": "σ┐½µèÑσÅúσ╛äΣ╕ìτ╗ƒΦ«í income σÉîµ¡ÑΦªåτ¢û",
+                    "note": "快报仅统计 income 库中的快报更新",
                 }
 
             suffix_allow = report_suffix_map.get(report_filter, report_suffix_map["ALL"])
@@ -3845,7 +3846,7 @@ def get_recent_financial_updates(request):
 
             express_ann_date = _parse_date_like(row.get("express_ann_date"))
             if express_ann_date is not None:
-                candidates.append((express_ann_date, "σ┐½"))
+                candidates.append((express_ann_date, "快"))
 
             if latest_trade_date is not None:
                 candidates = [item for item in candidates if item[0] <= latest_trade_date]
@@ -4616,7 +4617,7 @@ def _resolve_report_type_from_end_date(report_end_date):
 
 def _recent_report_candidate_sort_key(candidate):
     ann_date, label = candidate
-    return (ann_date, 0 if str(label or "") == "σ┐½" else 1)
+    return (ann_date, 0 if str(label or "") == "快" else 1)
 
 
 def _build_latest_official_financial_ann_date_map(ts_codes, max_trade_date=None):
@@ -4699,7 +4700,7 @@ def _build_latest_financial_ann_date_map(ts_codes, market="CN", max_trade_date=N
                     express_ann_date=express_ann_date,
                 ),
             ),
-            (express_ann_date, "σ┐½"),
+            (express_ann_date, "快"),
         ]:
             if candidate is None:
                 continue
@@ -4722,10 +4723,10 @@ def _build_latest_financial_ann_date_map(ts_codes, market="CN", max_trade_date=N
 def _normalize_recent_report_label(*, report_type=None, profit_source=None, ann_date=None, express_ann_date=None):
     source_text = str(profit_source or "").strip().lower()
     if source_text.startswith("express"):
-        return "σ┐½"
+        return "快"
 
     if ann_date is not None and express_ann_date is not None and ann_date == express_ann_date:
-        return "σ┐½"
+        return "快"
 
     normalized_type = str(report_type or "").strip().upper()
     if not normalized_type:
@@ -4794,7 +4795,7 @@ def _attach_recent_financial_report_badge(
             if (
                 _parse_date_like(row.get("valuation_express_ann_date")) is not None
                 or _parse_date_like(row.get("express_ann_date")) is not None
-                or fallback_payload.get("label") == "σ┐½"
+                or fallback_payload.get("label") == "快"
             ):
                 official_override_codes.append(ts_code)
 
@@ -4857,9 +4858,9 @@ def _attach_recent_financial_report_badge(
                 )
             )
         if valuation_express_ann is not None:
-            candidates.append((valuation_express_ann, "σ┐½"))
+            candidates.append((valuation_express_ann, "快"))
         if base_express_ann is not None:
-            candidates.append((base_express_ann, "σ┐½"))
+            candidates.append((base_express_ann, "快"))
 
         fallback_payload = fallback_ann_map.get(ts_code) or {}
         fallback_ann = fallback_payload.get("ann_date")
@@ -4893,6 +4894,231 @@ def _attach_recent_financial_report_badge(
         if 0 <= delta_days <= RECENT_FINANCIAL_ANNOUNCEMENT_DAYS:
             row["recent_report_badge"] = True
             row["recent_report_days"] = delta_days
+
+
+def _format_forecast_amount_yi_from_wan(value):
+    amount_wan = _to_float_or_none(value)
+    if amount_wan is None:
+        return None
+    return round(amount_wan / 10000.0, 2)
+
+
+def _format_forecast_pct(value):
+    pct = _to_float_or_none(value)
+    if pct is None:
+        return None
+    return round(pct, 2)
+
+
+def _build_forecast_narrative(payload):
+    ann_date = str(payload.get("ann_date") or "-")
+    end_date = str(payload.get("end_date") or "-")
+    forecast_type = str(payload.get("type") or "").strip() or "预告"
+    summary = str(payload.get("summary") or "").strip()
+    reason = str(payload.get("change_reason") or "").strip()
+
+    net_profit_min_yi = _format_forecast_amount_yi_from_wan(payload.get("net_profit_min"))
+    net_profit_max_yi = _format_forecast_amount_yi_from_wan(payload.get("net_profit_max"))
+    p_change_min = _format_forecast_pct(payload.get("p_change_min"))
+    p_change_max = _format_forecast_pct(payload.get("p_change_max"))
+
+    parts = [f"{ann_date} 发布 {end_date} 业绩预告，类型 {forecast_type}。"]
+
+    if net_profit_min_yi is not None or net_profit_max_yi is not None:
+        if net_profit_min_yi is not None and net_profit_max_yi is not None:
+            parts.append(f"预计归母净利润 {net_profit_min_yi:.2f}-{net_profit_max_yi:.2f} 亿元。")
+        else:
+            single = net_profit_min_yi if net_profit_min_yi is not None else net_profit_max_yi
+            parts.append(f"预计归母净利润约 {single:.2f} 亿元。")
+
+    if p_change_min is not None or p_change_max is not None:
+        if p_change_min is not None and p_change_max is not None:
+            parts.append(f"预计同比变动 {p_change_min:.2f}% 至 {p_change_max:.2f}%。")
+        else:
+            single = p_change_min if p_change_min is not None else p_change_max
+            parts.append(f"预计同比变动约 {single:.2f}%。")
+
+    if summary:
+        parts.append(f"摘要：{summary}")
+    if reason:
+        parts.append(f"原因：{reason[:160]}")
+
+    return " ".join(parts).strip()
+
+
+def _build_forecast_lite_estimate(payload, current_price=None):
+    p_change_min = _to_float_or_none(payload.get("p_change_min"))
+    p_change_max = _to_float_or_none(payload.get("p_change_max"))
+    net_profit_min = _to_float_or_none(payload.get("net_profit_min"))
+    net_profit_max = _to_float_or_none(payload.get("net_profit_max"))
+
+    yoy_mid = None
+    if p_change_min is not None and p_change_max is not None:
+        yoy_mid = (p_change_min + p_change_max) / 2.0
+    elif p_change_min is not None:
+        yoy_mid = p_change_min
+    elif p_change_max is not None:
+        yoy_mid = p_change_max
+
+    implied_return_pct = None
+    if yoy_mid is not None:
+        # Piecewise scaling: keep low-growth conservative while improving sensitivity for strong forecasts.
+        abs_yoy_mid = abs(yoy_mid)
+        if abs_yoy_mid <= 20:
+            scale = 0.20
+        elif abs_yoy_mid <= 50:
+            scale = 0.30
+        else:
+            scale = 0.40
+        implied_return_pct = max(-25.0, min(25.0, yoy_mid * scale))
+
+    signal = "中性"
+    if implied_return_pct is not None:
+        if implied_return_pct >= 8:
+            signal = "看多"
+        elif implied_return_pct <= -8:
+            signal = "看空"
+        elif implied_return_pct > 2:
+            signal = "偏多"
+        elif implied_return_pct < -2:
+            signal = "偏空"
+
+    confidence = "LOW"
+    if p_change_min is not None and p_change_max is not None and net_profit_min is not None and net_profit_max is not None:
+        confidence = "MEDIUM"
+
+    return {
+        "enabled": True,
+        "basis": "预告同比区间中枢 + 分段缩放(0.20/0.30/0.40) + 最新交易截面（极轻量提示）",
+        "implied_signal": signal,
+        "implied_return_pct": round(implied_return_pct, 2) if implied_return_pct is not None else None,
+        "confidence": confidence,
+        "latest_price": _to_float_or_none(current_price),
+        "note": "仅用于快速筛查，不替代正式估值结论。",
+    }
+
+
+def _extract_row_current_price(row):
+    valuation = row.get("valuation") if isinstance(row.get("valuation"), dict) else {}
+    for candidate in [
+        row.get("current_price"),
+        valuation.get("current_price"),
+        row.get("close"),
+        row.get("close_qfq"),
+    ]:
+        value = _to_float_or_none(candidate)
+        if value is not None:
+            return value
+    return None
+
+
+def _attach_recent_forecast_badge(rows, *, asof_date=None, window_days=60):
+    if not rows:
+        return
+
+    normalized_asof_date = _parse_date_like(asof_date) or datetime.date.today()
+    normalized_window_days = max(1, min(int(window_days or 60), 180))
+    cutoff_date = normalized_asof_date - datetime.timedelta(days=normalized_window_days)
+
+    ts_codes = sorted(
+        {
+            str(row.get("ts_code") or "").strip().upper()
+            for row in rows
+            if str(row.get("ts_code") or "").strip()
+        }
+    )
+
+    for row in rows:
+        row["forecast_badge"] = False
+        row["forecast_days"] = None
+        row["forecast_payload"] = None
+        row["forecast_narrative"] = None
+        row["forecast_lite_estimate"] = None
+
+    if not ts_codes:
+        return
+
+    placeholders = ",".join(["%s"] * len(ts_codes))
+    sql = f"""
+        SELECT ts_code, ann_date, end_date, type,
+               p_change_min, p_change_max,
+               net_profit_min, net_profit_max,
+               summary, change_reason
+        FROM earnings_fin_forecast_vip
+        WHERE ts_code IN ({placeholders})
+          AND ann_date >= %s
+          AND ann_date <= %s
+    """
+    params = list(ts_codes) + [
+        cutoff_date.strftime("%Y%m%d"),
+        normalized_asof_date.strftime("%Y%m%d"),
+    ]
+    forecast_df = query_local_financial_df(sql, params)
+    if forecast_df is None or forecast_df.empty:
+        return
+
+    latest_map = {}
+    for raw in forecast_df.to_dict(orient="records"):
+        ts_code = str(raw.get("ts_code") or "").strip().upper()
+        ann_date = _parse_date_like(raw.get("ann_date"))
+        end_date = _parse_date_like(raw.get("end_date"))
+        if not ts_code or ann_date is None:
+            continue
+        if ann_date < cutoff_date or ann_date > normalized_asof_date:
+            continue
+        key = (ann_date, end_date or datetime.date.min)
+        prev = latest_map.get(ts_code)
+        if prev is None or key > prev.get("key"):
+            latest_map[ts_code] = {
+                "key": key,
+                "ann_date": ann_date,
+                "end_date": end_date,
+                "raw": raw,
+            }
+
+    for row in rows:
+        ts_code = str(row.get("ts_code") or "").strip().upper()
+        candidate = latest_map.get(ts_code)
+        if candidate is None:
+            continue
+
+        effective_asof_date = (
+            _parse_date_like(row.get("earnings_asof_date"))
+            or _parse_date_like(row.get("trade_date"))
+            or _parse_date_like(row.get("latest_trade_date"))
+            or _parse_date_like((row.get("valuation") or {}).get("latest_trade_date"))
+            or normalized_asof_date
+        )
+        ann_date = candidate.get("ann_date")
+        if ann_date is None or effective_asof_date is None or ann_date > effective_asof_date:
+            continue
+
+        days = (effective_asof_date - ann_date).days
+        if days < 0 or days > normalized_window_days:
+            continue
+
+        raw = candidate.get("raw") or {}
+        end_date = candidate.get("end_date")
+        payload = {
+            "ann_date": ann_date.isoformat(),
+            "end_date": end_date.isoformat() if end_date is not None else str(raw.get("end_date") or ""),
+            "type": str(raw.get("type") or "").strip(),
+            "p_change_min": _to_float_or_none(raw.get("p_change_min")),
+            "p_change_max": _to_float_or_none(raw.get("p_change_max")),
+            "net_profit_min": _to_float_or_none(raw.get("net_profit_min")),
+            "net_profit_max": _to_float_or_none(raw.get("net_profit_max")),
+            "summary": str(raw.get("summary") or "").strip(),
+            "change_reason": str(raw.get("change_reason") or "").strip(),
+        }
+
+        row["forecast_badge"] = True
+        row["forecast_days"] = days
+        row["forecast_payload"] = payload
+        row["forecast_narrative"] = _build_forecast_narrative(payload)
+        row["forecast_lite_estimate"] = _build_forecast_lite_estimate(
+            payload,
+            current_price=_extract_row_current_price(row),
+        )
 
 
 def _attach_signal_window_returns(rows, trade_date_for_query, freq="D", signal_end_date=None):

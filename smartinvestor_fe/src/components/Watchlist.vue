@@ -99,6 +99,23 @@
                                 <el-tag v-if="stock.recent_report_badge" type="warning" effect="plain" size="small">
                                     {{ formatRecentReportLabel(stock.recent_report_label) }}
                                 </el-tag>
+                                <span
+                                    v-if="stock.forecast_badge"
+                                    style="display: inline-flex; cursor: pointer;"
+                                    role="button"
+                                    tabindex="0"
+                                    @click.stop="openForecastDialog(stock)"
+                                    @keydown.enter.stop.prevent="openForecastDialog(stock)"
+                                    @keydown.space.stop.prevent="openForecastDialog(stock)"
+                                >
+                                    <el-tag
+                                        type="danger"
+                                        effect="plain"
+                                        size="small"
+                                    >
+                                        预
+                                    </el-tag>
+                                </span>
                             </div>
                         </el-col>
                         <el-col :span="24">
@@ -274,6 +291,27 @@
         </el-card>
     </el-affix>
 
+    <el-dialog
+        v-model="forecastDialogVisible"
+        title="业绩预告提示"
+        width="560px"
+    >
+        <div v-if="forecastDialogStock" style="display: flex; flex-direction: column; gap: 8px; font-size: 13px; line-height: 1.7;">
+            <div style="color: #606266;">
+                {{ forecastDialogStock.name }} | {{ forecastDialogStock.ts_code }}
+            </div>
+            <div style="color: #303133;">
+                {{ forecastDialogStock.forecast_narrative || '暂无预告文案' }}
+            </div>
+            <div v-if="forecastDialogStock.forecast_lite_estimate" style="padding: 8px 10px; border: 1px solid #ebeef5; border-radius: 6px; background: #fafafa; color: #606266;">
+                <div>轻量提示: {{ forecastDialogStock.forecast_lite_estimate.implied_signal || '-' }} / {{ formatForecastLiteReturn(forecastDialogStock.forecast_lite_estimate.implied_return_pct) }}</div>
+                <div>置信度: {{ forecastDialogStock.forecast_lite_estimate.confidence || '-' }}</div>
+                <div>依据: {{ forecastDialogStock.forecast_lite_estimate.basis || '-' }}</div>
+                <div style="color: #909399;">{{ forecastDialogStock.forecast_lite_estimate.note || '' }}</div>
+            </div>
+        </div>
+    </el-dialog>
+
     <!-- <el-backtop :right="100" :bottom="100" /> -->
 </template>
 
@@ -281,7 +319,7 @@
 import { computed, inject, ref, onBeforeUnmount, onMounted, watch, nextTick } from 'vue';
 import axios from 'axios';
 // Element Plus
-import { ElAffix, ElRow, ElCol, ElButton, ElCard, ElDatePicker, ElDivider, ElIcon, ElLink, ElMessage, ElOption, ElPagination, ElPopover, ElRadioButton, ElRadioGroup, ElScrollbar, ElSelect, ElSkeleton, ElSkeletonItem, ElSwitch, ElTabPane, ElTabs, ElTag } from 'element-plus';
+import { ElAffix, ElRow, ElCol, ElButton, ElCard, ElDatePicker, ElDialog, ElDivider, ElIcon, ElLink, ElMessage, ElOption, ElPagination, ElPopover, ElRadioButton, ElRadioGroup, ElScrollbar, ElSelect, ElSkeleton, ElSkeletonItem, ElSwitch, ElTabPane, ElTabs, ElTag } from 'element-plus';
 import { View } from '@element-plus/icons-vue';
 import { useStockTradeStore } from '../stores/stockTradeStore';
 import { prefetchValuationMethodsWithSharedCache } from '../utils/valuationQuickViewCache';
@@ -335,6 +373,8 @@ const watchlistPageCache = new Map()
 const watchlistPagePrefetchPending = new Map()
 const watchlistFetchToken = ref(0)
 const resultHydrating = ref(false)
+const forecastDialogVisible = ref(false)
+const forecastDialogStock = ref(null)
 
 const RESUME_MARKER_KEY = 'smartinvestor_watchlist_resume_v1'
 const RESUME_MODE_KEY = 'smartinvestor_watchlist_resume_mode_v1'
@@ -717,6 +757,26 @@ function formatRecentReportLabel(value) {
         return '快'
     }
     return normalized
+}
+
+function formatForecastLiteReturn(value) {
+    const number = Number(value)
+    if (!Number.isFinite(number)) {
+        return '-'
+    }
+    return `${number >= 0 ? '+' : ''}${number.toFixed(2)}%`
+}
+
+function openForecastDialog(stock) {
+    if (!stock) {
+        return
+    }
+    console.debug('watchlist.forecast_dialog.open', {
+        ts_code: stock.ts_code,
+        forecast_badge: stock.forecast_badge,
+    })
+    forecastDialogStock.value = stock
+    forecastDialogVisible.value = true
 }
 
 function normalizeResumeMarker(value) {
