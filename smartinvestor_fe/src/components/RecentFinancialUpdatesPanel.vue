@@ -53,7 +53,7 @@
                                 underline="never">
                                 {{ stock.name }} | {{ stock.ts_code }}
                             </el-link>
-                            <el-tag type="warning" effect="plain" size="small">{{ stock.recent_report_label || '更新' }}</el-tag>
+                                    <el-tag type="warning" effect="plain" size="small">{{ formatRecentReportLabel(stock.recent_report_label) }}</el-tag>
                             </div>
                             <el-button
                                 size="small"
@@ -194,6 +194,17 @@ const formatReportFilterLabel = (value) => {
     const normalized = normalizeReportFilter(value);
     if (normalized === 'ALL') {
         return '全部';
+    }
+    return normalized;
+};
+
+const formatRecentReportLabel = (value) => {
+    const normalized = String(value || '').trim().toUpperCase();
+    if (!normalized) {
+        return '更新';
+    }
+    if (['快', 'EXP', 'EXPRESS', 'EXPRESS_VIP'].includes(normalized)) {
+        return '快';
     }
     return normalized;
 };

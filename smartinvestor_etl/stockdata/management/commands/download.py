@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import date, timedelta
 from django.core.management.base import BaseCommand, CommandError
 
 from utils.data_utils import (
@@ -42,6 +42,12 @@ class Command(BaseCommand):
         parser.add_argument(
             "--resume", type=str, help="Resume from a specific date or point"
         )
+        parser.add_argument(
+            "--max_backfill_days",
+            type=int,
+            default=0,
+            help="Max lookback days for implicit backfill when no date args are provided (0 means no cap)",
+        )
 
     def handle(self, *args, **options):
         ts_code = options.get("tscode")
@@ -52,6 +58,7 @@ class Command(BaseCommand):
         end_date = options.get("end_date")
         resume = options.get("resume")
         env = options.get("env")
+        max_backfill_days = options.get("max_backfill_days")
 
         # Validate arguments
         if not dtype or (dtype.upper() == "TRADING" and not freq):
@@ -63,8 +70,15 @@ class Command(BaseCommand):
             self.stderr.write(self.style.ERROR(msg))
             return
         
+        # Default behavior for scheduled daily runs:
+        # if no explicit date args are provided, backfill as a range ending today
+        # from each symbol's local next missing trade_date.
         if not trade_date and not start_date and not end_date:
-            trade_date = date.today().strftime("%Y%m%d")
+            end_date = date.today().strftime("%Y%m%d")
+            if max_backfill_days and max_backfill_days > 0:
+                start_date = (date.today() - timedelta(days=max_backfill_days)).strftime(
+                    "%Y%m%d"
+                )
 
         # Your command logic here
         try:

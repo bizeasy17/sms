@@ -3739,8 +3739,8 @@ def get_recent_financial_updates(request):
             report_filter = "ALL"
         elif report_filter_raw in {"Q1", "H1", "Q3", "FY"}:
             report_filter = report_filter_raw
-        elif report_filter_raw in {"σ┐½", "EXP", "EXPRESS"}:
-            report_filter = "σ┐½"
+        elif report_filter_raw in {"快", "EXP", "EXPRESS"}:
+            report_filter = "快"
         elif report_filter_raw in {"ANNUAL", "YEAR", "YEARLY"}:
             report_filter = "FY"
         else:
@@ -3768,7 +3768,7 @@ def get_recent_financial_updates(request):
             return normalized_code.startswith(scope)
 
         def _build_daily_sync_summary():
-            if report_filter == "σ┐½":
+            if report_filter == "快":
                 return {
                     "daily": [],
                     "expected_total": 0,
@@ -3777,7 +3777,7 @@ def get_recent_financial_updates(request):
                     "today_expected": 0,
                     "today_synced": 0,
                     "today_missing": 0,
-                    "note": "σ┐½µèÑσÅúσ╛äΣ╕ìτ╗ƒΦ«í income σÉîµ¡ÑΦªåτ¢û",
+                    "note": "快报仅统计 income 库中的快报更新",
                 }
 
             suffix_allow = report_suffix_map.get(report_filter, report_suffix_map["ALL"])
@@ -3960,7 +3960,7 @@ def get_recent_financial_updates(request):
 
             express_ann_date = _parse_date_like(row.get("express_ann_date"))
             if express_ann_date is not None:
-                candidates.append((express_ann_date, "σ┐½"))
+                candidates.append((express_ann_date, "快"))
 
             if latest_trade_date is not None:
                 candidates = [item for item in candidates if item[0] <= latest_trade_date]
@@ -4731,7 +4731,7 @@ def _resolve_report_type_from_end_date(report_end_date):
 
 def _recent_report_candidate_sort_key(candidate):
     ann_date, label = candidate
-    return (ann_date, 0 if str(label or "") == "σ┐½" else 1)
+    return (ann_date, 0 if str(label or "") == "快" else 1)
 
 
 def _build_latest_official_financial_ann_date_map(ts_codes, max_trade_date=None):
@@ -4814,7 +4814,7 @@ def _build_latest_financial_ann_date_map(ts_codes, market="CN", max_trade_date=N
                     express_ann_date=express_ann_date,
                 ),
             ),
-            (express_ann_date, "σ┐½"),
+            (express_ann_date, "快"),
         ]:
             if candidate is None:
                 continue
@@ -4837,10 +4837,10 @@ def _build_latest_financial_ann_date_map(ts_codes, market="CN", max_trade_date=N
 def _normalize_recent_report_label(*, report_type=None, profit_source=None, ann_date=None, express_ann_date=None):
     source_text = str(profit_source or "").strip().lower()
     if source_text.startswith("express"):
-        return "σ┐½"
+        return "快"
 
     if ann_date is not None and express_ann_date is not None and ann_date == express_ann_date:
-        return "σ┐½"
+        return "快"
 
     normalized_type = str(report_type or "").strip().upper()
     if not normalized_type:
@@ -4901,7 +4901,7 @@ def _attach_recent_financial_report_badge(rows, *, asof_date=None, market="CN"):
         if (
             _parse_date_like(row.get("valuation_express_ann_date")) is not None
             or _parse_date_like(row.get("express_ann_date")) is not None
-            or fallback_payload.get("label") == "σ┐½"
+            or fallback_payload.get("label") == "快"
         ):
             official_override_codes.append(ts_code)
 
@@ -4964,9 +4964,9 @@ def _attach_recent_financial_report_badge(rows, *, asof_date=None, market="CN"):
                 )
             )
         if valuation_express_ann is not None:
-            candidates.append((valuation_express_ann, "σ┐½"))
+            candidates.append((valuation_express_ann, "快"))
         if base_express_ann is not None:
-            candidates.append((base_express_ann, "σ┐½"))
+            candidates.append((base_express_ann, "快"))
 
         fallback_payload = fallback_ann_map.get(ts_code) or {}
         fallback_ann = fallback_payload.get("ann_date")

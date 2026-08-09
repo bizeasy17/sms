@@ -7,12 +7,14 @@ set "PYTHON_CMD=C:\Users\HANJ29\Development\code\JIUCAI_DEV\.venv\Scripts\python
 if not exist "%PYTHON_CMD%" set "PYTHON_CMD=python"
 if not defined ENABLE_PARALLEL_REFRESH set "ENABLE_PARALLEL_REFRESH=1"
 if not defined LOW_FREQ_TRADITIONAL_FULL_REFRESH_MONTHDAY set "LOW_FREQ_TRADITIONAL_FULL_REFRESH_MONTHDAY=1"
+if not defined ETL_MAX_BACKFILL_DAYS set "ETL_MAX_BACKFILL_DAYS=0"
 
 set "LOG_DIR=%UAT_ROOT%\logs"
 if not exist "%LOG_DIR%" mkdir "%LOG_DIR%"
 for /f %%i in ('powershell -NoProfile -Command "Get-Date -Format yyyyMMdd_HHmmss"') do set "RUN_STAMP=%%i"
 for /f %%i in ('powershell -NoProfile -Command "(Get-Date).Day"') do set "CUR_DAY=%%i"
 for /f %%i in ('powershell -NoProfile -Command "Get-Date -Format yyyyMM"') do set "CUR_MONTH_KEY=%%i"
+for /f %%i in ('powershell -NoProfile -Command "Get-Date -Format yyyyMMdd"') do set "TODAY_TRADE_DATE=%%i"
 set "LOG_FILE=%LOG_DIR%\daily_%RUN_STAMP%.log"
 set "TRADITIONAL_FULL_MARK_FILE=%LOG_DIR%\traditional_full_refresh_last_month.txt"
 set "LAST_TRADITIONAL_FULL_MONTH="
@@ -40,12 +42,14 @@ echo [INFO] traditional_full_mark_file=%TRADITIONAL_FULL_MARK_FILE% >> "%LOG_FIL
 echo [INFO] last_traditional_full_month=%LAST_TRADITIONAL_FULL_MONTH% >> "%LOG_FILE%"
 echo [INFO] should_traditional_full_refresh=%SHOULD_TRADITIONAL_FULL_REFRESH% >> "%LOG_FILE%"
 echo [INFO] traditional_candidate_policy=%TRADITIONAL_CANDIDATE_POLICY% >> "%LOG_FILE%"
+echo [INFO] etl_max_backfill_days=%ETL_MAX_BACKFILL_DAYS% >> "%LOG_FILE%"
+echo [INFO] today_trade_date=%TODAY_TRADE_DATE% >> "%LOG_FILE%"
 
-call :run_step "ETL daily trading download" "%UAT_ROOT%\smartinvestor_etl" "%PYTHON_CMD% manage.py download --freq=D --dtype=TRADING"
+call :run_step "ETL daily trading download" "%UAT_ROOT%\smartinvestor_etl" "%PYTHON_CMD% manage.py download --freq=D --dtype=TRADING --trade_date=%TODAY_TRADE_DATE%"
 if errorlevel 1 exit /b %ERRORLEVEL%
-call :run_step "ETL daily fundamental download" "%UAT_ROOT%\smartinvestor_etl" "%PYTHON_CMD% manage.py download --freq=D --dtype=FUNDAMENTAL"
+call :run_step "ETL daily fundamental download" "%UAT_ROOT%\smartinvestor_etl" "%PYTHON_CMD% manage.py download --freq=D --dtype=FUNDAMENTAL --trade_date=%TODAY_TRADE_DATE%"
 if errorlevel 1 exit /b %ERRORLEVEL%
-call :run_step "ETL daily CYQ download" "%UAT_ROOT%\smartinvestor_etl" "%PYTHON_CMD% manage.py download --freq=D --dtype=CYQ"
+call :run_step "ETL daily CYQ download" "%UAT_ROOT%\smartinvestor_etl" "%PYTHON_CMD% manage.py download --freq=D --dtype=CYQ --trade_date=%TODAY_TRADE_DATE%"
 if errorlevel 1 exit /b %ERRORLEVEL%
 call :run_step "Earnings sync market local delta" "%UAT_ROOT%\tushare_earnings_service" "%PYTHON_CMD% manage.py sync_market_local --mode delta --freq D --retention-years 3"
 if errorlevel 1 exit /b %ERRORLEVEL%

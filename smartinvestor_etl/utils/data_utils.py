@@ -18,6 +18,31 @@ import pandas as pd
 
 
 ADJ_PRICE_FIELDS = ["open", "high", "low", "close", "pre_close"]
+TUSHARE_DAILY_BASIC_REQUEST_INTERVAL_SECONDS = 0.15
+TUSHARE_RATE_LIMIT_RETRY_SLEEP_SECONDS = 65
+TUSHARE_RATE_LIMIT_MAX_RETRIES = 3
+
+
+def _is_tushare_rate_limit_error(error):
+    message = str(error or "")
+    return "daily_basic" in message and ("频率超限" in message or "500次/分钟" in message)
+
+
+def _fetch_daily_basic_with_retry(pro, **kwargs):
+    last_error = None
+    for attempt in range(1, TUSHARE_RATE_LIMIT_MAX_RETRIES + 1):
+        try:
+            return pro.daily_basic(**kwargs)
+        except Exception as error:
+            last_error = error
+            if not _is_tushare_rate_limit_error(error) or attempt >= TUSHARE_RATE_LIMIT_MAX_RETRIES:
+                raise
+            print(
+                f"[WARN] daily_basic rate limited on attempt {attempt}; "
+                f"sleep {TUSHARE_RATE_LIMIT_RETRY_SLEEP_SECONDS}s then retry. request={kwargs}"
+            )
+            sleep(TUSHARE_RATE_LIMIT_RETRY_SLEEP_SECONDS)
+    raise last_error
 
 
 def _missing_required_columns(frame, required_columns):
@@ -271,44 +296,50 @@ def fetch_and_store_daily_trading_history(
     for corp in corporations:
         try:
             print(f"Fetching data for {corp.ts_code}...")
-            if start_date is None:
-                start_date = (
+            corp_start_date = start_date
+            corp_end_date = end_date
+
+            if corp_start_date is None:
+                corp_start_date = (
                     get_next_trade_date_from_db(
                         StockTradingHistory, corp.ts_code, freq=freq
                     )
                     or corp.list_date
                 )
             # Ensure start_date and end_date are both datetime.date
-            if isinstance(start_date, str):
-                if "-" in start_date:
-                    start_date = datetime.strptime(start_date, "%Y-%m-%d").date()
+            if isinstance(corp_start_date, str):
+                if "-" in corp_start_date:
+                    corp_start_date = datetime.strptime(corp_start_date, "%Y-%m-%d").date()
                 else:
-                    start_date = datetime.strptime(start_date, "%Y%m%d").date()
-            elif isinstance(start_date, datetime):
-                start_date = start_date.date()
-            if isinstance(end_date, str):
-                if "-" in end_date:
-                    end_date = datetime.strptime(end_date, "%Y-%m-%d").date()
+                    corp_start_date = datetime.strptime(corp_start_date, "%Y%m%d").date()
+            elif isinstance(corp_start_date, datetime):
+                corp_start_date = corp_start_date.date()
+            if isinstance(corp_end_date, str):
+                if "-" in corp_end_date:
+                    corp_end_date = datetime.strptime(corp_end_date, "%Y-%m-%d").date()
                 else:
-                    end_date = datetime.strptime(end_date, "%Y%m%d").date()
-            elif isinstance(end_date, datetime):
-                end_date = end_date.date()
+                    corp_end_date = datetime.strptime(corp_end_date, "%Y%m%d").date()
+            elif isinstance(corp_end_date, datetime):
+                corp_end_date = corp_end_date.date()
 
-            if start_date > end_date:
+            if corp_start_date > corp_end_date:
                 print(
-                    f"Start date {start_date} is after end date {end_date} for {corp.ts_code}. Skipping."
+                    f"Start date {corp_start_date} is after end date {corp_end_date} for {corp.ts_code}. Skipping."
                 )
                 continue
 
             start_date_str = (
-                start_date.strftime("%Y%m%d")
-                if isinstance(start_date, (datetime, date))
-                else str(start_date)
+                corp_start_date.strftime("%Y%m%d")
+                if isinstance(corp_start_date, (datetime, date))
+                else str(corp_start_date)
             )
             end_date_str = (
-                end_date.strftime("%Y%m%d")
-                if isinstance(end_date, (datetime, date))
-                else str(end_date)
+                corp_end_date.strftime("%Y%m%d")
+                if isinstance(corp_end_date, (datetime, date))
+                else str(corp_end_date)
+            )
+            print(
+                f"{corp.ts_code} trading range: {start_date_str} -> {end_date_str}"
             )
             df = _fetch_daily_and_adj_factor(
                 pro=pro,
@@ -503,38 +534,41 @@ def fetch_and_store_fundamental_data(
         # Fetch fundamental data for each corporation
         for corp in corporations:
             print(f"Fetching data for {corp.ts_code}...")
-            
-            if start_date is None:
-                start_date = (
+
+            corp_start_date = start_date
+            corp_end_date = end_date
+
+            if corp_start_date is None:
+                corp_start_date = (
                     get_next_trade_date_from_db(
                         StockFundamentalHistory, corp.ts_code, freq=freq
                     )
                     or corp.list_date
                 )
-            
-            # Ensure start_date and end_date are both datetime.date
-            if isinstance(start_date, str):
-                if "-" in start_date:
-                    start_date = datetime.strptime(start_date, "%Y-%m-%d").date()
-                else:
-                    start_date = datetime.strptime(start_date, "%Y%m%d").date()
-            elif isinstance(start_date, datetime):
-                start_date = start_date.date()
-            if isinstance(end_date, str):
-                if "-" in end_date:
-                    end_date = datetime.strptime(end_date, "%Y-%m-%d").date()
-                else:
-                    end_date = datetime.strptime(end_date, "%Y%m%d").date()
-            elif isinstance(end_date, datetime):
-                end_date = end_date.date()
 
-            if start_date > end_date:
+            # Ensure start_date and end_date are both datetime.date
+            if isinstance(corp_start_date, str):
+                if "-" in corp_start_date:
+                    corp_start_date = datetime.strptime(corp_start_date, "%Y-%m-%d").date()
+                else:
+                    corp_start_date = datetime.strptime(corp_start_date, "%Y%m%d").date()
+            elif isinstance(corp_start_date, datetime):
+                corp_start_date = corp_start_date.date()
+            if isinstance(corp_end_date, str):
+                if "-" in corp_end_date:
+                    corp_end_date = datetime.strptime(corp_end_date, "%Y-%m-%d").date()
+                else:
+                    corp_end_date = datetime.strptime(corp_end_date, "%Y%m%d").date()
+            elif isinstance(corp_end_date, datetime):
+                corp_end_date = corp_end_date.date()
+
+            if corp_start_date > corp_end_date:
                 print(
-                    f"Start date {start_date} is after end date {end_date} for {corp.ts_code}. Skipping."
+                    f"Start date {corp_start_date} is after end date {corp_end_date} for {corp.ts_code}. Skipping."
                 )
                 continue
 
-            for start, end in split_dates_by_20_years(start_date, end_date):
+            for start, end in split_dates_by_20_years(corp_start_date, corp_end_date):
                 print(f"Fetching data from {start} to {end} for {corp.ts_code}...")
                 start_date_str = (
                     start.strftime("%Y%m%d")
@@ -546,7 +580,11 @@ def fetch_and_store_fundamental_data(
                     if isinstance(end, (datetime, date))
                     else str(end)
                 )
-                df = pro.daily_basic(
+                print(
+                    f"{corp.ts_code} fundamental range: {start_date_str} -> {end_date_str}"
+                )
+                df = _fetch_daily_basic_with_retry(
+                    pro,
                     ts_code=corp.ts_code,
                     start_date=start_date_str,
                     end_date=end_date_str,
@@ -566,7 +604,7 @@ def fetch_and_store_fundamental_data(
                     )
                 else:
                     print(f"No data returned for {corp.ts_code}.")
-                # sleep(0.33)
+                sleep(TUSHARE_DAILY_BASIC_REQUEST_INTERVAL_SECONDS)
     except (ValueError, KeyError, TypeError, ValidationError) as e:
         print(f"Error fetching or saving data: {e}")
     except ConnectionError as e:
