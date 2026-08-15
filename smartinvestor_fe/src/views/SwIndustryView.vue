@@ -350,6 +350,7 @@ import VChart from 'vue-echarts'
 import DefaultLayout from '../layouts/DefaultLayout.vue'
 import StockChartFilter from '../components/StockChartFilter.vue'
 import { useStockTradeStore } from '../stores/stockTradeStore'
+import { resolveCompanyWebsiteUrl } from '../utils/companyWebsite'
 
 use([CanvasRenderer, LineChart, BarChart, TooltipComponent, GridComponent, DataZoomComponent, LegendComponent, MarkLineComponent])
 
@@ -377,6 +378,7 @@ type SwConstituentRow = {
   name: string
   basic_info?: {
     website?: string
+    website_url?: string | null
     main_business?: string
   }
   in_watchlist: boolean
@@ -901,7 +903,7 @@ function syncDialogStock(row: SwConstituentRow) {
   if (!tsCode) return
   stockTradeStore.setTsCode(tsCode)
   stockTradeStore.setName(String(row.name || ''))
-  stockTradeStore.setWebsite(String(row.basic_info?.website || ''))
+  stockTradeStore.setWebsite(resolveCompanyWebsiteUrl(row.basic_info?.website_url, row.basic_info?.website))
   stockDialogTitle.value = `${row.name || ''} | ${tsCode}`
 }
 

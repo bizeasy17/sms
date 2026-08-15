@@ -66,7 +66,7 @@ class Command(BaseCommand):
             last_call_ts = time.monotonic()
             return result
 
-        self.stdout.write(
+        self._safe_write(
             f"开始同步估值远端缓存: market={market}, trade_date={trade_date}, request_interval={request_interval}, "
             f"history_years={history_years}, history_quantile={float(options.get('history_quantile') or 0.5)}, "
             f"history_min_samples={int(options.get('history_min_samples') or 120)}"
@@ -75,12 +75,12 @@ class Command(BaseCommand):
         if not options.get("disable_citic"):
             citic_payload = self._sync_citic_profile(pro, call, trade_date)
             self._write_cache(cache_dir / f"citic_profile_{market}.json", citic_payload)
-            self.stdout.write(f"CITIC缓存完成: {citic_payload['record_count']} 条")
+            self._safe_write(f"CITIC缓存完成: {citic_payload['record_count']} 条")
 
         if not options.get("disable_stock_company"):
             stock_payload = self._sync_stock_company(pro, call, trade_date)
             self._write_cache(cache_dir / f"stock_company_{market}.json", stock_payload)
-            self.stdout.write(f"stock_company缓存完成: {stock_payload['record_count']} 条")
+            self._safe_write(f"stock_company缓存完成: {stock_payload['record_count']} 条")
 
         if not options.get("disable_sw_history"):
             sw_payload = self._sync_sw_history(
@@ -92,11 +92,11 @@ class Command(BaseCommand):
                 request_interval=request_interval,
             )
             self._write_cache(cache_dir / f"sw_history_anchor_{market}.json", sw_payload)
-            self.stdout.write(
+            self._safe_write(
                 f"sw_history缓存完成: {sw_payload['record_count']} 条, 有效锚点 {sw_payload['anchored_count']} 条"
             )
 
-        self.stdout.write(self.style.SUCCESS("估值远端缓存同步完成"))
+        self._safe_write(self.style.SUCCESS("估值远端缓存同步完成"))
 
     def _resolve_trade_date(self, pro):
         today_text = datetime.now().strftime("%Y%m%d")
@@ -202,7 +202,7 @@ class Command(BaseCommand):
                 anchored_count += 1
             data[index_code] = payload
             if idx % 30 == 0 or idx == total:
-                self.stdout.write(f"sw_history 进度: {idx}/{total}")
+                self._safe_write(f"sw_history 进度: {idx}/{total}")
 
         return {
             "updated_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
@@ -216,3 +216,11 @@ class Command(BaseCommand):
     def _write_cache(path: Path, payload: dict):
         with path.open("w", encoding="utf-8") as file_obj:
             json.dump(payload, file_obj, ensure_ascii=False, indent=2)
+
+    def _safe_write(self, message: str):
+        """Write logs robustly on Windows consoles with non-UTF8 encodings."""
+        try:
+            self.stdout.write(message)
+        except UnicodeEncodeError:
+            # Fall back to escaped ASCII so batch jobs don't fail on cp1252/cp936 consoles.
+            self.stdout.write(str(message).encode("ascii", errors="backslashreplace").decode("ascii"))

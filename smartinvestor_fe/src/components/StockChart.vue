@@ -10,7 +10,7 @@
                             <el-col :span="8">
                                 <div style="display: flex; align-items: center; gap: 8px;">
                                     <el-link
-                                        :href="stockStore.website.startsWith('http') ? stockStore.website : 'https://' + stockStore.website"
+                                        :href="resolveCompanyWebsiteUrl(stockStore.website, '')"
                                         target="_blank" type="primary" style="font-size: 12px;">{{ stockStore.name + ' | ' + stockStore.tsCode }}
                                     </el-link>
                                     <el-check-tag v-if="displayEmbed" :checked="isInWatchlist"
@@ -162,6 +162,7 @@ import VChart from 'vue-echarts'
 // import the datastore
 import { useStockTradeStore } from '../stores/stockTradeStore'
 import { useStockChartFilterStore } from '../stores/stockChartFilterStore'
+import { resolveCompanyWebsiteUrl } from '../utils/companyWebsite'
 
 import axios from 'axios'
 import { inject } from 'vue'
@@ -186,6 +187,7 @@ function toCanonicalTsCode(code) {
 function buildTsCodeCandidates(code) {
     const normalized = String(code || '').trim().toUpperCase();
     const base = normalized.split('.')[0];
+    // If exchange suffix already exists, keep a single deterministic candidate.
     if (normalized.includes('.')) {
         return normalized ? [normalized] : [];
     }
@@ -194,11 +196,7 @@ function buildTsCodeCandidates(code) {
     if (base) candidateSet.add(base);
     const canonical = toCanonicalTsCode(normalized);
     if (canonical) candidateSet.add(canonical);
-    if (base && /^\d{6}$/.test(base)) {
-        candidateSet.add(`${base}.SH`);
-        candidateSet.add(`${base}.SZ`);
-        candidateSet.add(`${base}.BJ`);
-    }
+    // Do not fan-out to all markets (SH/SZ/BJ) to avoid extra watchlist checks.
     return Array.from(candidateSet);
 }
 
@@ -1949,7 +1947,11 @@ async function fetchTradingHistory(stockCode = '', freq = 'D', adj = 'qfq', coun
                 stockStore.setPctChg(pctChg.value.length > 0 ? pctChg.value[pctChg.value.length - 1] : null)
 
                 loadLatestChipDistribution(stockCode)
-                prefetchTradingHistoryVariants(normalizedStockCode, adj, requestCount, freq)
+                // Embedded dialog already renders one active timeframe. Skip W/M prefetch
+                // here to avoid extra backend pressure during prev/next navigation.
+                if (!displayEmbed.value) {
+                    prefetchTradingHistoryVariants(normalizedStockCode, adj, requestCount, freq)
+                }
             } catch (error) {
                 console.error('Failed to fetch trading history:', error)
             } finally {

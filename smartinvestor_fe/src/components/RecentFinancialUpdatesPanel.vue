@@ -81,10 +81,9 @@
                         <div style="margin-left: 2px; color: #888;">
                             <span>官网: </span>
                             <el-link
-                                :href="stock.basic_info.website.startsWith('http') ? stock.basic_info.website : 'https://' + stock.basic_info.website"
+                                :href="resolveCompanyWebsiteUrl(stock.basic_info.website_url, stock.basic_info.website)"
                                 target="_blank" type="primary" style="font-size: 12px;">
-                                {{ stock.basic_info.website.startsWith('http') ? stock.basic_info.website : 'https://' +
-                                    stock.basic_info.website }}
+                                {{ resolveCompanyWebsiteUrl(stock.basic_info.website_url, stock.basic_info.website) }}
                             </el-link>
                         </div>
                     </el-col>
@@ -133,6 +132,7 @@ import { computed, ref, defineOptions, inject, nextTick, onMounted } from 'vue'
 import axios from 'axios';
 import { ElCard, ElRow, ElCol, ElLink, ElTag, ElDivider, ElButton, ElButtonGroup, ElScrollbar, ElRadioGroup, ElRadioButton, ElMessage } from 'element-plus';
 import { useStockTradeStore } from '../stores/stockTradeStore';
+import { resolveCompanyWebsiteUrl } from '../utils/companyWebsite';
 
 const baseURL = inject('baseURL');
 const stockTradeStore = useStockTradeStore();
@@ -297,7 +297,7 @@ const selectStock = (stock) => {
     }
     stockTradeStore.setTsCode(stock.ts_code);
     stockTradeStore.setName(stock.name || '');
-    stockTradeStore.setWebsite(stock?.basic_info?.website || stock?.website || '');
+    stockTradeStore.setWebsite(resolveCompanyWebsiteUrl(stock?.basic_info?.website_url || stock?.website_url, stock?.basic_info?.website || stock?.website));
 };
 
 const saveBookmark = (stock, options = {}) => {
@@ -309,7 +309,7 @@ const saveBookmark = (stock, options = {}) => {
         [getBookmarkScopeKey()]: normalizeBookmarkEntry({
         ts_code: normalizeStockCode(stock.ts_code),
         name: String(stock.name || ''),
-        website: String(stock?.basic_info?.website || ''),
+        website: resolveCompanyWebsiteUrl(stock?.basic_info?.website_url, stock?.basic_info?.website),
         recentDays: Number(recentDays.value) || 7,
         marketScope: normalizeMarketScope(marketScope.value),
         reportFilter: normalizeReportFilter(reportFilter.value),

@@ -15,12 +15,15 @@
                     </span>
                 </el-col>
                 <el-col :span="7">
-                    <span style="display: inline-block; vertical-align: middle;">周期：</span>
-                    <el-radio-group v-model="selectedFreq" size="small" style="display: inline-block; vertical-align: middle; margin-left: 4px;">
-                        <el-radio-button label="D">日</el-radio-button>
-                        <el-radio-button label="W">周</el-radio-button>
-                        <el-radio-button label="M">月</el-radio-button>
-                    </el-radio-group>
+                    <span style="display: inline-block; vertical-align: middle;">财报所属年份：</span>
+                    <el-select v-model="selectedFiscalYear" size="small" style="display: inline-block; vertical-align: middle; margin-left: 4px; width: 112px;">
+                        <el-option
+                            v-for="year in fiscalYearOptions"
+                            :key="year"
+                            :label="year"
+                            :value="year"
+                        />
+                    </el-select>
                 </el-col>
                 <el-col :span="8">
                     <span style="display: inline-block; vertical-align: middle;">时长：</span>
@@ -38,12 +41,13 @@
                     <el-radio-group v-model="selectedPickingMode" size="small" style="display: inline-block; vertical-align: middle; margin-left: 8px;">
                         <el-radio-button label="MODE:BASELINE">传统估值</el-radio-button>
                         <el-radio-button label="MODE:PREDICTIVE">预测估值</el-radio-button>
+                        <el-radio-button label="MODE:FINANCIAL">财务表现</el-radio-button>
                     </el-radio-group>
-                    <span style="margin-left: 8px; color: #909399;">传统估值支持 Q1/H1/Q3/FY/快报 口径筛选；预测估值额外支持 FUSION。</span>
+                    <span style="margin-left: 8px; color: #909399;">财务表现按已发布财报筛选，不使用训练数据。</span>
                 </el-col>
             </el-row>
 
-            <el-row :gutter="2" style="font-size: x-small; margin-bottom: 6px; color: gray;">
+            <el-row v-if="!isFinancialMode" :gutter="2" style="font-size: x-small; margin-bottom: 6px; color: gray;">
                 <el-col :span="24">
                     <span style="display: inline-block; vertical-align: middle;">快速策略：</span>
                     <el-button
@@ -77,17 +81,17 @@
                 </el-col>
             </el-row>
 
-            <template v-if="quickConditionExpanded">
+            <template v-if="isFinancialMode || quickConditionExpanded">
                 <div class="filter-grid">
                     <div class="filter-item filter-item--u8 filter-item--order-1">
                         <span class="filter-label">口径：</span>
-                        <el-radio-group v-model="selectedEarningsReportType" size="small" class="filter-control filter-radio-group">
-                            <el-radio-button label="ERT:ALL">综合</el-radio-button>
+                        <el-radio-group v-model="selectedEarningsReportType" size="small" class="filter-control">
+                            <el-radio-button v-if="!isFinancialMode" label="ERT:ALL">综合</el-radio-button>
                             <el-radio-button label="ERT:Q1">Q1</el-radio-button>
                             <el-radio-button label="ERT:H1">H1</el-radio-button>
                             <el-radio-button label="ERT:Q3">Q3</el-radio-button>
                             <el-radio-button label="ERT:FY">FY</el-radio-button>
-                            <el-radio-button v-if="!isPredictiveMode" label="ERT:快">快报</el-radio-button>
+                            <el-radio-button v-if="!isPredictiveMode && !isFinancialMode" label="ERT:快">快报</el-radio-button>
                             <el-radio-button v-if="isPredictiveMode" label="ERT:FUSION">Fusion</el-radio-button>
                         </el-radio-group>
                     </div>
@@ -103,7 +107,7 @@
                         </el-select>
                     </div>
 
-                    <div class="filter-item">
+                    <div v-if="!isFinancialMode" class="filter-item">
                         <span class="filter-label">风险级别：</span>
                         <el-select
                             v-model="selectedRiskLevel"
@@ -121,7 +125,7 @@
                         </el-select>
                     </div>
 
-                    <div class="filter-item">
+                    <div v-if="!isFinancialMode" class="filter-item">
                         <span class="filter-label">最低分数：</span>
                         <el-input-number
                             v-model="selectedMinSignalScore"
@@ -150,7 +154,7 @@
                         </el-select>
                     </div>
 
-                    <div class="filter-item">
+                    <div v-if="!isFinancialMode" class="filter-item">
                         <span class="filter-label">优先策略：</span>
                         <el-select v-model="selectedPriorityPolicy" size="small" class="filter-control" placeholder="优先策略">
                             <el-option label="低估高分优先" value="score_desc" />
@@ -162,9 +166,9 @@
                         </el-select>
                     </div>
 
-                    <div class="filter-item">
+                    <div v-if="!isFinancialMode" class="filter-item">
                         <span class="filter-label">买入候选：</span>
-                        <el-radio-group v-model="selectedBuyCandidateOnly" size="small" class="filter-control filter-radio-group">
+                        <el-radio-group v-model="selectedBuyCandidateOnly" size="small" class="filter-control">
                             <el-radio-button label="BC:NONE">全部</el-radio-button>
                             <el-radio-button label="BC:ONLY">仅可买</el-radio-button>
                         </el-radio-group>
@@ -189,6 +193,21 @@
                         </el-select>
                     </div>
 
+                    <template v-if="isFinancialMode">
+                        <div class="filter-item"><span class="filter-label">EBIT同比最小值：</span><el-input-number v-model="selectedMinEbitYoy" :min="-100" :max="1000" class="filter-control" /></div>
+                        <div class="filter-item"><span class="filter-label">EBIT环比最小值：</span><el-input-number v-model="selectedMinEbitQoq" :min="-100" :max="1000" class="filter-control" /></div>
+                        <div class="filter-item"><span class="filter-label">营收同比最小值：</span><el-input-number v-model="selectedMinRevenueYoy" :min="-100" :max="1000" class="filter-control" /></div>
+                        <div class="filter-item"><span class="filter-label">营收环比最小值：</span><el-input-number v-model="selectedMinRevenueQoq" :min="-100" :max="1000" class="filter-control" /></div>
+                        <div class="filter-item"><span class="filter-label">净利同比最小值：</span><el-input-number v-model="selectedMinNetprofitYoy" :min="-100" :max="1000" class="filter-control" /></div>
+                        <div class="filter-item"><span class="filter-label">净利环比最小值：</span><el-input-number v-model="selectedMinNetprofitQoq" :min="-100" :max="1000" class="filter-control" /></div>
+                        <div class="filter-item"><span class="filter-label">ROE最小值：</span><el-input-number v-model="selectedMinRoe" :min="-100" :max="100" class="filter-control" /></div>
+                        <div class="filter-item"><span class="filter-label">扣非ROE最小值：</span><el-input-number v-model="selectedMinRoeDt" :min="-100" :max="100" class="filter-control" /></div>
+                        <div class="filter-item"><span class="filter-label">全部指标可用：</span><el-switch v-model="selectedRequireAllFinancialMetrics" class="filter-control filter-control--switch" /></div>
+                        <div class="filter-item"><span class="filter-label">排序条件：</span><el-select v-model="selectedFinancialSortBy" size="small" class="filter-control"><el-option label="财务表现分" value="financial_score" /><el-option label="当前价格" value="current_price" /><el-option label="传统估值分" value="traditional_valuation_score" /><el-option label="预测估值分" value="predictive_signal_score" /><el-option label="预测估值收益率" value="predictive_target_return_pct" /></el-select></div>
+                        <div class="filter-item"><span class="filter-label">排序方向：</span><el-radio-group v-model="selectedFinancialSortOrder" size="small" class="filter-control"><el-radio-button label="desc">从高到低</el-radio-button><el-radio-button label="asc">从低到高</el-radio-button></el-radio-group></div>
+                    </template>
+
+                    <template v-if="!isFinancialMode">
                     <div class="filter-item">
                         <span class="filter-label">估值带宽：</span>
                         <el-input-number
@@ -268,7 +287,7 @@
 
                     <div class="filter-item filter-item--u8 filter-item--order-2">
                         <span class="filter-label">状态：</span>
-                        <el-radio-group v-model="selectedValuationStatus" size="small" class="filter-control filter-radio-group">
+                        <el-radio-group v-model="selectedValuationStatus" size="small" class="filter-control">
                             <el-radio-button label="VS:NONE">不筛选</el-radio-button>
                             <el-radio-button label="VS:UNDER">低估</el-radio-button>
                             <el-radio-button label="VS:FAIR">正常</el-radio-button>
@@ -276,9 +295,10 @@
                         </el-radio-group>
                     </div>
 
+                    </template>
                     <div class="filter-item filter-item--u8 filter-item--order-3">
                         <span class="filter-label">范围：</span>
-                        <el-radio-group v-model="selectedScope" size="small" class="filter-control filter-radio-group">
+                        <el-radio-group v-model="selectedScope" size="small" class="filter-control">
                             <el-radio-button label="SCOPE:NONE" value="SCOPE:NONE">请选择</el-radio-button>
                             <el-radio-button label="WATCHLIST" value="WATCHLIST">自</el-radio-button>
                             <el-radio-button label="60" value="60">沪</el-radio-button>
@@ -301,10 +321,13 @@ import { useValuationStockPickingStore } from "../stores/valuationStockPickingSt
 
 const valuationStockPickingStore = useValuationStockPickingStore();
 const baseURL = inject<string>("baseURL", "");
+const currentYear = new Date().getFullYear();
+const fiscalYearOptions = Array.from({ length: 6 }, (_, index) => String(currentYear + index));
 
 const selectedPickingPeriod = ref("60");
 const selectedFreq = ref("D");
 const selectedDate = ref(new Date());
+const selectedFiscalYear = ref(String(currentYear));
 const selectedScope = ref("SCOPE:NONE");
 const selectedPickingMode = ref("MODE:BASELINE");
 const selectedValuationMethod = ref("VM:RECOMMENDED");
@@ -326,8 +349,17 @@ const selectedValuationBandNumber = computed<number>({
     },
 });
 const selectedValuationPickStrategy = ref("VPS:BASELINE");
-const selectedMinNetprofitYoy = ref<number | null>(2);
-const selectedMinEbitYoy = ref<number | null>(2);
+const selectedMinNetprofitYoy = ref<number | null>(3);
+const selectedMinEbitYoy = ref<number | null>(3);
+const selectedMinEbitQoq = ref<number | null>(3);
+const selectedMinRevenueYoy = ref<number | null>(3);
+const selectedMinRevenueQoq = ref<number | null>(3);
+const selectedMinNetprofitQoq = ref<number | null>(3);
+const selectedMinRoe = ref<number | null>(3);
+const selectedMinRoeDt = ref<number | null>(3);
+const selectedRequireAllFinancialMetrics = ref(true);
+const selectedFinancialSortBy = ref("financial_score");
+const selectedFinancialSortOrder = ref("desc");
 const selectedRequirePositivePrevNetprofit = ref(true);
 const selectedRequirePositivePrevEbit = ref(true);
 const selectedApplyFinancialFilters = ref(false);
@@ -379,6 +411,7 @@ const defaultQuickProfiles = {
 };
 const quickProfileConfig = ref<any>(JSON.parse(JSON.stringify(defaultQuickProfiles)));
 const isPredictiveMode = computed(() => selectedPickingMode.value === "MODE:PREDICTIVE");
+const isFinancialMode = computed(() => selectedPickingMode.value === "MODE:FINANCIAL");
 const resultDateMarks = computed(() => valuationStockPickingStore.resultDateMarks);
 
 function splitMultiValue(raw: unknown, fallback: string[] = []): string[] {
@@ -541,6 +574,12 @@ watch(isPredictiveMode, (enabled) => {
     }
 });
 
+watch(isFinancialMode, (enabled) => {
+    if (enabled && !["ERT:Q1", "ERT:H1", "ERT:Q3", "ERT:FY"].includes(selectedEarningsReportType.value)) {
+        selectedEarningsReportType.value = "ERT:H1";
+    }
+});
+
 function normalizeScopeFromBacktest(rawScope: string): string {
     const scope = String(rawScope || "").trim().toUpperCase();
     if (!scope) {
@@ -691,6 +730,13 @@ function applyBacktestPrefillFromQuery() {
         selectedFeatureDataSource.value = String(featureDataSource);
     }
 
+    const fiscalYear = String(
+        params.get("valuation_fiscal_year") || params.get("target_fiscal_year") || params.get("fiscal_year") || ""
+    ).trim();
+    if (/^\d{4}$/.test(fiscalYear)) {
+        selectedFiscalYear.value = fiscalYear;
+    }
+
 }
 
 onMounted(async () => {
@@ -712,6 +758,15 @@ watch(
         selectedValuationPickStrategy,
         selectedMinNetprofitYoy,
         selectedMinEbitYoy,
+        selectedMinEbitQoq,
+        selectedMinRevenueYoy,
+        selectedMinRevenueQoq,
+        selectedMinNetprofitQoq,
+        selectedMinRoe,
+        selectedMinRoeDt,
+        selectedRequireAllFinancialMetrics,
+        selectedFinancialSortBy,
+        selectedFinancialSortOrder,
         selectedRequirePositivePrevNetprofit,
         selectedRequirePositivePrevEbit,
         selectedApplyFinancialFilters,
@@ -726,6 +781,7 @@ watch(
         selectedMinSignalScore,
         selectedMinTargetReturnPct,
         selectedFeatureDataSource,
+        selectedFiscalYear,
     ],
     () => {
         valuationStockPickingStore.setTradeDate(formatDateForApi(selectedDate.value));
@@ -739,6 +795,15 @@ watch(
         valuationStockPickingStore.setValuationPickStrategy(selectedValuationPickStrategy.value);
         valuationStockPickingStore.setMinNetprofitYoy(selectedMinNetprofitYoy.value === null ? "" : String(selectedMinNetprofitYoy.value));
         valuationStockPickingStore.setMinEbitYoy(selectedMinEbitYoy.value === null ? "" : String(selectedMinEbitYoy.value));
+        valuationStockPickingStore.setMinEbitQoq(selectedMinEbitQoq.value === null ? "" : String(selectedMinEbitQoq.value));
+        valuationStockPickingStore.setMinRevenueYoy(selectedMinRevenueYoy.value === null ? "" : String(selectedMinRevenueYoy.value));
+        valuationStockPickingStore.setMinRevenueQoq(selectedMinRevenueQoq.value === null ? "" : String(selectedMinRevenueQoq.value));
+        valuationStockPickingStore.setMinNetprofitQoq(selectedMinNetprofitQoq.value === null ? "" : String(selectedMinNetprofitQoq.value));
+        valuationStockPickingStore.setMinRoe(selectedMinRoe.value === null ? "" : String(selectedMinRoe.value));
+        valuationStockPickingStore.setMinRoeDt(selectedMinRoeDt.value === null ? "" : String(selectedMinRoeDt.value));
+        valuationStockPickingStore.setRequireAllFinancialMetrics(selectedRequireAllFinancialMetrics.value);
+        valuationStockPickingStore.setFinancialSortBy(selectedFinancialSortBy.value);
+        valuationStockPickingStore.setFinancialSortOrder(selectedFinancialSortOrder.value);
         valuationStockPickingStore.setRequirePositivePrevNetprofit(selectedRequirePositivePrevNetprofit.value);
         valuationStockPickingStore.setRequirePositivePrevEbit(selectedRequirePositivePrevEbit.value);
         valuationStockPickingStore.setApplyFinancialFilters(selectedApplyFinancialFilters.value);
@@ -755,6 +820,7 @@ watch(
         );
         valuationStockPickingStore.setMinTargetReturnPct(selectedMinTargetReturnPct.value);
         valuationStockPickingStore.setFeatureDataSource(selectedFeatureDataSource.value);
+        valuationStockPickingStore.setFiscalYear(selectedFiscalYear.value);
     },
     { immediate: true }
 );
@@ -885,12 +951,6 @@ defineOptions({
     margin: 2px 0;
     min-height: 0;
     order: 10;
-}
-
-:deep(.filter-radio-group) {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 4px;
 }
 
 @media (max-width: 900px) {

@@ -17,6 +17,15 @@ export type ValuationStockPickingParams = {
     riskVariantPolicy: string;
     minNetprofitYoy: string;
     minEbitYoy: string;
+    minEbitQoq: string;
+    minRevenueYoy: string;
+    minRevenueQoq: string;
+    minNetprofitQoq: string;
+    minRoe: string;
+    minRoeDt: string;
+    requireAllFinancialMetrics: boolean;
+    financialSortBy: string;
+    financialSortOrder: string;
     requirePositivePrevNetprofit: boolean;
     requirePositivePrevEbit: boolean;
     applyFinancialFilters: boolean;
@@ -59,8 +68,17 @@ export const useValuationStockPickingStore = defineStore("valuationStockPicking"
     const valuationPickStrategy = ref("VPS:BASELINE");
     const valuationVariant = ref("");
     const riskVariantPolicy = ref("any");
-    const minNetprofitYoy = ref("");
-    const minEbitYoy = ref("");
+    const minNetprofitYoy = ref("3");
+    const minEbitYoy = ref("3");
+    const minEbitQoq = ref("3");
+    const minRevenueYoy = ref("3");
+    const minRevenueQoq = ref("3");
+    const minNetprofitQoq = ref("3");
+    const minRoe = ref("3");
+    const minRoeDt = ref("3");
+    const requireAllFinancialMetrics = ref(true);
+    const financialSortBy = ref("financial_score");
+    const financialSortOrder = ref("desc");
     const requirePositivePrevNetprofit = ref(true);
     const requirePositivePrevEbit = ref(true);
     const applyFinancialFilters = ref(false);
@@ -96,6 +114,15 @@ export const useValuationStockPickingStore = defineStore("valuationStockPicking"
     function setRiskVariantPolicy(value: string) { riskVariantPolicy.value = value; }
     function setMinNetprofitYoy(value: string) { minNetprofitYoy.value = value; }
     function setMinEbitYoy(value: string) { minEbitYoy.value = value; }
+    function setMinEbitQoq(value: string) { minEbitQoq.value = value; }
+    function setMinRevenueYoy(value: string) { minRevenueYoy.value = value; }
+    function setMinRevenueQoq(value: string) { minRevenueQoq.value = value; }
+    function setMinNetprofitQoq(value: string) { minNetprofitQoq.value = value; }
+    function setMinRoe(value: string) { minRoe.value = value; }
+    function setMinRoeDt(value: string) { minRoeDt.value = value; }
+    function setRequireAllFinancialMetrics(value: boolean) { requireAllFinancialMetrics.value = value; }
+    function setFinancialSortBy(value: string) { financialSortBy.value = value; }
+    function setFinancialSortOrder(value: string) { financialSortOrder.value = value; }
     function setRequirePositivePrevNetprofit(value: boolean) { requirePositivePrevNetprofit.value = value; }
     function setRequirePositivePrevEbit(value: boolean) { requirePositivePrevEbit.value = value; }
     function setApplyFinancialFilters(value: boolean) { applyFinancialFilters.value = value; }
@@ -145,6 +172,15 @@ export const useValuationStockPickingStore = defineStore("valuationStockPicking"
         riskVariantPolicy,
         minNetprofitYoy,
         minEbitYoy,
+        minEbitQoq,
+        minRevenueYoy,
+        minRevenueQoq,
+        minNetprofitQoq,
+        minRoe,
+        minRoeDt,
+        requireAllFinancialMetrics,
+        financialSortBy,
+        financialSortOrder,
         requirePositivePrevNetprofit,
         requirePositivePrevEbit,
         applyFinancialFilters,
@@ -179,6 +215,15 @@ export const useValuationStockPickingStore = defineStore("valuationStockPicking"
         setRiskVariantPolicy,
         setMinNetprofitYoy,
         setMinEbitYoy,
+        setMinEbitQoq,
+        setMinRevenueYoy,
+        setMinRevenueQoq,
+        setMinNetprofitQoq,
+        setMinRoe,
+        setMinRoeDt,
+        setRequireAllFinancialMetrics,
+        setFinancialSortBy,
+        setFinancialSortOrder,
         setRequirePositivePrevNetprofit,
         setRequirePositivePrevEbit,
         setApplyFinancialFilters,

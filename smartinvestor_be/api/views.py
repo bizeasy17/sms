@@ -65,6 +65,217 @@ import time
 
 logger = logging.getLogger(__name__)
 
+
+def _normalize_company_website_url(value):
+    website = str(value or "").strip()
+    if not website:
+        return None
+    website = website.replace(" ", "")
+    if website.lower().startswith(("http://", "https://")):
+        return website
+    return f"https://{website}"
+
+
+def _financial_screening_service_url():
+    return str(
+        getattr(
+            settings,
+            "FINANCIAL_SCREENING_SERVICE_BASE_URL",
+            "http://127.0.0.1:5003",
+        )
+    ).strip().rstrip("/")
+
+
+def _financial_screening_candidate_rows(request, scope, sw_industry):
+    queryset = Corporation.objects.filter(list_status="L")
+    scope_text = str(scope or "").strip().upper()
+    if scope_text == "WATCHLIST":
+        user = request.user if request.user.is_authenticated else User.get_admin_user()
+        watch_codes = UserWatchlist.objects.filter(user=user, is_enabled=True).values_list("ts_code", flat=True)
+        queryset = queryset.filter(ts_code__in=watch_codes)
+    elif scope_text not in {"", "SCOPE:NONE"}:
+        prefixes = [item.strip() for item in scope_text.split(",") if item.strip()]
+        scope_query = Q()
+        for prefix in prefixes:
+            normalized_prefix = {"0": "00", "3": "30", "688": "68"}.get(prefix, prefix)
+            scope_query |= Q(ts_code__startswith=normalized_prefix)
+        if scope_query:
+            queryset = queryset.filter(scope_query)
+    sw_text = str(sw_industry or "").strip()
+    if sw_text:
+        queryset = queryset.filter(Q(sw_l3_code=sw_text) | Q(sw_l3_name=sw_text))
+    return list(queryset.values("ts_code", "name", "sw_l3_code", "sw_l3_name"))
+
+
+def _attach_financial_screening_valuation_results(items, trade_date, report_type):
+    if not items:
+        return
+    codes = [str(item.get("ts_code") or "").strip().upper() for item in items]
+    codes = [code for code in codes if code]
+    report_end_date = _parse_date_like(items[0].get("financial_end_date"))
+    if not codes or report_end_date is None:
+        return
+    method_map_by_code = _build_latest_snapshot_method_map(
+        codes,
+        market="CN",
+        profit_report_type=report_type,
+        profit_report_end_date=report_end_date,
+    )
+    close_map = {}
+    max_trade_date = _parse_date_like(trade_date)
+    trade_rows = StockTradingHistory.objects.filter(ts_code__in=codes, freq="D")
+    if max_trade_date is not None:
+        trade_rows = trade_rows.filter(trade_date__lte=max_trade_date)
+    for quote in trade_rows.order_by("ts_code", "-trade_date").values("ts_code", "close_qfq", "close"):
+        code = str(quote.get("ts_code") or "").upper()
+        if code in close_map:
+            continue
+        close_map[code] = _to_float_or_none(quote.get("close_qfq")) or _to_float_or_none(quote.get("close"))
+    end_date_map = {code: report_end_date for code in codes}
+    try:
+        predictive_map = _fetch_earnings_signal_batch(
+            codes,
+            report_type=report_type,
+            financial_end_date_map=end_date_map,
+        )
+    except Exception as exc:
+        logger.warning("financial screening predictive enrichment degraded: %s", exc)
+        predictive_map = {}
+    for item in items:
+        code = str(item.get("ts_code") or "").upper()
+        traditional = _summarize_buy_candidate(
+            close_map.get(code),
+            method_map_by_code.get(code) or {},
+            0.1,
+        )
+        predictive = predictive_map.get(code) or {}
+        item.update({
+            "current_price": close_map.get(code),
+            "traditional_valuation_price": traditional.get("composite_valuation_price"),
+            "traditional_conservative_price": traditional.get("conservative_valuation_price"),
+            "traditional_valuation_score": traditional.get("undervalue_score"),
+            "traditional_buy_candidate": bool(traditional.get("buy_candidate")),
+            "predictive_signal_score": _to_float_or_none(predictive.get("signal_score")),
+            "predictive_action": str(predictive.get("action") or ""),
+            "predictive_risk_level": str(predictive.get("risk_level") or ""),
+            "predictive_target_price": _to_float_or_none(predictive.get("target_price")),
+            "predictive_target_return_pct": _to_float_or_none(predictive.get("target_return_pct")),
+        })
+
+
+def _sort_financial_screening_results(items, sort_by, sort_order):
+    allowed_fields = {
+        "financial_score",
+        "current_price",
+        "traditional_valuation_score",
+        "predictive_signal_score",
+        "predictive_target_return_pct",
+    }
+    field = str(sort_by or "financial_score").strip()
+    if field not in allowed_fields:
+        field = "financial_score"
+    descending = str(sort_order or "desc").strip().lower() != "asc"
+
+    def sort_key(item):
+        value = _to_float_or_none(item.get(field))
+        if value is None:
+            return (1, 0.0, str(item.get("ts_code") or ""))
+        return (0, -value if descending else value, str(item.get("ts_code") or ""))
+
+    items.sort(key=sort_key)
+
+
+@api_view(["GET"])
+def pick_stocks_by_financial_performance(request, trade_date, scope):
+    try:
+        fiscal_year = int(str(request.query_params.get("fiscal_year") or "").strip())
+    except (TypeError, ValueError):
+        return Response({"error": "fiscal_year must be a four-digit year"}, status=400)
+    report_type = str(request.query_params.get("report_type") or "").strip().upper()
+    if report_type not in {"Q1", "H1", "Q3", "FY"}:
+        return Response({"error": "report_type must be Q1, H1, Q3, or FY"}, status=400)
+
+    candidate_rows = _financial_screening_candidate_rows(
+        request,
+        scope,
+        request.query_params.get("sw_industry"),
+    )
+    candidate_map = {str(row["ts_code"]).upper(): row for row in candidate_rows}
+    website_map = {
+        str(row.ts_code or "").upper(): {
+            "website": str(row.website or ""),
+            "website_url": _normalize_company_website_url(row.website),
+        }
+        for row in CorporationBasic.objects.filter(ts_code__in=list(candidate_map))
+    }
+    filters = {
+        key: request.query_params.get(key)
+        for key in (
+            "min_ebit_yoy_pct", "min_ebit_qoq_pct", "min_revenue_yoy_pct",
+            "min_revenue_qoq_pct", "min_netprofit_yoy_pct", "min_netprofit_qoq_pct",
+            "min_roe_pct", "min_roe_dt_pct",
+        )
+        if str(request.query_params.get(key) or "").strip()
+    }
+    filters["require_all_metrics"] = str(
+        request.query_params.get("require_all_metrics", "0")
+    ).strip().lower() in {"1", "true", "yes", "on"}
+    payload = {
+        "candidate_codes": list(candidate_map),
+        "fiscal_year": fiscal_year,
+        "report_type": report_type,
+        "filters": filters,
+        "sort": {
+            "by": str(request.query_params.get("sort_by") or "financial_score"),
+            "order": str(request.query_params.get("sort_order") or "desc"),
+        },
+    }
+    try:
+        body = json.dumps(payload).encode("utf-8")
+        upstream_request = urllib_request.Request(
+            f"{_financial_screening_service_url()}/api/v1/financial-screening/screen",
+            data=body,
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        with urllib_request.urlopen(upstream_request, timeout=20) as upstream_response:
+            upstream_payload = json.loads(upstream_response.read().decode("utf-8"))
+    except (HTTPError, URLError, TimeoutError, ValueError) as exc:
+        return Response({"error": f"financial screening service unavailable: {exc}"}, status=502)
+    service_data = upstream_payload.get("data") if isinstance(upstream_payload, dict) else {}
+    items = service_data.get("items") if isinstance(service_data, dict) else []
+    enriched = []
+    for item in items if isinstance(items, list) else []:
+        code = str(item.get("ts_code") or "").upper()
+        corporation = candidate_map.get(code) or {}
+        website = website_map.get(code) or {}
+        enriched.append({
+            **item,
+            "name": corporation.get("name") or code,
+            "sw_l3_code": corporation.get("sw_l3_code"),
+            "sw_l3_name": corporation.get("sw_l3_name"),
+            "website": website.get("website") or "",
+            "website_url": website.get("website_url"),
+        })
+    _attach_financial_screening_valuation_results(enriched, trade_date, report_type)
+    _sort_financial_screening_results(
+        enriched,
+        request.query_params.get("sort_by"),
+        request.query_params.get("sort_order"),
+    )
+    return Response({
+        "data": enriched,
+        "total": len(enriched),
+        "meta": {
+            "trade_date": str(trade_date),
+            "fiscal_year": fiscal_year,
+            "report_type": report_type,
+            "scope": str(scope),
+            "sw_industry": str(request.query_params.get("sw_industry") or ""),
+        },
+    })
+
+
 WEEKLY_UNDERVALUED_FILE_PREFIX = {
     "traditional": "traditional_undervalued_",
     "predictive": "predictive_undervalued_",
@@ -1711,6 +1922,7 @@ def _build_latest_snapshot_method_map(
     max_trade_date=None,
     express_only=False,
     profit_report_type=None,
+    profit_report_end_date=None,
 ):
     if not ts_codes:
         return {}
@@ -1726,6 +1938,9 @@ def _build_latest_snapshot_method_map(
     normalized_profit_report_type = _normalize_valuation_profit_report_type(profit_report_type)
     if normalized_profit_report_type:
         snapshots = snapshots.filter(profit_report_type=normalized_profit_report_type)
+    report_end_dt = _parse_date_like(profit_report_end_date)
+    if report_end_dt is not None:
+        snapshots = snapshots.filter(profit_report_end_date=report_end_dt)
 
     snapshots = snapshots.values(
         "ts_code",
@@ -3392,9 +3607,13 @@ def get_watch_list(request, from_index, to_index):
             if record_mode == "result":
                 corp_basic_rows = CorporationBasic.objects.filter(ts_code__in=ts_codes)
                 for basic in corp_basic_rows:
-                    basic_info_map[basic.ts_code] = (
+                    basic_info = (
                         basic.to_dict_short() if hasattr(basic, "to_dict_short") else {}
                     )
+                    basic_info["website_url"] = _normalize_company_website_url(
+                        basic_info.get("website")
+                    )
+                    basic_info_map[basic.ts_code] = basic_info
 
                 prediction_rows = (
                     StockPrediction.objects.filter(ts_code__in=ts_codes)
@@ -3411,6 +3630,7 @@ def get_watch_list(request, from_index, to_index):
                 for basic in corp_basic_rows:
                     basic_info_map[basic["ts_code"]] = {
                         "website": basic.get("website"),
+                        "website_url": _normalize_company_website_url(basic.get("website")),
                         "main_business": basic.get("main_business"),
                     }
 
@@ -3990,6 +4210,7 @@ def get_stock_basic(request, ts_code):
                 # Add other fields as needed
             }
         )
+        data["website_url"] = _normalize_company_website_url(data.get("website"))
         return Response({"data": data, "ts_code": ts_code})
     except Exception as e:
         return Response({"error": str(e)}, status=500)
@@ -4498,6 +4719,7 @@ def pick_stocks_by_params(
                                 "corporation",
                             ]
                         },
+                        "website_url": _normalize_company_website_url(corp_basic.get("website")),
                         **latest_trading,
                         **latest_fundamental,
                         **valuation_payload,
@@ -5401,6 +5623,19 @@ def _pick_stocks_by_valuation_fast(request, trade_date, scope, freq="D", from_in
     valuation_express_only = valuation_report_type_text in {"EXP", "EXPRESS", "σ┐½"}
     earnings_report_type = _normalize_earnings_report_type_with_all(earnings_report_type_raw)
     valuation_profit_report_type = _normalize_valuation_profit_report_type(earnings_report_type)
+    valuation_fiscal_year = (
+        str(
+            request.query_params.get("valuation_fiscal_year")
+            or request.query_params.get("target_fiscal_year")
+            or ""
+        ).strip()
+        if hasattr(request, "query_params")
+        else ""
+    )
+    valuation_report_end_date = _resolve_valuation_report_end_date(
+        valuation_profit_report_type,
+        fiscal_year_value=valuation_fiscal_year,
+    )
     signal_action = _normalize_optional_choice(signal_action_raw, {"BUY", "HOLD", "SELL_PART", "SELL"})
     risk_level_set = _normalize_risk_level_filters(risk_level_raw)
     risk_level = ",".join(sorted(risk_level_set)) if risk_level_set else ""
@@ -5505,6 +5740,8 @@ def _pick_stocks_by_valuation_fast(request, trade_date, scope, freq="D", from_in
             "sw_industry": sw_industry,
             "picking_mode": picking_mode,
             "earnings_report_type": earnings_report_type,
+            "valuation_fiscal_year": valuation_fiscal_year,
+            "valuation_report_end_date": valuation_report_end_date.isoformat() if valuation_report_end_date is not None else "",
             "valuation_express_only": valuation_express_only,
             "signal_action": signal_action,
             "risk_level": risk_level,
@@ -5556,6 +5793,8 @@ def _pick_stocks_by_valuation_fast(request, trade_date, scope, freq="D", from_in
                     "strict_snapshot_only": True,
                     "picking_mode": picking_mode,
                     "earnings_report_type": "σ┐½" if valuation_express_only else earnings_report_type,
+                    "valuation_fiscal_year": valuation_fiscal_year or None,
+                    "valuation_report_end_date": valuation_report_end_date.isoformat() if valuation_report_end_date is not None else None,
                     "signal_action": signal_action,
                     "risk_level": risk_level,
                     "min_signal_score": min_signal_score,
@@ -5684,6 +5923,7 @@ def _pick_stocks_by_valuation_fast(request, trade_date, scope, freq="D", from_in
         max_trade_date=trade_date_for_query,
         express_only=valuation_express_only,
         profit_report_type=(None if valuation_express_only else valuation_profit_report_type),
+        profit_report_end_date=(None if valuation_express_only else valuation_report_end_date),
     )
     predictive_anchor_snapshot_map = {}
     if picking_mode == "predictive" and valuation_express_only:
@@ -5693,6 +5933,7 @@ def _pick_stocks_by_valuation_fast(request, trade_date, scope, freq="D", from_in
             pick_strategy=valuation_pick_strategy,
             max_trade_date=trade_date_for_query,
             express_only=False,
+            profit_report_end_date=valuation_report_end_date,
         )
     industry_context_map = _build_industry_context_map(ts_codes=ts_codes, market="CN")
 
@@ -5790,6 +6031,17 @@ def _pick_stocks_by_valuation_fast(request, trade_date, scope, freq="D", from_in
 
         if selected_price is None:
             valuation_payload["valuation_source"] = "snapshot_only_miss"
+
+        # Predictive seasonal filter (Q1/H1/Q3/FY) should use formal report-season
+        # snapshots by default. Express-driven snapshots are allowed only in
+        # explicit express/fusion flows.
+        if (
+            picking_mode == "predictive"
+            and not valuation_express_only
+            and earnings_report_type in {"Q1", "H1", "Q3", "FY"}
+            and str(selected_profit_data_source or "").strip().lower().startswith("express")
+        ):
+            continue
 
         buy_candidate_payload = None
         if summary_mode == "single_variant_strict":
@@ -6031,6 +6283,15 @@ def _pick_stocks_by_valuation_fast(request, trade_date, scope, freq="D", from_in
                 [str(code or "").strip().upper() for code in predictive_ts_codes if code]
             )
         )
+        predictive_report_window_strict = (
+            bool(valuation_fiscal_year)
+            and valuation_report_end_date is not None
+            and earnings_report_type in {"Q1", "H1", "Q3", "FY"}
+        )
+        try:
+            requested_fiscal_year_num = int(str(valuation_fiscal_year).strip()) if str(valuation_fiscal_year).strip() else None
+        except (TypeError, ValueError):
+            requested_fiscal_year_num = None
         earnings_end_date_map = {}
         if earnings_report_type in {"Q1", "H1", "Q3", "FY"}:
             for row in result:
@@ -6160,10 +6421,38 @@ def _pick_stocks_by_valuation_fast(request, trade_date, scope, freq="D", from_in
             earnings_risk_value = _canonicalize_risk_level(earnings_payload.get("risk_level")) or "MEDIUM"
             earnings_source_value = str(earnings_payload.get("feature_data_source") or "").strip().lower()
             earnings_fiscal_year = earnings_payload.get("financial_fiscal_year")
+            earnings_report_end_date = _parse_date_like(
+                earnings_payload.get("report_end_date") or earnings_payload.get("profit_report_end_date")
+            )
+            valuation_report_end_date_row = _parse_date_like(row.get("valuation_profit_report_end_date"))
+            earnings_report_type_from_end_date = _infer_report_type_from_end_date(earnings_report_end_date)
             pred_earnings_growth = _to_float_or_none(earnings_payload.get("pred_earnings_growth"))
             prev_year_netprofit_non_negative = earnings_payload.get("prev_year_netprofit_non_negative")
             earnings_signal_score = _to_float_or_none(earnings_payload.get("signal_score"))
             earnings_target_return_pct = _to_float_or_none(earnings_payload.get("target_return_pct"))
+
+            if predictive_report_window_strict:
+                # Enforce report window deterministically:
+                # 1) If valuation snapshot has report_end_date, it must equal requested end_date.
+                # 2) Only when valuation report_end_date is missing, fallback to earnings payload checks.
+                if valuation_report_end_date_row is not None:
+                    if valuation_report_end_date_row != valuation_report_end_date:
+                        continue
+                else:
+                    matches_end_date = (
+                        earnings_report_end_date is not None
+                        and earnings_report_end_date == valuation_report_end_date
+                    )
+                    matches_year_and_type = (
+                        requested_fiscal_year_num is not None
+                        and str(earnings_fiscal_year or "").strip() == str(requested_fiscal_year_num)
+                        and (
+                            (earnings_report_type_from_end_date or "").upper() == earnings_report_type
+                            or earnings_report_type_value == earnings_report_type
+                        )
+                    )
+                    if not (matches_end_date and matches_year_and_type):
+                        continue
 
             if signal_action and earnings_action_value != signal_action:
                 continue
@@ -9195,8 +9484,10 @@ def get_sw_industry_constituents(request, industry_code, from_index, to_index):
         basic_info_map = {}
         if ts_codes:
             for row in CorporationBasic.objects.filter(ts_code__in=ts_codes):
+                website = str(getattr(row, "website", "") or "")
                 basic_info_map[str(row.ts_code or "").strip().upper()] = {
-                    "website": str(getattr(row, "website", "") or ""),
+                    "website": website,
+                    "website_url": _normalize_company_website_url(website),
                     "main_business": str(getattr(row, "main_business", "") or ""),
                 }
 
@@ -9214,7 +9505,8 @@ def get_sw_industry_constituents(request, industry_code, from_index, to_index):
                     "name": str(corp.name or ""),
                     "industry_name": str(corp.sw_l3_name or ""),
                     "website": str(getattr(corp, "website", "") or ""),
-                    "basic_info": basic_info_map.get(ts_code_value) or {"website": "", "main_business": ""},
+                    "website_url": _normalize_company_website_url(getattr(corp, "website", "")),
+                    "basic_info": basic_info_map.get(ts_code_value) or {"website": "", "website_url": None, "main_business": ""},
                     "in_watchlist": watch_info["in_watchlist"],
                     "hold_position": watch_info["hold_position"],
                     "observe_only": watch_info["observe_only"],
@@ -9628,8 +9920,10 @@ def _build_basic_info_map(ts_codes):
         return {}
     basic_info_map = {}
     for row in CorporationBasic.objects.filter(ts_code__in=ts_codes):
+        website = str(getattr(row, "website", "") or "")
         basic_info_map[str(row.ts_code or "").strip().upper()] = {
-            "website": str(getattr(row, "website", "") or ""),
+            "website": website,
+            "website_url": _normalize_company_website_url(website),
             "main_business": str(getattr(row, "main_business", "") or ""),
         }
     return basic_info_map
@@ -10402,7 +10696,8 @@ def get_industry_universe_constituents(request):
                             "name": str(item.get("name") or (str(getattr(corp, "name", "") or ""))),
                             "industry_name": industry_name,
                             "website": str(getattr(corp, "website", "") or ""),
-                            "basic_info": basic_info_map.get(ts_code_value) or {"website": "", "main_business": ""},
+                            "website_url": _normalize_company_website_url(getattr(corp, "website", "")),
+                            "basic_info": basic_info_map.get(ts_code_value) or {"website": "", "website_url": None, "main_business": ""},
                             "in_watchlist": watch_info["in_watchlist"],
                             "hold_position": watch_info["hold_position"],
                             "observe_only": watch_info["observe_only"],
@@ -10458,7 +10753,8 @@ def get_industry_universe_constituents(request):
                     "name": str(corp.name or ""),
                     "industry_name": str(getattr(getattr(corp, "industry", None), "name", "") or ""),
                     "website": str(getattr(corp, "website", "") or ""),
-                    "basic_info": basic_info_map.get(ts_code_value) or {"website": "", "main_business": ""},
+                    "website_url": _normalize_company_website_url(getattr(corp, "website", "")),
+                    "basic_info": basic_info_map.get(ts_code_value) or {"website": "", "website_url": None, "main_business": ""},
                     "in_watchlist": watch_info["in_watchlist"],
                     "hold_position": watch_info["hold_position"],
                     "observe_only": watch_info["observe_only"],

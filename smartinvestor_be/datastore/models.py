@@ -394,7 +394,15 @@ class CorporationBasic(models.Model):
 
     def __str__(self):
         return self.ts_code
-    
+
+    def website_url(self):
+        website = str(self.website or "").strip().replace(" ", "")
+        if not website:
+            return None
+        if website.lower().startswith(("http://", "https://")):
+            return website
+        return f"https://{website}"
+
     def to_dict(self):
         return {
             "id": self.id,
@@ -410,6 +418,7 @@ class CorporationBasic(models.Model):
             "city": self.city.name if self.city else None,
             "introduction": self.introduction,
             "website": self.website,
+            "website_url": self.website_url(),
             "email": self.email,
             "office": self.office,
             "employees": self.employees,
@@ -424,6 +433,7 @@ class CorporationBasic(models.Model):
             "corporation": self.corporation.name if self.corporation else None,
             "setup_date": self.setup_date,
             "website": self.website,
+            "website_url": self.website_url(),
             "area": self.area.name if self.area else None,
             "city": self.city.name if self.city else None,
             "main_business": self.main_business,

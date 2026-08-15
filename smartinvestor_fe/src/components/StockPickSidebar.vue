@@ -81,9 +81,8 @@
                                 <div v-if="stock.basic_info.website">
                                     <span>官网: </span>
                                     <el-link
-                                        :href="stock.basic_info.website.startsWith('http') ? stock.basic_info.website : 'https://' + stock.basic_info.website"
-                                        target="_blank" type="primary" style="font-size: 12px;">{{ "https://" +
-                                            stock.basic_info.website }}</el-link>
+                                        :href="resolveCompanyWebsiteUrl(stock.basic_info.website_url, stock.basic_info.website)"
+                                        target="_blank" type="primary" style="font-size: 12px;">{{ resolveCompanyWebsiteUrl(stock.basic_info.website_url, stock.basic_info.website) }}</el-link>
                                 </div>
                             </div>
                         </el-col>
@@ -122,6 +121,7 @@ import { ElAffix, ElRow, ElCol, ElButton, ElCard, ElDivider, ElLink, ElRadioButt
 import { useStockTradeStore } from '../stores/stockTradeStore';
 import { useStockPickingStore } from '../stores/stockPickingStore';
 import RecentReportBadge from './RecentReportBadge.vue';
+import { resolveCompanyWebsiteUrl } from '../utils/companyWebsite';
 
 const stockTradeStore = useStockTradeStore();
 const stockPickingStore = useStockPickingStore();

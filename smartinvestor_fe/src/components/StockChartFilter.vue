@@ -11,7 +11,7 @@
                                         <div class="stock-name-row">
                                             <el-text type="primary" tag="b">
                                                 <el-link
-                                                    :href="stockTradeStore.website.startsWith('http') ? stockTradeStore.website : 'https://' + stockTradeStore.website"
+                                                    :href="resolveCompanyWebsiteUrl(stockTradeStore.website, '')"
                                                     target="_blank"
                                                     type="primary"
                                                     class="stock-name-link"
@@ -188,6 +188,7 @@ import StockChart from './StockChart.vue';
 import axios from 'axios';
 import { inject } from 'vue';
 import { fetchValuationMethodsWithSharedCache } from '../utils/valuationQuickViewCache';
+import { resolveCompanyWebsiteUrl } from '../utils/companyWebsite';
 
 use([CanvasRenderer, LineChart, TooltipComponent, GridComponent, DataZoomComponent, LegendComponent, MarkLineComponent])
 

@@ -9,42 +9,52 @@
                             </el-tag>
                         </el-col>
                     </el-row>
-                    <el-row v-if="jobStatusText" style="margin-bottom: 8px;">
+                    <el-row v-if="resultStatusText" style="margin-bottom: 8px;">
                         <el-col :span="24">
                             <div style="display:flex; flex-direction:column; gap:6px;">
                                 <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap; font-size:12px; color:#606266;">
-                                    <el-tag size="small" :type="isJobLoading ? 'warning' : 'success'" effect="light">{{ jobStatusText }}</el-tag>
-                                    <span v-if="jobMessage">{{ jobMessage }}</span>
+                                    <el-tag size="small" :type="isResultLoading ? 'warning' : 'success'" effect="light">{{ resultStatusText }}</el-tag>
+                                    <span v-if="resultMessage">{{ resultMessage }}</span>
                                     <span v-if="jobMatchedCount > 0">已命中 {{ jobMatchedCount }} 条</span>
                                     <span v-if="jobTotalCandidates > 0">候选 {{ jobTotalCandidates }} 支</span>
                                 </div>
-                                <el-progress v-if="isJobLoading" :percentage="jobProgressPct" :stroke-width="12" />
+                                <el-progress
+                                    v-if="isResultLoading"
+                                    :percentage="isFinancialMode ? financialProgressPct : jobProgressPct"
+                                    :stroke-width="12"
+                                />
                             </div>
                         </el-col>
                     </el-row>
                     <el-row>
                         <el-col :span="24">
                             <div ref="tableWrapperRef" class="result-table-wrapper">
-                            <el-table v-loading="isJobLoading" :data="pickingResult" style="width: 100%" size="small" :height="tableHeight" @row-dblclick="onRowDblClick">
+                            <el-table v-loading="isResultLoading" :data="pickingResult" style="width: 100%" size="small" :height="tableHeight" @row-dblclick="onRowDblClick">
                                     <el-table-column prop="ts_code" label="代码" fixed="left">
                                         <template #default="{ row }">
                                             <div style="display:flex; align-items:center; gap:6px; flex-wrap:wrap;">
-                                                <el-link type="primary" @click.stop="onStockClick(row)" style="font-size:12px" underline="never">{{ row.name + ' | ' + row.ts_code }}</el-link>
+                                                <el-link
+                                                    type="primary"
+                                                    :href="resolveCompanyWebsiteUrl(row.website_url, row.website) || undefined"
+                                                    target="_blank"
+                                                    style="font-size:12px"
+                                                    underline="never"
+                                                >{{ row.name + ' | ' + row.ts_code }}</el-link>
                                                 <RecentReportBadge :visible="row.recent_report_badge" />
                                             </div>
                                         </template>
                                     </el-table-column>
-                                    <el-table-column prop="signal_peak_return_pct" label="最高涨幅(%)" :width="138">
+                                    <el-table-column v-if="!isFinancialMode" prop="signal_peak_return_pct" label="最高涨幅(%)" :width="138">
                                         <template #default="{ row }">
                                             <span :style="{ color: (row.signal_peak_return_pct || 0) >= 0 ? 'red' : 'green' }">{{ formatPercentWithSymbol(row.signal_peak_return_pct) }}</span>
                                         </template>
                                     </el-table-column>
-                                    <el-table-column prop="signal_trough_return_pct" label="最低涨幅(%)" :width="138">
+                                    <el-table-column v-if="!isFinancialMode" prop="signal_trough_return_pct" label="最低涨幅(%)" :width="138">
                                         <template #default="{ row }">
                                             <span :style="{ color: (row.signal_trough_return_pct || 0) >= 0 ? 'red' : 'green' }">{{ formatPercentWithSymbol(row.signal_trough_return_pct) }}</span>
                                         </template>
                                     </el-table-column>
-                                    <el-table-column prop="signal_current_return_pct" label="当前涨幅(%)" :width="138">
+                                    <el-table-column v-if="!isFinancialMode" prop="signal_current_return_pct" label="当前涨幅(%)" :width="138">
                                         <template #default="{ row }">
                                             <span :style="{ color: (row.signal_current_return_pct || 0) >= 0 ? 'red' : 'green' }">{{ formatPercentWithSymbol(row.signal_current_return_pct) }}</span>
                                         </template>
@@ -54,43 +64,62 @@
                                             <span>{{ row.sw_l3_name || row.industry_name || '-' }}</span>
                                         </template>
                                     </el-table-column>
-                                    <el-table-column prop="valuation_method" label="估值法" :width="90">
+                                    <el-table-column v-if="isFinancialMode" prop="financial_end_date" label="财报期" :width="96" />
+                                    <el-table-column v-if="isFinancialMode" prop="financial_ann_date" label="公告日" :width="96" />
+                                    <el-table-column v-if="isFinancialMode" prop="revenue_yoy_pct" label="营收YoY(%)" :width="105"><template #default="{ row }">{{ formatPercent(row.revenue_yoy_pct) }}</template></el-table-column>
+                                    <el-table-column v-if="isFinancialMode" prop="revenue_qoq_pct" label="营收QoQ(%)" :width="105"><template #default="{ row }">{{ formatPercent(row.revenue_qoq_pct) }}</template></el-table-column>
+                                    <el-table-column v-if="isFinancialMode" prop="netprofit_yoy_pct" label="净利YoY(%)" :width="105"><template #default="{ row }">{{ formatPercent(row.netprofit_yoy_pct) }}</template></el-table-column>
+                                    <el-table-column v-if="isFinancialMode" prop="netprofit_qoq_pct" label="净利QoQ(%)" :width="105"><template #default="{ row }">{{ formatPercent(row.netprofit_qoq_pct) }}</template></el-table-column>
+                                    <el-table-column v-if="isFinancialMode" prop="ebit_yoy_pct" label="EBITYoY(%)" :width="105"><template #default="{ row }">{{ formatPercent(row.ebit_yoy_pct) }}</template></el-table-column>
+                                    <el-table-column v-if="isFinancialMode" prop="ebit_qoq_pct" label="EBITQoQ(%)" :width="105"><template #default="{ row }">{{ formatPercent(row.ebit_qoq_pct) }}</template></el-table-column>
+                                    <el-table-column v-if="isFinancialMode" prop="roe_pct" label="ROE(%)" :width="88"><template #default="{ row }">{{ formatPercent(row.roe_pct) }}</template></el-table-column>
+                                    <el-table-column v-if="isFinancialMode" prop="roe_dt_pct" label="扣非ROE(%)" :width="98"><template #default="{ row }">{{ formatPercent(row.roe_dt_pct) }}</template></el-table-column>
+                                    <el-table-column v-if="isFinancialMode" prop="financial_score" label="财务分" :width="80"><template #default="{ row }">{{ formatScore(row.financial_score) }}</template></el-table-column>
+                                    <el-table-column v-if="isFinancialMode" prop="traditional_valuation_price" label="传统估值价" :width="105"><template #default="{ row }">{{ formatPrice(row.traditional_valuation_price) }}</template></el-table-column>
+                                    <el-table-column v-if="isFinancialMode" prop="traditional_conservative_price" label="传统保守价" :width="105"><template #default="{ row }">{{ formatPrice(row.traditional_conservative_price) }}</template></el-table-column>
+                                    <el-table-column v-if="isFinancialMode" prop="traditional_valuation_score" label="传统估值分" :width="98"><template #default="{ row }">{{ formatScore(row.traditional_valuation_score) }}</template></el-table-column>
+                                    <el-table-column v-if="isFinancialMode" prop="predictive_signal_score" label="预测信号分" :width="98"><template #default="{ row }">{{ formatScore(row.predictive_signal_score) }}</template></el-table-column>
+                                    <el-table-column v-if="isFinancialMode" prop="predictive_action" label="预测建议" :width="90"><template #default="{ row }">{{ actionLabel(row.predictive_action) }}</template></el-table-column>
+                                    <el-table-column v-if="isFinancialMode" prop="predictive_risk_level" label="预测风险" :width="90"><template #default="{ row }">{{ riskLabel(row.predictive_risk_level) }}</template></el-table-column>
+                                    <el-table-column v-if="isFinancialMode" prop="predictive_target_price" label="预测目标价" :width="98"><template #default="{ row }">{{ formatPrice(row.predictive_target_price) }}</template></el-table-column>
+                                    <el-table-column v-if="isFinancialMode" prop="predictive_target_return_pct" label="预测收益(%)" :width="105"><template #default="{ row }">{{ formatPercent(row.predictive_target_return_pct) }}</template></el-table-column>
+                                    <el-table-column v-if="!isFinancialMode" prop="valuation_method" label="估值法" :width="90">
                                         <template #default="{ row }">
                                             <span>{{ methodLabel(row.valuation_method) }}</span>
                                         </template>
                                     </el-table-column>
-                                    <el-table-column prop="close_qfq" label="当前价格" :width="90">
+                                    <el-table-column v-if="!isFinancialMode" prop="close_qfq" label="当前价格" :width="90">
                                         <template #default="{ row }">
                                             <span>{{ formatPrice(row.close_qfq) }}</span>
                                         </template>
                                     </el-table-column>
-                                    <el-table-column prop="valuation_price" label="估值价" :width="90" />
-                                    <el-table-column prop="valuation_snapshot_updated_at" label="快照更新时间" :width="170">
+                                    <el-table-column v-if="!isFinancialMode" prop="valuation_price" label="估值价" :width="90" />
+                                    <el-table-column v-if="!isFinancialMode" prop="valuation_snapshot_updated_at" label="快照更新时间" :width="170">
                                         <template #default="{ row }">
                                             <span>{{ formatDateTime(row.valuation_snapshot_updated_at) }}</span>
                                         </template>
                                     </el-table-column>
-                                    <el-table-column prop="valuation_profit_report_ann_date" label="财报发布日" :width="120">
+                                    <el-table-column v-if="!isFinancialMode" prop="valuation_profit_report_ann_date" label="财报发布日" :width="120">
                                         <template #default="{ row }">
                                             <span>{{ formatDateOnly(row.valuation_profit_report_ann_date || row.financial_ann_date) }}</span>
                                         </template>
                                     </el-table-column>
-                                    <el-table-column prop="conservative_valuation_price" label="保守估值价" :width="110">
+                                    <el-table-column v-if="!isFinancialMode" prop="conservative_valuation_price" label="保守估值价" :width="110">
                                         <template #default="{ row }">
                                             <span>{{ formatPrice(row.conservative_valuation_price) }}</span>
                                         </template>
                                     </el-table-column>
-                                    <el-table-column prop="composite_valuation_price" label="组合估值价" :width="110">
+                                    <el-table-column v-if="!isFinancialMode" prop="composite_valuation_price" label="组合估值价" :width="110">
                                         <template #default="{ row }">
                                             <span>{{ formatPrice(row.composite_valuation_price) }}</span>
                                         </template>
                                     </el-table-column>
-                                    <el-table-column prop="valuation_gap_pct" label="偏离(%)" :width="90">
+                                    <el-table-column v-if="!isFinancialMode" prop="valuation_gap_pct" label="偏离(%)" :width="90">
                                         <template #default="{ row }">
                                             <span :style="{ color: (row.valuation_gap_pct || 0) >= 0 ? 'red' : 'green' }">{{ row.valuation_gap_pct ?? '-' }}</span>
                                         </template>
                                     </el-table-column>
-                                    <el-table-column prop="valuation_status" label="估值判断" :width="90">
+                                    <el-table-column v-if="!isFinancialMode" prop="valuation_status" label="估值判断" :width="90">
                                         <template #default="{ row }">
                                             <el-tag v-if="row.valuation_status === 'under'" round effect="light" type="danger" size="small">低估</el-tag>
                                             <el-tag v-else-if="row.valuation_status === 'over'" round effect="light" type="success" size="small">高估</el-tag>
@@ -98,13 +127,13 @@
                                             <span v-else>-</span>
                                         </template>
                                     </el-table-column>
-                                    <el-table-column prop="buy_candidate" label="候选" :width="88">
+                                    <el-table-column v-if="!isFinancialMode" prop="buy_candidate" label="候选" :width="88">
                                         <template #default="{ row }">
                                             <el-tag v-if="row.buy_candidate" round effect="light" type="danger" size="small">可买</el-tag>
                                             <el-tag v-else round effect="light" type="info" size="small">观察</el-tag>
                                         </template>
                                     </el-table-column>
-                                    <el-table-column prop="valuation_score" label="估值分数" :width="88">
+                                    <el-table-column v-if="!isFinancialMode" prop="valuation_score" label="估值分数" :width="88">
                                         <template #default="{ row }">
                                             <span :style="{ color: getUndervalueScoreColor(row.valuation_score ?? row.undervalue_score) }">{{ formatScore(row.valuation_score ?? row.undervalue_score) }}</span>
                                         </template>
@@ -205,7 +234,12 @@
             <div class="stock-title-actions">
                 <div class="stock-title-left">
                     <el-text type="primary" tag="b">
-                        <span class="stock-name-link">{{ detailDialogTitle }}</span>
+                        <el-link
+                            class="stock-name-link"
+                            :href="resolveCompanyWebsiteUrl(selectedDetailRow?.website_url, selectedDetailRow?.website) || undefined"
+                            target="_blank"
+                            underline="never"
+                        >{{ detailDialogTitle }}</el-link>
                     </el-text>
                     <el-check-tag
                         :checked="isInWatchlist"
@@ -238,7 +272,7 @@
         </div>
         <el-tabs v-model="overviewTab" class="overview-tabs">
             <el-tab-pane label="估值一览" name="valuation">
-                <StockValuationQuickView :embedded="true" />
+                <StockValuationQuickView :key="detailQuickViewKey" :embedded="true" />
             </el-tab-pane>
             <el-tab-pane label="技术趋势" name="trend" lazy>
                 <div class="trend-tab-panel">
@@ -275,6 +309,7 @@ import StockChart from "../components/StockChart.vue";
 import StockValuationQuickView from "./StockValuationQuickView.vue";
 import FinanceRelevant from "./FinanceRelevant.vue";
 import RecentReportBadge from "./RecentReportBadge.vue";
+import { resolveCompanyWebsiteUrl } from "../utils/companyWebsite";
 
 const valuationStockPickingStore = useValuationStockPickingStore();
 const stockTradeStore = useStockTradeStore();
@@ -304,9 +339,13 @@ const tableControlRef = ref<HTMLElement | null>(null);
 const tableHeight = ref(460);
 const isExportingAllCsv = ref(false);
 const isJobLoading = ref(false);
+const isFinancialLoading = ref(false);
 const jobStatusText = ref("");
+const financialStatusText = ref("");
 const jobMessage = ref("");
+const financialMessage = ref("");
 const jobProgressPct = ref(0);
+const financialProgressPct = ref(0);
 const jobMatchedCount = ref(0);
 const jobTotalCandidates = ref(0);
 const activeJobId = ref("");
@@ -315,6 +354,10 @@ let jobPollTimer: number | null = null;
 const baseURL = inject<string>("baseURL", "");
 const pickingResult = ref<Array<Record<string, any>>>([]);
 const isPredictiveMode = computed(() => valuationStockPickingStore.pickingMode === "MODE:PREDICTIVE");
+const isFinancialMode = computed(() => valuationStockPickingStore.pickingMode === "MODE:FINANCIAL");
+const isResultLoading = computed(() => isJobLoading.value || isFinancialLoading.value);
+const resultStatusText = computed(() => isFinancialMode.value ? financialStatusText.value : jobStatusText.value);
+const resultMessage = computed(() => isFinancialMode.value ? financialMessage.value : jobMessage.value);
 
 const hasPrevStock = computed(() => detailRowIndex.value > 0);
 const hasNextStock = computed(() => detailRowIndex.value >= 0 && detailRowIndex.value < pickingResult.value.length - 1);
@@ -337,6 +380,19 @@ const detailDialogTitle = computed(() => {
     }
     const row = pickingResult.value[detailRowIndex.value] || {};
     return `${row.name || ""} | ${row.ts_code || ""}`.trim() || "个股详情";
+});
+const selectedDetailRow = computed(() => {
+    if (detailRowIndex.value < 0 || detailRowIndex.value >= pickingResult.value.length) {
+        return null;
+    }
+    return pickingResult.value[detailRowIndex.value] || null;
+});
+const detailQuickViewKey = computed(() => {
+    if (detailRowIndex.value < 0 || detailRowIndex.value >= pickingResult.value.length) {
+        return "detail-quick-view-empty";
+    }
+    const row = pickingResult.value[detailRowIndex.value] || {};
+    return `detail-quick-view-${String(row.ts_code || "").trim().toUpperCase()}`;
 });
 const showFinancialStageHint = computed(() => {
     if (isPredictiveMode.value) {
@@ -448,9 +504,11 @@ function buildPickingSearchParams(from: number, to: number) {
         .join(",");
     const featureDataSourceVal = valuationStockPickingStore.featureDataSource.split(":")[1];
     const sharedMinScoreVal = String(valuationStockPickingStore.minSignalScore || "").trim();
+    const fiscalYearVal = String(valuationStockPickingStore.fiscalYear || "").trim();
 
     const search = new URLSearchParams();
     search.set("freq", valuationStockPickingStore.freq);
+    if (/^\d{4}$/.test(fiscalYearVal)) search.set("valuation_fiscal_year", fiscalYearVal);
     search.set("from_index", String(from));
     search.set("to_index", String(to));
     search.set("quick_preview", "1");
@@ -748,7 +806,7 @@ async function exportPickingResultCsv() {
 function syncDetailStock(row: any) {
     stockTradeStore.setTsCode(row.ts_code);
     stockTradeStore.setName(row.name);
-    stockTradeStore.setWebsite(row.website);
+    stockTradeStore.setWebsite(resolveCompanyWebsiteUrl(row.website_url, row.website));
     stockTradeStore.setPreferredValuationVariant(resolvePreferredValuationVariant(row));
 }
 
@@ -771,16 +829,15 @@ function toCanonicalTsCode(code: string) {
 function buildTsCodeCandidates(code: string) {
     const normalized = String(code || "").trim().toUpperCase();
     const base = normalized.split(".")[0];
+    if (normalized.includes(".")) {
+        return normalized ? [normalized] : [];
+    }
     const candidateSet = new Set<string>();
     if (normalized) candidateSet.add(normalized);
     if (base) candidateSet.add(base);
     const canonical = toCanonicalTsCode(normalized);
     if (canonical) candidateSet.add(canonical);
-    if (base && /^\d{6}$/.test(base)) {
-        candidateSet.add(`${base}.SH`);
-        candidateSet.add(`${base}.SZ`);
-        candidateSet.add(`${base}.BJ`);
-    }
+    // Keep candidate space tight to avoid unnecessary cross-market probe calls.
     return Array.from(candidateSet);
 }
 
@@ -1100,6 +1157,63 @@ async function fetchPickingResult() {
         }
 
         const isFirstPageRequest = fromIndex.value === 0;
+        if (isFinancialMode.value) {
+            isFinancialLoading.value = true;
+            financialStatusText.value = "提交中";
+            financialMessage.value = "正在创建财务筛选请求";
+            financialProgressPct.value = 10;
+            jobMatchedCount.value = 0;
+            jobTotalCandidates.value = 0;
+            await nextTick();
+            const search = new URLSearchParams({
+                fiscal_year: valuationStockPickingStore.fiscalYear,
+                report_type: valuationStockPickingStore.earningsReportType.split(":")[1],
+                require_all_metrics: valuationStockPickingStore.requireAllFinancialMetrics ? "1" : "0",
+            });
+            if (valuationStockPickingStore.swIndustry) search.set("sw_industry", valuationStockPickingStore.swIndustry);
+            const thresholdMap: Record<string, string> = {
+                min_ebit_yoy_pct: valuationStockPickingStore.minEbitYoy,
+                min_ebit_qoq_pct: valuationStockPickingStore.minEbitQoq,
+                min_revenue_yoy_pct: valuationStockPickingStore.minRevenueYoy,
+                min_revenue_qoq_pct: valuationStockPickingStore.minRevenueQoq,
+                min_netprofit_yoy_pct: valuationStockPickingStore.minNetprofitYoy,
+                min_netprofit_qoq_pct: valuationStockPickingStore.minNetprofitQoq,
+                min_roe_pct: valuationStockPickingStore.minRoe,
+                min_roe_dt_pct: valuationStockPickingStore.minRoeDt,
+            };
+            Object.entries(thresholdMap).forEach(([key, value]) => { if (String(value || "").trim()) search.set(key, value); });
+            search.set("sort_by", valuationStockPickingStore.financialSortBy);
+            search.set("sort_order", valuationStockPickingStore.financialSortOrder);
+            const scopePath = normalizeScopeForApi(valuationStockPickingStore.scopeParam);
+            try {
+                financialStatusText.value = "计算中";
+                financialMessage.value = "正在读取已发布财报并补充传统/预测估值结果";
+                financialProgressPct.value = 55;
+                const res = await axios.get(`${buildApiUrl(`/stock-pick-financial/${valuationStockPickingStore.tradeDate}/${scopePath}/`)}?${search}`);
+                financialStatusText.value = "结果汇总中";
+                financialMessage.value = "正在应用排序并整理结果";
+                financialProgressPct.value = 90;
+                await nextTick();
+                pickingResult.value = Array.isArray(res.data?.data) ? res.data.data : [];
+                totalFiltered.value = Number(res.data?.total || pickingResult.value.length);
+                valuationStockPickingStore.setPickingResults(pickingResult.value as any);
+                currentRangeStart.value = pickingResult.value.length ? 1 : 0;
+                currentRangeEnd.value = pickingResult.value.length;
+                jobMatchedCount.value = totalFiltered.value;
+                jobTotalCandidates.value = Number(res.data?.meta?.total_candidates || 0);
+                financialStatusText.value = "已完成";
+                financialMessage.value = totalFiltered.value ? "结果已按当前条件生成" : "当前条件下没有匹配股票";
+                financialProgressPct.value = 100;
+                nextTick(() => updateTableHeight());
+            } catch (error) {
+                financialStatusText.value = "失败";
+                financialMessage.value = "请求财务筛选结果失败，请稍后重试";
+                ElMessage.error(financialMessage.value);
+            } finally {
+                isFinancialLoading.value = false;
+            }
+            return;
+        }
         const url = buildPickingRequestUrl(fromIndex.value, toIndex.value);
         const requestFrom = fromIndex.value;
         const requestTo = toIndex.value;
@@ -1209,6 +1323,15 @@ watch(
         () => valuationStockPickingStore.valuationPickStrategy,
         () => valuationStockPickingStore.minNetprofitYoy,
         () => valuationStockPickingStore.minEbitYoy,
+        () => valuationStockPickingStore.minEbitQoq,
+        () => valuationStockPickingStore.minRevenueYoy,
+        () => valuationStockPickingStore.minRevenueQoq,
+        () => valuationStockPickingStore.minNetprofitQoq,
+        () => valuationStockPickingStore.minRoe,
+        () => valuationStockPickingStore.minRoeDt,
+        () => valuationStockPickingStore.requireAllFinancialMetrics,
+        () => valuationStockPickingStore.financialSortBy,
+        () => valuationStockPickingStore.financialSortOrder,
         () => valuationStockPickingStore.applyFinancialFilters,
         () => valuationStockPickingStore.applyMoneyflowFilters,
         () => valuationStockPickingStore.moneyflowNetInflowDaysWindow,
@@ -1230,7 +1353,11 @@ watch(
         toIndex.value = 25;
         currentRangeStart.value = 0;
         currentRangeEnd.value = 0;
-        void startPickingJob();
+        if (valuationStockPickingStore.pickingMode === "MODE:FINANCIAL") {
+            void fetchPickingResult();
+        } else {
+            void startPickingJob();
+        }
     },
     { immediate: true }
 );

@@ -20,6 +20,9 @@ start "UAT BE 5001" cmd /k call "%UAT_ROOT%\smartinvestor_be\run_django.bat"
 echo [INFO] launching Earnings Service on 5002
 start "UAT Earnings 5002" cmd /k call "%UAT_ROOT%\tushare_earnings_service\run_django.bat"
 
+echo [INFO] launching Financial Screening Service on 5003
+start "UAT Financial Screening 5003" cmd /k call "%UAT_ROOT%\financial_screening_service\run_django.bat"
+
 echo [INFO] launching FE via Vite
 start "UAT FE Vite" /d "%UAT_ROOT%\smartinvestor_fe" cmd /k %NPM_CMD% run dev -- --host 0.0.0.0
 

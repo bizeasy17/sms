@@ -111,6 +111,11 @@ urlpatterns = [
         name="sw-industry-options",
     ),
     path(
+        "stock-pick-financial/<str:trade_date>/<str:scope>/",
+        views.pick_stocks_by_financial_performance,
+        name="pick-stocks-by-financial-performance",
+    ),
+    path(
         "sw-industries/",
         getattr(views, "get_sw_industry_list", views.get_sw_industry_options),
         name="sw-industry-list",

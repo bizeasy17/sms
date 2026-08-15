@@ -38,7 +38,7 @@
                                     <template #default="{ row }">
                                         <el-link
                                             v-if="row.website"
-                                            :href="row.website.startsWith('http') ? row.website : `https://${row.website}`"
+                                            :href="resolveCompanyWebsiteUrl(row.website_url, row.website)"
                                             target="_blank"
                                             type="primary"
                                             style="font-size:12px"
@@ -102,6 +102,7 @@ import { useStockTradeStore } from '../stores/stockTradeStore';
 import { useStockChartFilterStore } from '../stores/stockChartFilterStore';
 import StockChart from '../components/StockChart.vue';
 import RecentReportBadge from './RecentReportBadge.vue';
+import { resolveCompanyWebsiteUrl } from '../utils/companyWebsite';
 
 const stockPickingStore = useStockPickingStore();
 const stockTradeStore = useStockTradeStore();
@@ -129,7 +130,7 @@ const onRowDblClick = (row: any) => {
     // pickingResultVisible.value = false;
     stockTradeStore.setTsCode(row.ts_code);
     stockTradeStore.setName(row.name);
-    stockTradeStore.setWebsite(row.website);
+    stockTradeStore.setWebsite(resolveCompanyWebsiteUrl(row.website_url, row.website));
     // Expand the result table if not already expanded
 
     if (!isResultTableElapsed.value) {
@@ -151,7 +152,7 @@ const onStockClick = (row: any) => {
     console.log(row);
     stockTradeStore.setTsCode(row.ts_code);
     stockTradeStore.setName(row.name);
-    stockTradeStore.setWebsite(row.website);
+    stockTradeStore.setWebsite(resolveCompanyWebsiteUrl(row.website_url, row.website));
 }
 
 async function fetchPickingResult(
