@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import sys
 import time
 from datetime import datetime, timedelta
@@ -148,6 +149,20 @@ def _load_ts_codes_from_file(path: str) -> list[str]:
     return out
 
 
+def _load_stock_regime_map(path: str) -> dict[str, str]:
+    if not path:
+        return {}
+    with open(path, "r", encoding="utf-8") as file_obj:
+        raw = json.load(file_obj)
+    if not isinstance(raw, dict):
+        raise CommandError("stock-regime-map-file must contain a JSON object")
+    return {
+        str(code or "").strip().upper(): str(regime or "").strip().upper()[:16]
+        for code, regime in raw.items()
+        if str(code or "").strip()
+    }
+
+
 def _resolve_asof_dates(options) -> list:
     asof_date = _parse_asof_date(options.get("asof_date"))
     if asof_date is not None:
@@ -292,6 +307,10 @@ class Command(BaseCommand):
         parser.add_argument("--offset", type=int, default=0, help="Offset after ts_code sort")
         parser.add_argument("--limit", type=int, help="Limit number of symbols")
         parser.add_argument("--batch-key", type=str, default="", help="Batch key for traceability")
+        parser.add_argument("--refresh-reason", type=str, default="", help="Structured snapshot refresh reason")
+        parser.add_argument("--refresh-detail", type=str, default="", help="Human-readable refresh trigger detail")
+        parser.add_argument("--stock-regime", type=str, default="", help="Confirmed stock regime for targeted refreshes")
+        parser.add_argument("--stock-regime-map-file", type=str, default="", help="JSON map of ts_code to confirmed stock regime")
         parser.add_argument("--sleep-ms", type=int, default=0, help="Sleep milliseconds between symbols")
         parser.add_argument("--strict", action="store_true", default=False, help="Stop on first error")
         parser.add_argument("--model-version", type=str, default="", help="Specify model version under output/model_versions")
@@ -413,6 +432,11 @@ class Command(BaseCommand):
 
         asof_dates = [None] if align_latest else _resolve_asof_dates(options)
         batch_key = str(options.get("batch_key") or "").strip() or datetime.now().strftime("monthly_%Y%m")
+        refresh_reason = str(options.get("refresh_reason") or "").strip().upper()[:32]
+        refresh_detail = str(options.get("refresh_detail") or "").strip()[:128]
+        stock_regime = str(options.get("stock_regime") or "").strip().upper()[:16]
+        stock_regime_map = _load_stock_regime_map(str(options.get("stock_regime_map_file") or "").strip())
+        triggered_at = timezone.now()
         run_key = datetime.now().strftime("sig_%Y%m%d_%H%M%S")
         sleep_ms = max(0, int(options.get("sleep_ms") or 0))
         strict = bool(options.get("strict"))
@@ -494,6 +518,24 @@ class Command(BaseCommand):
                             )
 
                         effective_model_version = str(result.get("model_version") or model_version_arg or "")
+                        result_market_regime = result.get("market_regime") or result.get("regime") or ""
+                        if isinstance(result_market_regime, dict):
+                            result_market_regime = result_market_regime.get("regime") or ""
+                        result_financial_end_date = str(
+                            result.get("financial_end_date")
+                            or result.get("served_financial_end_date")
+                            or result.get("latest_available_end_date")
+                            or ""
+                        )
+                        result_financial_ann_date = str(result.get("financial_ann_date") or "")
+                        result_financial_report_type = str(
+                            result.get("financial_report_type")
+                            or result.get("served_model_report_type")
+                            or served_report_type
+                            or "UNKNOWN"
+                        ).upper()
+                        result_financial_fiscal_year = result.get("financial_fiscal_year")
+                        row_stock_regime = stock_regime_map.get(code, stock_regime)
                         payload = {
                             "report_type": served_report_type,
                             "signal_score": _to_float_or_none(signal_score),
@@ -513,6 +555,11 @@ class Command(BaseCommand):
                             "raw_result": result,
                             "feature_data_source": str(result.get("feature_data_source") or ""),
                             "batch_key": batch_key,
+                            "refresh_reason": refresh_reason,
+                            "refresh_detail": refresh_detail,
+                            "market_regime": str(result_market_regime)[:16],
+                            "stock_regime": row_stock_regime,
+                            "triggered_at": triggered_at,
                             "last_error": "",
                         }
 
@@ -527,12 +574,16 @@ class Command(BaseCommand):
                             history_payload.update(
                                 {
                                     "snapshot_source": str(result.get("model_source") or "")[:32],
+                                    "refresh_reason": refresh_reason,
+                                    "refresh_detail": refresh_detail,
+                                    "stock_regime": row_stock_regime,
+                                    "triggered_at": triggered_at,
                                     "anchor_mode": str(anchor_mode or "")[:16],
-                                    "market_regime": str(
-                                        result.get("market_regime")
-                                        or result.get("regime")
-                                        or ""
-                                    )[:16],
+                                    "market_regime": str(result_market_regime)[:16],
+                                    "financial_report_type": result_financial_report_type[:16],
+                                    "financial_end_date": result_financial_end_date[:32],
+                                    "financial_ann_date": result_financial_ann_date[:32],
+                                    "financial_fiscal_year": result_financial_fiscal_year,
                                     "run_key": run_key,
                                     "is_backfill": asof_date is not None,
                                     "backfill_run_id": f"{batch_key}:{asof_label}" if asof_date is not None else "",
@@ -581,6 +632,11 @@ class Command(BaseCommand):
                             "raw_result": {},
                             "feature_data_source": "",
                             "batch_key": batch_key,
+                            "refresh_reason": refresh_reason,
+                            "refresh_detail": refresh_detail,
+                            "market_regime": "",
+                            "stock_regime": stock_regime_map.get(code, stock_regime),
+                            "triggered_at": triggered_at,
                             "last_error": safe_err,
                         }
                         if persist_latest:
@@ -594,6 +650,10 @@ class Command(BaseCommand):
                             failed_history_payload.update(
                                 {
                                     "snapshot_source": "",
+                                    "refresh_reason": refresh_reason,
+                                    "refresh_detail": refresh_detail,
+                                    "stock_regime": stock_regime,
+                                    "triggered_at": triggered_at,
                                     "anchor_mode": str(anchor_mode or "")[:16],
                                     "market_regime": "",
                                     "run_key": run_key,

@@ -252,6 +252,16 @@ urlpatterns = [
         name="earnings-signal",
     ),
     path(
+        "earnings/signal-persisted/<str:ts_code>/",
+        views.get_earnings_signal_persisted,
+        name="earnings-signal-persisted",
+    ),
+    path(
+        "earnings/signal-history/<str:ts_code>/",
+        views.get_earnings_signal_history,
+        name="earnings-signal-history",
+    ),
+    path(
         "earnings/signal-compare/<str:ts_code>/",
         views.get_earnings_signal_compare,
         name="earnings-signal-compare",

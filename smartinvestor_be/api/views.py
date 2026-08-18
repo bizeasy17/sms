@@ -16769,6 +16769,56 @@ def get_earnings_signal(request, ts_code):
         )
 
 
+@api_view(["GET"])
+def get_earnings_signal_persisted(request, ts_code):
+    """Proxy a persisted signal only; intentionally never calls the live predict path."""
+    code = str(ts_code or "").strip().upper()
+    report_type = _normalize_earnings_report_type(request.GET.get("report_type"))
+    if not code or not report_type:
+        return Response({"error": "ts_code and report_type are required"}, status=400)
+    base_url = str(getattr(settings, "EARNINGS_SERVICE_BASE_URL", "http://127.0.0.1:5002")).rstrip("/")
+    query = urlencode({
+        "ts_code": code,
+        "report_type": report_type,
+        "require_refresh_reason": request.GET.get("require_refresh_reason", "0"),
+        "view": request.GET.get("view", "latest"),
+        "financial_end_date": request.GET.get("financial_end_date", ""),
+    })
+    try:
+        with urllib_request.urlopen(f"{base_url}/api/forecast/signal/persisted/?{query}", timeout=8) as response:
+            payload = json.loads(response.read().decode("utf-8"))
+    except HTTPError as exc:
+        if exc.code == 404:
+            return Response({"code": 404, "message": "persisted snapshot not found", "data": None}, status=404)
+        return Response({"error": f"persisted signal upstream error: {exc}"}, status=502)
+    except (URLError, TimeoutError, ValueError) as exc:
+        return Response({"error": f"persisted signal unavailable: {exc}"}, status=502)
+    if not isinstance(payload, dict) or not payload.get("ok"):
+        return Response({"code": 404, "message": "persisted snapshot not found", "data": None}, status=404)
+    return Response({"code": 0, "message": "ok", "data": payload.get("result")})
+
+
+@api_view(["GET"])
+def get_earnings_signal_history(request, ts_code):
+    code = str(ts_code or "").strip().upper()
+    if not code:
+        return Response({"error": "ts_code is required"}, status=400)
+    try:
+        limit = max(1, min(int(request.GET.get("limit") or 100), 200))
+    except (TypeError, ValueError):
+        return Response({"error": "limit must be an integer"}, status=400)
+    base_url = str(getattr(settings, "EARNINGS_SERVICE_BASE_URL", "http://127.0.0.1:5002")).rstrip("/")
+    query = urlencode({"ts_code": code, "limit": limit})
+    try:
+        with urllib_request.urlopen(f"{base_url}/api/forecast/signal/history/?{query}", timeout=8) as response:
+            payload = json.loads(response.read().decode("utf-8"))
+    except (HTTPError, URLError, TimeoutError, ValueError) as exc:
+        return Response({"error": f"signal history unavailable: {exc}"}, status=502)
+    if not isinstance(payload, dict) or not payload.get("ok"):
+        return Response({"error": "signal history unavailable"}, status=502)
+    return Response({"code": 0, "message": "ok", "data": payload.get("items") or [], "total": payload.get("total") or 0})
+
+
 @api_view(["POST"])
 def openclaw_valuation_chat(request):
     """OpenClaw valuation assistant: natural-language query to valuation advice."""

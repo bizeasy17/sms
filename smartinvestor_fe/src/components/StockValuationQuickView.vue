@@ -360,9 +360,14 @@
                 <div class="valuation-side-card valuation-side-card-primary">
                   <div style="display: flex; align-items: center; justify-content: space-between;">
                     <strong>最新预测估值</strong>
-                    <el-tag size="small" effect="light" :type="earningsActionTagType(predictiveLatestView?.action)">{{
+                    <div style="display: flex; gap: 4px; align-items: center;">
+                    <el-button size="small" text :disabled="predictiveHistoryLoading || !stockTradeStore.tsCode" @click="openPredictiveRefreshHistory">历史</el-button>
+                    <el-tag v-if="predictiveLatestView?.refresh_reason" size="small" effect="light" :type="persistedRefreshTagType(predictiveLatestView?.refresh_reason)">{{ persistedRefreshLabel(predictiveLatestView?.refresh_reason) }}</el-tag>
+                    <el-tag v-if="predictiveLatestView" size="small" effect="light" :type="earningsActionTagType(predictiveLatestView?.action)">{{
                       earningsActionLabel(predictiveLatestView?.action) }}</el-tag>
+                    </div>
                   </div>
+                  <template v-if="predictiveLatestView">
                   <div style="margin-top: 6px; color: #334155;">
                     <span style="font-size: 12px;">分数优先</span>
                     <span style="margin-left: 6px; font-size: 20px; font-weight: 700;">{{
@@ -387,6 +392,9 @@
                       '-'
                       }}</span>
                   </div>
+                  <div v-if="predictiveLatestView?.refresh_detail" style="margin-top: 4px; color: #64748b; font-size: 12px;">触发 {{ predictiveLatestView.refresh_detail }}</div>
+                  </template>
+                  <div v-else style="margin-top: 12px; color: #94a3b8; font-size: 12px;">暂无已刷新预测估值</div>
                 </div>
               </el-col>
               <el-col :span="12">
@@ -425,9 +433,8 @@
               </el-col>
             </el-row>
             <div style="margin-bottom: 8px; color: #94a3b8; font-size: 11px; line-height: 1.6;">
-              <div>提示：左侧最新估值按请求时点实时计算，输入为所选口径财报数据 + 最新交易/基本面特征；当前来源 {{ predictiveLatestSourceLabel }}。</div>
-              <div v-if="predictiveLatestLiveFeatureRejected" style="color: #b45309;">提示：上游未返回实时特征（feature_data_source={{ predictiveLatestFeatureSourceText }}），左侧实时口径已拒绝该结果。</div>
-              <div>提示：右侧卡片固定取所选口径对应报告期发布时点（公告日锚定）的入库快照，不实时计算；当前来源 {{ predictiveReportSourceLabel }}。</div>
+              <div>提示：左侧仅展示市场风格、个股风格或财报更新触发后入库的预测快照；没有触发快照时保持为空。</div>
+              <div>提示：右侧卡片固定取所选口径对应报告期发布时点（公告日锚定）的入库快照，不实时计算。</div>
               <div v-if="predictiveReportSnapshotMissing" style="color: #b45309;">提示：当前所选口径暂无可用入库快照，右侧卡片为空。</div>
             </div>
             <div style="margin-bottom: 8px; color: #475569; font-size: 12px;">
@@ -520,6 +527,24 @@
             </div>
           </div>
         </div>
+        <el-dialog v-model="predictiveHistoryVisible" title="预测估值触发刷新历史" width="88%" top="8vh">
+          <el-table v-loading="predictiveHistoryLoading" :data="predictiveRefreshHistory" size="small" max-height="560">
+            <el-table-column prop="triggered_at" label="刷新时间" min-width="160"><template #default="{ row }">{{ formatDateTime(row.triggered_at || row.created_at) }}</template></el-table-column>
+            <el-table-column prop="refresh_reason" label="触发原因" min-width="120"><template #default="{ row }"><el-tag size="small" effect="light" :type="persistedRefreshTagType(row.refresh_reason)">{{ persistedRefreshLabel(row.refresh_reason) }}</el-tag></template></el-table-column>
+            <el-table-column prop="refresh_detail" label="触发细节" min-width="160"><template #default="{ row }">{{ row.refresh_detail || '-' }}</template></el-table-column>
+            <el-table-column prop="market_regime" label="市场风格" width="100"><template #default="{ row }">{{ row.market_regime || '-' }}</template></el-table-column>
+            <el-table-column prop="stock_regime" label="个股风格" width="110"><template #default="{ row }">{{ row.stock_regime || '-' }}</template></el-table-column>
+            <el-table-column prop="financial_report_type" label="财报口径" width="95"><template #default="{ row }">{{ row.financial_report_type || row.report_type || '-' }}</template></el-table-column>
+            <el-table-column prop="financial_end_date" label="财报输入周期" min-width="110"><template #default="{ row }">{{ formatDateOnly(row.financial_end_date) }}</template></el-table-column>
+            <el-table-column prop="financial_ann_date" label="公告日" min-width="105"><template #default="{ row }">{{ formatDateOnly(row.financial_ann_date) }}</template></el-table-column>
+            <el-table-column prop="action" label="信号" width="75"><template #default="{ row }"><el-tag size="small" effect="light" :type="earningsActionTagType(row.action)">{{ earningsActionLabel(row.action) }}</el-tag></template></el-table-column>
+            <el-table-column prop="signal_score" label="分数" width="75"><template #default="{ row }">{{ formatScore(row.signal_score) }}</template></el-table-column>
+            <el-table-column prop="target_price" label="目标价" width="90"><template #default="{ row }">{{ formatPrice(row.target_price) }}</template></el-table-column>
+            <el-table-column prop="target_return_pct" label="预期收益" width="100"><template #default="{ row }">{{ formatGap(row.target_return_pct) }}%</template></el-table-column>
+            <el-table-column prop="risk_level" label="风险" width="75"><template #default="{ row }"><el-tag size="small" effect="light" :type="earningsRiskTagType(row.risk_level)">{{ riskLevelLabel(row.risk_level) }}</el-tag></template></el-table-column>
+          </el-table>
+          <el-empty v-if="!predictiveHistoryLoading && !predictiveRefreshHistory.length" description="暂无市场或个股风格触发的预测刷新记录" />
+        </el-dialog>
         <div class="section-toggle" @click="variantTableExpanded = !variantTableExpanded">
           <span>多行业变体表格</span>
           <span>{{ variantTableExpanded ? '收起' : '展开' }}</span>
@@ -871,6 +896,10 @@ type EarningsSignal = {
   financial_fiscal_year: number | null
   financial_ann_date: string | null
   market_regime: string | null
+  refresh_reason?: string | null
+  refresh_detail?: string | null
+  stock_regime?: string | null
+  triggered_at?: string | null
   quantitative_target_components: {
     base_return_pct?: number | null
     prob_return_pct?: number | null
@@ -944,6 +973,7 @@ const bandPct = ref('0.1')
 const fetchSeq = ref(0)
 const predictiveFetchSeq = ref(0)
 const earningsSignal = ref<EarningsSignal | null>(null)
+const persistedLatestSignal = ref<EarningsSignal | null>(null)
 const valuationRisk = ref<ValuationRisk | null>(null)
 const earningsDegradeReason = ref<string>('')
 const selectedEarningsReportType = ref('FY')
@@ -965,6 +995,10 @@ const traditionalValuationTab = ref('snapshot')
 const predictiveValuationTab = ref('snapshot')
 const variantTableExpanded = ref(false)
 const predictiveLoading = ref(false)
+const predictiveHistoryVisible = ref(false)
+const predictiveHistoryLoading = ref(false)
+const predictiveRefreshHistory = ref<any[]>([])
+let predictiveHistoryRequestSeq = 0
 const predictiveLastRefreshAt = ref<number | null>(null)
 const predictiveFusionFallbackHit = ref(false)
 const predictiveDetailExpanded = ref(false)
@@ -1575,6 +1609,20 @@ function formatDateOnly(value: string | null | undefined) {
   return text.length >= 10 ? text.slice(0, 10) : text
 }
 
+function formatDateTime(value: string | null | undefined) {
+  const text = String(value || '').trim()
+  if (!text) return '-'
+  const date = new Date(text)
+  if (Number.isNaN(date.getTime())) return text
+  const yyyy = date.getFullYear()
+  const mm = String(date.getMonth() + 1).padStart(2, '0')
+  const dd = String(date.getDate()).padStart(2, '0')
+  const hh = String(date.getHours()).padStart(2, '0')
+  const mi = String(date.getMinutes()).padStart(2, '0')
+  const ss = String(date.getSeconds()).padStart(2, '0')
+  return `${yyyy}-${mm}-${dd} ${hh}:${mi}:${ss}`
+}
+
 function formatAnchorDateSuffix(value: string | null | undefined) {
   const text = formatDateOnly(value)
   return text ? `(${text})` : ''
@@ -1955,6 +2003,10 @@ function buildEarningsSignalModel(earningsData: any, fallbackTsCode: string, fal
     financial_fiscal_year: toNullableNumber(earningsData.financial_fiscal_year),
     financial_ann_date: earningsData.financial_ann_date ? String(earningsData.financial_ann_date) : null,
     market_regime: earningsData.market_regime ? String(earningsData.market_regime).toUpperCase() : null,
+    refresh_reason: earningsData.refresh_reason ? String(earningsData.refresh_reason).toUpperCase() : null,
+    refresh_detail: earningsData.refresh_detail ? String(earningsData.refresh_detail) : null,
+    stock_regime: earningsData.stock_regime ? String(earningsData.stock_regime).toUpperCase() : null,
+    triggered_at: earningsData.triggered_at ? String(earningsData.triggered_at) : null,
     quantitative_target_components:
       earningsData.quantitative_target_components && typeof earningsData.quantitative_target_components === 'object'
         ? {
@@ -2050,6 +2102,7 @@ async function fetchPredictiveSignalOnly(requestSeq = ++predictiveFetchSeq.value
   const canonicalTsCode = toCanonicalTsCode(normalizedTsCode)
   if (!normalizedTsCode || !baseURL) {
     earningsSignal.value = null
+    persistedLatestSignal.value = null
     predictiveCompare.value = null
     earningsDegradeReason.value = ''
     predictiveFusionFallbackHit.value = false
@@ -2059,76 +2112,36 @@ async function fetchPredictiveSignalOnly(requestSeq = ++predictiveFetchSeq.value
 
   predictiveLoading.value = true
   try {
-    const valuationTsCode = ''
-    const earningsTsCodeCandidates = canonicalTsCode
-      ? [canonicalTsCode]
-      : Array.from(new Set([normalizedTsCode, valuationTsCode].filter((code) => Boolean(code))))
     const normalizedSignalReportType = normalizeEarningsReportTypeForSignal(selectedEarningsReportType.value)
-    const selectedValuationEndDateRaw = rows.value.find((item) => item.profit_report_end_date)?.profit_report_end_date || null
-    const selectedValuationEndDate = shouldPinFinancialEndDate(
-      normalizedSignalReportType,
-      selectedValuationEndDateRaw,
-      currentTradeDate.value,
-    )
-      ? selectedValuationEndDateRaw
-      : null
-    const earningsResp = await fetchEarningsSignalWithFallback(
-      earningsTsCodeCandidates,
-      requestSeq,
-      selectedEarningsReportType.value,
-      selectedPredictModelSlot.value,
-      selectedPredictAnchorMode.value,
-      selectedValuationEndDate,
-    )
-    const normalizedFusionSelection = String(selectedEarningsReportType.value || '').trim().toUpperCase()
-    const fusionFallbackNeeded =
-      normalizedFusionSelection === 'FUSION'
-      && isDefaultPredictivePlaceholder(earningsResp?.payload?.data)
-    predictiveFusionFallbackHit.value = fusionFallbackNeeded
-    const effectiveEarningsResp = fusionFallbackNeeded
-      ? await fetchEarningsSignalWithFallback(
-        earningsTsCodeCandidates,
-        requestSeq,
-        'ALL',
-        selectedPredictModelSlot.value,
-        selectedPredictAnchorMode.value,
-        null,
-      )
-      : earningsResp
+    if (!normalizedSignalReportType) {
+      earningsSignal.value = null
+      persistedLatestSignal.value = null
+      predictiveCompare.value = null
+      earningsDegradeReason.value = 'persisted_snapshot_unavailable'
+      return
+    }
+    const encoded = encodeURIComponent(canonicalTsCode || normalizedTsCode)
+    const preferredFinancialEndDate = String(stockTradeStore.preferredPredictiveFinancialEndDate || '').trim()
+    const financialEndDateQuery = preferredFinancialEndDate ? `&financial_end_date=${encodeURIComponent(preferredFinancialEndDate)}` : ''
+    const baseSnapshotUrl = `${baseURL}/earnings/signal-persisted/${encoded}/?ts_code=${encoded}&report_type=${encodeURIComponent(normalizedSignalReportType)}${financialEndDateQuery}`
+    const [latestResult, reportResult] = await Promise.allSettled([
+      axios.get(`${baseSnapshotUrl}&require_refresh_reason=1`),
+      axios.get(`${baseSnapshotUrl}&view=report_anchor`),
+    ])
     if (requestSeq !== predictiveFetchSeq.value || normalizedTsCode !== String(stockTradeStore.tsCode || '').trim().toUpperCase()) {
       return
     }
-
-    applyEarningsSignalResponse(effectiveEarningsResp, normalizedTsCode, canonicalTsCode, valuationTsCode)
-
-    try {
-      const compareResp = await fetchPredictiveCompareSignal(
-        canonicalTsCode || normalizedTsCode,
-        selectedEarningsReportType.value,
-        selectedPredictModelSlot.value,
-        selectedValuationEndDate,
-      )
-      const compareData = compareResp?.data
-      predictiveCompare.value = compareData && typeof compareData === 'object'
-        ? (compareData as PredictiveComparePayload)
-        : null
-      const normalizedAnchorMode = String(selectedPredictAnchorMode.value || '').trim().toLowerCase()
-      const comparePayloadAny = predictiveCompare.value as any
-      const reportAnchorRaw = comparePayloadAny?.report_anchor_view || comparePayloadAny?.report_view
-      const latestRaw = comparePayloadAny?.latest_view
-      const preferredRaw = latestRaw || reportAnchorRaw
-      // For ann mode, keep primary signal from /earnings/signal to avoid
-      // compare payload accidentally downgrading to an older report period.
-      if (normalizedAnchorMode === 'live' && preferredRaw && typeof preferredRaw === 'object') {
-        earningsSignal.value = buildEarningsSignalModel(
-          preferredRaw,
-          normalizedTsCode,
-          String(selectedEarningsReportType.value || 'UNKNOWN').toUpperCase(),
-        )
-      }
-    } catch {
-      predictiveCompare.value = null
-    }
+    const latestPayload = latestResult.status === 'fulfilled' ? latestResult.value?.data?.data : null
+    const reportPayload = reportResult.status === 'fulfilled' ? reportResult.value?.data?.data : null
+    persistedLatestSignal.value = latestPayload && typeof latestPayload === 'object'
+      ? buildEarningsSignalModel(latestPayload, normalizedTsCode, normalizedSignalReportType)
+      : null
+    earningsSignal.value = reportPayload && typeof reportPayload === 'object'
+      ? buildEarningsSignalModel(reportPayload, normalizedTsCode, normalizedSignalReportType)
+      : null
+    predictiveCompare.value = null
+    predictiveFusionFallbackHit.value = false
+    earningsDegradeReason.value = earningsSignal.value ? '' : 'persisted_snapshot_unavailable'
 
     predictiveLastRefreshAt.value = Date.now()
   } catch (error) {
@@ -2136,8 +2149,9 @@ async function fetchPredictiveSignalOnly(requestSeq = ++predictiveFetchSeq.value
       return
     }
     earningsSignal.value = null
+    persistedLatestSignal.value = null
     predictiveCompare.value = null
-    earningsDegradeReason.value = ''
+    earningsDegradeReason.value = 'persisted_snapshot_unavailable'
     predictiveFusionFallbackHit.value = false
     console.error('Failed to fetch predictive valuation section:', error)
   } finally {
@@ -2290,15 +2304,7 @@ const predictiveContextLabel = computed(() => {
 })
 
 const predictiveLatestView = computed<EarningsSignal | null>(() => {
-  const latestRaw = predictiveCompare.value?.latest_view
-  if (latestRaw && typeof latestRaw === 'object') {
-    return buildEarningsSignalModel(
-      latestRaw,
-      String(stockTradeStore.tsCode || '').trim().toUpperCase(),
-      String(selectedEarningsReportType.value || 'UNKNOWN').toUpperCase(),
-    )
-  }
-  return earningsSignal.value
+  return persistedLatestSignal.value
 })
 
 const predictiveReportAnchorView = computed<EarningsSignal | null>(() => {
@@ -2312,6 +2318,46 @@ const predictiveReportAnchorView = computed<EarningsSignal | null>(() => {
   }
   return earningsSignal.value
 })
+
+function persistedRefreshLabel(reason: string | null | undefined) {
+  return ({
+    MARKET_REGIME_SWITCH: '市场风格切换',
+    STOCK_REGIME_SWITCH: '个股风格切换',
+    FINANCIAL_DISCLOSURE: '财报更新',
+    MONTHLY_FULL_REFRESH: '月度刷新',
+    MANUAL_REFRESH: '手工刷新',
+  } as Record<string, string>)[String(reason || '').toUpperCase()] || '已刷新'
+}
+
+function persistedRefreshTagType(reason: string | null | undefined) {
+  const value = String(reason || '').toUpperCase()
+  if (value === 'MARKET_REGIME_SWITCH') return 'warning'
+  if (value === 'STOCK_REGIME_SWITCH') return 'danger'
+  if (value === 'FINANCIAL_DISCLOSURE') return 'success'
+  return 'info'
+}
+
+async function loadPredictiveRefreshHistory(tsCode: string, requestSeq = ++predictiveHistoryRequestSeq) {
+  const code = toCanonicalTsCode(String(tsCode || '').trim().toUpperCase()) || String(tsCode || '').trim().toUpperCase()
+  if (!code || !baseURL) return
+  predictiveHistoryLoading.value = true
+  try {
+    const response = await axios.get(`${baseURL}/earnings/signal-history/${encodeURIComponent(code)}/?limit=100`)
+    const currentCode = toCanonicalTsCode(String(stockTradeStore.tsCode || '').trim().toUpperCase()) || String(stockTradeStore.tsCode || '').trim().toUpperCase()
+    if (requestSeq !== predictiveHistoryRequestSeq || currentCode !== code) return
+    predictiveRefreshHistory.value = Array.isArray(response?.data?.data) ? response.data.data : []
+  } catch {
+    if (requestSeq !== predictiveHistoryRequestSeq) return
+    predictiveRefreshHistory.value = []
+  } finally {
+    if (requestSeq === predictiveHistoryRequestSeq) predictiveHistoryLoading.value = false
+  }
+}
+
+async function openPredictiveRefreshHistory() {
+  predictiveHistoryVisible.value = true
+  await loadPredictiveRefreshHistory(stockTradeStore.tsCode)
+}
 
 const predictiveCompareSummary = computed<PredictiveCompareSummary | null>(() => {
   const summary = predictiveCompare.value?.compare_summary
@@ -2839,6 +2885,7 @@ function onUserReportTypeChange() {
     return
   }
   userPinnedReportType.value = true
+  stockTradeStore.setPreferredPredictiveFinancialEndDate('')
   // Guard against stale auto-sync skip flag swallowing the first manual switch.
   skipNextValuationFetch.value = false
 }
@@ -2853,7 +2900,22 @@ watch(
 
     if (normalizedNewTsCode !== normalizedOldTsCode) {
       // Reset pin state before fetching for a newly selected stock.
-      userPinnedReportType.value = false
+      const preferredReportType = String(stockTradeStore.preferredPredictiveReportType || '').trim().toUpperCase()
+      if (['Q1', 'H1', 'Q3', 'FY'].includes(preferredReportType)) {
+        programmaticReportTypeSync.value = true
+        selectedEarningsReportType.value = preferredReportType
+        lastValuationReportType.value = preferredReportType
+        programmaticReportTypeSync.value = false
+        userPinnedReportType.value = true
+      } else {
+        userPinnedReportType.value = false
+      }
+      persistedLatestSignal.value = null
+      predictiveRefreshHistory.value = []
+      const historyRequestSeq = ++predictiveHistoryRequestSeq
+      if (predictiveHistoryVisible.value) {
+        void loadPredictiveRefreshHistory(normalizedNewTsCode, historyRequestSeq)
+      }
     }
 
     if (

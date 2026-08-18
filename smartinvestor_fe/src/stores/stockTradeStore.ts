@@ -6,6 +6,8 @@ export const useStockTradeStore = defineStore('tsCode', () => {
     const name = ref<string>('');
     const website = ref<string>('');
     const preferredValuationVariant = ref<string>('');
+    const preferredPredictiveReportType = ref<string>('');
+    const preferredPredictiveFinancialEndDate = ref<string>('');
     const open = ref<number>(0);
     const close = ref<number>(0);
     const high = ref<number>(0);
@@ -41,6 +43,16 @@ export const useStockTradeStore = defineStore('tsCode', () => {
 
     function setPreferredValuationVariant(newVariant: string) {
         preferredValuationVariant.value = String(newVariant || '').trim();
+    }
+
+    function setPreferredPredictiveReportType(newReportType: string) {
+        const reportType = String(newReportType || '').trim().toUpperCase();
+        preferredPredictiveReportType.value = ["Q1", "H1", "Q3", "FY"].includes(reportType) ? reportType : '';
+    }
+
+    function setPreferredPredictiveFinancialEndDate(newEndDate: string) {
+        const value = String(newEndDate || '').trim();
+        preferredPredictiveFinancialEndDate.value = /^\d{4}-\d{2}-\d{2}$/.test(value) || /^\d{8}$/.test(value) ? value : '';
     }
 
     function setOpen(newOpen: number) {
@@ -99,6 +111,10 @@ export const useStockTradeStore = defineStore('tsCode', () => {
         setWebsite,
         preferredValuationVariant,
         setPreferredValuationVariant,
+        preferredPredictiveReportType,
+        setPreferredPredictiveReportType,
+        preferredPredictiveFinancialEndDate,
+        setPreferredPredictiveFinancialEndDate,
         open,
         setOpen,
         close,

@@ -188,6 +188,7 @@ def _snapshot_to_payload(snapshot: EarningsSignalSnapshot, prev_year_income_sign
     explain = snapshot.explain or {}
     raw_result = snapshot.raw_result or {}
     quant_target = raw_result.get("quantitative_target") if isinstance(raw_result, dict) else None
+    quant_target = quant_target if isinstance(quant_target, dict) else {}
     financial_end_date = raw_result.get("financial_end_date") if isinstance(raw_result, dict) else None
     prev_year_end_date = _to_prev_year_end_date(financial_end_date)
     prev_year_netprofit_non_negative = None
@@ -201,11 +202,23 @@ def _snapshot_to_payload(snapshot: EarningsSignalSnapshot, prev_year_income_sign
         "target_return_pct": _to_float_or_none(snapshot.target_return_pct),
         "target_price": _to_float_or_none(snapshot.target_price),
         "target_market_cap": _to_float_or_none(snapshot.target_market_cap),
+        "target_return_low_pct": _to_float_or_none(quant_target.get("target_return_low_pct")),
+        "target_return_high_pct": _to_float_or_none(quant_target.get("target_return_high_pct")),
+        "target_price_low": _to_float_or_none(quant_target.get("target_price_low")),
+        "target_price_high": _to_float_or_none(quant_target.get("target_price_high")),
+        "target_market_cap_low": _to_float_or_none(quant_target.get("target_market_cap_low")),
+        "target_market_cap_high": _to_float_or_none(quant_target.get("target_market_cap_high")),
         "action": str(snapshot.action or "HOLD").upper(),
         "risk_level": str(snapshot.risk_level or "MEDIUM").upper(),
         "model_version": snapshot.model_version or None,
         "trade_date": snapshot.asof_date.isoformat() if snapshot.asof_date else None,
+        "asof_date": snapshot.asof_date.isoformat() if snapshot.asof_date else None,
         "feature_data_source": snapshot.feature_data_source or None,
+        "refresh_reason": snapshot.refresh_reason or None,
+        "refresh_detail": snapshot.refresh_detail or None,
+        "market_regime": snapshot.market_regime or None,
+        "stock_regime": snapshot.stock_regime or None,
+        "triggered_at": snapshot.triggered_at.isoformat() if snapshot.triggered_at else None,
         "financial_fiscal_year": raw_result.get("financial_fiscal_year") if isinstance(raw_result, dict) else None,
         "financial_ann_date": raw_result.get("financial_ann_date") if isinstance(raw_result, dict) else None,
         "financial_end_date": financial_end_date,
@@ -216,7 +229,7 @@ def _snapshot_to_payload(snapshot: EarningsSignalSnapshot, prev_year_income_sign
             "prob_component": _to_float_or_none(explain.get("prob_component")),
             "earnings_component": _to_float_or_none(explain.get("earnings_component")),
         },
-        "quantitative_target": quant_target if isinstance(quant_target, dict) else {},
+        "quantitative_target": quant_target,
         "be_payload": {
             "signal_score": _to_float_or_none(snapshot.signal_score),
             "target_return_pct": _to_float_or_none(snapshot.target_return_pct),
@@ -232,6 +245,7 @@ def _history_to_payload(snapshot: EarningsSignalSnapshotHistory) -> dict:
     explain = snapshot.explain or {}
     raw_result = snapshot.raw_result or {}
     quant_target = raw_result.get("quantitative_target") if isinstance(raw_result, dict) else None
+    quant_target = quant_target if isinstance(quant_target, dict) else {}
     financial_end_date = (
         raw_result.get("financial_end_date") if isinstance(raw_result, dict) else None
     ) or snapshot.financial_end_date
@@ -245,10 +259,17 @@ def _history_to_payload(snapshot: EarningsSignalSnapshotHistory) -> dict:
         "target_return_pct": _to_float_or_none(snapshot.target_return_pct),
         "target_price": _to_float_or_none(snapshot.target_price),
         "target_market_cap": _to_float_or_none(snapshot.target_market_cap),
+        "target_return_low_pct": _to_float_or_none(quant_target.get("target_return_low_pct")),
+        "target_return_high_pct": _to_float_or_none(quant_target.get("target_return_high_pct")),
+        "target_price_low": _to_float_or_none(quant_target.get("target_price_low")),
+        "target_price_high": _to_float_or_none(quant_target.get("target_price_high")),
+        "target_market_cap_low": _to_float_or_none(quant_target.get("target_market_cap_low")),
+        "target_market_cap_high": _to_float_or_none(quant_target.get("target_market_cap_high")),
         "action": str(snapshot.action or "HOLD").upper(),
         "risk_level": str(snapshot.risk_level or "MEDIUM").upper(),
         "model_version": snapshot.model_version or None,
         "trade_date": snapshot.asof_date.isoformat() if snapshot.asof_date else None,
+        "asof_date": snapshot.asof_date.isoformat() if snapshot.asof_date else None,
         "feature_data_source": snapshot.feature_data_source or None,
         "financial_fiscal_year": raw_result.get("financial_fiscal_year") if isinstance(raw_result, dict) else snapshot.financial_fiscal_year,
         "financial_ann_date": raw_result.get("financial_ann_date") if isinstance(raw_result, dict) else snapshot.financial_ann_date,
@@ -260,7 +281,7 @@ def _history_to_payload(snapshot: EarningsSignalSnapshotHistory) -> dict:
             "prob_component": _to_float_or_none(explain.get("prob_component")),
             "earnings_component": _to_float_or_none(explain.get("earnings_component")),
         },
-        "quantitative_target": quant_target if isinstance(quant_target, dict) else {},
+        "quantitative_target": quant_target,
         "be_payload": {
             "signal_score": _to_float_or_none(snapshot.signal_score),
             "target_return_pct": _to_float_or_none(snapshot.target_return_pct),
@@ -363,6 +384,39 @@ def _select_payload_by_financial_end_date(
         if history_end_date == target_end_date:
             return _history_to_payload(history_row)
     return None
+
+
+def _select_announcement_anchor_history(ts_code: str, report_type: str, financial_end_date: str | None = None) -> EarningsSignalSnapshotHistory | None:
+    expected_end_date = _normalize_end_date_token(financial_end_date)
+    candidates = []
+    for snapshot in (
+        EarningsSignalSnapshotHistory.objects.filter(
+            ts_code=str(ts_code or "").strip().upper(),
+            report_type=str(report_type or "").strip().upper(),
+        )
+        .order_by("-created_at")[:500]
+    ):
+        raw = snapshot.raw_result if isinstance(snapshot.raw_result, dict) else {}
+        snapshot_end_date = _normalize_end_date_token(raw.get("financial_end_date") or snapshot.financial_end_date)
+        if expected_end_date and snapshot_end_date != expected_end_date:
+            continue
+        announcement_date = _parse_token_date(raw.get("financial_ann_date") or snapshot.financial_ann_date)
+        anchor_date = snapshot.asof_date or _parse_token_date(raw.get("trade_date"))
+        if announcement_date is None or anchor_date is None:
+            continue
+        candidates.append((snapshot, announcement_date, anchor_date))
+    if not candidates:
+        return None
+    candidates.sort(
+        key=lambda item: (
+            abs((item[2] - item[1]).days),
+            1 if item[2] < item[1] else 0,
+            0 if str(item[0].anchor_mode or "").lower() == "ann" else 1,
+            -item[2].toordinal(),
+            -item[0].created_at.timestamp(),
+        )
+    )
+    return candidates[0][0]
 
 
 def _build_fusion_payload_from_snapshots(snapshots: list[EarningsSignalSnapshot]) -> dict | None:
@@ -597,6 +651,85 @@ def signal_snapshot(request):
     if include_fusion:
         payload["fusion_result"] = _build_fusion_payload_from_snapshots(all_snaps)
     return JsonResponse(payload)
+
+
+@require_GET
+def signal_persisted_snapshot(request):
+    """Return an already persisted signal only; never invoke prediction or build a fallback."""
+    ts_code = str(request.GET.get("ts_code") or "").strip().upper()
+    report_type = _normalize_report_type(request.GET.get("report_type"), allow_all=False)
+    if not ts_code or not report_type:
+        return JsonResponse({"ok": False, "error": "ts_code and report_type are required"}, status=400)
+    require_refresh_reason = _parse_bool(request.GET.get("require_refresh_reason"), default=False)
+    view = str(request.GET.get("view") or "latest").strip().lower()
+    financial_end_date = _normalize_end_date_token(request.GET.get("financial_end_date"))
+    if view == "report_anchor":
+        snapshot = _select_announcement_anchor_history(ts_code, report_type, financial_end_date)
+        if snapshot is None:
+            return JsonResponse({"ok": False, "error": "announcement-anchor snapshot not found"}, status=404)
+        return JsonResponse({"ok": True, "result": _history_to_payload(snapshot)})
+    query = EarningsSignalSnapshot.objects.filter(ts_code=ts_code, report_type=report_type)
+    if require_refresh_reason:
+        query = query.exclude(refresh_reason="")
+    snapshot = query.order_by("-updated_at").first()
+    if snapshot is None:
+        return JsonResponse({"ok": False, "error": "persisted snapshot not found"}, status=404)
+    payload = _snapshot_to_payload(snapshot, _build_prev_year_income_sign_map([snapshot]))
+    return JsonResponse({"ok": True, "result": payload})
+
+
+@require_GET
+def signal_refresh_history(request):
+    ts_code = str(request.GET.get("ts_code") or "").strip().upper()
+    if not ts_code:
+        return JsonResponse({"ok": False, "error": "ts_code is required"}, status=400)
+    try:
+        limit = max(1, min(int(request.GET.get("limit") or 100), 200))
+    except (TypeError, ValueError):
+        return JsonResponse({"ok": False, "error": "limit must be an integer"}, status=400)
+    rows = list(
+        EarningsSignalSnapshotHistory.objects.filter(ts_code=ts_code)
+        .filter(refresh_reason__in=["MARKET_REGIME_SWITCH", "STOCK_REGIME_SWITCH"])
+        .order_by("-triggered_at", "-created_at", "-id")[:limit]
+    )
+    selected_by_batch = {}
+    for row in rows:
+        batch_identity = (str(row.batch_key or ""), str(row.refresh_reason or ""), str(row.triggered_at or row.created_at or ""))
+        existing = selected_by_batch.get(batch_identity)
+        if existing is None:
+            selected_by_batch[batch_identity] = row
+            continue
+        existing_is_fusion = str(existing.report_type or "").upper() == "FUSION"
+        row_is_fusion = str(row.report_type or "").upper() == "FUSION"
+        if existing_is_fusion and not row_is_fusion:
+            selected_by_batch[batch_identity] = row
+        elif not existing.financial_end_date and row.financial_end_date:
+            selected_by_batch[batch_identity] = row
+
+    items = []
+    for row in sorted(selected_by_batch.values(), key=lambda item: (item.triggered_at or item.created_at, item.created_at), reverse=True):
+        raw = row.raw_result if isinstance(row.raw_result, dict) else {}
+        items.append(
+            {
+                "ts_code": row.ts_code,
+                "report_type": str(row.report_type or "UNKNOWN").upper(),
+                "financial_report_type": str(row.financial_report_type or row.report_type or "UNKNOWN").upper(),
+                "financial_end_date": row.financial_end_date or raw.get("financial_end_date") or None,
+                "financial_ann_date": row.financial_ann_date or raw.get("financial_ann_date") or None,
+                "refresh_reason": row.refresh_reason,
+                "refresh_detail": row.refresh_detail or None,
+                "market_regime": row.market_regime or None,
+                "stock_regime": row.stock_regime or None,
+                "triggered_at": row.triggered_at.isoformat() if row.triggered_at else None,
+                "created_at": row.created_at.isoformat() if row.created_at else None,
+                "signal_score": _to_float_or_none(row.signal_score),
+                "target_price": _to_float_or_none(row.target_price),
+                "target_return_pct": _to_float_or_none(row.target_return_pct),
+                "action": str(row.action or "HOLD").upper(),
+                "risk_level": str(row.risk_level or "MEDIUM").upper(),
+            }
+        )
+    return JsonResponse({"ok": True, "items": items, "total": len(items)})
 
 
 @require_POST

@@ -10,6 +10,26 @@ from earnings_forecast.management.commands.export_updated_financial_codes import
 	_collect_remote_dividend_codes,
 )
 from earnings_forecast.services.backtest import _simulate_year
+from earnings_forecast.services.stock_regime import classify_stock_regime, next_regime_state
+
+
+class StockRegimeTests(SimpleTestCase):
+	def test_growth_regime_requires_strength_above_moving_averages(self):
+		metrics = classify_stock_regime(range(1, 81))
+		self.assertIsNotNone(metrics)
+		self.assertEqual(metrics.regime, "GROWTH")
+
+	def test_regime_switch_requires_two_confirmations(self):
+		first = next_regime_state("GROWTH", "", 0, "DEFENSIVE", 2)
+		self.assertEqual(first, ("GROWTH", "DEFENSIVE", 1, False))
+		second = next_regime_state("GROWTH", "DEFENSIVE", 1, "DEFENSIVE", 2)
+		self.assertEqual(second, ("DEFENSIVE", "", 0, True))
+
+	def test_current_regime_resets_pending_switch(self):
+		self.assertEqual(
+			next_regime_state("BALANCE", "DEFENSIVE", 1, "BALANCE", 2),
+			("BALANCE", "", 0, False),
+		)
 
 
 class ExportUpdatedFinancialCodesTests(SimpleTestCase):

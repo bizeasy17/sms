@@ -475,6 +475,30 @@ class LocalCorporation(models.Model):
         db_table = "earnings_dim_corporation"
 
 
+class StockRegimeState(models.Model):
+    """Persisted per-symbol regime baseline used to trigger targeted signal refreshes."""
+
+    ts_code = models.CharField(max_length=16, unique=True, db_index=True)
+    regime = models.CharField(max_length=16, db_index=True)
+    previous_regime = models.CharField(max_length=16, blank=True, default="")
+    pending_regime = models.CharField(max_length=16, blank=True, default="")
+    pending_days = models.PositiveSmallIntegerField(default=0)
+    asof_trade_date = models.DateField(null=True, blank=True, db_index=True)
+    ma20 = models.FloatField(null=True, blank=True)
+    ma60 = models.FloatField(null=True, blank=True)
+    volatility_20d = models.FloatField(null=True, blank=True)
+    drawdown_60d = models.FloatField(null=True, blank=True)
+    last_triggered_at = models.DateTimeField(null=True, blank=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = "earnings_stock_regime_state"
+        indexes = [
+            models.Index(fields=["regime", "asof_trade_date"], name="idx_earn_stk_regime_dt"),
+        ]
+
+
 class EarningsSignalSnapshot(models.Model):
     """Persisted forecast signal snapshot for API read path."""
 
@@ -492,6 +516,11 @@ class EarningsSignalSnapshot(models.Model):
     raw_result = models.JSONField(blank=True, default=dict)
     feature_data_source = models.CharField(max_length=32, blank=True, default="")
     batch_key = models.CharField(max_length=64, blank=True, default="manual", db_index=True)
+    refresh_reason = models.CharField(max_length=32, blank=True, default="", db_index=True)
+    refresh_detail = models.CharField(max_length=128, blank=True, default="")
+    market_regime = models.CharField(max_length=16, blank=True, default="", db_index=True)
+    stock_regime = models.CharField(max_length=16, blank=True, default="", db_index=True)
+    triggered_at = models.DateTimeField(null=True, blank=True)
     last_error = models.TextField(blank=True, default="")
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -528,6 +557,10 @@ class EarningsSignalSnapshotHistory(models.Model):
     raw_result = models.JSONField(blank=True, default=dict)
     feature_data_source = models.CharField(max_length=32, blank=True, default="")
     batch_key = models.CharField(max_length=64, blank=True, default="manual", db_index=True)
+    refresh_reason = models.CharField(max_length=32, blank=True, default="", db_index=True)
+    refresh_detail = models.CharField(max_length=128, blank=True, default="")
+    stock_regime = models.CharField(max_length=16, blank=True, default="", db_index=True)
+    triggered_at = models.DateTimeField(null=True, blank=True)
     snapshot_source = models.CharField(max_length=32, blank=True, default="", db_index=True)
     anchor_mode = models.CharField(max_length=16, blank=True, default="", db_index=True)
     market_regime = models.CharField(max_length=16, blank=True, default="", db_index=True)

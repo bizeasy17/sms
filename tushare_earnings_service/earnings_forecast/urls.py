@@ -9,6 +9,8 @@ from .views import (
     prepare_dataset,
     run_backtest,
     signal_snapshot,
+    signal_persisted_snapshot,
+    signal_refresh_history,
     signal_snapshot_batch,
     train_model,
 )
@@ -16,6 +18,8 @@ from .views import (
 urlpatterns = [
     path("health/", health, name="health"),
     path("signal/", signal_snapshot, name="signal-snapshot"),
+    path("signal/persisted/", signal_persisted_snapshot, name="signal-persisted-snapshot"),
+    path("signal/history/", signal_refresh_history, name="signal-refresh-history"),
     path("signal/batch/", signal_snapshot_batch, name="signal-snapshot-batch"),
     path("backtest/run/", run_backtest, name="run-backtest"),
     path("backtest/batch-candidates/", list_backtest_batch_candidates, name="list-backtest-batch-candidates"),
