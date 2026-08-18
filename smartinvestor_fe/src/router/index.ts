@@ -8,6 +8,11 @@ const routes: Array<RouteRecordRaw> = [
         component: () => import('../views/DashboardView.vue'),
     },
     {
+        path: '/opt/stock-research-dashboard',
+        name: 'OptStockResearchDashboard',
+        component: () => import('../views/OptStockResearchDashboardView.vue'),
+    },
+    {
         path: '/market',
         name: 'Market',
         component: () => import('../views/MarketView.vue'),
