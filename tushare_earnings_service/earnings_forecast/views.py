@@ -404,15 +404,18 @@ def _select_announcement_anchor_history(ts_code: str, report_type: str, financia
         anchor_date = snapshot.asof_date or _parse_token_date(raw.get("trade_date"))
         if announcement_date is None or anchor_date is None:
             continue
-        candidates.append((snapshot, announcement_date, anchor_date))
+        candidates.append((snapshot, snapshot_end_date, announcement_date, anchor_date))
     if not candidates:
         return None
+    if not expected_end_date:
+        latest_end_date = max(item[1] for item in candidates if item[1])
+        candidates = [item for item in candidates if item[1] == latest_end_date]
     candidates.sort(
         key=lambda item: (
-            abs((item[2] - item[1]).days),
-            1 if item[2] < item[1] else 0,
+            abs((item[3] - item[2]).days),
+            1 if item[3] < item[2] else 0,
             0 if str(item[0].anchor_mode or "").lower() == "ann" else 1,
-            -item[2].toordinal(),
+            -item[3].toordinal(),
             -item[0].created_at.timestamp(),
         )
     )

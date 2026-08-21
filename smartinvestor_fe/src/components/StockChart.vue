@@ -264,12 +264,18 @@ function applyPositionTriggerLines(tsCode) {
         return
     }
     const markLine = buildPositionTriggerMarkLine(tsCode || stockStore.tsCode)
+    const firstSeries = { ...chartTrendOption.value.series[0] }
     if (markLine) {
-        chartTrendOption.value.series[0].markLine = markLine
-    } else if (chartTrendOption.value.series[0].markLine) {
-        delete chartTrendOption.value.series[0].markLine
+        firstSeries.markLine = markLine
+    } else if (firstSeries.markLine) {
+        delete firstSeries.markLine
     }
     applyPositionTriggerYAxisRange(tsCode || stockStore.tsCode)
+    chartTrendOption.value = {
+        ...chartTrendOption.value,
+        yAxis: Array.isArray(chartTrendOption.value.yAxis) ? [...chartTrendOption.value.yAxis] : chartTrendOption.value.yAxis,
+        series: [firstSeries, ...chartTrendOption.value.series.slice(1)],
+    }
 }
 
 function applyPositionTriggerYAxisRange(tsCode) {
@@ -397,6 +403,7 @@ async function toggleHoldingStatus(hold) {
 // 创建联动的 group id
 const chartGroup = 'stockChartsGroup'
 const trendChartRef = ref()
+const atrRiskLinesVisible = ref(true)
 const chipChartRef = ref()
 
 const techChartRef = ref()
@@ -865,6 +872,14 @@ function buildDerivedTradingChartData(parsedData) {
             smooth: true,
             showSymbol: false,
             lineStyle: { color: '#ea580c', width: 1 }
+        },
+        {
+            name: 'ATR止盈止损',
+            type: 'line',
+            data: [],
+            silent: true,
+            showSymbol: false,
+            lineStyle: { color: '#f97316', width: 2 }
         }
     ]
 
@@ -874,7 +889,14 @@ function buildDerivedTradingChartData(parsedData) {
         {
             name: '成交量',
             type: 'bar',
-            data: parsedData.vol,
+            data: parsedData.vol.map((value, index) => ({
+                value,
+                itemStyle: {
+                    color: Number(parsedData.kdata[index]?.[1]) >= Number(parsedData.kdata[index]?.[0])
+                        ? '#ef4444'
+                        : '#22c55e',
+                },
+            })),
             smooth: true
         },
         {
@@ -1135,8 +1157,13 @@ function applyDerivedTradingChartData(parsedData, derivedData) {
     chartTrendOption.value.series = [...trendSeries, ...overlaySeries, ...volSeries]
     chartTrendOption.value.legend.data = [
         'MA6', 'MA10', 'MA25', 'MA43', 'MA60', 'MA120', 'MA200',
+        'ATR止盈止损',
         ...(derivedData.overlayLegend || []),
     ]
+    chartTrendOption.value.legend.selected = {
+        ...(chartTrendOption.value.legend.selected || {}),
+        'ATR止盈止损': atrRiskLinesVisible.value,
+    }
     applyPositionTriggerLines(stockStore.tsCode)
     chartTechOption.value.xAxis.data = derivedData.techXAxis
     chartTechOption.value.series = (derivedData.techSeriesByOption[techOption.value] || []).map(series => ({ ...series }))
@@ -1267,7 +1294,7 @@ const chartTrendOption = ref({
         // Exclude 'K线' from legend
         selector: false,
         data: [
-            'MA6', 'MA10', 'MA25', 'MA43', 'MA60', 'MA120', 'MA200'
+            'MA6', 'MA10', 'MA25', 'MA43', 'MA60', 'MA120', 'MA200', 'ATR止盈止损'
         ]
     },
     dataZoom: [
@@ -1785,6 +1812,42 @@ function onTrendDataZoom(event) {
     applyTrendZoomToOption()
 }
 
+function applyAtrRiskLineVisibility() {
+    const atrLineNames = new Set(['SL1', 'SL2', 'TP1', 'TP2'])
+    const atrLineData = {
+        SL1: sl1.value,
+        SL2: sl2.value,
+        TP1: tp1.value,
+        TP2: tp2.value,
+    }
+    chartTrendOption.value = {
+        ...chartTrendOption.value,
+        legend: {
+            ...chartTrendOption.value.legend,
+            selected: {
+                ...(chartTrendOption.value.legend?.selected || {}),
+                'ATR止盈止损': atrRiskLinesVisible.value,
+            },
+        },
+        series: (chartTrendOption.value.series || []).map((series) => (
+            atrLineNames.has(series.name)
+                ? {
+                    ...series,
+                    data: atrRiskLinesVisible.value ? atrLineData[series.name] : [],
+                }
+                : series
+        )),
+    }
+}
+
+function onTrendLegendSelectChanged(event) {
+    if (event?.name !== 'ATR止盈止损') {
+        return
+    }
+    atrRiskLinesVisible.value = Boolean(event?.selected?.['ATR止盈止损'])
+    applyAtrRiskLineVisibility()
+}
+
 function bindTrendHoverSync() {
     const chart = trendChartRef.value?.chart
     if (!chart) return
@@ -1792,6 +1855,8 @@ function bindTrendHoverSync() {
     chart.on('updateAxisPointer', onTrendAxisPointer)
     chart.off('datazoom', onTrendDataZoom)
     chart.on('datazoom', onTrendDataZoom)
+    chart.off('legendselectchanged', onTrendLegendSelectChanged)
+    chart.on('legendselectchanged', onTrendLegendSelectChanged)
     chart.dispatchAction({
         type: 'dataZoom',
         start: trendZoomRange.value.start,
