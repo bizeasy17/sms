@@ -1,6 +1,13 @@
 from django.test import SimpleTestCase
+from unittest.mock import patch
 
-from financial_screening.services import _growth_pct, _previous_quarter_report_type, _standalone
+from financial_screening.services import (
+    ScreenRequest,
+    _growth_pct,
+    _previous_quarter_report_type,
+    _standalone,
+    screen_financial_performance,
+)
 
 
 class FinancialMetricCalculationTests(SimpleTestCase):
@@ -22,3 +29,16 @@ class FinancialMetricCalculationTests(SimpleTestCase):
     def test_h1_qoq_compares_h1_second_quarter_with_q1(self):
         self.assertEqual(_previous_quarter_report_type("H1"), "Q1")
         self.assertEqual(_standalone(50, 900, _previous_quarter_report_type("H1")), 50)
+
+    @patch("financial_screening.services._fetch_rows", return_value={})
+    def test_screen_returns_empty_when_candidates_have_no_current_report(self, _fetch_rows):
+        request = ScreenRequest(
+            candidate_codes=["600975.SH"],
+            fiscal_year=2026,
+            report_type="H1",
+            filters={"require_all_metrics": True},
+            sort_by="predictive_signal_score",
+            sort_order="desc",
+        )
+
+        self.assertEqual(screen_financial_performance(request), [])

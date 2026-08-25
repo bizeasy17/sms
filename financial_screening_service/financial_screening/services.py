@@ -7,6 +7,16 @@ from typing import Any
 from django.db import connection
 
 REPORT_END_SUFFIX = {"Q1": "0331", "H1": "0630", "Q3": "0930", "FY": "1231"}
+FINANCIAL_METRIC_FIELDS = {
+    "revenue_yoy_pct",
+    "revenue_qoq_pct",
+    "netprofit_yoy_pct",
+    "netprofit_qoq_pct",
+    "ebit_yoy_pct",
+    "ebit_qoq_pct",
+    "roe_pct",
+    "roe_dt_pct",
+}
 
 
 def _as_number(value: Any) -> float | None:
@@ -203,7 +213,7 @@ def screen_financial_performance(request: ScreenRequest) -> list[dict[str, Any]]
             "data_quality_flags": quality_flags,
             "turnaround": revenue_turnaround or netprofit_turnaround or ebit_turnaround,
         })
-    sort_by = request.sort_by if request.sort_by in {"financial_score", *metrics.keys()} else "financial_score"
+    sort_by = request.sort_by if request.sort_by in {"financial_score", *FINANCIAL_METRIC_FIELDS} else "financial_score"
     descending = str(request.sort_order).lower() != "asc"
     result.sort(key=lambda row: (row.get(sort_by) is None, -(row.get(sort_by) or float("-inf")) if descending else row.get(sort_by) or float("inf"), row["ts_code"]))
     return result

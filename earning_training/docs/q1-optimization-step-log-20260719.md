@@ -75,6 +75,26 @@
 - 结果报告：docs/q1-p1-f3-grayzone-threshold-results-20260719.md
 - 结论：`cls_auc` 提升至 0.734、`cls_acc` 提升至 69.33%，且固定策略回放收益/命中率/回撤同步改善，进入优先候选。
 
+### Step J: P1-F3 窄幅扫描（abs_min=0.07/0.09）
+- 需求文档：docs/q1-h1-p1-next-round-optimization-requirement-20260823.md
+- 配置文件：
+  - configs/default.q1_opt_exp_r3_cls_c_uat_ocf_fix_f3_grayzone_threshold_scan07.yaml
+  - configs/default.q1_opt_exp_r3_cls_c_uat_ocf_fix_f3_grayzone_threshold_scan09.yaml
+- 模型产物：
+  - outputs/model_versions/uat_20260823_q1_p1_f3_grayzone_threshold_scan07/
+  - outputs/model_versions/uat_20260823_q1_p1_f3_grayzone_threshold_scan09/
+- 对比产物：outputs/local_valuation_checks/q1_p1_f3_scan07_scan09_vs_f3_20260823.json
+- 结果报告：docs/q1-h1-p1-next-round-optimization-results-20260823.md
+- 结论：`scan07` 在 `cls_auc`、Top8 收益、命中率、回撤上同时优于 F3，成为新的 Q1 优先候选；`scan09` 可作为风险优先备选。
+
+### Step K: H1-F3 训练策略迁移（标签灰区 + 阈值校准）
+- 需求文档：docs/q1-h1-p1-next-round-optimization-requirement-20260823.md
+- 配置文件：configs/default.h1_opt_exp_r1_cls_a_oos2024_fy2_uat_ocf_fix_f3_grayzone_threshold.yaml
+- 模型产物：outputs/model_versions/uat_20260823_h1_p1_f3_grayzone_threshold/
+- 对比产物：outputs/local_valuation_checks/h1_p1_f3_vs_baselines_20260823.json
+- 结果报告：docs/q1-h1-p1-next-round-optimization-results-20260823.md
+- 结论：离线分类相对 H1 OCF Fix 明显改善，但 Top10 回放收益与命中率下降，不作为直接替换候选。
+
 ## 3. 记录完整性检查
 - 需求记录：已覆盖
 - 配置/脚本记录：已覆盖

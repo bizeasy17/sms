@@ -808,12 +808,8 @@ function syncDetailStock(row: any) {
     stockTradeStore.setName(row.name);
     stockTradeStore.setWebsite(resolveCompanyWebsiteUrl(row.website_url, row.website));
     stockTradeStore.setPreferredValuationVariant(resolvePreferredValuationVariant(row));
-    stockTradeStore.setPreferredPredictiveReportType(
-        valuationStockPickingStore.pickingMode === "MODE:FINANCIAL" ? String(row.report_type || "") : "",
-    );
-    stockTradeStore.setPreferredPredictiveFinancialEndDate(
-        valuationStockPickingStore.pickingMode === "MODE:FINANCIAL" ? String(row.financial_end_date || "") : "",
-    );
+    stockTradeStore.setPreferredPredictiveReportType("");
+    stockTradeStore.setPreferredPredictiveFinancialEndDate("");
 }
 
 function clearDetailStockStatus() {
