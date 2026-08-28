@@ -57,6 +57,8 @@ call :run_step "Earnings sync index dailybasic local" "%UAT_ROOT%\tushare_earnin
 if errorlevel 1 exit /b %ERRORLEVEL%
 call :run_step "BE daily trading pull" "%UAT_ROOT%\smartinvestor_be" "call %UAT_ROOT%\smartinvestor_be\daily_pull_data.bat"
 if errorlevel 1 exit /b %ERRORLEVEL%
+call :run_step "BE market sentiment daily refresh" "%UAT_ROOT%\smartinvestor_be" "%PYTHON_CMD% manage.py refresh_market_sentiment --latest --market CN --scope MARKET --scope-code ALL_A"
+if errorlevel 1 exit /b %ERRORLEVEL%
 call :run_step "BE daily index trading sync" "%UAT_ROOT%\smartinvestor_be" "%PYTHON_CMD% manage.py sync_index_trading_history --mode delta --index-codes 000001.SH,399001.SZ,399006.SZ,000300.SH,000905.SH,000852.SH --delta-overlap-days 5 --log-every 20 --sleep-ms 180"
 if errorlevel 1 exit /b %ERRORLEVEL%
 call :run_step "BE sw params refresh daily pre-traditional" "%UAT_ROOT%\smartinvestor_be" "%PYTHON_CMD% manage.py syncswvaluation --params-only --sample-size 3 --history-years 3,5,10 --history-quantile 0.5 --history-min-samples 120 --request-interval 0.45"

@@ -1,5 +1,6 @@
 from django.urls import path
 from . import views
+from market_sentiment.api import get_market_sentiment_history, get_market_sentiment_latest
 
 urlpatterns = [
     # Stock-related endpoints (RESTful format, optimized with freq and adj params)
@@ -266,4 +267,6 @@ urlpatterns = [
         views.get_earnings_signal_compare,
         name="earnings-signal-compare",
     ),
+    path("market-sentiment/latest/", get_market_sentiment_latest, name="market-sentiment-latest"),
+    path("market-sentiment/history/", get_market_sentiment_history, name="market-sentiment-history"),
 ]

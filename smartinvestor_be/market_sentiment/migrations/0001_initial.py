@@ -1,0 +1,17 @@
+from django.db import migrations, models
+
+
+class Migration(migrations.Migration):
+    initial = True
+    dependencies = []
+    operations = [
+        migrations.CreateModel(name='MarketSentimentSnapshot', fields=[
+            ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
+            ('market', models.CharField(db_index=True, default='CN', max_length=10)), ('scope_type', models.CharField(db_index=True, default='MARKET', max_length=16)), ('scope_code', models.CharField(db_index=True, default='ALL_A', max_length=64)), ('trade_date', models.DateField(db_index=True)), ('sentiment_score', models.DecimalField(blank=True, decimal_places=2, max_digits=6, null=True)), ('sentiment_level', models.CharField(db_index=True, default='WARMING_UP', max_length=16)), ('raw_score', models.DecimalField(blank=True, decimal_places=6, max_digits=12, null=True)), ('standardized_score', models.DecimalField(blank=True, decimal_places=6, max_digits=12, null=True)), ('momentum_score', models.DecimalField(blank=True, decimal_places=6, max_digits=12, null=True)), ('activity_score', models.DecimalField(blank=True, decimal_places=6, max_digits=12, null=True)), ('fear_score', models.DecimalField(blank=True, decimal_places=6, max_digits=12, null=True)), ('universe_size', models.IntegerField(default=0)), ('valid_sample_size', models.IntegerField(default=0)), ('coverage', models.DecimalField(blank=True, decimal_places=4, max_digits=6, null=True)), ('engine_version', models.CharField(db_index=True, default='daily_v1_20260828', max_length=32)), ('status', models.CharField(db_index=True, default='PENDING', max_length=24)), ('metadata', models.JSONField(blank=True, default=dict)), ('created_at', models.DateTimeField(auto_now_add=True)), ('updated_at', models.DateTimeField(auto_now=True)),
+        ], options={'ordering': ['-trade_date'], 'unique_together': {('market', 'scope_type', 'scope_code', 'trade_date', 'engine_version')}}),
+        migrations.CreateModel(name='MarketSentimentFactor', fields=[
+            ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')), ('dimension', models.CharField(db_index=True, max_length=32)), ('factor_code', models.CharField(db_index=True, max_length=64)), ('factor_name', models.CharField(max_length=128)), ('raw_value', models.DecimalField(blank=True, decimal_places=8, max_digits=18, null=True)), ('normalized_value', models.DecimalField(blank=True, decimal_places=6, max_digits=12, null=True)), ('weight', models.DecimalField(blank=True, decimal_places=6, max_digits=8, null=True)), ('contribution', models.DecimalField(blank=True, decimal_places=6, max_digits=12, null=True)), ('available', models.BooleanField(default=True)), ('reason', models.TextField(blank=True, default='')), ('payload', models.JSONField(blank=True, default=dict)), ('sort_order', models.IntegerField(default=0)), ('created_at', models.DateTimeField(auto_now_add=True)), ('snapshot', models.ForeignKey(on_delete=models.deletion.CASCADE, related_name='factors', to='market_sentiment.marketsentimentsnapshot')),
+        ]),
+        migrations.AddIndex(model_name='marketsentimentsnapshot', index=models.Index(fields=['market', 'scope_type', 'scope_code', 'trade_date'], name='mkt_sent_scope_date_idx')),
+        migrations.AddIndex(model_name='marketsentimentfactor', index=models.Index(fields=['dimension', 'factor_code'], name='mkt_sent_factor_idx')),
+    ]

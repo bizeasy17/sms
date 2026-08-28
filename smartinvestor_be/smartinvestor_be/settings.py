@@ -57,6 +57,7 @@ INSTALLED_APPS = [
     "backtest.apps.BacktestConfig",
     "valuation.apps.ValuationConfig",
     "valuation_risk.apps.ValuationRiskConfig",
+    "market_sentiment.apps.MarketSentimentConfig",
     "supply_chain.apps.SupplyChainConfig",
 ]
 
