@@ -58,9 +58,9 @@
                             <el-col :span="16">
                                 <el-skeleton :loading="trendChartsLoading" animated>
                                     <template #template>
-                                        <el-skeleton-item variant="image" class="chart-skeleton chart-skeleton-400" />
+                                        <el-skeleton-item variant="image" class="chart-skeleton chart-skeleton-500" />
                                     </template>
-                                    <v-chart ref="trendChartRef" :option="chartTrendOption" style="height:400px;" />
+                                    <v-chart ref="trendChartRef" :option="chartTrendOption" style="height:500px;" />
                                 </el-skeleton>
                             </el-col>
                             <el-col :span="8">
@@ -71,9 +71,9 @@
                                 </div>
                                 <el-skeleton :loading="trendChartsLoading" animated>
                                     <template #template>
-                                        <el-skeleton-item variant="image" class="chart-skeleton chart-skeleton-400" />
+                                        <el-skeleton-item variant="image" class="chart-skeleton chart-skeleton-500" />
                                     </template>
-                                    <v-chart ref="chipChartRef" :option="chartChipOption" style="height:400px;" />
+                                    <v-chart ref="chipChartRef" :option="chartChipOption" style="height:500px;" />
                                 </el-skeleton>
                             </el-col>
                         </el-row>
@@ -187,7 +187,6 @@ function toCanonicalTsCode(code) {
 function buildTsCodeCandidates(code) {
     const normalized = String(code || '').trim().toUpperCase();
     const base = normalized.split('.')[0];
-    // If exchange suffix already exists, keep a single deterministic candidate.
     if (normalized.includes('.')) {
         return normalized ? [normalized] : [];
     }
@@ -196,7 +195,6 @@ function buildTsCodeCandidates(code) {
     if (base) candidateSet.add(base);
     const canonical = toCanonicalTsCode(normalized);
     if (canonical) candidateSet.add(canonical);
-    // Do not fan-out to all markets (SH/SZ/BJ) to avoid extra watchlist checks.
     return Array.from(candidateSet);
 }
 
@@ -454,7 +452,123 @@ const trendChartsLoading = ref(false)
 const trendInitialLoadDone = ref(false)
 const TREND_ZOOM_STORAGE_KEY = 'smartinvestor_stockchart_trend_zoom_v1'
 const trendZoomRange = ref({ start: 0, end: 100 })
+const MARKET_SENTIMENT_ENGINE_VERSION = 'daily_v1_20260828'
+const marketSentimentCache = new Map()
+const marketSentimentPending = new Map()
 let embedSwitchRequestToken = 0
+
+function normalizeMarketSentimentDateKey(value) {
+    return String(value || '').replace(/-/g, '').trim()
+}
+
+function toNullableFiniteNumber(value) {
+    if (value === null || value === undefined || value === '') {
+        return null
+    }
+    const numeric = Number(value)
+    return Number.isFinite(numeric) ? numeric : null
+}
+
+function buildMarketSentimentSeriesData(tradeDatesList = [], sentimentRows = []) {
+    const dateIndex = new Map()
+    ;(Array.isArray(tradeDatesList) ? tradeDatesList : []).forEach((tradeDate, idx) => {
+        const normalized = normalizeMarketSentimentDateKey(tradeDate)
+        if (normalized) {
+            dateIndex.set(normalized, idx)
+        }
+    })
+
+    const sentimentData = Array(tradeDatesList.length).fill(null)
+    const sentimentMeta = Array(tradeDatesList.length).fill(null)
+
+    ;(Array.isArray(sentimentRows) ? sentimentRows : []).forEach((row) => {
+        const tradeDate = String(row?.trade_date || '').trim()
+        const score = toNullableFiniteNumber(row?.score)
+        const idx = dateIndex.get(normalizeMarketSentimentDateKey(tradeDate))
+        if (!Number.isInteger(idx) || idx < 0 || idx >= sentimentData.length) {
+            return
+        }
+
+        const level = String(row?.level || '').trim().toUpperCase()
+        const status = String(row?.status || '').trim().toUpperCase()
+        const isMissing = score === null
+        const isUnavailable = level === 'WARMING_UP' || level === 'INSUFFICIENT_DATA' || status === 'WARMING_UP' || status === 'INSUFFICIENT_DATA'
+
+        sentimentData[idx] = isMissing || isUnavailable ? null : score
+        sentimentMeta[idx] = {
+            level,
+            status,
+            momentum_score: toNullableFiniteNumber(row?.momentum_score),
+            activity_score: toNullableFiniteNumber(row?.activity_score),
+            fear_score: toNullableFiniteNumber(row?.fear_score),
+        }
+    })
+
+    return { sentimentData, sentimentMeta }
+}
+
+function resolveMarketSentimentColor(value) {
+    const score = Number(value)
+    if (!Number.isFinite(score)) return '#64748b'
+    if (score < 30) return '#ef4444'
+    if (score < 45) return '#f97316'
+    if (score < 55) return '#a3a3a3'
+    if (score < 70) return '#22c55e'
+    return '#2563eb'
+}
+
+function getMarketSentimentCacheKey(tsCode, period) {
+    return ['market_sentiment', 'CN', 'STOCK', String(tsCode || '').trim().toUpperCase(), String(period || ''), MARKET_SENTIMENT_ENGINE_VERSION].join('|')
+}
+
+async function fetchMarketSentimentHistory(tsCode, period = 60) {
+    const normalizedTsCode = String(tsCode || '').trim().toUpperCase()
+    if (!baseURL || !normalizedTsCode) {
+        return []
+    }
+    const normalizedPeriod = Number(period)
+    const limit = Number.isFinite(normalizedPeriod) ? Math.max(1, Math.floor(normalizedPeriod)) : 60
+    const cacheKey = getMarketSentimentCacheKey(normalizedTsCode, limit)
+    if (marketSentimentCache.has(cacheKey)) {
+        return marketSentimentCache.get(cacheKey)
+    }
+
+    const pending = marketSentimentPending.get(cacheKey)
+    if (pending) {
+        return pending
+    }
+
+    const request = axios.get(`${baseURL}/market-sentiment/history/`, {
+        params: {
+            market: 'CN',
+            scope: 'STOCK',
+            scope_code: normalizedTsCode,
+            engine_version: MARKET_SENTIMENT_ENGINE_VERSION,
+            limit,
+        },
+    }).then((response) => {
+        const rows = Array.isArray(response?.data?.data) ? response.data.data : []
+        const normalizedRows = rows.map((row) => ({
+            trade_date: String(row?.trade_date || '').trim(),
+            score: toNullableFiniteNumber(row?.score),
+            level: String(row?.level || '').trim().toUpperCase(),
+            status: String(row?.status || '').trim().toUpperCase(),
+            momentum_score: toNullableFiniteNumber(row?.momentum_score),
+            activity_score: toNullableFiniteNumber(row?.activity_score),
+            fear_score: toNullableFiniteNumber(row?.fear_score),
+        })).filter((row) => row.trade_date)
+        marketSentimentCache.set(cacheKey, normalizedRows)
+        return normalizedRows
+    }).catch(() => {
+        marketSentimentCache.set(cacheKey, [])
+        return []
+    }).finally(() => {
+        marketSentimentPending.delete(cacheKey)
+    })
+
+    marketSentimentPending.set(cacheKey, request)
+    return request
+}
 
 const trendMaLineStyles = {
     MA6: { width: 1, color: '#5470C6' },
@@ -801,6 +915,19 @@ function applyParsedStockChartData(parsedData) {
 function buildDerivedTradingChartData(parsedData) {
     const maPeriods = [6, 10, 25, 43, 60, 120, 200]
     const positionTriggerMarkLine = buildPositionTriggerMarkLine(stockStore.tsCode)
+    const marketSentiment = buildMarketSentimentSeriesData(parsedData.tradeDates || [], parsedData.marketSentimentRows || [])
+    const marketSentimentData = marketSentiment.sentimentData.map((value, index) => ({
+        value: value,
+        symbol: 'none',
+        sentimentLevel: marketSentiment.sentimentMeta[index]?.level || '',
+        sentimentStatus: marketSentiment.sentimentMeta[index]?.status || '',
+        momentum_score: marketSentiment.sentimentMeta[index]?.momentum_score ?? null,
+        activity_score: marketSentiment.sentimentMeta[index]?.activity_score ?? null,
+        fear_score: marketSentiment.sentimentMeta[index]?.fear_score ?? null,
+        itemStyle: {
+            color: resolveMarketSentimentColor(value),
+        },
+    }))
 
     const trendSeries = [
         {
@@ -885,6 +1012,34 @@ function buildDerivedTradingChartData(parsedData) {
 
     const overlaySeries = buildTrendValuationOverlaySeries(parsedData)
 
+    const marketSentimentSeries = [
+        {
+            name: '市场情绪',
+            type: 'line',
+            xAxisIndex: 2,
+            yAxisIndex: 2,
+            data: marketSentimentData,
+            smooth: true,
+            showSymbol: false,
+            lineStyle: {
+                width: 2,
+                color: '#4f46e5',
+            },
+            markLine: {
+                silent: true,
+                symbol: ['none', 'none'],
+                label: { formatter: '{b}', color: '#475569', fontSize: 10 },
+                lineStyle: { type: 'dashed', color: '#94a3b8', width: 1 },
+                data: [
+                    { yAxis: 30, name: '恐慌' },
+                    { yAxis: 50, name: '中性' },
+                    { yAxis: 70, name: '亢奋' },
+                ],
+            },
+            z: 6,
+        }
+    ]
+
     const volSeries = [
         {
             name: '成交量',
@@ -940,6 +1095,7 @@ function buildDerivedTradingChartData(parsedData) {
         trendSeries,
         overlaySeries,
         volSeries,
+        marketSentimentSeries,
         techXAxis: parsedData.tradeDates,
         overlayLegend: overlaySeries.map(item => item.name),
         techSeriesByOption: Object.fromEntries(
@@ -1142,6 +1298,7 @@ async function fetchValuationOverlayPoints(tsCode, freq, period) {
 function applyDerivedTradingChartData(parsedData, derivedData) {
     chartTrendOption.value.xAxis[0].data = parsedData.tradeDates
     chartTrendOption.value.xAxis[1].data = parsedData.tradeDates
+    chartTrendOption.value.xAxis[2].data = parsedData.tradeDates
     applyTrendZoomToOption()
     const trendSeries = derivedData.trendSeries.map(series => ({
         ...series,
@@ -1154,10 +1311,16 @@ function applyDerivedTradingChartData(parsedData, derivedData) {
         xAxisIndex: 1,
         yAxisIndex: 1,
     }))
-    chartTrendOption.value.series = [...trendSeries, ...overlaySeries, ...volSeries]
+    const marketSentimentSeries = (derivedData.marketSentimentSeries || []).map(series => ({
+        ...series,
+        xAxisIndex: 2,
+        yAxisIndex: 2,
+    }))
+    chartTrendOption.value.series = [...trendSeries, ...overlaySeries, ...volSeries, ...marketSentimentSeries]
     chartTrendOption.value.legend.data = [
         'MA6', 'MA10', 'MA25', 'MA43', 'MA60', 'MA120', 'MA200',
         'ATR止盈止损',
+        '市场情绪',
         ...(derivedData.overlayLegend || []),
     ]
     chartTrendOption.value.legend.selected = {
@@ -1189,6 +1352,49 @@ function calcMovingAvg(data, window) {
     return result
 }
 
+function formatTrendTooltip(params) {
+    const points = Array.isArray(params) ? params : [params]
+    const anchor = points.find(item => Number.isInteger(Number(item?.dataIndex)))
+    const dataIndex = Number(anchor?.dataIndex)
+    if (!Number.isInteger(dataIndex) || dataIndex < 0) return ''
+
+    const tradeDate = String(tradeDates.value[dataIndex] || anchor?.axisValue || '')
+    const ohlc = kdata.value[dataIndex]
+    const openPrice = Number(ohlc?.[0])
+    const closePrice = Number(ohlc?.[1])
+    const lowPrice = Number(ohlc?.[2])
+    const highPrice = Number(ohlc?.[3])
+    const changePct = toNullableFiniteNumber(pctChg.value[dataIndex])
+    const volume = toNullableFiniteNumber(vol.value[dataIndex])
+
+    const sentimentSeries = (chartTrendOption.value.series || []).find(series => series?.name === '市场情绪')
+    const sentiment = sentimentSeries?.data?.[dataIndex]
+    const sentimentScore = toNullableFiniteNumber(sentiment?.value)
+    const momentum = toNullableFiniteNumber(sentiment?.momentum_score)
+    const activity = toNullableFiniteNumber(sentiment?.activity_score)
+    const fear = toNullableFiniteNumber(sentiment?.fear_score)
+    const level = String(sentiment?.sentimentLevel || '').trim() || '--'
+
+    const priceLines = Array.isArray(ohlc) ? [
+        `开盘: ${Number.isFinite(openPrice) ? openPrice.toFixed(4) : '--'}`,
+        `收盘: ${Number.isFinite(closePrice) ? closePrice.toFixed(4) : '--'}`,
+        `最低: ${Number.isFinite(lowPrice) ? lowPrice.toFixed(4) : '--'}`,
+        `最高: ${Number.isFinite(highPrice) ? highPrice.toFixed(4) : '--'}`,
+        `涨跌幅: ${changePct === null ? '--' : `${changePct.toFixed(2)}%`}`,
+        `成交量: ${volume === null ? '--' : volume.toLocaleString()}`,
+    ] : ['OHLC: 暂无数据']
+    const sentimentLines = sentimentScore === null
+        ? ['市场情绪: 未发布']
+        : [
+            `市场情绪: ${sentimentScore.toFixed(1)} (${level})`,
+            `动量: ${momentum === null ? '--' : momentum.toFixed(2)}`,
+            `热度: ${activity === null ? '--' : activity.toFixed(2)}`,
+            `恐慌: ${fear === null ? '--' : fear.toFixed(2)}`,
+        ]
+
+    return `<div><strong>${tradeDate}</strong><br/>${[...priceLines, ...sentimentLines].join('<br/>')}</div>`
+}
+
 // 配置三个图表的 option，并设置 group
 const chartTrendOption = ref({
     animation: false,
@@ -1209,45 +1415,20 @@ const chartTrendOption = ref({
         axisPointer: {
             type: 'cross'
         },
-        formatter: function (params) {
-            // params is an array of series data at the hovered point
-            // Only show the candlestick (K线) info
-            const kline = params.find(item => item.seriesType === 'candlestick')
-            if (!kline) return ''
-            // ECharts candlestick expects [open, close, low, high]
-            // But sometimes data is [open, close, low, high], so destructure accordingly
-            const [idx, open, close, low, high] = kline.data
-            // If you see wrong values, log kline.data for debugging
-            // console.log('kline.data', kline.data)
-            let pctChange = ''
-            if (kline.dataIndex > 0 && kline.seriesIndex === 0) {
-                // Find previous close from the same series' data
-                const seriesData = this && this.seriesData ? this.seriesData : null
-                let prevClose = null
-                if (seriesData && Array.isArray(seriesData[kline.dataIndex - 1])) {
-                    prevClose = seriesData[kline.dataIndex - 1][1]
-                } else if (Array.isArray(chartTrendOption.value.series[0].data[kline.dataIndex - 1])) {
-                    prevClose = chartTrendOption.value.series[0].data[kline.dataIndex - 1][1]
-                }
-                if (typeof prevClose === 'number' && prevClose !== 0) {
-                    pctChange = ((close - prevClose) / prevClose * 100).toFixed(2) + '%'
-                }
-            }
-            return `
-            <div>
-                <strong>${kline.axisValue}</strong><br/>
-                开盘: ${open}<br/>
-                收盘: ${close}<br/>
-                最低: ${low}<br/>
-                最高: ${high}<br/>
-                ${pctChange ? `涨跌幅: ${pctChange}` : ''}
-            </div>
-            `
-        }
+        formatter: formatTrendTooltip
+    },
+    axisPointer: {
+        link: [
+            { xAxisIndex: [0, 1, 2] },
+        ],
+        label: {
+            show: true,
+        },
     },
     grid: [
-        { left: '8%', right: '4%', top: 34, height: '56%' },
-        { left: '8%', right: '4%', top: '72%', height: '20%' },
+        { left: '8%', right: '4%', top: 34, height: '48%' },
+        { left: '8%', right: '4%', top: '59%', height: '11%' },
+        { left: '8%', right: '4%', top: '78%', height: '13%' },
     ],
     xAxis: [
         {
@@ -1260,6 +1441,14 @@ const chartTrendOption = ref({
             type: 'category',
             data: [],
             gridIndex: 1,
+            axisLabel: { show: false },
+            axisTick: { show: false },
+            axisLine: { show: false },
+        },
+        {
+            type: 'category',
+            data: [],
+            gridIndex: 2,
         },
     ],
     yAxis: [
@@ -1287,6 +1476,15 @@ const chartTrendOption = ref({
             splitLine: { show: true, lineStyle: { type: 'dashed', color: '#f5f5f5' } },
             gridIndex: 1,
         },
+        {
+            type: 'value',
+            name: '市场情绪',
+            min: 0,
+            max: 100,
+            gridIndex: 2,
+            splitLine: { show: true, lineStyle: { type: 'dashed', color: '#f5f5f5' } },
+            axisLabel: { formatter: value => `${Number(value).toFixed(0)}` },
+        },
     ],
     legend: {
         show: true,
@@ -1300,7 +1498,7 @@ const chartTrendOption = ref({
     dataZoom: [
         {
             type: 'inside',
-            xAxisIndex: [0, 1],
+            xAxisIndex: [0, 1, 2],
             start: 0,
             end: 100
         }
@@ -1432,6 +1630,28 @@ const chartTrendOption = ref({
                 // color: '#fc8452'
             },
             showSymbol: false
+        },
+        {
+            name: '市场情绪',
+            type: 'line',
+            data: [],
+            xAxisIndex: 2,
+            yAxisIndex: 2,
+            smooth: true,
+            showSymbol: false,
+            lineStyle: { width: 2, color: '#4f46e5' },
+            markLine: {
+                silent: true,
+                symbol: ['none', 'none'],
+                label: { formatter: '{b}', color: '#475569', fontSize: 10 },
+                lineStyle: { type: 'dashed', color: '#94a3b8', width: 1 },
+                data: [
+                    { yAxis: 30, name: '恐慌' },
+                    { yAxis: 50, name: '中性' },
+                    { yAxis: 70, name: '亢奋' },
+                ],
+            },
+            z: 6,
         },
     ]
 })
@@ -1987,6 +2207,7 @@ async function fetchTradingHistory(stockCode = '', freq = 'D', adj = 'qfq', coun
                 if (!derivedData) {
                     const valuationOverlayRows = await fetchValuationOverlayPoints(normalizedStockCode, freq, count)
                     parsedData.valuationOverlayRows = valuationOverlayRows
+                    parsedData.marketSentimentRows = await fetchMarketSentimentHistory(normalizedStockCode, count)
                     derivedData = buildDerivedTradingChartData(parsedData)
                 }
 
@@ -2493,6 +2714,10 @@ onBeforeUnmount(() => {
 
 .chart-skeleton-400 {
     height: 400px;
+}
+
+.chart-skeleton-500 {
+    height: 500px;
 }
 
 .chart-skeleton-200 {
