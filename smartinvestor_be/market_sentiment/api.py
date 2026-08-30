@@ -2,6 +2,7 @@ from rest_framework.decorators import api_view
 from rest_framework.response import Response
 
 from market_sentiment.models import MarketSentimentSnapshot
+from market_sentiment.services.daily_engine import ENGINE_VERSION, STOCK_ENGINE_VERSION
 
 
 def _serialize(snapshot, include_factors=False):
@@ -41,11 +42,13 @@ def _serialize(snapshot, include_factors=False):
 
 
 def _query(request):
+    scope_type = request.query_params.get('scope', 'MARKET').upper()
+    default_engine_version = STOCK_ENGINE_VERSION if scope_type == 'STOCK' else ENGINE_VERSION
     return MarketSentimentSnapshot.objects.filter(
         market=request.query_params.get('market', 'CN'),
-        scope_type=request.query_params.get('scope', 'MARKET').upper(),
+        scope_type=scope_type,
         scope_code=request.query_params.get('scope_code', 'ALL_A').upper(),
-        engine_version=request.query_params.get('engine_version', 'daily_v1_20260828'),
+        engine_version=request.query_params.get('engine_version', default_engine_version),
     )
 
 
@@ -66,6 +69,6 @@ def get_market_sentiment_history(request):
         snapshots = snapshots.filter(trade_date__gte=start_date)
     if end_date:
         snapshots = snapshots.filter(trade_date__lte=end_date)
-    limit = min(max(int(request.query_params.get('limit', 120)), 1), 1000)
+    limit = min(max(int(request.query_params.get('limit', 120)), 1), 10000)
     rows = list(snapshots.order_by('-trade_date')[:limit])
     return Response({'data': [_serialize(snapshot) for snapshot in reversed(rows)]})

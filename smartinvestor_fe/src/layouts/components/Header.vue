@@ -225,6 +225,8 @@ const headerMarketQuantileDialogPeriod = ref<'30D' | '60D' | '90D' | '1Y' | '3Y'
 const headerSimpleValuation = ref<any | null>(null)
 const headerSimpleValuationLoading = ref(false)
 const headerSimpleValuationError = ref('')
+const headerMarketSentimentRows = ref<MarketSentimentRow[]>([])
+let headerMarketSentimentRequest: Promise<void> | null = null
 
 const HEADER_MARKET_METRIC_OPTIONS = [
     { key: 'pe', label: 'PE' },
@@ -309,6 +311,16 @@ const HEADER_MARKET_PERIOD_OPTIONS = [
 type MarketHistoryRow = {
     trade_date: string
     value: number
+}
+
+type MarketSentimentRow = {
+    trade_date: string
+    score: number | null
+    level: string
+    status: string
+    momentum_score: number | null
+    activity_score: number | null
+    fear_score: number | null
 }
 
 type MarketSummaryRow = {
@@ -463,6 +475,10 @@ function parseHistoryDate(value: string): Date | null {
     return Number.isNaN(parsed.getTime()) ? null : parsed
 }
 
+function normalizeHistoryDateKey(value: string): string {
+    return String(value || '').trim().replace(/-/g, '')
+}
+
 function filterHistoryRowsByPeriod(
     rows: MarketHistoryRow[],
     period: '30D' | '60D' | '90D' | '1Y' | '3Y' | '5Y' | '10Y' | 'ALL',
@@ -606,6 +622,17 @@ const headerMarketQuantileChartOption = computed(() => {
     const rows = headerMarketQuantileChartRows.value
     if (!rows.length) return null
     const levels = headerMarketQuantileDynamicLevels.value
+    const sentimentByDate = new Map(headerMarketSentimentRows.value.map((item) => [normalizeHistoryDateKey(item.trade_date), item]))
+    const sentimentData = rows.map((item) => {
+        const sentiment = sentimentByDate.get(normalizeHistoryDateKey(item.trade_date))
+        const unavailable = !sentiment
+            || sentiment.score === null
+            || sentiment.level === 'WARMING_UP'
+            || sentiment.level === 'INSUFFICIENT_DATA'
+            || sentiment.status === 'WARMING_UP'
+            || sentiment.status === 'INSUFFICIENT_DATA'
+        return unavailable ? null : sentiment.score
+    })
     const markLineData = [
         { key: 'P10', value: levels.p10, color: '#10b981' },
         { key: 'P50', value: levels.p50, color: '#f59e0b' },
@@ -628,9 +655,12 @@ const headerMarketQuantileChartOption = computed(() => {
         tooltip: {
             trigger: 'axis',
             formatter: (params: any) => {
-                const point = Array.isArray(params) ? params[0] : params
+                const points = Array.isArray(params) ? params : [params]
+                const point = points.find((item: any) => item?.seriesName !== '市场情绪') || points[0]
                 const axisValue = String(point?.axisValue || '')
-                const value = Number(point?.data)
+                const value = Number(rows.find((item) => item.trade_date === axisValue)?.value)
+                const sentiment = sentimentByDate.get(normalizeHistoryDateKey(axisValue))
+                const sentimentScore = sentiment?.score
                 return [
                     axisValue,
                     `${headerMarketQuantileDialogMarketLabel.value} ${headerMarketQuantileDialogMetricLabel.value}: ${Number.isFinite(value) ? value.toFixed(2) : '-'}`,
@@ -638,35 +668,68 @@ const headerMarketQuantileChartOption = computed(() => {
                     `P10: ${formatMetricValue(levels.p10)}`,
                     `P50: ${formatMetricValue(levels.p50)}`,
                     `P90: ${formatMetricValue(levels.p90)}`,
+                    sentimentScore === null || sentimentScore === undefined
+                        ? '市场情绪: 未发布'
+                        : `市场情绪: ${Number(sentimentScore).toFixed(2)} (${sentiment?.level || '-'})`,
+                    `动量: ${formatMetricValue(sentiment?.momentum_score)} 热度: ${formatMetricValue(sentiment?.activity_score)} 恐慌: ${formatMetricValue(sentiment?.fear_score)}`,
                 ].join('<br/>')
             },
         },
+        axisPointer: {
+            link: [{ xAxisIndex: [0, 1] }],
+            label: { show: true },
+        },
         legend: {
             top: 0,
-            data: [headerMarketQuantileDialogMarket.value === 'shanghai' ? '上证' : `${headerMarketQuantileDialogStyleLabel.value}综合指数`],
+            data: [
+                headerMarketQuantileDialogMarket.value === 'shanghai' ? '上证' : `${headerMarketQuantileDialogStyleLabel.value}综合指数`,
+                '市场情绪',
+            ],
         },
-        grid: {
-            left: 54,
-            right: 24,
-            top: 42,
-            bottom: 72,
-        },
-        dataZoom: [
-            { type: 'inside', start: 0, end: 100 },
-            { type: 'slider', height: 18, bottom: 22, start: 0, end: 100 },
+        grid: [
+            { left: 54, right: 24, top: 42, height: '48%' },
+            { left: 54, right: 24, top: '66%', height: '18%' },
         ],
-        xAxis: {
-            type: 'category',
-            data: rows.map((item) => item.trade_date),
-            boundaryGap: false,
-        },
-        yAxis: {
-            type: 'value',
-            scale: true,
-            axisLabel: {
-                formatter: (value: number) => Number(value).toFixed(2),
+        dataZoom: [
+            { type: 'inside', xAxisIndex: [0, 1], start: 0, end: 100 },
+            { type: 'slider', xAxisIndex: [0, 1], height: 18, bottom: 16, start: 0, end: 100 },
+        ],
+        xAxis: [
+            {
+                type: 'category',
+                data: rows.map((item) => item.trade_date),
+                boundaryGap: false,
+                gridIndex: 0,
+                axisLabel: { show: false },
+                axisTick: { show: false },
             },
-        },
+            {
+                type: 'category',
+                data: rows.map((item) => item.trade_date),
+                boundaryGap: false,
+                gridIndex: 1,
+            },
+        ],
+        yAxis: [
+            {
+                type: 'value',
+                scale: true,
+                gridIndex: 0,
+                axisLabel: {
+                    formatter: (value: number) => Number(value).toFixed(2),
+                },
+            },
+            {
+                type: 'value',
+                name: '市场情绪',
+                min: 0,
+                max: 100,
+                gridIndex: 1,
+                axisLabel: {
+                    formatter: (value: number) => Number(value).toFixed(0),
+                },
+            },
+        ],
         series: [
             ...(headerMarketQuantileDialogMarket.value === 'shanghai'
                 ? [{
@@ -697,6 +760,27 @@ const headerMarketQuantileChartOption = computed(() => {
                         data: markLineData,
                     },
                 }]),
+            {
+                name: '市场情绪',
+                type: 'line',
+                xAxisIndex: 1,
+                yAxisIndex: 1,
+                smooth: false,
+                symbol: 'none',
+                connectNulls: false,
+                lineStyle: { width: 2, color: '#0f766e' },
+                data: sentimentData,
+                markLine: {
+                    symbol: ['none', 'none'],
+                    silent: true,
+                    label: { formatter: '{b}', fontSize: 10 },
+                    data: [
+                        { name: '恐慌', yAxis: 30, lineStyle: { color: '#ef4444', type: 'dashed' } },
+                        { name: '中性', yAxis: 50, lineStyle: { color: '#94a3b8', type: 'dashed' } },
+                        { name: '亢奋', yAxis: 70, lineStyle: { color: '#16a34a', type: 'dashed' } },
+                    ],
+                },
+            },
         ],
     }
 })
@@ -836,8 +920,38 @@ async function fetchHeaderIndexHistories() {
     headerIndexHistoryMap.value = nextMap
 }
 
+async function fetchHeaderMarketSentiment() {
+    if (!baseURL || headerMarketSentimentRows.value.length) return
+    if (headerMarketSentimentRequest) return headerMarketSentimentRequest
+    headerMarketSentimentRequest = axios.get(`${baseURL}/market-sentiment/history/`, {
+        params: {
+            market: 'CN',
+            scope: 'INDEX',
+            scope_code: 'BROAD_COMPOSITE',
+            engine_version: 'index_daily_v1_20260829',
+            limit: 10000,
+        },
+    }).then((resp) => {
+        const rows = Array.isArray(resp?.data?.data) ? resp.data.data : []
+        headerMarketSentimentRows.value = rows.map((item: any) => ({
+            trade_date: String(item?.trade_date || '').trim(),
+            score: toNullableNumber(item?.score),
+            level: String(item?.level || '').trim().toUpperCase(),
+            status: String(item?.status || '').trim().toUpperCase(),
+            momentum_score: toNullableNumber(item?.momentum_score),
+            activity_score: toNullableNumber(item?.activity_score),
+            fear_score: toNullableNumber(item?.fear_score),
+        })).filter((item: MarketSentimentRow) => Boolean(item.trade_date))
+    }).catch(() => {
+        headerMarketSentimentRows.value = []
+    }).finally(() => {
+        headerMarketSentimentRequest = null
+    })
+    return headerMarketSentimentRequest
+}
+
 async function openHeaderMarketQuantileDialog(kind: 'market' | 'shanghai') {
-    await fetchHeaderIndexHistories()
+    await Promise.all([fetchHeaderIndexHistories(), fetchHeaderMarketSentiment()])
     headerMarketQuantileDialogMarket.value = kind
     headerMarketQuantileDialogVisible.value = true
     void fetchHeaderSimpleValuation(kind)
@@ -1069,7 +1183,7 @@ watch(() => headerMarketQuantileDialogMarket.value, () => {
 }
 
 .header-market-quantile-chart {
-    height: 420px;
+    height: 500px;
 }
 
 .header-search {

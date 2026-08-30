@@ -8,9 +8,11 @@ from datastore.models import Corporation, StockFundamentalHistory, StockTradingH
 
 
 ENGINE_VERSION = 'daily_v1_20260828'
+STOCK_ENGINE_VERSION = 'stock_daily_v2_20260830'
 Z_WINDOW = 20
 VOLATILITY_WINDOW = 10
 SCORE_WINDOW = 252
+MIN_STOCK_HISTORY = 20
 
 
 def _number(value):
@@ -39,6 +41,14 @@ def _z_score(value, history):
     return max(-3.0, min(3.0, (value - _mean(history)) / deviation))
 
 
+def _percentile_rank(value, values):
+    if value is None or not values:
+        return None
+    below = sum(candidate < value for candidate in values)
+    equal = sum(candidate == value for candidate in values)
+    return 100.0 * (below + equal / 2.0) / len(values)
+
+
 def _weighted_score(parts):
     available = [(value, weight) for value, weight in parts if value is not None]
     total_weight = sum(weight for _, weight in available)
@@ -62,16 +72,45 @@ def _level(score):
     return 'EUPHORIC'
 
 
-def _scope_codes(scope_type, scope_code):
-    if scope_type == 'STOCK':
-        return [scope_code]
+def _scope_context(scope_type, scope_code):
     if scope_type == 'MARKET':
-        return Corporation.objects.filter(asset='E', list_status='L').values_list('ts_code', flat=True)
+        codes = Corporation.objects.filter(asset='E', list_status='L').values_list('ts_code', flat=True)
+        return codes, {'benchmark_type': 'MARKET', 'benchmark_code': 'ALL_A', 'benchmark_name': '全A'}
+    if scope_type == 'STOCK':
+        corporation = Corporation.objects.filter(ts_code=scope_code).values(
+            'industry_id', 'industry__name', 'sw_l3_code', 'sw_l3_name'
+        ).first()
+        if corporation is None:
+            raise ValueError(f'Unknown stock scope code: {scope_code}')
+        candidates = []
+        if corporation['sw_l3_code']:
+            candidates.append((
+                'SW_L3', corporation['sw_l3_code'], corporation['sw_l3_name'], 10,
+                Corporation.objects.filter(asset='E', list_status='L', sw_l3_code=corporation['sw_l3_code']),
+            ))
+        if corporation['industry_id']:
+            candidates.append((
+                'INDUSTRY', str(corporation['industry_id']), corporation['industry__name'], 20,
+                Corporation.objects.filter(asset='E', list_status='L', industry_id=corporation['industry_id']),
+            ))
+        candidates.append((
+            'MARKET', 'ALL_A', '全A', 500,
+            Corporation.objects.filter(asset='E', list_status='L'),
+        ))
+        for benchmark_type, benchmark_code, benchmark_name, minimum_size, queryset in candidates:
+            codes = list(queryset.values_list('ts_code', flat=True))
+            if len(codes) >= minimum_size or benchmark_type == 'MARKET':
+                return codes, {
+                    'benchmark_type': benchmark_type,
+                    'benchmark_code': benchmark_code,
+                    'benchmark_name': benchmark_name,
+                    'benchmark_minimum_size': minimum_size,
+                }
     raise ValueError(f'Unsupported scope type: {scope_type}')
 
 
 def _load_rows(start_date, end_date, scope_type, scope_code):
-    codes = _scope_codes(scope_type, scope_code)
+    codes, scope_context = _scope_context(scope_type, scope_code)
     trading_query = StockTradingHistory.objects.filter(trade_date__gte=start_date, trade_date__lte=end_date, freq='D')
     fundamental_query = StockFundamentalHistory.objects.filter(trade_date__gte=start_date, trade_date__lte=end_date, freq='D')
     trading_query = trading_query.filter(ts_code__in=codes)
@@ -88,12 +127,15 @@ def _load_rows(start_date, end_date, scope_type, scope_code):
         fundamental = fundamentals.get((row['ts_code'], row['trade_date']), {})
         row.update(fundamental)
         rows_by_code[row['ts_code']].append(row)
-    return rows_by_code
+    return rows_by_code, scope_context
 
 
 def calculate_snapshots(*, start_date, end_date, scope_type='MARKET', scope_code='ALL_A'):
-    rows_by_code = _load_rows(start_date, end_date, scope_type, scope_code)
-    dates = sorted({row['trade_date'] for rows in rows_by_code.values() for row in rows})
+    rows_by_code, scope_context = _load_rows(start_date, end_date, scope_type, scope_code)
+    if scope_type == 'STOCK':
+        dates = [row['trade_date'] for row in rows_by_code.get(scope_code, [])]
+    else:
+        dates = sorted({row['trade_date'] for rows in rows_by_code.values() for row in rows})
     daily = defaultdict(list)
 
     for rows in rows_by_code.values():
@@ -144,7 +186,7 @@ def calculate_snapshots(*, start_date, end_date, scope_type='MARKET', scope_code
             momentum = _weighted_score([(return_1_z, .40), (return_5_z, .30), (return_20_z, .20), (streak_z, .10)])
             activity = _weighted_score([(vol_z, .25), (amount_z, .20), (turnover_z, .40), (volume_ratio_z, .15)])
             fear = _weighted_score([(volatility_z, .30), (amp_z, .25), (lower_shadow_z, .15), (vol_z if return_1 is not None and return_1 < 0 else None, .20), (down_return_z, .10)])
-            daily[row['trade_date']].append({'momentum': momentum, 'activity': activity, 'fear': fear, 'complete': close is not None and pre_close is not None and volume is not None and amount is not None, 'turnover_source': 'turnover_rate_f' if turnover_f is not None else 'turnover_rate' if turnover is not None else None})
+            daily[row['trade_date']].append({'ts_code': row['ts_code'], 'momentum': momentum, 'activity': activity, 'fear': fear, 'complete': close is not None and pre_close is not None and volume is not None and amount is not None, 'turnover_source': 'turnover_rate_f' if turnover_f is not None else 'turnover_rate' if turnover is not None else None})
             if return_1 is not None:
                 returns.append(return_1)
                 down_returns.append(max(-return_1, 0))
@@ -170,23 +212,39 @@ def calculate_snapshots(*, start_date, end_date, scope_type='MARKET', scope_code
 
     raw_history = []
     results = []
-    for trade_date in dates:
+    for history_days, trade_date in enumerate(dates, start=1):
         samples = daily[trade_date]
         valid = [sample for sample in samples if None not in (sample['momentum'], sample['activity'], sample['fear'])]
         coverage = sum(sample['complete'] for sample in samples) / len(samples) if samples else 0.0
-        if not valid:
-            results.append({'trade_date': trade_date, 'status': 'INSUFFICIENT_DATA', 'sentiment_level': 'INSUFFICIENT_DATA', 'universe_size': len(samples), 'valid_sample_size': 0, 'coverage': coverage, 'metadata': {'turnover_sources': {}}})
+        target = next((sample for sample in valid if sample['ts_code'] == scope_code), None) if scope_type == 'STOCK' else None
+        if not valid or (scope_type == 'STOCK' and target is None):
+            results.append({'trade_date': trade_date, 'status': 'INSUFFICIENT_DATA', 'sentiment_level': 'INSUFFICIENT_DATA', 'universe_size': len(samples), 'valid_sample_size': len(valid), 'coverage': coverage, 'metadata': {**scope_context, 'stock_history_days': history_days, 'turnover_sources': {}}})
             continue
-        momentum = median(sample['momentum'] for sample in valid)
-        activity = median(sample['activity'] for sample in valid)
-        fear = median(sample['fear'] for sample in valid)
+        aggregation_samples = [target] if target is not None else valid
+        momentum = median(sample['momentum'] for sample in aggregation_samples)
+        activity = median(sample['activity'] for sample in aggregation_samples)
+        fear = median(sample['fear'] for sample in aggregation_samples)
         raw_score = .35 * momentum + .35 * activity - .30 * fear
         standardized = _z_score(raw_score, raw_history[-SCORE_WINDOW:]) if len(raw_history) >= SCORE_WINDOW else None
-        score = round(100 / (1 + math.exp(-standardized)), 2) if standardized is not None else None
+        if standardized is not None:
+            score = round(100 / (1 + math.exp(-standardized)), 2)
+            status = 'SUCCESS'
+            normalization_mode = 'ROLLING_Z_SCORE'
+        elif scope_type == 'STOCK' and history_days >= MIN_STOCK_HISTORY and len(valid) >= scope_context['benchmark_minimum_size']:
+            momentum_percentile = _percentile_rank(momentum, [sample['momentum'] for sample in valid])
+            activity_percentile = _percentile_rank(activity, [sample['activity'] for sample in valid])
+            fear_percentile = _percentile_rank(fear, [sample['fear'] for sample in valid])
+            score = round(.35 * momentum_percentile + .35 * activity_percentile + .30 * (100 - fear_percentile), 2)
+            status = 'CROSS_SECTIONAL_PROVISIONAL'
+            normalization_mode = 'CROSS_SECTIONAL_PERCENTILE'
+        else:
+            score = None
+            status = 'WARMING_UP'
+            normalization_mode = 'WARMING_UP'
         sources = defaultdict(int)
         for sample in samples:
             if sample['turnover_source']:
                 sources[sample['turnover_source']] += 1
-        results.append({'trade_date': trade_date, 'status': 'SUCCESS' if score is not None else 'WARMING_UP', 'sentiment_level': _level(score), 'sentiment_score': score, 'raw_score': raw_score, 'standardized_score': standardized, 'momentum_score': momentum, 'activity_score': activity, 'fear_score': fear, 'universe_size': len(samples), 'valid_sample_size': len(valid), 'coverage': coverage, 'metadata': {'turnover_sources': dict(sources), 'windows': {'z_score': Z_WINDOW, 'volatility': VOLATILITY_WINDOW, 'score': SCORE_WINDOW}}})
+        results.append({'trade_date': trade_date, 'status': status, 'sentiment_level': _level(score), 'sentiment_score': score, 'raw_score': raw_score, 'standardized_score': standardized, 'momentum_score': momentum, 'activity_score': activity, 'fear_score': fear, 'universe_size': len(samples), 'valid_sample_size': len(valid), 'coverage': coverage, 'metadata': {**scope_context, 'normalization_mode': normalization_mode, 'benchmark_sample_size': len(valid), 'stock_history_days': history_days if scope_type == 'STOCK' else None, 'minimum_history_days': MIN_STOCK_HISTORY if scope_type == 'STOCK' else None, 'turnover_sources': dict(sources), 'windows': {'z_score': Z_WINDOW, 'volatility': VOLATILITY_WINDOW, 'score': SCORE_WINDOW}}})
         raw_history.append(raw_score)
     return results

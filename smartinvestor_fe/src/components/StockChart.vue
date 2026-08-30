@@ -452,7 +452,7 @@ const trendChartsLoading = ref(false)
 const trendInitialLoadDone = ref(false)
 const TREND_ZOOM_STORAGE_KEY = 'smartinvestor_stockchart_trend_zoom_v1'
 const trendZoomRange = ref({ start: 0, end: 100 })
-const MARKET_SENTIMENT_ENGINE_VERSION = 'daily_v1_20260828'
+const MARKET_SENTIMENT_ENGINE_VERSIONS = ['daily_v1_20260828', 'stock_daily_v2_20260830']
 const marketSentimentCache = new Map()
 const marketSentimentPending = new Map()
 let embedSwitchRequestToken = 0
@@ -517,18 +517,12 @@ function resolveMarketSentimentColor(value) {
     return '#2563eb'
 }
 
-function getMarketSentimentCacheKey(tsCode, period) {
-    return ['market_sentiment', 'CN', 'STOCK', String(tsCode || '').trim().toUpperCase(), String(period || ''), MARKET_SENTIMENT_ENGINE_VERSION].join('|')
+function getMarketSentimentCacheKey(tsCode, period, engineVersion) {
+    return ['market_sentiment', 'CN', 'STOCK', String(tsCode || '').trim().toUpperCase(), String(period || ''), engineVersion].join('|')
 }
 
-async function fetchMarketSentimentHistory(tsCode, period = 60) {
-    const normalizedTsCode = String(tsCode || '').trim().toUpperCase()
-    if (!baseURL || !normalizedTsCode) {
-        return []
-    }
-    const normalizedPeriod = Number(period)
-    const limit = Number.isFinite(normalizedPeriod) ? Math.max(1, Math.floor(normalizedPeriod)) : 60
-    const cacheKey = getMarketSentimentCacheKey(normalizedTsCode, limit)
+async function fetchMarketSentimentHistoryByEngine(tsCode, limit, engineVersion) {
+    const cacheKey = getMarketSentimentCacheKey(tsCode, limit, engineVersion)
     if (marketSentimentCache.has(cacheKey)) {
         return marketSentimentCache.get(cacheKey)
     }
@@ -542,8 +536,8 @@ async function fetchMarketSentimentHistory(tsCode, period = 60) {
         params: {
             market: 'CN',
             scope: 'STOCK',
-            scope_code: normalizedTsCode,
-            engine_version: MARKET_SENTIMENT_ENGINE_VERSION,
+            scope_code: tsCode,
+            engine_version: engineVersion,
             limit,
         },
     }).then((response) => {
@@ -568,6 +562,23 @@ async function fetchMarketSentimentHistory(tsCode, period = 60) {
 
     marketSentimentPending.set(cacheKey, request)
     return request
+}
+
+async function fetchMarketSentimentHistory(tsCode, period = 60) {
+    const normalizedTsCode = String(tsCode || '').trim().toUpperCase()
+    if (!baseURL || !normalizedTsCode) {
+        return []
+    }
+    const normalizedPeriod = Number(period)
+    const limit = Number.isFinite(normalizedPeriod) ? Math.max(1, Math.floor(normalizedPeriod)) : 60
+
+    for (const engineVersion of MARKET_SENTIMENT_ENGINE_VERSIONS) {
+        const rows = await fetchMarketSentimentHistoryByEngine(normalizedTsCode, limit, engineVersion)
+        if (rows.some((row) => row.score !== null)) {
+            return rows
+        }
+    }
+    return []
 }
 
 const trendMaLineStyles = {
@@ -918,7 +929,6 @@ function buildDerivedTradingChartData(parsedData) {
     const marketSentiment = buildMarketSentimentSeriesData(parsedData.tradeDates || [], parsedData.marketSentimentRows || [])
     const marketSentimentData = marketSentiment.sentimentData.map((value, index) => ({
         value: value,
-        symbol: 'none',
         sentimentLevel: marketSentiment.sentimentMeta[index]?.level || '',
         sentimentStatus: marketSentiment.sentimentMeta[index]?.status || '',
         momentum_score: marketSentiment.sentimentMeta[index]?.momentum_score ?? null,
@@ -1020,7 +1030,9 @@ function buildDerivedTradingChartData(parsedData) {
             yAxisIndex: 2,
             data: marketSentimentData,
             smooth: true,
-            showSymbol: false,
+            showSymbol: marketSentimentData.filter((item) => item.value !== null).length === 1,
+            symbol: 'circle',
+            symbolSize: 6,
             lineStyle: {
                 width: 2,
                 color: '#4f46e5',

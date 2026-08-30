@@ -36,6 +36,36 @@ $env:EARNINGS_CONFIG_PATH="c:/your/path/default.yaml"
 
 常用变量见：`.env.example`
 
+## 2.1 一键部署模型到预测服务
+
+部署工具默认只校验，不写文件。一个 release 必须同时包含 Q1、H1、Q3、FY 四个模型。先在 `configs/model_deployment.yaml` 中分别配置四个训练版本、统一发布 ID、共享数据集、指标门禁和目标槽位：
+
+```powershell
+python scripts/deploy_models.py
+```
+
+确认 dry-run 输出后执行发布：
+
+```powershell
+python scripts/deploy_models.py --apply
+```
+
+默认激活 `candidate`。发布到生产必须同时显式指定槽位和写入开关：
+
+```powershell
+python scripts/deploy_models.py --slot production --apply
+```
+
+每次发布会把 `models_Q1.joblib`、`models_H1.joblib`、`models_Q3.joblib`、`models_FY.joblib` 及对应指标文件写入预测服务的同一个 `outputs/model_versions/<release_id>` 不可变版本，在
+`outputs/deployment_history` 保存回滚记录，并原子更新 `outputs/serving.yaml`。回滚只恢复槽位指针，不删除任何版本：
+
+```powershell
+python scripts/deploy_models.py --rollback <deployment_id>
+python scripts/deploy_models.py --rollback <deployment_id> --apply
+```
+
+四个报告期可以来自不同训练版本，但必须具有完全相同的 `feature_cols`，并通过 `impute_stats_report_type` 指定共享插补缓存来源。共享数据集必须已存在于预测服务的 `outputs/datasets/<version>`。任一季度缺失、指标不达标或校验失败时，整个发布终止且不会切换 serving 指针。脚本不调用 API、不迁移数据库，也不重启服务。
+
 ## 3. API
 
 - `GET /api/forecast/health/`
@@ -144,7 +174,7 @@ python manage.py build_financial_feature_snapshot
 
 然后对每个模型输出的 `signal_score` 做加权平均：
 
-```
+```text
 ensemble_score = Σ(w_rt * score_rt)
 ```
 

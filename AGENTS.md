@@ -5,6 +5,23 @@
 - Focus on safe validation, reproducible checks, and minimal-risk changes.
 - Keep responses concise and token-efficient by default; return only necessary key points unless detailed output is explicitly requested.
 
+## Cost Optimization Mode
+
+Before coding:
+
+1. Never scan the entire repository.
+2. Read only files explicitly mentioned.
+3. Limit code search to maximum 3 files.
+4. Do not generate tests unless requested.
+5. Do not run build, pytest, unittest, or Django checks unless requested.
+6. Propose architecture before implementation.
+7. Prefer minimal patches over refactoring.
+8. Avoid repeated file reviews.
+9. Stop after first working solution.
+
+Goal:
+Minimize GitHub Copilot Credits consumption.
+
 ## Guardrails
 - Never add or enable auto-trading execution behavior.
 - Never expose secrets, tokens, or credentials in code, logs, or docs.
