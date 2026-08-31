@@ -1,11 +1,12 @@
 import datetime
 
 from django.core.management.base import BaseCommand, CommandError
+from django.db import transaction
 from django.db.models import Count, Max, Min
 
 from datastore.models import Corporation, StockTradingHistory
 from market_sentiment.models import MarketSentimentFactor, MarketSentimentSnapshot
-from market_sentiment.services.daily_engine import ENGINE_VERSION, SCORE_WINDOW, STOCK_ENGINE_VERSION, Z_WINDOW, calculate_snapshots
+from market_sentiment.services.daily_engine import ENGINE_VERSION, SCORE_WINDOW, STOCK_ENGINE_VERSION, Z_WINDOW, calculate_all_stock_snapshots_latest, calculate_snapshots
 
 
 class Command(BaseCommand):
@@ -56,6 +57,9 @@ class Command(BaseCommand):
                 raise CommandError('没有可用的日线行情。')
         elif not options['missing_history_groups']:
             end_date = self._date(requested_date, 'trade-date/end-date')
+        if options['all_stocks'] and options['latest']:
+            self._refresh_all_stocks_latest(end_date, options)
+            return
         if scope_targets is None:
             scope_targets = [(scope_code, end_date, None) for scope_code in self._scope_codes(options)]
         total_computed = 0
@@ -93,6 +97,89 @@ class Command(BaseCommand):
         if total_computed == 0:
             raise CommandError('指定范围内没有可计算的日线行情。')
         self.stdout.write(self.style.SUCCESS(f'total_computed={total_computed} total_written={total_written} scopes={len(scope_targets)}'))
+
+    def _refresh_all_stocks_latest(self, end_date, options):
+        calculation_start_date = end_date - datetime.timedelta(days=(SCORE_WINDOW + Z_WINDOW + 30) * 2)
+        results = calculate_all_stock_snapshots_latest(
+            start_date=calculation_start_date,
+            end_date=end_date,
+        )
+        if options['resume']:
+            resume = options['resume'].strip().upper()
+            results = [item for item in results if item['scope_code'] >= resume]
+        if options['limit']:
+            results = results[:options['limit']]
+        if not results:
+            raise CommandError('最新交易日没有可计算的个股情绪。')
+        written = 0 if options['dry_run'] else self._persist_batch_results(results, options)
+        scored = sum(item.get('sentiment_score') is not None for item in results)
+        warming = sum(item.get('status') == 'WARMING_UP' for item in results)
+        insufficient = sum(item.get('status') == 'INSUFFICIENT_DATA' for item in results)
+        self.stdout.write(self.style.SUCCESS(
+            f'total_computed={len(results)} scored={scored} warming={warming} '
+            f'insufficient={insufficient} total_written={written} latest_date={end_date}'
+        ))
+
+    @staticmethod
+    @transaction.atomic
+    def _persist_batch_results(results, options):
+        key_fields = ['market', 'scope_type', 'scope_code', 'trade_date', 'engine_version']
+        update_fields = [
+            'sentiment_score', 'sentiment_level', 'raw_score', 'standardized_score',
+            'momentum_score', 'activity_score', 'fear_score', 'universe_size',
+            'valid_sample_size', 'coverage', 'status', 'metadata', 'updated_at',
+        ]
+        snapshots = []
+        for item in results:
+            values = {key: value for key, value in item.items() if key not in ('scope_code', 'trade_date')}
+            snapshots.append(MarketSentimentSnapshot(
+                market=options['market'],
+                scope_type='STOCK',
+                scope_code=item['scope_code'],
+                trade_date=item['trade_date'],
+                engine_version=options['engine_version'],
+                **values,
+            ))
+        MarketSentimentSnapshot.objects.bulk_create(
+            snapshots,
+            batch_size=500,
+            update_conflicts=True,
+            update_fields=update_fields,
+            unique_fields=key_fields,
+        )
+        persisted = {
+            snapshot.scope_code: snapshot
+            for snapshot in MarketSentimentSnapshot.objects.filter(
+                market=options['market'],
+                scope_type='STOCK',
+                trade_date=results[0]['trade_date'],
+                engine_version=options['engine_version'],
+                scope_code__in=[item['scope_code'] for item in results],
+            )
+        }
+        MarketSentimentFactor.objects.filter(snapshot__in=persisted.values()).delete()
+        factors = []
+        for item in results:
+            snapshot = persisted[item['scope_code']]
+            for order, (code, value) in enumerate((
+                ('momentum', item.get('momentum_score')),
+                ('activity', item.get('activity_score')),
+                ('fear', item.get('fear_score')),
+                ('raw_score', item.get('raw_score')),
+            ), 1):
+                factors.append(MarketSentimentFactor(
+                    snapshot=snapshot,
+                    dimension='COMPOSITE',
+                    factor_code=code,
+                    factor_name=code,
+                    normalized_value=value,
+                    contribution=value,
+                    available=value is not None,
+                    sort_order=order,
+                    payload=item.get('metadata', {}),
+                ))
+        MarketSentimentFactor.objects.bulk_create(factors, batch_size=1000)
+        return len(persisted)
 
     def _missing_history_targets(self, options):
         market_dates = list(

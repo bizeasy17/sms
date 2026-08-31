@@ -571,14 +571,20 @@ async function fetchMarketSentimentHistory(tsCode, period = 60) {
     }
     const normalizedPeriod = Number(period)
     const limit = Number.isFinite(normalizedPeriod) ? Math.max(1, Math.floor(normalizedPeriod)) : 60
-
-    for (const engineVersion of MARKET_SENTIMENT_ENGINE_VERSIONS) {
-        const rows = await fetchMarketSentimentHistoryByEngine(normalizedTsCode, limit, engineVersion)
-        if (rows.some((row) => row.score !== null)) {
-            return rows
-        }
-    }
-    return []
+    const rowsByEngine = await Promise.all(MARKET_SENTIMENT_ENGINE_VERSIONS.map(
+        (engineVersion) => fetchMarketSentimentHistoryByEngine(normalizedTsCode, limit, engineVersion)
+    ))
+    const rowsByDate = new Map()
+    rowsByEngine.forEach((rows) => {
+        rows.forEach((row) => {
+            if (row.score !== null || !rowsByDate.has(row.trade_date)) {
+                rowsByDate.set(row.trade_date, row)
+            }
+        })
+    })
+    return Array.from(rowsByDate.values())
+        .sort((left, right) => left.trade_date.localeCompare(right.trade_date))
+        .slice(-limit)
 }
 
 const trendMaLineStyles = {
