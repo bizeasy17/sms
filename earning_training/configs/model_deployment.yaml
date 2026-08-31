@@ -1,0 +1,82 @@
+schema_version: 2
+
+source:
+  model_versions_dir: outputs/model_versions
+  required_report_types:
+    - Q1
+    - H1
+    - Q3
+    - FY
+  # All four models must use identical feature_cols. Select the approved
+  # report type whose imputation cache is shared by this release.
+  impute_stats_report_type: H1
+  releases:
+    Q1: replace_with_approved_q1_version
+    H1: opt_20260826_trial03b_h1_gray_zone_fast_h1_abs_min_0p04
+    Q3: replace_with_approved_q3_version
+    FY: replace_with_approved_fy_version
+
+target:
+  project_root: tushare_earnings_service
+  outputs_dir: outputs
+  release_id: replace_with_quarterly_release_id
+
+activation:
+  slot: candidate
+  # The dataset must already exist under the prediction service outputs/datasets.
+  dataset:
+    version: replace_with_shared_dataset_version
+    file: dataset.parquet
+
+qualification:
+  defaults:
+    minimum:
+      cls_auc: 0.75
+      cls_acc: 0.70
+    maximum:
+      reg_mae: 1.30
+  per_report_type:
+    Q1:
+      minimum:
+        cls_auc: 0.75
+        cls_acc: 0.70
+      maximum:
+        reg_mae: 1.30
+    H1:
+      minimum:
+        cls_auc: 0.79
+        cls_acc: 0.74
+      maximum:
+        reg_mae: 1.24
+      # Relative gates can be enabled together with an approved baseline:
+      # baseline_metrics: outputs/model_versions/<baseline>/metrics_H1.json
+      # minimum_delta:
+      #   cls_auc: 0.01
+      # maximum_regression:
+      #   reg_mae: 0.01
+    Q3:
+      minimum:
+        cls_auc: 0.80
+        cls_acc: 0.70
+      maximum:
+        reg_mae: 1.20
+    FY:
+      minimum:
+        cls_auc: 0.68
+        cls_acc: 0.60
+      maximum:
+        reg_mae: 1.30
+
+safety:
+  required_bundle_keys:
+    - run_id
+    - classifier
+    - regressor
+    - feature_cols
+    - metrics
+  # Pin these after confirming the prediction service runtime. Prefix matching
+  # permits patch upgrades while preventing incompatible minor-version loads.
+  runtime_version_prefixes: {}
+  # runtime_version_prefixes:
+  #   python: "3.14."
+  #   scikit-learn: "1.8."

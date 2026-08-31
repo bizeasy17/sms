@@ -1294,6 +1294,110 @@ class EarningsForecastPipeline:
         return frame
 
     @staticmethod
+    def _select_pinned_report_snapshot(snapshot: pd.DataFrame, report_type: str) -> pd.DataFrame:
+        required = {"ts_code", "fiscal_year", "report_type", "ann_date"}
+        if snapshot is None or snapshot.empty or not required.issubset(snapshot.columns):
+            raise ValueError(f"pinned report panel requires snapshot columns: {sorted(required)}")
+
+        target_type = str(report_type or "").strip().upper()
+        selected = snapshot[
+            snapshot["report_type"].fillna("UNKNOWN").astype(str).str.upper().eq(target_type)
+        ].copy()
+        selected["ts_code"] = selected["ts_code"].astype(str)
+        selected["fiscal_year"] = pd.to_numeric(selected["fiscal_year"], errors="coerce")
+        selected["ann_date"] = pd.to_datetime(selected["ann_date"], errors="coerce")
+        selected = selected.dropna(subset=["ts_code", "fiscal_year", "ann_date"])
+        selected = selected.sort_values(["ts_code", "fiscal_year", "ann_date"], kind="mergesort")
+        return selected.drop_duplicates(["ts_code", "fiscal_year"], keep="first")
+
+    @staticmethod
+    def _filter_report_instance_window(
+        frame: pd.DataFrame,
+        start_month: int,
+        end_month: int,
+    ) -> pd.DataFrame:
+        if not 1 <= start_month <= 12 or not 1 <= end_month <= 12:
+            raise ValueError("pinned report panel months must be in [1, 12]")
+        if "fiscal_year" not in frame.columns:
+            raise ValueError("pinned report panel requires fiscal_year")
+
+        fiscal_year = pd.to_numeric(frame["fiscal_year"], errors="coerce")
+        trade_date = pd.to_datetime(frame["trade_date"], errors="coerce")
+        start_year = fiscal_year
+        end_year = fiscal_year + (1 if start_month > end_month else 0)
+        window_start = pd.to_datetime(
+            {"year": start_year, "month": start_month, "day": 1},
+            errors="coerce",
+        )
+        window_end = pd.to_datetime(
+            {"year": end_year, "month": end_month, "day": 1},
+            errors="coerce",
+        )
+        window_end += pd.offsets.MonthEnd(0)
+        keep = trade_date.between(window_start, window_end)
+        return frame[keep].copy()
+
+    @staticmethod
+    def _attach_fy_supervised_targets(
+        feature_frame: pd.DataFrame,
+        snapshot: pd.DataFrame,
+        label_cfg: dict[str, Any],
+    ) -> pd.DataFrame:
+        fy_value_col = str(label_cfg.get("fy_value_col", "n_income"))
+        required = {"ts_code", "fiscal_year", "report_type", fy_value_col}
+        if snapshot is None or snapshot.empty or not required.issubset(snapshot.columns):
+            raise ValueError(f"FY label snapshot requires columns: {sorted(required)}")
+
+        columns = ["ts_code", "fiscal_year", "report_type", fy_value_col]
+        if "ann_date" in snapshot.columns:
+            columns.append("ann_date")
+        fy_labels = snapshot[columns].copy()
+        fy_labels = fy_labels[
+            fy_labels["report_type"].fillna("UNKNOWN").astype(str).str.upper().eq("FY")
+        ]
+        fy_labels["ts_code"] = fy_labels["ts_code"].astype(str)
+        fy_labels["fiscal_year"] = pd.to_numeric(fy_labels["fiscal_year"], errors="coerce")
+        fy_labels = fy_labels.dropna(subset=["fiscal_year"])
+        sort_columns = ["ts_code", "fiscal_year"]
+        if "ann_date" in fy_labels.columns:
+            fy_labels["ann_date"] = pd.to_datetime(fy_labels["ann_date"], errors="coerce")
+            sort_columns.append("ann_date")
+        fy_labels = fy_labels.sort_values(sort_columns, kind="mergesort")
+        fy_labels = fy_labels.drop_duplicates(["ts_code", "fiscal_year"], keep="last")
+        fy_labels["target_fy_value"] = pd.to_numeric(fy_labels[fy_value_col], errors="coerce")
+
+        fy_cfg = label_cfg.get("fy_yoy") or {}
+        clip_min_raw = fy_cfg.get("clip_min", -20.0)
+        clip_max_raw = fy_cfg.get("clip_max", 20.0)
+        clip_min = None if clip_min_raw is None else float(clip_min_raw)
+        clip_max = None if clip_max_raw is None else float(clip_max_raw)
+        fy_labels["target_fy_value_yoy"] = fy_labels.groupby("ts_code")["target_fy_value"].transform(
+            lambda series: EarningsForecastPipeline._build_fy_yoy(
+                series,
+                base_abs_min=float(fy_cfg.get("base_abs_min", 1e6)),
+                clip_min=clip_min,
+                clip_max=clip_max,
+            )
+        )
+        fy_labels["target_fy_up"] = (fy_labels["target_fy_value_yoy"] > 0).astype(float)
+        fy_labels = fy_labels[
+            ["ts_code", "fiscal_year", "target_fy_value", "target_fy_value_yoy", "target_fy_up"]
+        ]
+
+        out = feature_frame.drop(
+            columns=["target_fy_value", "target_fy_value_yoy", "target_fy_up"],
+            errors="ignore",
+        )
+        out = out.merge(
+            fy_labels,
+            on=["ts_code", "fiscal_year"],
+            how="left",
+            validate="many_to_one",
+        )
+        out["is_fy_row"] = False
+        return out
+
+    @staticmethod
     def _build_targets(frame: pd.DataFrame, horizon_days: int, label_cfg: dict[str, Any] | None = None) -> pd.DataFrame:
         label_cfg = label_cfg or {}
         frame = frame.sort_values(["ts_code", "trade_date"]).copy()
@@ -1479,10 +1583,25 @@ class EarningsForecastPipeline:
 
         self._prepare_log("building features")
         t_feat = time.perf_counter()
+        pinned_cfg = feature_cfg.get("pinned_report_panel") or {}
+        pinned_enabled = bool(pinned_cfg.get("enabled", False))
+        report_type = str(pinned_cfg.get("report_type") or "").strip().upper()
+        start_month = int(pinned_cfg.get("start_month", 1))
+        end_month = int(pinned_cfg.get("end_month", 12))
+        feature_cache = financial_cache
+        if pinned_enabled:
+            if not report_type:
+                raise ValueError("feature.pinned_report_panel.report_type is required")
+            self._prepare_log(
+                f"using pinned report features: report_type={report_type}, window={start_month}-{end_month}"
+            )
+            feature_cache = dict(financial_cache)
+            feature_cache["snapshot"] = self._select_pinned_report_snapshot(snapshot, report_type)
+
         frame = self._build_features(
             trading=trading,
             fundamental=fundamental,
-            financial_cache=financial_cache,
+            financial_cache=feature_cache,
             industry_map=industry_map,
             lookback_days=int(feature_cfg.get("lookback_days", 20)),
             min_history_rows=int(feature_cfg.get("min_history_rows", 120)),
@@ -1498,6 +1617,13 @@ class EarningsForecastPipeline:
             label_cfg=label_cfg,
         )
         self._prepare_log(f"targets built: rows={len(frame)}, cols={len(frame.columns)}, elapsed={time.perf_counter()-t_label:.2f}s")
+
+        if pinned_enabled:
+            frame = self._filter_report_instance_window(frame, start_month, end_month)
+            frame = self._attach_fy_supervised_targets(frame, snapshot, label_cfg)
+            self._prepare_log(
+                f"pinned report panel built: rows={len(frame)}, instances={frame[['ts_code', 'fiscal_year']].drop_duplicates().shape[0]}"
+            )
 
         dataset_file = output_cfg.get("dataset_file", "dataset.parquet")
         output_path = dataset_out_dir / dataset_file

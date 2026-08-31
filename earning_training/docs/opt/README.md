@@ -20,6 +20,8 @@
 
 FY 入口会固定设置 `label.exclude_fy_rows_for_training=false`。当前训练管线在该值为 `true` 时会过滤 FY 行，因此 FY 独立训练必须显式关闭过滤；Q1/H1/Q3 仍保持各自基线配置。
 
+H1 优化配置启用 `feature.pinned_report_panel`：每个 `(ts_code, fiscal_year)` 固定使用最早披露的 H1 快照生成特征，并仅保留该财年 9 月至次年 4 月。后续 Q3/FY 快照不会覆盖 H1 特征；FY 快照只用于按 `(ts_code, fiscal_year)` 生成监督标签。专用面板写入独立数据版本 `15y_20260825_h1_pinned_v1`，不覆盖旧数据集。
+
 ## 2. 运行方法
 
 先进入项目目录：

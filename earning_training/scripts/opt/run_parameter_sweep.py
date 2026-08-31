@@ -67,6 +67,20 @@ def main() -> None:
     parser.add_argument("--parameter", required=True, help="Dotted YAML path, for example label.cls_gray_zone.abs_min")
     parser.add_argument("--values", nargs="+", required=True)
     parser.add_argument("--top-pct", type=float, required=True)
+    parser.add_argument("--min-score", type=float, default=0.60)
+    parser.add_argument("--max-positions", type=int, default=20)
+    parser.add_argument("--max-stock-weight", type=float, default=0.05)
+    parser.add_argument("--max-industry-weight", type=float, default=0.20)
+    parser.add_argument("--commission", type=float, default=0.0003)
+    parser.add_argument("--slippage", type=float, default=0.0005)
+    parser.add_argument("--drawdown-soft-limit", type=float, default=-0.12)
+    parser.add_argument("--drawdown-hard-limit", type=float, default=-0.22)
+    parser.add_argument("--max-allowed-drawdown", type=float, default=-0.30)
+    parser.add_argument("--reduced-exposure", type=float, default=0.50)
+    parser.add_argument("--cooldown-periods", type=int, default=5)
+    parser.add_argument("--walk-forward-folds", type=int, default=4)
+    parser.add_argument("--backtest-start-month", type=int)
+    parser.add_argument("--backtest-end-month", type=int)
     parser.add_argument("--name", required=True)
     parser.add_argument(
         "--set",
@@ -80,6 +94,12 @@ def main() -> None:
     parser.add_argument("--run-tag", default=datetime.now().strftime("%Y%m%d_%H%M%S"))
     parser.add_argument("--dry-run", action="store_true")
     args = parser.parse_args()
+    default_start_month, default_end_month = {"Q1": (5, 12), "H1": (9, 4)}.get(
+        args.report_type,
+        (1, 12),
+    )
+    backtest_start_month = args.backtest_start_month or default_start_month
+    backtest_end_month = args.backtest_end_month or default_end_month
 
     base_config_path = (PROJECT_ROOT / args.base_config).resolve()
     baseline_config_path = (PROJECT_ROOT / (args.baseline_config or args.base_config)).resolve()
@@ -150,6 +170,34 @@ def main() -> None:
         args.report_type,
         "--top-pct",
         str(args.top_pct),
+        "--min-score",
+        str(args.min_score),
+        "--max-positions",
+        str(args.max_positions),
+        "--max-stock-weight",
+        str(args.max_stock_weight),
+        "--max-industry-weight",
+        str(args.max_industry_weight),
+        "--commission",
+        str(args.commission),
+        "--slippage",
+        str(args.slippage),
+        "--drawdown-soft-limit",
+        str(args.drawdown_soft_limit),
+        "--drawdown-hard-limit",
+        str(args.drawdown_hard_limit),
+        "--max-allowed-drawdown",
+        str(args.max_allowed_drawdown),
+        "--reduced-exposure",
+        str(args.reduced_exposure),
+        "--cooldown-periods",
+        str(args.cooldown_periods),
+        "--walk-forward-folds",
+        str(args.walk_forward_folds),
+        "--backtest-start-month",
+        str(backtest_start_month),
+        "--backtest-end-month",
+        str(backtest_end_month),
         "--out",
         str(replay_path.relative_to(PROJECT_ROOT)),
     ]
@@ -178,6 +226,22 @@ def main() -> None:
         "parameter": args.parameter,
         "values": [parse_scalar(value) for value in args.values],
         "top_pct": args.top_pct,
+        "backtest_start_month": backtest_start_month,
+        "backtest_end_month": backtest_end_month,
+        "policy": {
+            "min_score": args.min_score,
+            "max_positions": args.max_positions,
+            "max_stock_weight": args.max_stock_weight,
+            "max_industry_weight": args.max_industry_weight,
+            "commission": args.commission,
+            "slippage": args.slippage,
+            "drawdown_soft_limit": args.drawdown_soft_limit,
+            "drawdown_hard_limit": args.drawdown_hard_limit,
+            "max_allowed_drawdown": args.max_allowed_drawdown,
+            "reduced_exposure": args.reduced_exposure,
+            "cooldown_periods": args.cooldown_periods,
+            "walk_forward_folds": args.walk_forward_folds,
+        },
         "base_config": str(base_config_path),
         "baseline_model": args.baseline_model,
         "baseline_config": str(baseline_config_path),

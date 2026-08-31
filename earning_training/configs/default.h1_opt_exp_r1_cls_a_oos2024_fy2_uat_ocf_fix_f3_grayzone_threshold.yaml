@@ -40,6 +40,11 @@ feature:
     recent_years_per_symbol: 5
     max_rows_per_report_type: 0
     report_types: [Q1, H1, Q3, FY]
+  pinned_report_panel:
+    enabled: true
+    report_type: H1
+    start_month: 9
+    end_month: 4
 
 label:
   horizon_days: 20
@@ -112,7 +117,7 @@ output:
   dir: outputs
   use_dataset_versioning: true
   auto_dataset_version: false
-  dataset_version: 15y_20260402_uat_r1
+  dataset_version: 15y_20260825_h1_pinned_v1
   dataset_versions_dir: datasets
   model_versions_dir: model_versions
   model_registry_file: model_registry.jsonl
