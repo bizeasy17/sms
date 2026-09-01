@@ -23,4 +23,5 @@ urlpatterns = [
     path('api/opt/v1/', include('opt_api.urls')),
     path('api/supply-chain/', include('supply_chain.urls')),
     path('api/backtest/', include('backtest.urls')),
+    path('api/v1/stocks/', include('stock_extremes.urls')),
 ]

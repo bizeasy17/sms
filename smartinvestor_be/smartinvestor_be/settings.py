@@ -59,6 +59,7 @@ INSTALLED_APPS = [
     "valuation_risk.apps.ValuationRiskConfig",
     "market_sentiment.apps.MarketSentimentConfig",
     "supply_chain.apps.SupplyChainConfig",
+    "stock_extremes.apps.StockExtremesConfig",
 ]
 
 MIDDLEWARE = [

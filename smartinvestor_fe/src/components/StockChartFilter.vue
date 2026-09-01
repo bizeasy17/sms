@@ -80,6 +80,7 @@
                 </el-col>
 
             </el-row>
+            <StockExtremeSummary />
             <el-row :gutter="12" class="valuation-quickview-row">
                 <el-col :span="24">
                     <el-tabs v-model="overviewTab" class="overview-tabs">
@@ -185,6 +186,7 @@ import { useStockTradeStore } from '../stores/stockTradeStore';
 import StockValuationQuickView from './StockValuationQuickView.vue';
 import FinanceRelevant from './FinanceRelevant.vue';
 import StockChart from './StockChart.vue';
+import StockExtremeSummary from './StockExtremeSummary.vue';
 import axios from 'axios';
 import { inject } from 'vue';
 import { fetchValuationMethodsWithSharedCache } from '../utils/valuationQuickViewCache';

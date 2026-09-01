@@ -759,6 +759,12 @@ class StockTradingHistory(models.Model):
         ordering = ["-trade_date"]
         verbose_name = _("股票交易历史")
         unique_together = ("trade_date", "ts_code", "freq")
+        indexes = [
+            models.Index(
+                fields=["freq", "ts_code", "trade_date"],
+                name="dst_trd_freq_code_date_idx",
+            ),
+        ]
         verbose_name_plural = verbose_name
         get_latest_by = "id"
 
