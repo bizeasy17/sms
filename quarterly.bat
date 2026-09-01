@@ -6,10 +6,12 @@ if "%UAT_ROOT:~-1%"=="\" set "UAT_ROOT=%UAT_ROOT:~0,-1%"
 set "LOG_DIR=%UAT_ROOT%\logs"
 if not exist "%LOG_DIR%" mkdir "%LOG_DIR%"
 for /f %%i in ('powershell -NoProfile -Command "Get-Date -Format yyyyMMdd_HHmmss"') do set "RUN_STAMP=%%i"
+for /f %%i in ('powershell -NoProfile -Command "[math]::Ceiling((Get-Date).Month / 3)"') do set "CURRENT_QUARTER=%%i"
 set "LOG_FILE=%LOG_DIR%\quarterly_%RUN_STAMP%.log"
 
 echo [INFO] quarterly pipeline start at %DATE% %TIME% > "%LOG_FILE%"
 echo [INFO] uat_root=%UAT_ROOT% >> "%LOG_FILE%"
+echo [INFO] current_quarter=Q%CURRENT_QUARTER% >> "%LOG_FILE%"
 
 call :run_step "Earnings quarterly full pipeline" :step_earnings_quarterly_full_pipeline
 if errorlevel 1 exit /b %ERRORLEVEL%
@@ -17,6 +19,13 @@ call :run_step "BE earnings refresh backfill" :step_be_earnings_refresh_backfill
 if errorlevel 1 exit /b %ERRORLEVEL%
 call :run_step "BE annual outlook" :step_be_annual_outlook
 if errorlevel 1 exit /b %ERRORLEVEL%
+if "%CURRENT_QUARTER%"=="4" (
+  call :run_step "BE stock extremes refresh" :step_be_stock_extremes_refresh
+  if errorlevel 1 exit /b !ERRORLEVEL!
+) else (
+  echo [SKIP] BE stock extremes refresh only runs in Q4. current=Q%CURRENT_QUARTER%
+  echo [SKIP] BE stock extremes refresh only runs in Q4. current=Q%CURRENT_QUARTER% >> "%LOG_FILE%"
+)
 
 echo [INFO] quarterly pipeline completed at %DATE% %TIME% >> "%LOG_FILE%"
 echo quarterly pipeline completed. log=%LOG_FILE%
@@ -47,3 +56,12 @@ exit /b %ERRORLEVEL%
 :step_be_annual_outlook
 call "%UAT_ROOT%\smartinvestor_be\daily_annual_outlook.bat"
 exit /b %ERRORLEVEL%
+
+:step_be_stock_extremes_refresh
+set "PYTHON_CMD=C:\Users\HANJ29\Development\code\JIUCAI_DEV\.venv\Scripts\python.exe"
+if not exist "%PYTHON_CMD%" set "PYTHON_CMD=python"
+pushd "%UAT_ROOT%\smartinvestor_be"
+"%PYTHON_CMD%" manage.py refresh_stock_extremes
+set "ERR=%ERRORLEVEL%"
+popd
+exit /b %ERR%
