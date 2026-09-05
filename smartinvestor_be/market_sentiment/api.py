@@ -2,7 +2,6 @@ from rest_framework.decorators import api_view
 from rest_framework.response import Response
 
 from market_sentiment.models import MarketSentimentSnapshot
-from market_sentiment.services.daily_engine import ENGINE_VERSION, STOCK_ENGINE_VERSION
 
 
 def _serialize(snapshot, include_factors=False):
@@ -42,13 +41,11 @@ def _serialize(snapshot, include_factors=False):
 
 
 def _query(request):
-    scope_type = request.query_params.get('scope', 'MARKET').upper()
-    default_engine_version = STOCK_ENGINE_VERSION if scope_type == 'STOCK' else ENGINE_VERSION
     return MarketSentimentSnapshot.objects.filter(
         market=request.query_params.get('market', 'CN'),
-        scope_type=scope_type,
+        scope_type=request.query_params.get('scope', 'MARKET').upper(),
         scope_code=request.query_params.get('scope_code', 'ALL_A').upper(),
-        engine_version=request.query_params.get('engine_version', default_engine_version),
+        engine_version=request.query_params.get('engine_version', 'daily_v1_20260828'),
     )
 
 

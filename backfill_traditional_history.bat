@@ -48,7 +48,7 @@ if defined RESUME_FROM (
 )
 
 echo [STEP] trade_date=%CUR_DATE%>>"%LOG_FILE%"
-"%PYTHON_CMD%" "smartinvestor_be\manage.py" prefillvaluationsnapshot --trade-date %CUR_DATE% --scope %SCOPE% --freq D --refresh-policy all --price-anchor-mode market_now --profit-buckets both --methods %METHODS% >> "%LOG_FILE%" 2>&1
+"%PYTHON_CMD%" "smartinvestor_be\manage.py" prefillvaluationsnapshot --trade-date %CUR_DATE% --scope %SCOPE% --freq D --refresh-policy all --price-anchor-mode market_now --profit-buckets both --backfill-history-only --methods %METHODS% >> "%LOG_FILE%" 2>&1
 set "ERR=%ERRORLEVEL%"
 if not "%ERR%"=="0" (
   echo [ERROR] trade_date=%CUR_DATE% failed code=%ERR%>>"%LOG_FILE%"

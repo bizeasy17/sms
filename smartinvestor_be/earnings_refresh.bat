@@ -4,7 +4,7 @@ setlocal enableextensions enabledelayedexpansion
 set "VENV_PYTHON=C:\Users\HANJ29\Development\code\JIUCAI_DEV\.venv\Scripts\python.exe"
 set "BASE_DIR=%~dp0"
 cd /d "%BASE_DIR%"
-set "VALUATION_TABLE_PREFIX=valuation"
+set "VALUATION_TABLE_PREFIX=prediction"
 
 if not exist "output" mkdir "output"
 if not exist "output\logs" mkdir "output\logs"

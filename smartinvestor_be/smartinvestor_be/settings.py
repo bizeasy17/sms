@@ -119,6 +119,17 @@ DATABASES["earnings"] = {
     "PORT": os.getenv("EARNINGS_DB_PORT", DATABASES["default"].get("PORT", "5432")),
 }
 
+# Traditional valuation snapshots are persisted separately while the BE remains
+# the only HTTP service and computes valuations from its primary data store.
+DATABASES["valuation"] = {
+    "ENGINE": "django.db.backends.postgresql_psycopg2",
+    "NAME": os.getenv("VALUATION_DB_NAME", "valuation_service"),
+    "USER": os.getenv("VALUATION_DB_USER", DATABASES["default"].get("USER", "postgres")),
+    "PASSWORD": os.getenv("VALUATION_DB_PASSWORD", DATABASES["default"].get("PASSWORD", "postgres")),
+    "HOST": os.getenv("VALUATION_DB_HOST", DATABASES["default"].get("HOST", "localhost")),
+    "PORT": os.getenv("VALUATION_DB_PORT", DATABASES["default"].get("PORT", "5432")),
+}
+
 # SQLite configuration (for development or testing)
 # DATABASES = {
 #     "default": {
@@ -314,7 +325,9 @@ VALUATION_LOCAL_FINANCIAL_DB_ALIAS = os.getenv("VALUATION_LOCAL_FINANCIAL_DB_ALI
 # Valuation snapshot table prefix switch:
 # - "prediction": current table prefix before rename
 # - "valuation": target prefix after DB table rename
-_valuation_table_prefix = str(os.getenv("VALUATION_TABLE_PREFIX", "valuation") or "valuation").strip().lower()
+# The rebuilt UAT database is created by prediction migrations, so default to
+# the existing prediction_* snapshot tables unless a completed rename is explicit.
+_valuation_table_prefix = str(os.getenv("VALUATION_TABLE_PREFIX", "prediction") or "prediction").strip().lower()
 VALUATION_TABLE_PREFIX = _valuation_table_prefix if _valuation_table_prefix in {"prediction", "valuation"} else "prediction"
 
 # Valuation remote-cache strategy: local-first with optional remote fallback.

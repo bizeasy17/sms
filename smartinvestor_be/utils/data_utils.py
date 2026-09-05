@@ -278,7 +278,7 @@ def fetch_and_store_corporations():
         TypeError,
     ) as e:
         print(f"Error fetching corporation data: {e}")
-        return
+        raise RuntimeError("Corporation fetch failed") from e
 
 
 def fetch_and_store_corp_basic(ts_code, resume: str = None):

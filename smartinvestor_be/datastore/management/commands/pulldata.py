@@ -1,5 +1,5 @@
 from django.conf import settings
-from django.core.management.base import BaseCommand
+from django.core.management.base import BaseCommand, CommandError
 import requests
 from datetime import timedelta
 from datastore.models import StockCostHistory, StockFundamentalHistory, StockTradingHistory
@@ -38,14 +38,22 @@ class Command(BaseCommand):
             help="Data type (trading or fundamental)",
         )
         parser.add_argument("--batch", type=bool, help="Whether to run in batch mode")
+        parser.add_argument(
+            "--date-from",
+            dest="date_from",
+            type=str,
+            help="Explicit inclusive source date (YYYY-MM-DD) for per-stock pulls",
+        )
 
     def handle(self, *args, **options):
         ts_code = options["tscode"]
         freq = options["freq"]
         dtype = options["dtype"]
         batch = options["batch"]
+        date_from = options["date_from"]
 
         api_base = settings.ETL_BASE_URL
+        failures = []
 
         if batch:
             endpoints = []
@@ -99,6 +107,7 @@ class Command(BaseCommand):
                         self.stderr.write(
                             f"Failed to update pull status for {label} data.\n"
                         )
+                        failures.append(f"{label} pull-status update")
                 except requests.RequestException as e:
                     if self._is_no_unpulled_404(e, url):
                         self.stdout.write(
@@ -106,6 +115,7 @@ class Command(BaseCommand):
                         )
                         continue
                     self.stderr.write(f"Failed to batch fetch {label} data: {e}\n")
+                    failures.append(f"{label} batch fetch")
         else:
             corporations = (
                 Corporation.objects.filter(ts_code=ts_code)
@@ -118,6 +128,11 @@ class Command(BaseCommand):
                 return
 
             def get_next_date(model, ts_code, freq, label):
+                if date_from:
+                    self.stdout.write(
+                        f"Using explicit 'date_from' for {ts_code} ({label}): {date_from}\n"
+                    )
+                    return date_from
                 latest = (
                     model.objects.filter(ts_code=ts_code, freq=freq)
                     .order_by("-trade_date")
@@ -138,39 +153,47 @@ class Command(BaseCommand):
 
             for corp in corporations:
                 ts_code = corp.ts_code
-                date_from_trade = get_next_date(
-                    StockTradingHistory, ts_code, freq, "trading"
-                )
-                date_from_funda = get_next_date(
-                    StockFundamentalHistory, ts_code, freq, "fundamental"
-                )
-                date_from_cost = get_next_date(StockCostHistory, ts_code, freq, "cost")
-                if not date_from_trade or not date_from_funda:
-                    continue
-
                 endpoints = []
                 if dtype == "trading" or dtype is None:
+                    date_from_trade = get_next_date(
+                        StockTradingHistory, ts_code, freq, "trading"
+                    )
+                    if not date_from_trade:
+                        continue
                     endpoints.append(
                         (
                             "trading",
                             f"{api_base}/stocks/{ts_code}/trades/{freq}/{date_from_trade}/?format=json",
                             save_trading_history_from_response,
+                            f"{api_base}/stocks/trades/pull-status/update/{freq}/",
                         )
                     )
                 if dtype == "fundamental" or dtype is None:
+                    date_from_funda = get_next_date(
+                        StockFundamentalHistory, ts_code, freq, "fundamental"
+                    )
+                    if not date_from_funda:
+                        continue
                     endpoints.append(
                         (
                             "fundamental",
                             f"{api_base}/stocks/{ts_code}/fundamentals/{freq}/{date_from_funda}/?format=json",
                             save_fundamental_data_from_response,
+                            f"{api_base}/stocks/fundamentals/pull-status/update/{freq}/",
                         )
                     )
                 if dtype == "cost" or dtype is None:   
+                    date_from_cost = get_next_date(
+                        StockCostHistory, ts_code, freq, "cost"
+                    )
+                    if not date_from_cost:
+                        continue
                     endpoints.append(
                         (
                             "cost",
                             f"{api_base}/stocks/{ts_code}/cost/{freq}/{date_from_cost}/?format=json",
                             save_cost_data_from_response,
+                            f"{api_base}/stocks/cost/pull-status/update/{freq}/",
                         )
                     )
 
@@ -181,13 +204,26 @@ class Command(BaseCommand):
                     continue
 
                 try:
-                    for label, url, save_func in endpoints:
+                    for label, url, save_func, callback_url in endpoints:
                         self.stdout.write(f"Fetching {label} data from {url}\n")
                         resp = requests.get(url, timeout=30)
                         resp.raise_for_status()
-                        save_func(resp, corp)
+                        success_codes = save_func(resp, corp, freq=freq)
+                        if success_codes and not update_pull_status(
+                            callback_url, success_codes
+                        ):
+                            self.stderr.write(
+                                f"Saved {label} data for {ts_code}, but failed to update ETL pull status.\n"
+                            )
+                            failures.append(f"{ts_code} {label} pull-status update")
                     self.stdout.write(
                         f"Fetched {', '.join([e[0] for e in endpoints])} records for {ts_code} from ETL API.\n"
                     )
                 except requests.RequestException as e:
                     self.stderr.write(f"Failed to fetch data for {ts_code}: {e}\n")
+                    failures.append(f"{ts_code} fetch")
+
+        if failures:
+            raise CommandError(
+                f"Pull completed with {len(failures)} failure(s): {', '.join(failures)}"
+            )

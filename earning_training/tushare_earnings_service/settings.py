@@ -105,7 +105,7 @@ else:
     DATABASES = {
         "default": {
             "ENGINE": DB_ENGINE,
-            "NAME": os.getenv("DB_NAME", "smartinvestor_dev"),
+            "NAME": os.getenv("DB_NAME", "earning_training"),
             "USER": os.getenv("DB_USER", "postgres"),
             "PASSWORD": os.getenv("DB_PASSWORD", "postgres"),
             "HOST": os.getenv("DB_HOST", "127.0.0.1"),

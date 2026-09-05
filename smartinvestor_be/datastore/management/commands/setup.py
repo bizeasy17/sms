@@ -1,4 +1,6 @@
-from django.core.management.base import BaseCommand
+from django.core.management import call_command
+from django.core.management.base import BaseCommand, CommandError
+from datastore.models import Corporation
 from utils.data_utils import fetch_and_store_corporations, fetch_and_store_corp_basic
 
 
@@ -18,10 +20,15 @@ class Command(BaseCommand):
             resume = options.get("resume")
 
             fetch_and_store_corporations()
+            if not Corporation.objects.exists():
+                raise CommandError("Corporation initialization returned no records.")
             fetch_and_store_corp_basic(ts_code=ts_code, resume=resume)
+            call_command("synccorporationsw", market="CN")
             self.stdout.write(
-                self.style.SUCCESS("Corporations fetched and stored successfully.")
+                self.style.SUCCESS(
+                    "Corporations, basic information, and SW L3 mappings synced successfully."
+                )
             )
         except Exception as e:
             self.stderr.write(self.style.ERROR(f"Error during setup: {e}"))
-        self.stdout.write(self.style.SUCCESS("Setup command executed successfully."))
+            raise CommandError(f"Backend setup failed: {e}") from e

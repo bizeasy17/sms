@@ -13,6 +13,8 @@ from django.conf import settings
 
 from datastore.models import Corporation, StockTradingHistory
 from valuation.models import (
+    ExternalValuationSnapshot,
+    ExternalValuationSnapshotLatest,
     StockValuationSnapshot,
     StockValuationSnapshotHistory,
     StockValuationSnapshotLatest,
@@ -989,263 +991,147 @@ def _bulk_upsert_valuation_rows(
     target_report_type="",
     profit_bucket_mode="",
 ):
-    if not snapshot_rows and not latest_rows and not summary_latest_rows:
+    if not snapshot_rows:
         return
 
-    with transaction.atomic():
-        if backfill_history_only:
-            history_rows = []
-            for row in snapshot_rows:
-                history_rows.append(
-                    StockValuationSnapshotHistory(
-                        archive_reason="backfill_history_only",
-                        is_backfill=bool(is_backfill),
-                        backfill_run_id=str(backfill_run_id or "")[:64],
-                        refresh_policy=str(refresh_policy or "")[:16],
-                        price_anchor_mode=str(price_anchor_mode or "")[:24],
-                        target_report_type=str(target_report_type or "")[:16],
-                        profit_bucket_mode=str(profit_bucket_mode or "")[:16],
-                        source_snapshot_id=None,
-                        snapshot_created_at=None,
-                        snapshot_updated_at=None,
-                        corporation=row.corporation,
-                        ts_code=row.ts_code,
-                        trade_date=row.trade_date,
-                        market=row.market,
-                        valuation_method=row.valuation_method,
-                        valuation_variant=row.valuation_variant,
-                        valuation_price=row.valuation_price,
-                        valuation_market_cap=row.valuation_market_cap,
-                        source=row.source,
-                        industry_level=row.industry_level,
-                        industry_code=row.industry_code,
-                        industry_name=row.industry_name,
-                        compare_group=row.compare_group,
-                        match_score=row.match_score,
-                        profit_data_source=row.profit_data_source,
-                        profit_report_end_date=row.profit_report_end_date,
-                        profit_report_ann_date=row.profit_report_ann_date,
-                        profit_report_type=row.profit_report_type,
-                        express_end_date=row.express_end_date,
-                        express_ann_date=row.express_ann_date,
-                        express_apply_reason=row.express_apply_reason,
-                        express_block_reason=row.express_block_reason,
-                        strict_express_match=row.strict_express_match,
-                        express_max_age_days=row.express_max_age_days,
-                    )
+    snapshot_payload = [
+        ExternalValuationSnapshot(
+            ts_code=row.ts_code,
+            trade_date=row.trade_date,
+            market=row.market,
+            valuation_method=row.valuation_method,
+            valuation_variant=row.valuation_variant,
+            valuation_price=_to_float(row.valuation_price),
+            valuation_market_cap=_to_float(row.valuation_market_cap),
+            source=row.source,
+            industry_level=row.industry_level,
+            industry_code=row.industry_code,
+            industry_name=row.industry_name,
+            compare_group=row.compare_group,
+            match_score=_to_float(row.match_score),
+            profit_data_source=row.profit_data_source,
+            profit_report_end_date=row.profit_report_end_date,
+            profit_report_ann_date=row.profit_report_ann_date,
+            profit_report_type=row.profit_report_type,
+            express_end_date=row.express_end_date,
+            express_ann_date=row.express_ann_date,
+            express_apply_reason=row.express_apply_reason,
+            express_block_reason=row.express_block_reason,
+            strict_express_match=row.strict_express_match,
+            express_max_age_days=row.express_max_age_days,
+        )
+        for row in snapshot_rows
+    ]
+
+    update_fields = [
+        "updated_at", "valuation_price", "valuation_market_cap", "source",
+        "industry_level", "industry_code", "industry_name", "compare_group",
+        "match_score", "profit_report_ann_date", "express_end_date", "express_ann_date",
+        "express_apply_reason", "express_block_reason", "strict_express_match",
+        "express_max_age_days",
+    ]
+    snapshot_unique_fields = [
+        "ts_code", "trade_date", "market", "valuation_method", "valuation_variant",
+        "profit_report_type", "profit_report_end_date", "profit_data_source",
+    ]
+    latest_unique_fields = [
+        "ts_code", "market", "valuation_method", "valuation_variant",
+        "profit_report_type", "profit_data_source",
+    ]
+
+    with transaction.atomic(using="valuation"):
+        ExternalValuationSnapshot.objects.using("valuation").bulk_create(
+            snapshot_payload,
+            batch_size=1000,
+            update_conflicts=True,
+            update_fields=update_fields,
+            unique_fields=snapshot_unique_fields,
+        )
+
+        if latest_rows:
+            latest_payload = [
+                ExternalValuationSnapshotLatest(
+                    ts_code=row.ts_code,
+                    latest_trade_date=row.latest_trade_date,
+                    market=row.market,
+                    valuation_method=row.valuation_method,
+                    valuation_variant=row.valuation_variant,
+                    valuation_price=_to_float(row.valuation_price),
+                    valuation_market_cap=_to_float(row.valuation_market_cap),
+                    source=row.source,
+                    industry_level=row.industry_level,
+                    industry_code=row.industry_code,
+                    industry_name=row.industry_name,
+                    compare_group=row.compare_group,
+                    match_score=_to_float(row.match_score),
+                    profit_data_source=row.profit_data_source,
+                    profit_report_end_date=row.profit_report_end_date,
+                    profit_report_ann_date=row.profit_report_ann_date,
+                    profit_report_type=row.profit_report_type,
+                    express_end_date=row.express_end_date,
+                    express_ann_date=row.express_ann_date,
+                    express_apply_reason=row.express_apply_reason,
+                    express_block_reason=row.express_block_reason,
+                    strict_express_match=row.strict_express_match,
+                    express_max_age_days=row.express_max_age_days,
                 )
-
-            if history_rows:
-                StockValuationSnapshotHistory.objects.bulk_create(history_rows, batch_size=1000)
-            return
-
-        if snapshot_rows:
-            key_set = {
+                for row in latest_rows
+            ]
+            latest_keys = {
                 (
                     row.ts_code,
-                    row.trade_date,
                     row.market,
                     row.valuation_method,
                     row.valuation_variant,
                     row.profit_report_type,
-                    row.profit_report_end_date,
+                    row.profit_data_source,
                 )
-                for row in snapshot_rows
+                for row in latest_payload
             }
+            existing_latest = {}
+            for row in ExternalValuationSnapshotLatest.objects.using("valuation").filter(
+                ts_code__in={item[0] for item in latest_keys},
+                market__in={item[1] for item in latest_keys},
+                valuation_method__in={item[2] for item in latest_keys},
+                valuation_variant__in={item[3] for item in latest_keys},
+            ):
+                key = (
+                    row.ts_code,
+                    row.market,
+                    row.valuation_method,
+                    row.valuation_variant,
+                    row.profit_report_type,
+                    row.profit_data_source,
+                )
+                if key in latest_keys:
+                    existing_latest[key] = row.latest_trade_date
 
-            if key_set:
-                chunk_size = 500
-                key_list = list(key_set)
-                existing_rows = []
-
-                for start in range(0, len(key_list), chunk_size):
-                    chunk_keys = key_list[start:start + chunk_size]
-                    if not chunk_keys:
-                        continue
-
-                    chunk_key_set = set(chunk_keys)
-                    ts_codes = {item[0] for item in chunk_keys}
-                    trade_dates = {item[1] for item in chunk_keys}
-                    markets = {item[2] for item in chunk_keys}
-                    methods = {item[3] for item in chunk_keys}
-                    variants = {item[4] for item in chunk_keys}
-                    report_types = {item[5] for item in chunk_keys}
-                    report_end_dates = {item[6] for item in chunk_keys}
-
-                    candidate_qs = StockValuationSnapshot.objects.filter(
-                        ts_code__in=ts_codes,
-                        trade_date__in=trade_dates,
-                        market__in=markets,
-                        valuation_method__in=methods,
-                        valuation_variant__in=variants,
-                        profit_report_type__in=report_types,
-                        profit_report_end_date__in=report_end_dates,
+            latest_payload = [
+                row
+                for row in latest_payload
+                if _parse_date_like(row.latest_trade_date)
+                >= _parse_date_like(
+                    existing_latest.get(
+                        (
+                            row.ts_code,
+                            row.market,
+                            row.valuation_method,
+                            row.valuation_variant,
+                            row.profit_report_type,
+                            row.profit_data_source,
+                        ),
+                        row.latest_trade_date,
                     )
-
-                    for old in candidate_qs:
-                        old_key = (
-                            old.ts_code,
-                            old.trade_date,
-                            old.market,
-                            old.valuation_method,
-                            old.valuation_variant,
-                            old.profit_report_type,
-                            old.profit_report_end_date,
-                        )
-                        if old_key in chunk_key_set:
-                            existing_rows.append(old)
-
-                history_rows = []
-                for old in existing_rows:
-                    history_rows.append(
-                        StockValuationSnapshotHistory(
-                            archive_reason="upsert_replace",
-                            is_backfill=bool(is_backfill),
-                            backfill_run_id=str(backfill_run_id or "")[:64],
-                            refresh_policy=str(refresh_policy or "")[:16],
-                            price_anchor_mode=str(price_anchor_mode or "")[:24],
-                            target_report_type=str(target_report_type or "")[:16],
-                            profit_bucket_mode=str(profit_bucket_mode or "")[:16],
-                            source_snapshot_id=old.id,
-                            snapshot_created_at=old.created_at,
-                            snapshot_updated_at=old.updated_at,
-                            corporation=old.corporation,
-                            ts_code=old.ts_code,
-                            trade_date=old.trade_date,
-                            market=old.market,
-                            valuation_method=old.valuation_method,
-                            valuation_variant=old.valuation_variant,
-                            valuation_price=old.valuation_price,
-                            valuation_market_cap=old.valuation_market_cap,
-                            source=old.source,
-                            industry_level=old.industry_level,
-                            industry_code=old.industry_code,
-                            industry_name=old.industry_name,
-                            compare_group=old.compare_group,
-                            match_score=old.match_score,
-                            profit_data_source=old.profit_data_source,
-                            profit_report_end_date=old.profit_report_end_date,
-                            profit_report_ann_date=old.profit_report_ann_date,
-                            profit_report_type=old.profit_report_type,
-                            express_end_date=old.express_end_date,
-                            express_ann_date=old.express_ann_date,
-                            express_apply_reason=old.express_apply_reason,
-                            express_block_reason=old.express_block_reason,
-                            strict_express_match=old.strict_express_match,
-                            express_max_age_days=old.express_max_age_days,
-                        )
-                    )
-
-                if history_rows:
-                    StockValuationSnapshotHistory.objects.bulk_create(history_rows, batch_size=1000)
-
-            StockValuationSnapshot.objects.bulk_create(
-                snapshot_rows,
-                batch_size=1000,
-                update_conflicts=True,
-                update_fields=[
-                    "updated_at",
-                    "valuation_price",
-                    "valuation_market_cap",
-                    "source",
-                    "corporation",
-                    "industry_level",
-                    "industry_code",
-                    "industry_name",
-                    "compare_group",
-                    "match_score",
-                    "profit_data_source",
-                    "profit_report_end_date",
-                    "profit_report_ann_date",
-                    "profit_report_type",
-                    "express_end_date",
-                    "express_ann_date",
-                    "express_apply_reason",
-                    "express_block_reason",
-                    "strict_express_match",
-                    "express_max_age_days",
-                ],
-                unique_fields=[
-                    "ts_code",
-                    "trade_date",
-                    "market",
-                    "valuation_method",
-                    "valuation_variant",
-                    "profit_report_type",
-                    "profit_report_end_date",
-                    "profit_data_source",
-                ],
-            )
-
-        if latest_rows:
-            StockValuationSnapshotLatest.objects.bulk_create(
-                latest_rows,
-                batch_size=1000,
-                update_conflicts=True,
-                update_fields=[
-                    "updated_at",
-                    "latest_trade_date",
-                    "valuation_price",
-                    "valuation_market_cap",
-                    "source",
-                    "corporation",
-                    "industry_level",
-                    "industry_code",
-                    "industry_name",
-                    "compare_group",
-                    "match_score",
-                    "profit_data_source",
-                    "profit_report_end_date",
-                    "profit_report_ann_date",
-                    "profit_report_type",
-                    "express_end_date",
-                    "express_ann_date",
-                    "express_apply_reason",
-                    "express_block_reason",
-                    "strict_express_match",
-                    "express_max_age_days",
-                ],
-                unique_fields=[
-                    "ts_code",
-                    "market",
-                    "valuation_method",
-                    "valuation_variant",
-                    "profit_report_type",
-                    "profit_data_source",
-                ],
-            )
-
-        if summary_latest_rows:
-            StockValuationVariantSummaryLatest.objects.bulk_create(
-                summary_latest_rows,
-                batch_size=1000,
-                update_conflicts=True,
-                update_fields=[
-                    "updated_at",
-                    "latest_trade_date",
-                    "corporation",
-                    "profit_data_source",
-                    "profit_report_end_date",
-                    "profit_report_ann_date",
-                    "composite_valuation_price",
-                    "conservative_valuation_price",
-                    "undervalue_score",
-                    "buy_candidate",
-                    "buy_candidate_reason",
-                    "buy_candidate_rule_version",
-                    "valuation_valid_methods",
-                    "valuation_under_methods",
-                    "valuation_core_methods",
-                    "source",
-                ],
-                unique_fields=[
-                    "ts_code",
-                    "market",
-                    "valuation_variant",
-                    "profit_report_type",
-                    "profit_data_source",
-                ],
-            )
+                )
+            ]
+            if latest_payload:
+                ExternalValuationSnapshotLatest.objects.using("valuation").bulk_create(
+                    latest_payload,
+                    batch_size=1000,
+                    update_conflicts=True,
+                    update_fields=["latest_trade_date", *update_fields],
+                    unique_fields=latest_unique_fields,
+                )
 
 
 def _max_frame_date(frame, candidate_columns, upper_bound=None):
@@ -1970,7 +1856,7 @@ class Command(BaseCommand):
                 probe_report_end_date = probe_trace_fields.get("profit_report_end_date")
 
                 existing_qs = _apply_report_period_filters(
-                    StockValuationSnapshot.objects.filter(
+                    ExternalValuationSnapshot.objects.using("valuation").filter(
                         ts_code=ts_code,
                         trade_date=valuation_trade_date,
                         market=market,
@@ -2198,7 +2084,7 @@ class Command(BaseCommand):
                         primary_outputs[market_style_method] = market_style_outputs
                 elif enable_market_style and skip_market_style_for_recent_listing and not dry_run and refresh_policy == "all":
                     market_style_cleanup_qs = _apply_report_period_filters(
-                        StockValuationSnapshot.objects.filter(
+                        ExternalValuationSnapshot.objects.using("valuation").filter(
                             ts_code=ts_code,
                             trade_date=valuation_trade_date,
                             market=market,
@@ -2209,7 +2095,7 @@ class Command(BaseCommand):
                     )
                     market_style_cleanup_qs.delete()
                     if forced_report_end_date is None:
-                        StockValuationSnapshotLatest.objects.filter(
+                        ExternalValuationSnapshotLatest.objects.using("valuation").filter(
                             ts_code=ts_code,
                             market=market,
                             valuation_method=market_style_method,
@@ -2246,7 +2132,7 @@ class Command(BaseCommand):
                 market_style_null_pairs = set()
                 if enable_market_style:
                     market_style_existing_qs = _apply_report_period_filters(
-                        StockValuationSnapshot.objects.filter(
+                        ExternalValuationSnapshot.objects.using("valuation").filter(
                             ts_code=ts_code,
                             trade_date=valuation_trade_date,
                             market=market,
@@ -2429,3 +2315,8 @@ class Command(BaseCommand):
         else:
             for state, count in sorted(market_overall_state_counts.items(), key=lambda item: (-item[1], item[0])):
                 self.stdout.write(f"- {state}: {count}")
+
+        if backfill_history_only and counters["errors"]:
+            raise CommandError(
+                f"Historical valuation backfill failed for {counters['errors']} stock(s)."
+            )

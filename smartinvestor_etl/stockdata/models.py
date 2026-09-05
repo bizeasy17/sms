@@ -995,4 +995,4 @@ class StockCostHistory(models.Model):
         ordering = ["-trade_date"]
         verbose_name = _("股票成本历史")
         verbose_name_plural = verbose_name
-        unique_together = ("ts_code", "trade_date")
+        unique_together = ("ts_code", "trade_date", "freq")

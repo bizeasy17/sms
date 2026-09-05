@@ -30,15 +30,43 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
+import { inject, onMounted, ref } from 'vue'
+import axios from 'axios'
 import DefaultLayout from '../layouts/DefaultLayout.vue'
 import StockChartFilter from '../components/StockChartFilter.vue'
 import Watchlist from '../components/Watchlist.vue';
+import { useStockTradeStore } from '../stores/stockTradeStore'
 // Element Plus
 import { ElRow, ElCol, ElAffix } from 'element-plus';
 import RecentFinancialUpdatesTag from '../components/RecentFinancialUpdatesTag.vue';
 
+const DEFAULT_TS_CODE = '000001.SZ'
+const DEFAULT_STOCK_NAME = '平安银行'
+const baseURL = inject<string>('baseURL', '')
+const stockTradeStore = useStockTradeStore()
 const showRecentReportPanel = ref(true)
+
+async function initializeDashboardStock() {
+  stockTradeStore.setName(DEFAULT_STOCK_NAME)
+  stockTradeStore.setTsCode(DEFAULT_TS_CODE)
+  if (!baseURL) {
+    return
+  }
+
+  try {
+    const response = await axios.get(`${baseURL}/watchlist/0/1/`, {
+      params: { format: 'json', market: 'HO' },
+    })
+    const firstHolding = response?.data?.data?.[0]
+    const firstHoldingTsCode = String(firstHolding?.ts_code || '').trim().toUpperCase()
+    if (firstHoldingTsCode) {
+      stockTradeStore.setName(String(firstHolding?.name || '').trim())
+      stockTradeStore.setTsCode(firstHoldingTsCode)
+    }
+  } catch (error) {
+    console.error('Failed to initialize dashboard stock from holdings:', error)
+  }
+}
 
 function toggleRecentReportPanel() {
   showRecentReportPanel.value = !showRecentReportPanel.value
@@ -48,6 +76,7 @@ function toggleRecentReportPanel() {
 }
 
 onMounted(() => {
+  void initializeDashboardStock()
   if (typeof window === 'undefined') {
     return
   }

@@ -7,10 +7,12 @@ from utils.date_utils import split_dates_by_20_years
 from utils.char_utils import pinyin_firstletter
 from stockdata.models import (
     Corporation,
+    CorporationBasic,
     StockCostHistory,
     StockFundamentalHistory,
     Industry,
     Area,
+    City,
     StockTradingHistory,
 )
 from datetime import date
@@ -823,7 +825,7 @@ def fetch_and_store_corporations():
         TypeError,
     ) as e:
         print(f"Error fetching corporation data: {e}")
-        return
+        raise RuntimeError("Corporation fetch failed") from e
 
 
 def create_area(area):
@@ -833,6 +835,75 @@ def create_area(area):
     if created:
         print(f"{area} created.")
     return area_obj
+
+
+def create_city(city_name, area):
+    city_obj, _ = City.objects.get_or_create(
+        name=city_name,
+        area=area,
+        defaults={"name_pinyin": pinyin_firstletter(city_name)},
+    )
+    return city_obj
+
+
+def fetch_and_store_corp_basic():
+    pro = ts.pro_api()
+    corporations = {
+        corporation.ts_code: corporation
+        for corporation in Corporation.objects.all()
+    }
+    if not corporations:
+        raise RuntimeError("No Corporation records found before corporation basic sync")
+
+    fields = (
+        "ts_code,exchange,chairman,manager,reg_capital,setup_date,province,"
+        "secretary,city,introduction,website,email,office,employees,"
+        "main_business,business_scope"
+    )
+    saved_count = 0
+    for exchange in ("SSE", "SZSE", "BSE"):
+        frame = pro.stock_company(exchange=exchange, fields=fields)
+        if frame is None or frame.empty:
+            continue
+        for row in frame.to_dict(orient="records"):
+            ts_code = str(row.get("ts_code") or "").strip().upper()
+            corporation = corporations.get(ts_code)
+            if corporation is None:
+                continue
+            province = row.get("province") or "上海"
+            city_name = row.get("city") or "上海"
+            area = create_area(province)
+            city = create_city(city_name, area)
+            setup_date = row.get("setup_date")
+            CorporationBasic.objects.update_or_create(
+                ts_code=ts_code,
+                defaults={
+                    "corporation": corporation,
+                    "exchange": row.get("exchange"),
+                    "chairman": row.get("chairman"),
+                    "manager": row.get("manager"),
+                    "reg_capital": row.get("reg_capital"),
+                    "setup_date": (
+                        datetime.strptime(str(setup_date), "%Y%m%d").date()
+                        if setup_date and not pd.isna(setup_date)
+                        else None
+                    ),
+                    "area": area,
+                    "city": city,
+                    "introduction": row.get("introduction"),
+                    "website": row.get("website"),
+                    "email": row.get("email"),
+                    "office": row.get("office"),
+                    "secretary": row.get("secretary"),
+                    "employees": row.get("employees"),
+                    "main_business": row.get("main_business"),
+                    "business_scope": row.get("business_scope"),
+                },
+            )
+            saved_count += 1
+    if not saved_count:
+        raise RuntimeError("Corporation basic sync returned no matching records")
+    return saved_count
 
 
 def create_industry(industry):

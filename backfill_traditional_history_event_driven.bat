@@ -1,12 +1,16 @@
 @echo off
 setlocal EnableExtensions EnableDelayedExpansion
+set "DJANGO_SETTINGS_MODULE="
+set "PYTHONIOENCODING=utf-8"
+set "VALUATION_TABLE_PREFIX=prediction"
 
 if /I "%DEBUG_TRACE%"=="1" echo on
 
 set "BASE_DIR=%~dp0"
 cd /d "%BASE_DIR%"
 
-set "PYTHON_CMD=C:\Users\HANJ29\Development\vdev1\Scripts\python.exe"
+if not defined PYTHON_CMD set "PYTHON_CMD=C:\Users\HANJ29\Development\code\ASI_DEV\.venv\Scripts\python.exe"
+if not exist "%PYTHON_CMD%" set "PYTHON_CMD=C:\Users\HANJ29\Development\code\JIUCAI_DEV\.venv\Scripts\python.exe"
 if not exist "%PYTHON_CMD%" set "PYTHON_CMD=python"
 
 set "START_DATE=%~1"
@@ -143,6 +147,16 @@ if exist "%CHECKPOINT_FILE%" (
 
 echo [INFO] traditional event-driven backfill start %DATE% %TIME%>>"%LOG_FILE%"
 echo [INFO] start_date=%START_DATE% end_date=%END_DATE% scope=%SCOPE% methods=%METHODS% cadence_days=%CADENCE_DAYS% business_match_topn=%BUSINESS_MATCH_TOPN% enable_full_refresh=%ENABLE_FULL_REFRESH% template_refresh_months=%TEMPLATE_REFRESH_MONTHS% forced_target_report_type=%TARGET_REPORT_TYPE% forced_target_fiscal_year=%TARGET_FISCAL_YEAR% resume_from=%RESUME_FROM%>>"%LOG_FILE%"
+
+if /I not "%BACKFILL_SKIP_PRECHECK%"=="1" (
+  set "PRECHECK_REPORT=%BASE_DIR%logs\traditional_history_precheck.json"
+  "%PYTHON_CMD%" "smartinvestor_be\manage.py" check_history_backfill_prerequisites --start-date %START_DATE% --end-date %END_DATE% --scope %SCOPE% --report-file "!PRECHECK_REPORT!" >> "%LOG_FILE%" 2>&1
+  set "ERR=!ERRORLEVEL!"
+  if not "!ERR!"=="0" (
+    echo [ERROR] traditional precheck failed code=!ERR! report=!PRECHECK_REPORT!>>"%LOG_FILE%"
+    exit /b !ERR!
+  )
+)
 
 "%PYTHON_CMD%" "tushare_earnings_service\manage.py" export_backfill_event_dates --start-date %START_DATE% --end-date %END_DATE% --scope %SCOPE% --output-file %EVENT_DATES_FILE% --reasons-file %EVENT_REASONS_FILE% --financial-apis disclosure_date,express_vip,income,fina_indicator_vip --financial-date-codes-dir %FINANCIAL_CODES_DIR% --cadence-days %CADENCE_DAYS% >> "%LOG_FILE%" 2>&1
 set "ERR=%ERRORLEVEL%"

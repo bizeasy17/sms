@@ -1,5 +1,6 @@
 from datetime import date, timedelta
 from django.core.management.base import BaseCommand, CommandError
+from stockdata.models import Corporation
 
 from utils.data_utils import (
     fetch_and_store_cyq_data,
@@ -69,6 +70,11 @@ class Command(BaseCommand):
             )
             self.stderr.write(self.style.ERROR(msg))
             return
+
+        if not ts_code and not trade_date and not Corporation.objects.exists():
+            raise CommandError(
+                "No Corporation records found. Run 'manage.py fetchcorp' before downloading history."
+            )
         
         # Default behavior for scheduled daily runs:
         # if no explicit date args are provided, backfill as a range ending today

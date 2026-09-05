@@ -35,6 +35,7 @@ from prediction.models import (
     StockThsMoneyflowDaily,
 )
 from valuation.models import (
+    ExternalValuationSnapshotLatest,
     StockValuationSnapshot,
     StockValuationSnapshotHistory,
     StockValuationSnapshotLatest,
@@ -11778,72 +11779,37 @@ def get_stock_valuation_methods(request, ts_code):
                     asof_date=current_trade_date,
                 )
 
-        if valuation_report_type or express_only or fusion_only:
-            snapshot_qs = StockValuationSnapshot.objects.filter(
-                ts_code=ts_code,
-                market=market,
+        snapshot_qs = ExternalValuationSnapshotLatest.objects.using("valuation").filter(
+            ts_code=ts_code,
+            market=market,
+        )
+        if express_only:
+            snapshot_qs = snapshot_qs.filter(profit_data_source__startswith="express")
+        elif fusion_only:
+            snapshot_qs = snapshot_qs.filter(profit_data_source="express_vip_blended")
+        elif valuation_report_type:
+            snapshot_qs = snapshot_qs.filter(profit_report_type=valuation_report_type)
+        if valuation_report_type and not express_only and not fusion_only and valuation_report_end_date is not None:
+            snapshot_qs = snapshot_qs.filter(profit_report_end_date=valuation_report_end_date)
+        snapshots = list(
+            snapshot_qs.order_by("valuation_variant", "valuation_method", "-latest_trade_date", "-updated_at").values(
+                "valuation_method",
+                "valuation_variant",
+                "valuation_price",
+                "valuation_market_cap",
+                "source",
+                "latest_trade_date",
+                "profit_data_source",
+                "profit_report_end_date",
+                "profit_report_ann_date",
+                "profit_report_type",
+                "industry_level",
+                "industry_code",
+                "industry_name",
+                "compare_group",
+                "match_score",
             )
-            if express_only:
-                snapshot_qs = snapshot_qs.filter(profit_data_source__startswith="express")
-            elif fusion_only:
-                snapshot_qs = snapshot_qs.filter(profit_data_source="express_vip_blended")
-            else:
-                snapshot_qs = snapshot_qs.filter(profit_report_type=valuation_report_type)
-            if not express_only and not fusion_only and valuation_report_end_date is not None:
-                snapshot_qs = snapshot_qs.filter(profit_report_end_date=valuation_report_end_date)
-            snapshot_rows = list(
-                snapshot_qs.order_by("valuation_variant", "valuation_method", "-trade_date", "-updated_at").values(
-                    "valuation_method",
-                    "valuation_variant",
-                    "valuation_price",
-                    "valuation_market_cap",
-                    "source",
-                    "trade_date",
-                    "profit_data_source",
-                    "profit_report_end_date",
-                    "profit_report_ann_date",
-                    "profit_report_type",
-                    "industry_level",
-                    "industry_code",
-                    "industry_name",
-                    "compare_group",
-                    "match_score",
-                )
-            )
-            snapshots = []
-            seen_snapshot_keys = set()
-            for row in snapshot_rows:
-                method = _normalize_valuation_method_name(row.get("valuation_method"))
-                variant = _normalize_valuation_variant(row.get("valuation_variant"), fallback="default")
-                snapshot_key = (variant, method)
-                if not method or snapshot_key in seen_snapshot_keys:
-                    continue
-                seen_snapshot_keys.add(snapshot_key)
-                mapped = dict(row)
-                mapped["latest_trade_date"] = row.get("trade_date")
-                snapshots.append(mapped)
-        else:
-            snapshots = list(
-                StockValuationSnapshotLatest.objects.filter(ts_code=ts_code, market=market)
-                .order_by("valuation_variant", "valuation_method", "-updated_at")
-                .values(
-                    "valuation_method",
-                    "valuation_variant",
-                    "valuation_price",
-                    "valuation_market_cap",
-                    "source",
-                    "latest_trade_date",
-                    "profit_data_source",
-                    "profit_report_end_date",
-                    "profit_report_ann_date",
-                    "profit_report_type",
-                    "industry_level",
-                    "industry_code",
-                    "industry_name",
-                    "compare_group",
-                    "match_score",
-                )
-            )
+        )
 
         method_order = {
             m: idx
@@ -12049,81 +12015,6 @@ def get_stock_valuation_methods(request, ts_code):
         else:
             rows = []
 
-        if not rows and not express_only and not fusion_only:
-            trade_date_arg = None
-            if current_trade_date is not None:
-                trade_date_arg = current_trade_date.strftime("%Y-%m-%d")
-
-            valuation_result = test_valuation(
-                ts_code=ts_code,
-                trade_date=trade_date_arg,
-                forced_report_end_date=valuation_report_end_date,
-                allow_express_adjustment=False,
-                prefer_sw_history_targets=True,
-            )
-            valuation_df = valuation_result.get("valuations")
-            valuation_snapshot = valuation_result.get("snapshot") or {}
-            fallback_report_end_source = (
-                valuation_snapshot.get("profit_report_end_date")
-                or valuation_snapshot.get("end_date")
-                or valuation_report_end_date
-            )
-            fallback_report_end_date, fallback_report_ann_date = _normalize_report_dates(
-                fallback_report_end_source,
-                valuation_snapshot.get("profit_report_ann_date"),
-            )
-            fallback_profit_report_type = valuation_snapshot.get("profit_report_type") or valuation_report_type
-            fallback_profit_data_source = valuation_snapshot.get("profit_data_source")
-            fallback_methods = ["scarcity_overlay", "sw_history", "pe", "pb", "ps", "peg", "fcff_dcf", "ddm"]
-            for method in fallback_methods:
-                method_rows = _extract_method_valuation_rows(valuation_df, method)
-                if not method_rows:
-                    continue
-                selected = _select_valuation_candidate(method_rows, "baseline", asof_date=current_trade_date)
-                valuation_price = selected.get("implied_price")
-                if valuation_price is None:
-                    continue
-                status, gap_pct = _classify_valuation(current_price, valuation_price, band_pct)
-                rows.append(
-                    {
-                        "valuation_method": _normalize_valuation_method_name(selected.get("method") or method),
-                        "valuation_variant": "default",
-                        "valuation_price": round(float(valuation_price), 4),
-                        "valuation_market_cap": round(float(selected.get("equity_value")), 2)
-                        if selected.get("equity_value") is not None
-                        else None,
-                        "valuation_status": status,
-                        "valuation_gap_pct": round(gap_pct * 100, 2) if gap_pct is not None else None,
-                        "source": "live_compute",
-                        "latest_trade_date": current_trade_date,
-                        "profit_data_source": fallback_profit_data_source,
-                        "profit_report_end_date": fallback_report_end_date,
-                        "profit_report_ann_date": fallback_report_ann_date,
-                        "profit_report_type": fallback_profit_report_type,
-                        "industry_level": None,
-                        "industry_code": None,
-                        "industry_name": None,
-                        "compare_group": None,
-                        "match_score": None,
-                    }
-                )
-
-            rows.sort(key=lambda item: method_order.get(item.get("valuation_method"), 999))
-            data_by_variant = {"default": rows}
-            valuation_variants = [
-                {
-                    "valuation_variant": "default",
-                    "label": "Θ╗ÿΦ«ñΣ╝░σÇ╝",
-                    "industry_level": None,
-                    "industry_code": None,
-                    "industry_name": None,
-                    "compare_group": None,
-                    "match_score": None,
-                    "method_count": len(rows),
-                }
-            ]
-            active_variant = "default"
-
         rows.sort(key=lambda item: method_order.get(item.get("valuation_method"), 999))
 
         for variant, variant_rows in data_by_variant.items():
@@ -12137,55 +12028,7 @@ def get_stock_valuation_methods(request, ts_code):
             )
         rows = data_by_variant.get(active_variant, rows)
 
-        has_scarcity_overlay = any(
-            _normalize_valuation_method_name(item.get("valuation_method")) == "scarcity_overlay"
-            for item in rows
-        )
-        if not has_scarcity_overlay and not valuation_report_type and not fusion_only:
-            trade_date_arg = None
-            if current_trade_date is not None:
-                trade_date_arg = current_trade_date.strftime("%Y-%m-%d")
-            try:
-                scarcity_result = test_valuation(
-                    ts_code=ts_code,
-                    trade_date=trade_date_arg,
-                )
-                scarcity_df = scarcity_result.get("valuations")
-                scarcity_rows = _extract_method_valuation_rows(scarcity_df, "scarcity_overlay")
-                selected_scarcity = _select_valuation_candidate(scarcity_rows, "baseline", asof_date=current_trade_date)
-                scarcity_price = selected_scarcity.get("implied_price") if selected_scarcity else None
-                if scarcity_price is not None:
-                    status, gap_pct = _classify_valuation(current_price, scarcity_price, band_pct)
-                    scarcity_row = {
-                        "valuation_method": "scarcity_overlay",
-                        "valuation_variant": active_variant,
-                        "valuation_price": round(float(scarcity_price), 4),
-                        "valuation_market_cap": round(float(selected_scarcity.get("equity_value")), 2)
-                        if selected_scarcity.get("equity_value") is not None
-                        else None,
-                        "valuation_status": status,
-                        "valuation_gap_pct": round(gap_pct * 100, 2) if gap_pct is not None else None,
-                        "source": "live_compute",
-                        "latest_trade_date": current_trade_date,
-                        "industry_level": None,
-                        "industry_code": None,
-                        "industry_name": None,
-                        "compare_group": None,
-                        "match_score": None,
-                    }
-                    rows.append(scarcity_row)
-                    rows.sort(key=lambda item: method_order.get(item.get("valuation_method"), 999))
-                    if active_variant in data_by_variant:
-                        updated_variant_rows = list(data_by_variant.get(active_variant) or [])
-                        updated_variant_rows.append(scarcity_row)
-                        updated_variant_rows.sort(
-                            key=lambda item: method_order.get(item.get("valuation_method"), 999)
-                        )
-                        data_by_variant[active_variant] = updated_variant_rows
-            except Exception:
-                pass
-
-        market_style_allow_fallback_inference = not (valuation_report_type or express_only or fusion_only or valuation_report_end_date is not None)
+        market_style_allow_fallback_inference = False
         market_style_snapshot = None
         if market_style_allow_fallback_inference and current_trade_date is not None:
             try:
@@ -12227,17 +12070,7 @@ def get_stock_valuation_methods(request, ts_code):
             )
             market_style_by_variant[variant] = market_style_payload
             market_style_by_variant_normalized[variant] = market_style_payload_normalized
-            persisted_summary_payload = None
-            if LIVE_VALUATION_SUMMARY_USE_PERSISTED_FIRST:
-                persisted_summary_payload = _load_persisted_variant_summary_payload(
-                    ts_code=ts_code,
-                    market=market,
-                    valuation_variant=variant,
-                    trade_date=anchor_row.get("latest_trade_date") or current_trade_date,
-                    profit_report_type=anchor_row.get("profit_report_type") or valuation_report_type,
-                    profit_report_end_date=anchor_row.get("profit_report_end_date"),
-                )
-            base_summary_payload = persisted_summary_payload or _build_valuation_summary_payload(
+            base_summary_payload = _build_valuation_summary_payload(
                 current_price,
                 variant_rows,
                 band_pct,

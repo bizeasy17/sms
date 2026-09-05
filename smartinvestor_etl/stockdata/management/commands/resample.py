@@ -9,6 +9,7 @@ from stockdata.models import StockTradingHistory
 from datetime import timedelta
 from datetime import datetime
 from stockdata.models import StockFundamentalHistory
+from stockdata.models import StockCostHistory
 
 
 class Command(BaseCommand):
@@ -255,6 +256,85 @@ class Command(BaseCommand):
                     self.stdout.write(
                         self.style.SUCCESS(
                             f"Resampled {corp.ts_code} stock fundamental data for {freq}."
+                        )
+                    )
+            elif dtype == "COST":
+                cost_ok = False
+                try:
+                    latest_cost = (
+                        StockCostHistory.objects.filter(
+                            ts_code=corp.ts_code, corporation=corp, freq=freq[0]
+                        )
+                        .order_by("-trade_date")
+                        .first()
+                    )
+                    start_date = (
+                        latest_cost.trade_date + timedelta(days=1)
+                        if latest_cost
+                        else corp.list_date
+                    )
+                    cost_qs = StockCostHistory.objects.filter(
+                        ts_code=corp.ts_code,
+                        corporation=corp,
+                        trade_date__gte=start_date,
+                        freq="D",
+                    ).order_by("trade_date")
+                    cost_df = pd.DataFrame(list(cost_qs.values()))
+                    if cost_df.empty:
+                        continue
+                    cost_df["trade_date"] = pd.to_datetime(cost_df["trade_date"])
+                    resampled = (
+                        cost_df.set_index("trade_date")
+                        .resample(freq)
+                        .last()
+                        .dropna(subset=["ts_code"])
+                        .reset_index()
+                    )
+                    for _, row in resampled.iterrows():
+                        row_trade_date = pd.to_datetime(row["trade_date"])
+                        if (
+                            freq == "ME"
+                            and month is None
+                            and not force
+                            and month_end_cutoff_date is not None
+                            and row_trade_date.date() > month_end_cutoff_date
+                        ):
+                            continue
+                        if month is not None and row_trade_date.month not in month:
+                            continue
+                        clean_row = {
+                            key: (None if pd.isna(row[key]) else row[key])
+                            for key in row.index
+                            if key
+                            not in [
+                                "id",
+                                "trade_date",
+                                "ts_code",
+                                "freq",
+                                "corporation",
+                                "corporation_id",
+                                "is_pulled_by_client",
+                            ]
+                        }
+                        StockCostHistory.objects.update_or_create(
+                            corporation=corp,
+                            ts_code=corp.ts_code,
+                            freq=freq[0],
+                            trade_date=row_trade_date.date(),
+                            is_pulled_by_client=False,
+                            defaults=clean_row,
+                        )
+                    cost_ok = True
+                except Exception as e:
+                    self.stdout.write(
+                        self.style.ERROR(
+                            f"Error resampling {corp.ts_code} stock cost data for {freq}: {e}"
+                        )
+                    )
+                if cost_ok:
+                    self.stdout.write(
+                        self.style.SUCCESS(
+                            f"Resampled {corp.ts_code} stock cost data for {freq}."
                         )
                     )
         self.stdout.write(self.style.SUCCESS("Resampling complete for all stocks."))

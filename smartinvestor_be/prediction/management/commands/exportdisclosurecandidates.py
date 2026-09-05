@@ -10,7 +10,7 @@ from prediction.management.commands.prefillvaluationsnapshot import (
     _parse_date_like,
     _resolve_latest_disclosure_signal,
 )
-from valuation.models import StockValuationSnapshot
+from valuation.models import ExternalValuationSnapshot
 from valuation.services.valuation_engine import get_stock_valuation_snapshot
 from datastore.models import StockTradingHistory
 from users.models import UserWatchlist
@@ -140,7 +140,7 @@ class Command(BaseCommand):
             "remote_probe_no_signal": 0,
         }
 
-        snapshot_rows = StockValuationSnapshot.objects.filter(
+        snapshot_rows = ExternalValuationSnapshot.objects.using("valuation").filter(
             ts_code__in=sliced_codes,
             trade_date=trade_date,
             market=market,
@@ -148,7 +148,7 @@ class Command(BaseCommand):
         ).values("ts_code", "valuation_method", "valuation_market_cap", "updated_at")
 
         latest_snapshot_rows = (
-            StockValuationSnapshot.objects.filter(
+            ExternalValuationSnapshot.objects.using("valuation").filter(
                 ts_code__in=sliced_codes,
                 market=market,
                 valuation_method__in=methods,

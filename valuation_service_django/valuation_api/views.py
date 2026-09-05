@@ -706,7 +706,6 @@ def _build_valuation_payload(ts_code, market="CN", freq="D", band_pct=0.1):
 
     rows = []
     method_map_for_summary = {}
-
     if bool(getattr(settings, "ENABLE_LIVE_VALUATION_FALLBACK", True)):
         trade_date_arg = current_trade_date.strftime("%Y-%m-%d") if current_trade_date is not None else None
         try:
@@ -717,8 +716,7 @@ def _build_valuation_payload(ts_code, market="CN", freq="D", band_pct=0.1):
             valuation_df = None
             weighted_payload = {}
 
-        fallback_methods = ["pe", "pb", "ps", "peg", "ev_ebitda", "fcff_dcf", "ddm"]
-        fallback_methods = ["sw_history"] + fallback_methods
+        fallback_methods = ["sw_history", "pe", "pb", "ps", "peg", "ev_ebitda", "fcff_dcf", "ddm"]
         for method in fallback_methods:
             method_rows = _extract_method_valuation_rows(valuation_df, method)
             if not method_rows:
@@ -729,23 +727,9 @@ def _build_valuation_payload(ts_code, market="CN", freq="D", band_pct=0.1):
             valuation_price = selected.get("implied_price")
             if valuation_price is None:
                 continue
-
             status, gap_pct = _classify_valuation(current_price, valuation_price, band_pct)
             normalized_method = _normalize_method_name(selected.get("method") or method)
-            rows.append(
-                {
-                    "valuation_method": normalized_method,
-                    "valuation_price": round(float(valuation_price), 4),
-                    "valuation_market_cap": round(float(selected.get("equity_value")), 2)
-                    if selected.get("equity_value") is not None
-                    else None,
-                    "valuation_status": status,
-                    "valuation_gap_pct": round(gap_pct * 100, 2) if gap_pct is not None else None,
-                    "valuation_weight": selected.get("method_weight"),
-                    "source": "live_compute",
-                    "latest_trade_date": current_trade_date,
-                }
-            )
+            rows.append({"valuation_method": normalized_method, "valuation_price": round(float(valuation_price), 4), "valuation_market_cap": round(float(selected.get("equity_value")), 2) if selected.get("equity_value") is not None else None, "valuation_status": status, "valuation_gap_pct": round(gap_pct * 100, 2) if gap_pct is not None else None, "valuation_weight": selected.get("method_weight"), "source": "live_compute", "latest_trade_date": current_trade_date})
             method_map_for_summary[normalized_method] = {"valuation_price": float(valuation_price)}
     else:
         weighted_payload = {}

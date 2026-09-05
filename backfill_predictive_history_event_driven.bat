@@ -1,11 +1,13 @@
 @echo off
 setlocal EnableExtensions EnableDelayedExpansion
+set "DJANGO_SETTINGS_MODULE="
+set "PYTHONIOENCODING=utf-8"
 
 set "BASE_DIR=%~dp0"
 cd /d "%BASE_DIR%"
 
-if not defined PYTHON_CMD set "PYTHON_CMD=C:\Users\HANJ29\Development\code\JIUCAI_DEV\.venv\Scripts\python.exe"
-if not exist "%PYTHON_CMD%" set "PYTHON_CMD=C:\Users\HANJ29\Development\vdev1\Scripts\python.exe"
+if not defined PYTHON_CMD set "PYTHON_CMD=C:\Users\HANJ29\Development\code\ASI_DEV\.venv\Scripts\python.exe"
+if not exist "%PYTHON_CMD%" set "PYTHON_CMD=C:\Users\HANJ29\Development\code\JIUCAI_DEV\.venv\Scripts\python.exe"
 if not exist "%PYTHON_CMD%" set "PYTHON_CMD=python"
 
 set "START_DATE=%~1"
@@ -103,6 +105,16 @@ if "%PLAN_MODE%"=="1" goto :run_plan
 echo [INFO] predictive event-driven backfill start %DATE% %TIME%>>"%LOG_FILE%"
 echo [INFO] start_date=%START_DATE% end_date=%END_DATE% scope=%SCOPE% report_types=%REPORT_TYPES% store_mode=%STORE_MODE% enable_regime_switch=%ENABLE_REGIME_SWITCH% resume_from=%RESUME_FROM%>>"%LOG_FILE%"
 echo [INFO] final_parsed_args start_date=%START_DATE% end_date=%END_DATE% scope=%SCOPE% report_types=%REPORT_TYPES% store_mode=%STORE_MODE% enable_regime_switch=%ENABLE_REGIME_SWITCH% >>"%LOG_FILE%"
+
+if /I not "%BACKFILL_SKIP_PRECHECK%"=="1" (
+  set "PRECHECK_REPORT=%BASE_DIR%logs\predictive_history_precheck%RUN_TAG%.json"
+  "%PYTHON_CMD%" "tushare_earnings_service\manage.py" check_history_backfill_prerequisites --start-date %START_DATE% --end-date %END_DATE% --scope %SCOPE% --report-file "!PRECHECK_REPORT!" >> "%LOG_FILE%" 2>&1
+  set "ERR=!ERRORLEVEL!"
+  if not "!ERR!"=="0" (
+    echo [ERROR] predictive precheck failed code=!ERR! report=!PRECHECK_REPORT!>>"%LOG_FILE%"
+    exit /b !ERR!
+  )
+)
 
 "%PYTHON_CMD%" "tushare_earnings_service\manage.py" export_backfill_event_dates --start-date %START_DATE% --end-date %END_DATE% --scope %SCOPE% --output-file %EVENT_DATES_FILE% --reasons-file %EVENT_REASONS_FILE% --financial-apis disclosure_date,express_vip,income,fina_indicator_vip --financial-date-codes-dir %FINANCIAL_CODES_DIR% --full-refresh-dates-file %FULL_REFRESH_DATES_FILE% %REGIME_FLAG% >> "%LOG_FILE%" 2>&1
 set "ERR=%ERRORLEVEL%"
