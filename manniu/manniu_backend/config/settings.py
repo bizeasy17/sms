@@ -39,6 +39,13 @@ INSTALLED_APPS = [
     'django.contrib.messages',
     'django.contrib.staticfiles',
     'core',
+    'traditional_valuation',
+    'predictive_valuation',
+    'stock_selection',
+    'backtest_engine',
+    'financials',
+    'market_data',
+    'indices',
 ]
 
 MIDDLEWARE = [
