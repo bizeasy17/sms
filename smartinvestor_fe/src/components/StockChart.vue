@@ -452,7 +452,7 @@ const trendChartsLoading = ref(false)
 const trendInitialLoadDone = ref(false)
 const TREND_ZOOM_STORAGE_KEY = 'smartinvestor_stockchart_trend_zoom_v1'
 const trendZoomRange = ref({ start: 0, end: 100 })
-const MARKET_SENTIMENT_ENGINE_VERSION = 'daily_v1_20260828'
+const STOCK_SENTIMENT_ENGINE_VERSION = 'stock_daily_v2_20260830'
 const marketSentimentCache = new Map()
 const marketSentimentPending = new Map()
 let embedSwitchRequestToken = 0
@@ -518,7 +518,7 @@ function resolveMarketSentimentColor(value) {
 }
 
 function getMarketSentimentCacheKey(tsCode, period) {
-    return ['market_sentiment', 'CN', 'STOCK', String(tsCode || '').trim().toUpperCase(), String(period || ''), MARKET_SENTIMENT_ENGINE_VERSION].join('|')
+    return ['market_sentiment', 'CN', 'STOCK', String(tsCode || '').trim().toUpperCase(), String(period || ''), STOCK_SENTIMENT_ENGINE_VERSION].join('|')
 }
 
 async function fetchMarketSentimentHistory(tsCode, period = 60) {
@@ -543,7 +543,7 @@ async function fetchMarketSentimentHistory(tsCode, period = 60) {
             market: 'CN',
             scope: 'STOCK',
             scope_code: normalizedTsCode,
-            engine_version: MARKET_SENTIMENT_ENGINE_VERSION,
+            engine_version: STOCK_SENTIMENT_ENGINE_VERSION,
             limit,
         },
     }).then((response) => {
