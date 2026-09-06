@@ -2,7 +2,7 @@
 
 ## Status And Ownership
 
-This document is the implementation design for the registered `manniu_backend.market_data` Django application. The first schema layer is implemented and migrated to PostgreSQL: its Django models cover securities, geography/industry dimensions, company profiles, daily trading history/latest snapshots, stock fundamental history/latest snapshots, stock cost history/latest snapshots, index fundamental history/latest snapshots, and ingestion run/watermark control. Public APIs, Tushare adapters, synchronization commands, actual PostgreSQL partition DDL, and market-data ingestion writes are not yet implemented.
+This document is the implementation design for the registered `manniu_backend.market_data` Django application. The first schema layer is implemented and migrated to PostgreSQL: its Django models cover securities, geography/industry dimensions, company profiles, daily trading history/latest snapshots, stock fundamental history/latest snapshots, stock cost history/latest snapshots, index fundamental history/latest snapshots, and ingestion run/watermark control. An initial `sync_market_data` CLI is implemented for master/company/daily datasets; paging/retry/resume, complete adjustment processing, PostgreSQL partition DDL, weekly/monthly derivation, public APIs, and production ingestion runs remain pending.
 
 `market_data` owns end-of-day market-data ingestion, PostgreSQL persistence, reconciliation, and read-optimized query services for stocks and indices. The `indices` application consumes index data for index-domain analysis and does not own index synchronization or tables.
 
@@ -14,7 +14,7 @@ The module supports analysis and decision support only. It must never place or a
 | --- | --- | --- | --- |
 | Security master | Stocks and indices | `stock_basic`, `index_basic` | On demand and daily delta |
 | Company profile | Stocks | `stock_company` | On demand and daily delta |
-| Trading bars | Stocks | `daily`, `adj_factor` | Daily, derived weekly/monthly |
+| Trading bars and adjusted prices | Stocks | `stk_factor` | Daily, derived weekly/monthly |
 | Daily fundamentals | Stocks | `daily_basic` | Daily, derived weekly/monthly |
 | Cost distribution | Stocks | `cyq_perf` | Daily, derived weekly/monthly |
 | Trading bars | Indices | `index_daily` | Daily, derived weekly/monthly |
@@ -104,13 +104,25 @@ Daily trading history is the source of record and is stored separately from curr
 
 The daily-history unique key is `(security_id, trade_date)`. `volume >= 0` and `amount >= 0` when present. Prices and adjustment factor use `NUMERIC(20, 6)` or an approved equivalent; `pct_change` uses `NUMERIC(12, 6)` and represents percentage points.
 
-For stocks, daily raw bars come from `daily` and are joined to `adj_factor` by `(ts_code, trade_date)`. If a valid factor is available, qfq prices use $price \times factor / latest\_factor$ and hfq prices use $price \times factor / first\_factor$ within the applicable adjustment series. Adjusted changes and percentage changes are recalculated from adjusted close and adjusted pre-close. Missing factors leave adjusted fields null and create a quality record; raw values remain usable.
+For stocks, `stk_factor` is the authoritative Tushare interface for raw daily bars and adjusted prices. It must provide raw OHLC/pre-close values, `adj_factor`, and the corresponding qfq/hfq values; the adapter maps those directly to the raw and adjustment columns in `MarketBarDailyHistory`. `daily` and `adj_factor` are not a substitute for this first implementation, because an ordinary daily refresh can otherwise leave the qfq/hfq columns null. The adapter validates the required `stk_factor` columns before each write and records a quality failure rather than silently publishing incomplete adjusted data.
 
 For indices, `index_daily` values are raw provider values. Adjustment fields remain null unless a separately approved index factor source is added; raw index prices must not be copied into qfq/hfq fields and labeled as adjusted.
 
 `MarketBarWeeklyHistory` and `MarketBarMonthlyHistory` are independent physical tables, not `frequency` rows mixed into the daily partitioned table. They have the same business columns and unique key `(security_id, trade_date)`, where `trade_date` is the completed period end date. This keeps daily indexes compact and makes 1Y/3Y lower-frequency chart queries predictable.
 
 `MarketBarLatest` has at most one row per `(security_id, frequency)`, where frequency is `D`, `W`, or `M`. It stores the latest completed bar's trade date, selected OHLCV/raw and adjusted values, source revision timestamp, and local sync timestamp. It is a denormalized read model, not a replacement for historical data.
+
+### Corporate Actions And Adjustment Rebuilds
+
+Stock qfq/hfq history is mutable when a new ex-dividend or ex-rights event becomes effective. A routine daily `stk_factor` refresh only obtains current-period records; it must not be assumed to rewrite previously stored adjusted prices. The planned `dividend` event handler addresses this explicitly:
+
+1. After the stock daily-data run, request Tushare `dividend` for a bounded lookback window with `ts_code`, announcement, record, ex-date, payout, and share-change fields.
+2. Normalize each provider event into a future `CorporateActionEvent` table using a unique provider event identity or a deterministic natural key comprising security, ex-date, and action attributes.
+3. Detect a new event or a material revision whose ex-date is within the synchronized history of the affected stock.
+4. Enqueue one idempotent `rebuild-adjusted-history` job for that security. The job re-requests the complete retained history window from `stk_factor`, upserts every daily historical row's raw and qfq/hfq fields, then recalculates the daily latest snapshot.
+5. Commit the stock-specific rebuild atomically, invalidate only that security's EOD chart/fundamental cache keys, and record the source event and rebuilt coverage in `IngestionRun`/`IngestionWatermark`.
+
+The event handler must not rewrite other securities, invoke real-time trading behavior, or advance a normal stock-bars watermark until the rebuild succeeds. A failed rebuild preserves its event as pending/retryable and keeps existing history visible with a data-quality warning.
 
 ### Fundamentals And Cost Distribution
 
@@ -181,8 +193,8 @@ Future repository APIs must enforce bounded ranges: chart reads require a securi
 
 Every adapter response is checked for required columns before transformation:
 
-- `daily` and `index_daily`: `ts_code`, `trade_date`, `open`, `high`, `low`, `close`.
-- `adj_factor`: `ts_code`, `trade_date`, `adj_factor`.
+- `stk_factor`: `ts_code`, `trade_date`, raw OHLC/pre-close/change/percentage/volume/amount fields, and qfq/hfq OHLC/pre-close fields.
+- `index_daily`: `ts_code`, `trade_date`, `open`, `high`, `low`, `close`.
 - `daily_basic`, `cyq_perf`, and `index_dailybasic`: `ts_code`, `trade_date` plus the requested metric fields.
 - `stock_basic` and `index_basic`: `ts_code`, name, market/exchange, and lifecycle fields where available.
 - `stock_company`: `ts_code`, `province`, and `city` are nullable but must be distinguishable from malformed payloads.
@@ -216,7 +228,7 @@ Incomplete current weeks and months are not marked complete. The resample waterm
 
 ### CLI Contract
 
-The planned root command is:
+The detailed command contract, source projections, dataset ordering, and recovery behavior are maintained in [Market Data Sync CLI Design](market-data-sync-cli-design.md). The following is the root command summary:
 
 ```text
 python manage.py sync_market_data \
@@ -224,7 +236,7 @@ python manage.py sync_market_data \
   --mode backfill|daily \
   --frequency D|W|M \
   --scope all|ts-code|index-universe \
-  [--ts-codes CODE[,CODE...]] [--start-date YYYYMMDD] [--end-date YYYYMMDD] \
+  [--ts-codes CODE[,CODE...]] [--start-date YYYYMMDD|--history-years N] [--end-date YYYYMMDD] \
   [--resume-run RUN_ID] [--overlap-days N] [--dry-run]
 ```
 
@@ -235,7 +247,7 @@ Rules:
 - `stock-fundamentals`, `stock-cost`, and `index-fundamentals` are daily provider datasets; weekly/monthly values are only created when a documented derived table exists.
 - `index-bars` supports daily provider data and derived weekly/monthly records.
 - `--mode daily` requires no historical date range and defaults to the last completed trading date plus overlap.
-- `--mode backfill` requires an explicit start date or a persisted watermark; it never defaults to an uncontrolled full-history request.
+- A first `--mode backfill` defaults to `--history-years 5` when neither a start date nor resumable watermark is available; this bounds source calls and disk use. An explicit start date is required for an exceptional range outside the configured five-year window and cannot be combined with `--history-years`.
 - `--resume-run` resumes unfinished chunks from the persisted run record; it is not a positional-code shortcut.
 - `--dry-run` validates source data, reports planned chunks, and writes no domain or control-plane rows.
 
@@ -277,7 +289,8 @@ Initial API design constraints are:
 
 ### Core Flow
 
-- A stock daily bar joined with a valid adjustment factor persists raw and calculated qfq/hfq values under its `(security, trade_date, D)` key.
+- A valid `stk_factor` stock row persists raw and provider qfq/hfq values under its `(security, trade_date, D)` key.
+- A newly detected or revised `dividend` event queues one idempotent full retained-history `stk_factor` rebuild for the affected stock and updates historical adjusted prices.
 - An index daily bar persists raw values while adjusted fields remain null without an approved index factor source.
 - An `index_dailybasic` record persists all seven confirmed metrics under `(security, trade_date)`.
 - A daily overlap run upserts a revised provider record and advances the watermark only after its chunk commits.
@@ -294,6 +307,7 @@ Initial API design constraints are:
 - A city with the same name in two provinces resolves through `(province, city)` rather than a global city-name lookup.
 - An unmapped province remains without a region and appears in the mapping-quality report.
 - A non-trading day does not advance a daily watermark without trading-calendar confirmation.
+- A duplicate dividend event does not queue a second concurrent rebuild; a revised event queues exactly one replacement rebuild.
 - A resample task does not publish an incomplete current week or month.
 - A 3Y K-line request resolves an explicit lower trade-date bound and its query plan prunes unrelated daily-history partitions.
 - A fundamental-history request for a K-line window uses one bounded batched query and aligns records by trade date without issuing per-bar queries.
@@ -304,6 +318,7 @@ Initial API design constraints are:
 - A rate-limited source retries within its budget, then records failure and returns nonzero when exhausted.
 - A failed chunk rolls back its domain rows and does not mark partial coverage as complete.
 - A failed transaction leaves the historical row, latest snapshot, cache-invalidation marker, and watermark at their pre-run state.
+- A failed dividend-triggered rebuild leaves its event pending, does not advance the related adjusted-history watermark, and does not affect unrelated securities.
 - An unsupported K-line window, a window exceeding 756 daily bars, or an unbounded field projection is rejected before querying historical data.
 - An unauthorized future API request is rejected before any `market_data` query service is called.
 - A query without explicit bounded range or page limit is rejected by the future API layer.
@@ -313,7 +328,8 @@ Initial API design constraints are:
 1. Completed: implement Django models and migrations for security, dimensions, company profiles, daily raw trading records, latest snapshots, and ingestion control plane.
 2. Create PostgreSQL monthly partition parent tables and forward partitions; run migration and database-index verification on the target PostgreSQL instance.
 3. Completed: implement and migrate `StockDailyFundamentalHistory/Latest`, `StockCostDistributionHistory/Latest`, and `IndexDailyFundamentalHistory/Latest` using the field, raw-unit, precision, history/latest, and monthly partition contracts in this document.
-4. Implement adapters, validation, upsert repositories, and operator-only CLI with unit tests using mocked Tushare payloads.
-5. Implement backfill dry-run, persisted watermarks, daily overlap refresh, reconciliation reports, and failure exit behavior.
-6. Implement weekly/monthly derivation and its source-coverage checks.
-7. Confirm external API and permission contracts, then implement read endpoints through `api_gateway` and `access_control`.
+4. Replace the initial stock-bar `daily` adapter with the validated `stk_factor` adapter and tests for direct qfq/hfq persistence.
+5. Implement `dividend` event persistence, event-change detection, stock-specific full adjusted-history rebuild, retries, and regression tests.
+6. Implement backfill dry-run, persisted watermarks, daily overlap refresh, reconciliation reports, and failure exit behavior.
+7. Implement weekly/monthly derivation and its source-coverage checks.
+8. Confirm external API and permission contracts, then implement read endpoints through `api_gateway` and `access_control`.

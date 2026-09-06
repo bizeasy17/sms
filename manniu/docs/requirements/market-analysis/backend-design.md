@@ -13,8 +13,13 @@
 | `financials` | Financial-data capabilities |
 | `market_data` | Market-data capabilities |
 | `indices` | Index-data capabilities |
+| `market_sentiment` | Market and stock end-of-day sentiment indicators |
 
 The detailed, implementation-ready design for `market_data` is maintained in [Market Data Backend Design](market-data-backend-design.md). Its data model, CLI, API, and PostgreSQL contracts are planned and not yet implemented.
+
+The detailed financial-data and CLI designs for the registered `financials` app are maintained in [Financials Backend Design](financials-backend-design.md) and [Financials Sync CLI Design](financials-sync-cli-design.md). The app owns financial-statement ingestion and financial read models; it consumes `market_data.Security` and does not own market trading history.
+
+`market_sentiment` is a planned Django application and is not yet registered or implemented. Its market-level and stock-level daily indicator design is maintained in [Market Sentiment Backend Design](market-sentiment-backend-design.md). It consumes PostgreSQL data from `market_data` and never owns Tushare ingestion, trading history, or automated trading execution.
 
 ## Backend Architecture
 

@@ -17,12 +17,15 @@ class Security(models.Model):
     list_date = models.DateField(null=True, blank=True)
     delist_date = models.DateField(null=True, blank=True)
     is_hs = models.CharField(max_length=8, blank=True)
+    area = models.ForeignKey('Province', null=True, blank=True, on_delete=models.PROTECT)
+    industry = models.ForeignKey('Industry', null=True, blank=True, on_delete=models.PROTECT)
     source_updated_at = models.DateTimeField(null=True, blank=True)
     synced_at = models.DateTimeField(auto_now=True)
 
     class Meta:
         indexes = [
             models.Index(fields=['asset_type', 'list_status']),
+            models.Index(fields=['area', 'industry', 'list_status']),
         ]
 
 
