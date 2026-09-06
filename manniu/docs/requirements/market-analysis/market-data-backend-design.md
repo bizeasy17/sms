@@ -2,7 +2,7 @@
 
 ## Status And Ownership
 
-This document is the implementation design for the registered `manniu_backend.market_data` Django application. The first schema layer is implemented: its Django models cover securities, geography/industry dimensions, company profiles, daily trading history/latest snapshots, and ingestion run/watermark control. Public APIs, Tushare adapters, synchronization commands, actual PostgreSQL partition DDL, and database writes are not yet implemented.
+This document is the implementation design for the registered `manniu_backend.market_data` Django application. The first schema layer is implemented and migrated to PostgreSQL: its Django models cover securities, geography/industry dimensions, company profiles, daily trading history/latest snapshots, stock fundamental history/latest snapshots, stock cost history/latest snapshots, index fundamental history/latest snapshots, and ingestion run/watermark control. Public APIs, Tushare adapters, synchronization commands, actual PostgreSQL partition DDL, and market-data ingestion writes are not yet implemented.
 
 `market_data` owns end-of-day market-data ingestion, PostgreSQL persistence, reconciliation, and read-optimized query services for stocks and indices. The `indices` application consumes index data for index-domain analysis and does not own index synchronization or tables.
 
@@ -114,13 +114,23 @@ For indices, `index_daily` values are raw provider values. Adjustment fields rem
 
 ### Fundamentals And Cost Distribution
 
-`StockDailyFundamental` has unique key `(security_id, trade_date)` and stores `daily_basic` fields: turnover rates, volume ratio, PE/PB/PS, dividend yield, share counts, and market-capitalization measures. Units and precision are documented next to each implemented field; the adapter must not silently convert provider units.
+`StockDailyFundamentalHistory` stores `daily_basic` with unique key `(security_id, trade_date)`. Its `StockDailyFundamentalLatest` counterpart has unique `security_id`. Both use the identical business field set below, plus `trade_date`, `source_updated_at`, and `synced_at`.
 
-`StockCostDistribution` has unique key `(security_id, trade_date)` and stores `cyq_perf` fields: historical high/low, 5/15/50/85/95 cost quantiles, weighted average cost, and winning rate.
+| Field group | Fields and storage contract |
+| --- | --- |
+| Price | `close NUMERIC(18,4)`, Tushare unit: yuan per share |
+| Rates | `turnover_rate`, `turnover_rate_f`, `dv_ratio`, `dv_ttm` as `NUMERIC(12,4)`, Tushare unit: percentage points; `volume_ratio NUMERIC(14,6)`, dimensionless |
+| Valuation | `pe`, `pe_ttm`, `pb`, `ps`, `ps_ttm` as signed `NUMERIC(18,6)`, unit: ratio/multiple |
+| Share counts | `total_share`, `float_share`, `free_share` as `NUMERIC(22,4)`, Tushare raw unit: ten thousand shares |
+| Market capitalization | `total_mv`, `circ_mv` as `NUMERIC(24,4)`, Tushare raw unit: ten thousand yuan |
 
-`IndexDailyFundamental` has unique key `(security_id, trade_date)` and stores these seven `index_dailybasic` values: `pe`, `pe_ttm`, `pb`, `turnover_rate`, `turnover_rate_f`, `total_mv`, and `float_mv`. It is valid only for `Security.asset_type = 'INDEX'`.
+The first implementation preserves these Tushare raw units. It does not silently convert share counts to shares or market capitalization to yuan; any future normalized columns must have explicit unit-bearing names and a separate approved migration.
 
-`StockDailyFundamentalLatest`, `StockCostDistributionLatest`, and `IndexDailyFundamentalLatest` each have at most one row per `security_id`. They retain the complete frontend field set for the most recent successful source date, plus `trade_date`, `source_updated_at`, and `synced_at`. They are updated only when an incoming record is newer than the current snapshot date, or has the same date with a newer source revision. Historical backfills for older dates must not overwrite latest snapshots.
+`StockCostDistributionHistory` stores `cyq_perf` with unique key `(security_id, trade_date)`. Its `StockCostDistributionLatest` counterpart has unique `security_id`. Both store `his_low`, `his_high`, `cost_5pct`, `cost_15pct`, `cost_50pct`, `cost_85pct`, `cost_95pct`, and `weight_avg` as `NUMERIC(18,4)` in yuan per share, plus `winner_rate NUMERIC(12,4)` in percentage points and standard source/local audit fields.
+
+`IndexDailyFundamentalHistory` has unique key `(security_id, trade_date)` and an `IndexDailyFundamentalLatest` counterpart with unique `security_id`. Both store these seven `index_dailybasic` values: `pe`, `pe_ttm`, `pb` as signed `NUMERIC(18,6)`; `turnover_rate`, `turnover_rate_f` as `NUMERIC(12,4)` percentage points; and `total_mv`, `float_mv` as `NUMERIC(24,4)` in Tushare raw ten thousand yuan. They are valid only for `Security.asset_type = 'INDEX'`.
+
+All three latest tables are updated only when an incoming record is newer than the stored snapshot date, or has the same date with a newer source revision. Historical backfills for older dates must not overwrite latest snapshots.
 
 ### Ingestion Control Plane
 
@@ -302,7 +312,7 @@ Initial API design constraints are:
 
 1. Completed: implement Django models and migrations for security, dimensions, company profiles, daily raw trading records, latest snapshots, and ingestion control plane.
 2. Create PostgreSQL monthly partition parent tables and forward partitions; run migration and database-index verification on the target PostgreSQL instance.
-3. Confirm the remaining stock fundamental/cost field types and units, then implement their history/latest models and migrations.
+3. Completed: implement and migrate `StockDailyFundamentalHistory/Latest`, `StockCostDistributionHistory/Latest`, and `IndexDailyFundamentalHistory/Latest` using the field, raw-unit, precision, history/latest, and monthly partition contracts in this document.
 4. Implement adapters, validation, upsert repositories, and operator-only CLI with unit tests using mocked Tushare payloads.
 5. Implement backfill dry-run, persisted watermarks, daily overlap refresh, reconciliation reports, and failure exit behavior.
 6. Implement weekly/monthly derivation and its source-coverage checks.
