@@ -13,8 +13,11 @@ https://docs.djangoproject.com/en/5.1/ref/settings/
 import os
 from pathlib import Path
 
+from dotenv import load_dotenv
+
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
+load_dotenv(BASE_DIR / '.env')
 
 
 # Quick-start development settings - unsuitable for production
@@ -82,11 +85,12 @@ WSGI_APPLICATION = 'config.wsgi.application'
 # Database
 # https://docs.djangoproject.com/en/5.1/ref/settings/#databases
 REQUIRED_POSTGRES_SETTINGS = (
-    'POSTGRES_DB',
-    'POSTGRES_USER',
-    'POSTGRES_PASSWORD',
-    'POSTGRES_HOST',
-    'POSTGRES_PORT',
+    'DB_ENGINE',
+    'DB_NAME',
+    'DB_USER',
+    'DB_PASSWORD',
+    'DB_HOST',
+    'DB_PORT',
 )
 missing_postgres_settings = [
     setting for setting in REQUIRED_POSTGRES_SETTINGS if not os.environ.get(setting)
@@ -95,14 +99,19 @@ if missing_postgres_settings:
     missing_names = ', '.join(missing_postgres_settings)
     raise RuntimeError(f'Missing required PostgreSQL settings: {missing_names}')
 
+if os.environ['DB_ENGINE'] != 'django.db.backends.postgresql':
+    raise RuntimeError('DB_ENGINE must be django.db.backends.postgresql')
+
+TUSHARE_TOKEN = os.environ.get('TUSHARE_TOKEN', '')
+
 DATABASES = {
     'default': {
-        'ENGINE': 'django.db.backends.postgresql',
-        'NAME': os.environ['POSTGRES_DB'],
-        'USER': os.environ['POSTGRES_USER'],
-        'PASSWORD': os.environ['POSTGRES_PASSWORD'],
-        'HOST': os.environ['POSTGRES_HOST'],
-        'PORT': os.environ['POSTGRES_PORT'],
+        'ENGINE': os.environ['DB_ENGINE'],
+        'NAME': os.environ['DB_NAME'],
+        'USER': os.environ['DB_USER'],
+        'PASSWORD': os.environ['DB_PASSWORD'],
+        'HOST': os.environ['DB_HOST'],
+        'PORT': os.environ['DB_PORT'],
     }
 }
 
