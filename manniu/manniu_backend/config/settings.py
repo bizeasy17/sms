@@ -103,6 +103,29 @@ if os.environ['DB_ENGINE'] != 'django.db.backends.postgresql':
     raise RuntimeError('DB_ENGINE must be django.db.backends.postgresql')
 
 TUSHARE_TOKEN = os.environ.get('TUSHARE_TOKEN', '')
+PREDICTIVE_VALUATION_ENABLED = os.environ.get('PREDICTIVE_VALUATION_ENABLED', 'false').strip().lower() == 'true'
+PREDICTIVE_VALUATION_CONFIG = os.environ.get(
+    'PREDICTIVE_VALUATION_CONFIG',
+    'predictive_valuation/configs/default.yaml',
+).strip()
+PREDICTIVE_VALUATION_MODEL_ROOT = os.environ.get(
+    'PREDICTIVE_VALUATION_MODEL_ROOT',
+    'predictive_valuation/outputs',
+).strip()
+PREDICTIVE_VALUATION_RISK_DATA_ROOT = os.environ.get(
+    'PREDICTIVE_VALUATION_RISK_DATA_ROOT',
+    'predictive_valuation/outputs_risk',
+).strip()
+PREDICTIVE_VALUATION_LOOKBACK_YEARS = int(os.environ.get('PREDICTIVE_VALUATION_LOOKBACK_YEARS', '5'))
+PREDICTIVE_VALUATION_EVENT_DEBOUNCE_SECONDS = int(
+    os.environ.get('PREDICTIVE_VALUATION_EVENT_DEBOUNCE_SECONDS', '900')
+)
+PREDICTIVE_VALUATION_MAX_FEATURE_GAP_DAYS = int(
+    os.environ.get('PREDICTIVE_VALUATION_MAX_FEATURE_GAP_DAYS', '5')
+)
+PREDICTIVE_VALUATION_STRICT_LIVE_FEATURES = (
+    os.environ.get('PREDICTIVE_VALUATION_STRICT_LIVE_FEATURES', 'true').strip().lower() == 'true'
+)
 
 DATABASES = {
     'default': {

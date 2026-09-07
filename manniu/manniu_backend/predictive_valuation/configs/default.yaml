@@ -1,0 +1,15 @@
+feature_contract_version: "1"
+model:
+  serving_pointer: "serving.yaml"
+  bundle_file: "model_bundle.joblib"
+feature_builder:
+  strict_live_features: true
+  max_market_feature_gap_days: 5
+valuation_mapping:
+  quant_target_max_abs_return: 0.30
+  quant_target_base_band: 0.04
+  market_regime:
+    enabled: true
+    benchmark_ts_code: "000001.SH"
+event_processing:
+  debounce_seconds: 900
