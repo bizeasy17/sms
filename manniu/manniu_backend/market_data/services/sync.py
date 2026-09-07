@@ -318,11 +318,21 @@ def _sync_daily_dataset(pro, plan: SyncPlan) -> int:
     return count
 
 
+def _format_scope_key(plan: SyncPlan) -> str:
+    if not plan.ts_codes:
+        return plan.scope.upper()[:64]
+    joined = ','.join(plan.ts_codes)
+    if len(joined) <= 64:
+        return joined
+    prefix = f'TS_CODES({len(plan.ts_codes)}):'
+    return (prefix + joined)[:64]
+
+
 def execute_sync(plan: SyncPlan) -> int:
     if plan.dry_run:
         return 0
     pro = _client()
-    scope = ','.join(plan.ts_codes) if plan.ts_codes else plan.scope.upper()
+    scope = _format_scope_key(plan)
     run = IngestionRun.objects.create(dataset=plan.dataset, mode=plan.mode.upper(), frequency='D', scope_key=scope, requested_start_date=plan.start_date, requested_end_date=plan.end_date, status=IngestionRun.Status.RUNNING, started_at=timezone.now())
     try:
         if plan.dataset == 'security-master':

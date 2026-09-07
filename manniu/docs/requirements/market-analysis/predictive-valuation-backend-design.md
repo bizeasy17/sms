@@ -68,7 +68,10 @@ predictive_valuation/
     schema.yaml
   outputs/
     serving.yaml
-    <model-version>/model_bundle.joblib
+    model_versions/<model-version>/models_Q1.joblib
+    model_versions/<model-version>/models_H1.joblib
+    model_versions/<model-version>/models_Q3.joblib
+    model_versions/<model-version>/models_FY.joblib
   outputs_risk/
     <risk-dataset-version>/...
 ```
@@ -83,6 +86,29 @@ expected numeric-unit conventions.
 outside this module's scheduled inference jobs. A serving pointer promotion is an
 explicit deployment operation with its own audit record; a batch job must never
 overwrite model artifacts.
+
+### Quarterly Production Model Routing
+
+Production inference is report-type-specific. `serving.yaml` contains one production
+model version and a required `production.models` mapping for `Q1`, `H1`, `Q3`, and `FY`.
+Each mapping entry names its corresponding `models_Q1.joblib`, `models_H1.joblib`,
+`models_Q3.joblib`, or `models_FY.joblib` artifact and matching metrics file.
+
+The inference service resolves the bundle from the selected feature panel's report type:
+
+| Feature panel report type | Required production artifact |
+| --- | --- |
+| `Q1` | `production.models.Q1` / `models_Q1.joblib` |
+| `H1` | `production.models.H1` / `models_H1.joblib` |
+| `Q3` | `production.models.Q3` / `models_Q3.joblib` |
+| `FY` | `production.models.FY` / `models_FY.joblib` |
+
+The artifact registry fails when the report type is unsupported or its configured bundle
+is missing or outside the configured model root. A declared sklearn version different
+from the running version emits an explicit compatibility warning and is recorded in run
+output; it does not block prediction. The registry must never silently fall back to a
+different quarter's model. The operator `validate` command checks all configured
+report-type mappings before a batch or event consumer runs.
 
 ## Shared Feature Contract
 
@@ -114,11 +140,26 @@ them with the model-compatible names required by the reference pipeline: income
 `q_dt_roe`, `tr_yoy`, liquidity ratios, `assets_turn`, `ocf_to_or`), balance-sheet, and
 cash-flow fields are persisted without lossy field renaming.
 
-`PredictiveFinancialFeatureBuilder` reads only `financials` raw income, balance-sheet,
-cash-flow, indicator, and disclosure records. It resolves each report's effective
-disclosure date, upserts point-in-time panel rows, and updates the latest row from the
-newest eligible panel before inference begins. Predictive serving must never build an
-unpersisted raw-table join.
+`PredictiveFinancialFeatureBuilder` reads only typed `financials` raw income,
+balance-sheet, cash-flow, indicator, and disclosure records. It resolves each report's
+effective disclosure date, upserts point-in-time panel rows, and updates the latest row
+from the newest eligible panel before inference begins. Predictive serving must never
+build an unpersisted raw-table join.
+
+Every persisted predictive financial feature must be a direct field mapping from an
+approved financial raw-record column. The builder must not derive, synthesize, or use a
+different-field substitute for a model feature. In particular, `cash_ratio` and
+`ocf_to_or` must come from `FinancialIndicatorRecord.cash_ratio` and
+`FinancialIndicatorRecord.ocf_to_or`; they must not be recomputed from balance-sheet or
+income/cash-flow values. `q_dt_roe`, `st_borr`, `lt_borr`, and
+`n_incr_cash_cash_equ` likewise require their corresponding typed raw fields. A missing
+raw source remains null for model imputation and is recorded in feature provenance.
+
+The financial ingestion schema and repository must persist all fields in the active
+model contract before a predictive panel rebuild. Existing raw payloads may be used for
+a one-time, auditable typed-field backfill only when the value is copied directly from
+the provider field of the same name. This preserves compatibility with the legacy
+`earnings_financial_feature_panel` feature distribution.
 
 Feature values must be normalized according to `schema.yaml`. In particular,
 ratio-scale upstream values must not be mixed with percentage-scale model features.
@@ -161,11 +202,12 @@ predictive_valuation/
     predictive_valuation.py
 ```
 
-`artifact_registry` validates and caches bundle metadata. `financial_feature_builder`
+`artifact_registry` validates and resolves the production bundle matching each panel's
+financial report type. `financial_feature_builder`
 rebuilds the predictive module's panel/latest rows from financial raw records before
 every inference. `feature_builder` then performs point-in-time market and financial
 joins and emits a named feature row plus provenance. `inference_service` loads the
-classifier/regressor bundle, applies ordered feature reindexing and hierarchical
+report-type-specific classifier/regressor bundle, applies ordered feature reindexing and hierarchical
 imputation (security recent history, industry median, bundle global median), then maps
 the score through capped, risk- and regime-aware target ranges. `event_service` detects,
 coalesces, claims, and completes events transactionally.
