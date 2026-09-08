@@ -5,6 +5,7 @@ import importlib.metadata
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
+import warnings
 
 import joblib
 import yaml
@@ -22,6 +23,8 @@ class ServingArtifact:
     model_path: Path
     artifact_hash: str
     feature_columns: tuple[str, ...]
+    required_sklearn_version: str
+    installed_sklearn_version: str
 
 
 class PredictiveArtifactRegistry:
@@ -29,7 +32,10 @@ class PredictiveArtifactRegistry:
         configured_root = model_root or self._resolve_path(settings.PREDICTIVE_VALUATION_MODEL_ROOT)
         self.model_root = configured_root.resolve()
 
-    def load_production(self) -> ServingArtifact:
+    def load_production(self, report_type: str) -> ServingArtifact:
+        requested_type = str(report_type or '').strip().upper()
+        if requested_type not in {'Q1', 'H1', 'Q3', 'FY'}:
+            raise ArtifactValidationError(f'Unsupported financial report type: {report_type}')
         pointer = self.model_root / 'serving.yaml'
         if not pointer.is_file():
             raise ArtifactValidationError(f'Serving pointer not found: {pointer}')
@@ -37,7 +43,20 @@ class PredictiveArtifactRegistry:
         production = payload.get('production')
         if not isinstance(production, dict):
             raise ArtifactValidationError('Serving pointer requires a production entry')
-        return self._load_entry(production)
+        models = production.get('models')
+        if not isinstance(models, dict):
+            raise ArtifactValidationError('Production entry requires a models mapping by report type')
+        report_entry = models.get(requested_type)
+        if not isinstance(report_entry, dict):
+            raise ArtifactValidationError(f'Production model not configured for report type: {requested_type}')
+        entry = dict(production)
+        entry.pop('models', None)
+        entry.update(report_entry)
+        entry['report_type'] = requested_type
+        return self._load_entry(entry)
+
+    def validate_production_models(self, report_types: tuple[str, ...] = ('Q1', 'H1', 'Q3', 'FY')) -> tuple[ServingArtifact, ...]:
+        return tuple(self.load_production(report_type) for report_type in report_types)
 
     def _load_entry(self, entry: dict[str, Any]) -> ServingArtifact:
         model_version = str(entry.get('model_version') or '').strip()
@@ -51,8 +70,11 @@ class PredictiveArtifactRegistry:
         required_sklearn_version = str(entry.get('sklearn_version') or '').strip()
         installed_sklearn_version = importlib.metadata.version('scikit-learn')
         if required_sklearn_version and required_sklearn_version != installed_sklearn_version:
-            raise ArtifactValidationError(
-                f'Model requires scikit-learn {required_sklearn_version}, installed {installed_sklearn_version}'
+            warnings.warn(
+                f'Model requires scikit-learn {required_sklearn_version}, installed {installed_sklearn_version}; '
+                'continuing with a compatibility-risk runtime.',
+                RuntimeWarning,
+                stacklevel=2,
             )
         bundle = joblib.load(model_path)
         if not isinstance(bundle, dict):
@@ -68,6 +90,8 @@ class PredictiveArtifactRegistry:
             model_path=model_path,
             artifact_hash=self._sha256(model_path),
             feature_columns=tuple(str(column) for column in feature_columns),
+            required_sklearn_version=required_sklearn_version,
+            installed_sklearn_version=installed_sklearn_version,
         )
 
     def _safe_artifact_path(self, raw_path: str) -> Path:

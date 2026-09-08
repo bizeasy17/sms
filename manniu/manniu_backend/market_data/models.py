@@ -370,3 +370,122 @@ class IngestionWatermark(models.Model):
         indexes = [
             models.Index(fields=['status', '-updated_at']),
         ]
+
+
+class MarketRegimeSnapshot(models.Model):
+    benchmark_security = models.ForeignKey(
+        Security, on_delete=models.PROTECT, related_name='market_regime_snapshots'
+    )
+    asof_trade_date = models.DateField()
+    source_trade_date = models.DateField()
+    regime = models.CharField(max_length=16)
+    source = models.CharField(max_length=64)
+    classifier_version = models.CharField(max_length=32)
+    row_count = models.PositiveIntegerField(default=0)
+    status = models.CharField(max_length=24, default='VALID')
+    metrics = models.JSONField(default=dict, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = 'market_data_market_regime_snapshot'
+        constraints = [
+            models.UniqueConstraint(
+                fields=['benchmark_security', 'asof_trade_date', 'classifier_version'],
+                name='market_data_market_regime_uniq',
+            ),
+        ]
+        indexes = [
+            models.Index(fields=['-asof_trade_date', 'regime'], name='market_data_market_regime_dt'),
+        ]
+
+
+class SecurityRegimeSnapshot(models.Model):
+    security = models.ForeignKey(Security, on_delete=models.PROTECT, related_name='regime_snapshots')
+    asof_trade_date = models.DateField()
+    source_trade_date = models.DateField()
+    regime = models.CharField(max_length=16)
+    source = models.CharField(max_length=64, default='local_market_data')
+    classifier_version = models.CharField(max_length=32)
+    row_count = models.PositiveIntegerField(default=0)
+    status = models.CharField(max_length=24, default='VALID')
+    metrics = models.JSONField(default=dict, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = 'market_data_security_regime_snapshot'
+        constraints = [
+            models.UniqueConstraint(
+                fields=['security', 'asof_trade_date', 'classifier_version'],
+                name='market_data_security_regime_uniq',
+            ),
+        ]
+        indexes = [
+            models.Index(fields=['security', '-asof_trade_date'], name='market_data_security_regime_dt'),
+            models.Index(fields=['regime', '-asof_trade_date'], name='md_sec_regime_idx'),
+        ]
+
+
+class MarketRegimeState(models.Model):
+    scope_key = models.CharField(max_length=32, unique=True)
+    current_regime = models.CharField(max_length=16, blank=True)
+    previous_regime = models.CharField(max_length=16, blank=True)
+    last_valid_trade_date = models.DateField(null=True, blank=True)
+    classifier_version = models.CharField(max_length=32)
+    source_version = models.CharField(max_length=64, blank=True)
+    metrics = models.JSONField(default=dict, blank=True)
+    last_event_at = models.DateTimeField(null=True, blank=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'market_data_market_regime_state'
+
+
+class SecurityRegimeState(models.Model):
+    security = models.ForeignKey(Security, on_delete=models.PROTECT, related_name='regime_state_rows')
+    classifier_version = models.CharField(max_length=32)
+    current_regime = models.CharField(max_length=16, blank=True)
+    previous_regime = models.CharField(max_length=16, blank=True)
+    pending_regime = models.CharField(max_length=16, blank=True)
+    pending_days = models.PositiveSmallIntegerField(default=0)
+    last_valid_trade_date = models.DateField(null=True, blank=True)
+    source_version = models.CharField(max_length=64, blank=True)
+    metrics = models.JSONField(default=dict, blank=True)
+    last_event_at = models.DateTimeField(null=True, blank=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'market_data_security_regime_state'
+        constraints = [
+            models.UniqueConstraint(
+                fields=['security', 'classifier_version'],
+                name='market_data_security_regime_state_uniq',
+            ),
+        ]
+        indexes = [
+            models.Index(fields=['current_regime', '-updated_at'], name='market_data_security_state_idx'),
+        ]
+
+
+class RegimeEvent(models.Model):
+    class Status(models.TextChoices):
+        PENDING = 'PENDING', 'Pending'
+        CONSUMED = 'CONSUMED', 'Consumed'
+
+    event_type = models.CharField(max_length=32)
+    event_key = models.CharField(max_length=128)
+    security = models.ForeignKey(Security, null=True, blank=True, on_delete=models.PROTECT, related_name='regime_events')
+    source_trade_date = models.DateField()
+    payload = models.JSONField(default=dict, blank=True)
+    status = models.CharField(max_length=16, choices=Status.choices, default=Status.PENDING)
+    created_at = models.DateTimeField(auto_now_add=True)
+    consumed_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        db_table = 'market_data_regime_event'
+        constraints = [
+            models.UniqueConstraint(fields=['event_type', 'event_key'], name='market_data_regime_event_uniq'),
+        ]
+        indexes = [
+            models.Index(fields=['status', '-created_at'], name='md_regime_evt_status'),
+            models.Index(fields=['event_type', '-source_trade_date'], name='market_data_regime_event_type'),
+        ]

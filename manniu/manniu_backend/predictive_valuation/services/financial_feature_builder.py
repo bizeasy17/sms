@@ -28,10 +28,14 @@ class PredictiveFinancialFeatureBuilder:
         cls,
         security: Security | int,
         as_of_date: date | None = None,
+        start_date: date | None = None,
+        end_date: date | None = None,
+        update_latest: bool = True,
     ) -> int:
         if isinstance(security, int):
             security = Security.objects.get(id=security)
 
+        requested_end_date = end_date
         disclosure_dates = cls._effective_disclosure_dates(security)
         income_records = FinancialIncomeRecord.objects.filter(security=security)
         balance_records = FinancialBalanceSheetRecord.objects.filter(security=security)
@@ -41,6 +45,10 @@ class PredictiveFinancialFeatureBuilder:
         periods = cls._periods(income_records, balance_records, cashflow_records, indicator_records)
         panels: list[PredictiveFinancialFeaturePanel] = []
         for end_date, report_type in periods:
+            if (start_date is not None and end_date < start_date) or (
+                requested_end_date is not None and end_date > requested_end_date
+            ):
+                continue
             income = income_records.filter(end_date=end_date).order_by('-ann_date', '-id').first()
             balance = balance_records.filter(end_date=end_date).order_by('-ann_date', '-id').first()
             cashflow = cashflow_records.filter(end_date=end_date).order_by('-ann_date', '-id').first()
@@ -81,7 +89,7 @@ class PredictiveFinancialFeatureBuilder:
                 unique_fields=['security', 'end_date', 'report_type', 'source_as_of_date'],
                 update_fields=update_fields,
             )
-            if as_of_date is None:
+            if update_latest and as_of_date is None:
                 latest = max(panels, key=lambda panel: (panel.end_date, panel.source_as_of_date))
                 latest_values = {
                     field.name: getattr(latest, field.name)
@@ -145,8 +153,6 @@ class PredictiveFinancialFeatureBuilder:
         cashflow: FinancialCashFlowRecord | None,
         indicator: FinancialIndicatorRecord | None,
     ) -> PredictiveFinancialFeaturePanel:
-        cash_ratio = cls._divide(balance.money_cap, balance.total_cur_liab) if balance else None
-        ocf_to_or = cls._divide(cashflow.n_cashflow_act, income.revenue) if cashflow and income else None
         return PredictiveFinancialFeaturePanel(
             security=security,
             end_date=end_date,
@@ -165,6 +171,7 @@ class PredictiveFinancialFeatureBuilder:
             roe=indicator.roe if indicator else None,
             roe_dt=indicator.roe_dt if indicator else None,
             roa=indicator.roa if indicator else None,
+            q_dt_roe=indicator.q_dt_roe if indicator else None,
             tr_yoy=indicator.or_yoy if indicator else None,
             netprofit_yoy=indicator.netprofit_yoy if indicator else None,
             grossprofit_margin=indicator.grossprofit_margin if indicator else None,
@@ -172,33 +179,33 @@ class PredictiveFinancialFeatureBuilder:
             debt_to_assets=indicator.debt_to_assets if indicator else None,
             current_ratio=indicator.current_ratio if indicator else None,
             quick_ratio=indicator.quick_ratio if indicator else None,
-            cash_ratio=cash_ratio,
+            cash_ratio=indicator.cash_ratio if indicator else None,
             assets_turn=indicator.assets_turn if indicator else None,
-            ocf_to_or=ocf_to_or,
+            ocf_to_or=indicator.ocf_to_or if indicator else None,
             total_assets=balance.total_assets if balance else None,
             total_liab=balance.total_liab if balance else None,
             total_hldr_eqy_exc_min_int=balance.total_hldr_eqy_exc_min_int if balance else None,
             money_cap=balance.money_cap if balance else None,
             accounts_receiv=balance.accounts_receiv if balance else None,
             inventories=balance.inventories if balance else None,
-            st_borr=balance.short_borrow if balance else None,
-            lt_borr=balance.long_borrow if balance else None,
+            st_borr=balance.st_borr if balance else None,
+            lt_borr=balance.lt_borr if balance else None,
             n_cashflow_act=cashflow.n_cashflow_act if cashflow else None,
             n_cashflow_inv_act=cashflow.n_cashflow_inv_act if cashflow else None,
             n_cash_flows_fnc_act=cashflow.n_cash_flows_fnc_act if cashflow else None,
-            n_incr_cash_cash_equ=cashflow.net_incr_cash_cash_equ if cashflow else None,
+            n_incr_cash_cash_equ=cashflow.n_incr_cash_cash_equ if cashflow else None,
             raw_payload={
                 'income_id': income.id if income else None,
                 'balance_sheet_id': balance.id if balance else None,
                 'cashflow_id': cashflow.id if cashflow else None,
                 'indicator_id': indicator.id if indicator else None,
-                'derived_fields': ['cash_ratio', 'ocf_to_or'],
-                'unavailable_raw_fields': ['q_dt_roe'],
+                'raw_feature_sources': {
+                    'q_dt_roe': 'FinancialIndicatorRecord.q_dt_roe',
+                    'cash_ratio': 'FinancialIndicatorRecord.cash_ratio',
+                    'ocf_to_or': 'FinancialIndicatorRecord.ocf_to_or',
+                    'st_borr': 'FinancialBalanceSheetRecord.st_borr',
+                    'lt_borr': 'FinancialBalanceSheetRecord.lt_borr',
+                    'n_incr_cash_cash_equ': 'FinancialCashFlowRecord.n_incr_cash_cash_equ',
+                },
             },
         )
-
-    @staticmethod
-    def _divide(numerator: Any, denominator: Any) -> Any:
-        if numerator is None or denominator in (None, 0):
-            return None
-        return numerator / denominator

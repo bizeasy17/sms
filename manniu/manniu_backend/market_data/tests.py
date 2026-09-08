@@ -21,6 +21,7 @@ from .models import (
     StockDailyFundamentalLatest,
 )
 from .services.sync import SyncValidationError, _optional_trade_date, build_sync_plan, execute_sync
+from .services.regime import classify_market_regime, classify_security_regime, next_regime_state
 
 
 class MarketDataSchemaTests(SimpleTestCase):
@@ -83,6 +84,30 @@ class MarketDataSchemaTests(SimpleTestCase):
         )
 
 
+class MarketRegimeClassifierTests(SimpleTestCase):
+    def test_market_classifier_requires_eighty_positive_closes(self):
+        result = classify_market_regime(
+            range(1, 80),
+            asof_trade_date=date(2026, 9, 8),
+            source_trade_date=date(2026, 9, 8),
+        )
+
+        self.assertEqual(result.status, 'INSUFFICIENT_DATA')
+        self.assertEqual(result.regime, 'BALANCE')
+
+    def test_security_classifier_and_two_day_confirmation(self):
+        result = classify_security_regime(
+            range(1, 81),
+            asof_trade_date=date(2026, 9, 8),
+            source_trade_date=date(2026, 9, 8),
+            ts_code='000001.SZ',
+        )
+
+        self.assertEqual(result.regime, 'GROWTH')
+        self.assertEqual(next_regime_state('GROWTH', '', 0, 'DEFENSIVE', 2), ('GROWTH', 'DEFENSIVE', 1, False))
+        self.assertEqual(next_regime_state('GROWTH', 'DEFENSIVE', 1, 'DEFENSIVE', 2), ('DEFENSIVE', '', 0, True))
+
+
 class MarketDataSyncPlanTests(SimpleTestCase):
     def test_optional_source_date_converts_nan_to_null(self):
         self.assertIsNone(_optional_trade_date(float('nan')))
@@ -118,6 +143,14 @@ class MarketDataSyncPlanTests(SimpleTestCase):
     def test_unimplemented_resume_is_rejected(self):
         with self.assertRaises(SyncValidationError):
             build_sync_plan({'dataset': 'stock-bars', 'mode': 'backfill', 'resume_run': 1})
+
+    def test_by_date_strategy_validation(self):
+        plan = build_sync_plan({'dataset': 'stock-bars', 'mode': 'daily', 'strategy': 'by-date'}, today=date(2026, 9, 6))
+        self.assertEqual(plan.strategy, 'by-date')
+        self.assertEqual(plan.start_date, date(2026, 9, 3))
+
+        with self.assertRaises(SyncValidationError):
+            build_sync_plan({'dataset': 'security-master', 'mode': 'backfill', 'strategy': 'by-date'})
 
 
 class MarketDataSyncExecutionTests(TestCase):
@@ -182,3 +215,36 @@ class MarketDataSyncExecutionTests(TestCase):
             IngestionWatermark.objects.get(dataset='stock-fundamentals', scope_key=security.ts_code, frequency='D').last_complete_source_date,
             date(2026, 9, 5),
         )
+
+    @patch('market_data.services.sync._client')
+    def test_by_date_strategy_executes_bulk_upsert_for_stock_bars(self, client):
+        sec1 = Security.objects.create(ts_code='000001.SZ', asset_type=Security.AssetType.STOCK)
+        sec2 = Security.objects.create(ts_code='000002.SZ', asset_type=Security.AssetType.STOCK)
+        client.return_value.stk_factor.return_value = pd.DataFrame([
+            {
+                'ts_code': '000001.SZ', 'trade_date': '20260905',
+                'open': 10.0, 'high': 11.0, 'low': 9.8, 'close': 10.5, 'pre_close': 10.0,
+                'change': 0.5, 'pct_change': 5.0, 'vol': 1000, 'amount': 10000.0, 'adj_factor': 1.0,
+                'open_qfq': 10.0, 'high_qfq': 11.0, 'low_qfq': 9.8, 'close_qfq': 10.5, 'pre_close_qfq': 10.0,
+                'open_hfq': 10.0, 'high_hfq': 11.0, 'low_hfq': 9.8, 'close_hfq': 10.5, 'pre_close_hfq': 10.0,
+            },
+            {
+                'ts_code': '000002.SZ', 'trade_date': '20260905',
+                'open': 20.0, 'high': 21.0, 'low': 19.8, 'close': 20.5, 'pre_close': 20.0,
+                'change': 0.5, 'pct_change': 2.5, 'vol': 2000, 'amount': 40000.0, 'adj_factor': 1.0,
+                'open_qfq': 20.0, 'high_qfq': 21.0, 'low_qfq': 19.8, 'close_qfq': 20.5, 'pre_close_qfq': 20.0,
+                'open_hfq': 20.0, 'high_hfq': 21.0, 'low_hfq': 19.8, 'close_hfq': 20.5, 'pre_close_hfq': 20.0,
+            },
+        ])
+        plan = build_sync_plan({
+            'dataset': 'stock-bars',
+            'mode': 'backfill',
+            'strategy': 'by-date',
+            'start_date': '20260905',
+            'end_date': '20260905',
+        })
+
+        self.assertEqual(execute_sync(plan), 2)
+        client.return_value.stk_factor.assert_called_once_with(trade_date='20260905')
+        self.assertEqual(MarketBarDailyHistory.objects.filter(trade_date=date(2026, 9, 5)).count(), 2)
+        self.assertEqual(MarketBarLatest.objects.filter(frequency=MarketBarLatest.Frequency.DAILY).count(), 2)

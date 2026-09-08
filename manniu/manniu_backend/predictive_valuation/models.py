@@ -120,7 +120,7 @@ class PredictiveValuationSnapshot(models.Model):
 		db_table = 'predictive_valuation_snapshot'
 		constraints = [
 			models.UniqueConstraint(
-				fields=['security', 'asof_date', 'horizon', 'model_version', 'feature_contract_version'],
+				fields=['security', 'asof_date', 'financial_report_type', 'horizon', 'model_version', 'feature_contract_version'],
 				name='pv_snapshot_uniq',
 			),
 		]
@@ -180,6 +180,22 @@ class PredictiveValuationEventState(models.Model):
 		db_table = 'predictive_valuation_event_state'
 		indexes = [
 			models.Index(fields=['status', 'event_type', 'created_at'], name='pv_event_status_type_ct'),
+		]
+
+
+class PredictiveValuationRegimeState(models.Model):
+	"""Last successfully observed market or security regime for event detection."""
+
+	scope_key = models.CharField(max_length=32, unique=True)
+	regime = models.CharField(max_length=16)
+	asof_date = models.DateField()
+	metrics = models.JSONField(default=dict, blank=True)
+	updated_at = models.DateTimeField(auto_now=True)
+
+	class Meta:
+		db_table = 'predictive_valuation_regime_state'
+		indexes = [
+			models.Index(fields=['regime', '-asof_date'], name='pv_regime_state_regime_dt'),
 		]
 
 

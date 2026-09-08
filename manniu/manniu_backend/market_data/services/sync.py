@@ -50,6 +50,7 @@ class SyncExecutionError(RuntimeError):
 class SyncPlan:
     dataset: str
     mode: str
+    strategy: str
     scope: str
     ts_codes: tuple[str, ...]
     start_date: date | None
@@ -77,11 +78,16 @@ def _years_before(value: date, years: int) -> date:
 def build_sync_plan(options: dict[str, Any], today: date | None = None) -> SyncPlan:
     dataset = str(options['dataset']).strip().lower()
     mode = str(options['mode']).strip().lower()
+    strategy = str(options.get('strategy') or 'by-code').strip().lower()
     scope = str(options.get('scope') or 'all').strip().lower()
     if dataset not in DATASETS:
         raise SyncValidationError(f'Unsupported dataset: {dataset}')
     if mode not in {'backfill', 'daily'}:
         raise SyncValidationError(f'Unsupported mode: {mode}')
+    if strategy not in {'by-code', 'by-date'}:
+        raise SyncValidationError(f'Unsupported strategy: {strategy}')
+    if strategy == 'by-date' and dataset not in DAILY_DATASETS:
+        raise SyncValidationError(f'--strategy by-date is supported only for daily datasets')
     if options.get('resume_run') is not None:
         raise SyncValidationError('--resume-run is not available until chunk-level resume is implemented')
     if scope not in {'all', 'ts-code', 'index-universe'}:
@@ -111,7 +117,9 @@ def build_sync_plan(options: dict[str, Any], today: date | None = None) -> SyncP
     if mode == 'daily':
         if start_arg or history_years is not None:
             raise SyncValidationError('daily mode does not accept --start-date or --history-years')
-        return SyncPlan(dataset, mode, scope, codes, None, end_date, max(0, int(options.get('overlap_days', 3))), page_size, max_pages, bool(options.get('dry_run')))
+        overlap = max(0, int(options.get('overlap_days', 3)))
+        calc_start = end_date.fromordinal(max(end_date.toordinal() - overlap, date.min.toordinal()))
+        return SyncPlan(dataset, mode, strategy, scope, codes, calc_start, end_date, overlap, page_size, max_pages, bool(options.get('dry_run')))
     if start_arg and history_years is not None:
         raise SyncValidationError('--start-date and --history-years are mutually exclusive')
     years = 5 if history_years is None else int(history_years)
@@ -120,7 +128,7 @@ def build_sync_plan(options: dict[str, Any], today: date | None = None) -> SyncP
     start_date = _parse_date(start_arg, '--start-date') if start_arg else _years_before(end_date, years)
     if start_date > end_date:
         raise SyncValidationError('--start-date must not be after --end-date')
-    return SyncPlan(dataset, mode, scope, codes, start_date, end_date, None, page_size, max_pages, bool(options.get('dry_run')))
+    return SyncPlan(dataset, mode, strategy, scope, codes, start_date, end_date, None, page_size, max_pages, bool(options.get('dry_run')))
 
 
 def _decimal(value: Any) -> Decimal | None:
@@ -318,6 +326,116 @@ def _sync_daily_dataset(pro, plan: SyncPlan) -> int:
     return count
 
 
+def _sync_daily_dataset_by_date(pro, plan: SyncPlan) -> int:
+    asset_type = Security.AssetType.INDEX if plan.dataset in INDEX_DATASETS else Security.AssetType.STOCK
+    securities = _target_securities(plan, asset_type)
+    security_map = {sec.ts_code: sec for sec in securities}
+    if not security_map:
+        return 0
+
+    start = plan.start_date or plan.end_date
+    curr_ordinal = start.toordinal()
+    end_ordinal = plan.end_date.toordinal()
+    count = 0
+
+    while curr_ordinal <= end_ordinal:
+        curr_date = date.fromordinal(curr_ordinal)
+        curr_ordinal += 1
+        date_str = curr_date.strftime('%Y%m%d')
+
+        if plan.dataset == 'stock-bars':
+            fields = (
+                'open', 'high', 'low', 'close', 'pre_close', 'change', 'pct_change', 'amount', 'adj_factor',
+                'open_qfq', 'high_qfq', 'low_qfq', 'close_qfq', 'pre_close_qfq',
+                'open_hfq', 'high_hfq', 'low_hfq', 'close_hfq', 'pre_close_hfq',
+            )
+            required = {'ts_code', 'trade_date', 'vol', *fields}
+            rows = _records(pro.stk_factor(trade_date=date_str), required)
+            history_model, latest_model = MarketBarDailyHistory, MarketBarLatest
+        elif plan.dataset == 'stock-fundamentals':
+            fields = ('close', 'turnover_rate', 'turnover_rate_f', 'volume_ratio', 'pe', 'pe_ttm', 'pb', 'ps', 'ps_ttm', 'dv_ratio', 'dv_ttm', 'total_share', 'float_share', 'free_share', 'total_mv', 'circ_mv')
+            rows = _records(pro.daily_basic(trade_date=date_str), {'ts_code', 'trade_date', *fields})
+            history_model, latest_model = StockDailyFundamentalHistory, StockDailyFundamentalLatest
+        elif plan.dataset == 'stock-cost':
+            fields = ('his_low', 'his_high', 'cost_5pct', 'cost_15pct', 'cost_50pct', 'cost_85pct', 'cost_95pct', 'weight_avg', 'winner_rate')
+            rows = _records(pro.cyq_perf(trade_date=date_str), {'ts_code', 'trade_date', *fields})
+            history_model, latest_model = StockCostDistributionHistory, StockCostDistributionLatest
+        elif plan.dataset == 'index-bars':
+            fields = ('open', 'high', 'low', 'close', 'pre_close', 'change', 'amount')
+            rows = _records(pro.index_daily(trade_date=date_str), {'ts_code', 'trade_date', 'open', 'high', 'low', 'close'})
+            history_model, latest_model = MarketBarDailyHistory, MarketBarLatest
+        else:
+            fields = ('pe', 'pe_ttm', 'pb', 'turnover_rate', 'turnover_rate_f', 'total_mv', 'float_mv')
+            rows = _records(pro.index_dailybasic(trade_date=date_str), {'ts_code', 'trade_date', *fields})
+            history_model, latest_model = IndexDailyFundamentalHistory, IndexDailyFundamentalLatest
+
+        if not rows:
+            continue
+
+        history_objs = []
+        latest_dict = {}
+
+        for row in rows:
+            code = str(row['ts_code']).strip().upper()
+            sec = security_map.get(code)
+            if sec is None:
+                continue
+
+            payload = {field: _decimal(row.get(field)) for field in fields}
+            if history_model is MarketBarDailyHistory:
+                if plan.dataset == 'stock-bars':
+                    payload['volume'] = int(float(row['vol'])) if row.get('vol') is not None and not pd.isna(row['vol']) else None
+                    payload['change_qfq'], payload['pct_change_qfq'] = _adjusted_change(
+                        payload['close_qfq'], payload['pre_close_qfq']
+                    )
+                    payload['change_hfq'], payload['pct_change_hfq'] = _adjusted_change(
+                        payload['close_hfq'], payload['pre_close_hfq']
+                    )
+                else:
+                    payload['pct_change'] = _decimal(row.get('pct_chg'))
+                    payload['volume'] = int(float(row['vol'])) if row.get('vol') is not None and not pd.isna(row['vol']) else None
+
+            history_kwargs = {'security': sec, 'trade_date': curr_date, **payload}
+            history_objs.append(history_model(**history_kwargs))
+
+            latest_payload = payload if latest_model is not MarketBarLatest else {
+                key: payload.get(key)
+                for key in ('close', 'pct_change', 'close_qfq', 'close_hfq', 'volume', 'amount')
+            }
+            latest_dict[sec] = latest_payload
+
+        with transaction.atomic():
+            if history_objs:
+                update_fields = [f for f in fields]
+                if history_model is MarketBarDailyHistory:
+                    if plan.dataset == 'stock-bars':
+                        update_fields.extend(['volume', 'change_qfq', 'pct_change_qfq', 'change_hfq', 'pct_change_hfq'])
+                    else:
+                        update_fields.extend(['pct_change', 'volume'])
+                history_model.objects.bulk_create(
+                    history_objs,
+                    update_conflicts=True,
+                    unique_fields=['security', 'trade_date'],
+                    update_fields=update_fields,
+                )
+                count += len(history_objs)
+
+            for sec, latest_payload in latest_dict.items():
+                if latest_model is MarketBarLatest:
+                    latest_payload['frequency'] = MarketBarLatest.Frequency.DAILY
+                    current = latest_model.objects.filter(security=sec, frequency=MarketBarLatest.Frequency.DAILY).first()
+                    if current is None or curr_date >= current.trade_date:
+                        latest_model.objects.update_or_create(
+                            security=sec,
+                            frequency=MarketBarLatest.Frequency.DAILY,
+                            defaults={'trade_date': curr_date, **latest_payload},
+                        )
+                else:
+                    _update_latest(latest_model, sec, latest_payload, curr_date)
+
+    return count
+
+
 def _format_scope_key(plan: SyncPlan) -> str:
     if not plan.ts_codes:
         return plan.scope.upper()[:64]
@@ -341,6 +459,8 @@ def execute_sync(plan: SyncPlan) -> int:
             count = _sync_index_master(pro)
         elif plan.dataset == 'company-profile':
             count = _sync_company_profiles(pro, plan)
+        elif plan.strategy == 'by-date':
+            count = _sync_daily_dataset_by_date(pro, plan)
         else:
             count = _sync_daily_dataset(pro, plan)
         run.status = IngestionRun.Status.SUCCEEDED

@@ -71,6 +71,204 @@ All identifiers, timestamps, and lifecycle fields use Django conventions when im
 
 Unique key: `ts_code`. Check constraint: `asset_type IN ('STOCK', 'INDEX')`.
 
+## Market And Security Regime Data
+
+`market_data` owns the canonical end-of-day regime inputs and read services
+used by both `traditional_valuation` and `predictive_valuation`. The valuation
+modules must not copy these classifiers or infer a regime independently. They
+call the read service with an explicit as-of date and persist the returned
+regime metadata in their own snapshots.
+
+The regime layer is an analysis read model, not a trading signal or order
+instruction. It uses only completed rows already persisted by `market_data`.
+No request-time Tushare fallback is allowed. If upstream ingestion is stale or
+incomplete, the service returns a deterministic degraded result with source and
+coverage metadata.
+
+### Market Regime (`BULL`, `BEAR`, `BALANCE`)
+
+The market regime follows the `earnings_forecast` pipeline rule currently used
+by prediction serving. The default benchmark is `000001.SH`; the benchmark is
+resolved through `Security` with `asset_type='INDEX'`, and its close history is
+read from `MarketBarDailyHistory`.
+
+For an `asof_date`, select rows with `trade_date <= asof_date`, sorted by date.
+The minimum usable history is 80 completed rows. Calculate:
+
+$$
+MA20 = mean(Close_{t-19}, \ldots, Close_t),\qquad
+MA60 = mean(Close_{t-59}, \ldots, Close_t)
+$$
+
+$$
+ma\_ratio = Close_t / MA60
+$$
+
+`volatility20` is the standard deviation of the last 20 daily percentage
+changes, and `drawdown60` is `Close_t / max(Close_{t-59..t}) - 1`.
+
+Default classification thresholds are:
+
+| Condition | Regime |
+| --- | --- |
+| `MA20 > MA60`, `ma_ratio >= 1.03`, and `drawdown60 > -0.12` | `BULL` |
+| `MA20 < MA60` and (`ma_ratio <= 0.97` or `drawdown60 <= -0.12`) | `BEAR` |
+| All other valid observations | `BALANCE` |
+
+When a provisional `BULL` result has `volatility20 >= 0.028`, downgrade it to
+`BALANCE` to avoid aggressive valuation or prediction expansion during a high
+volatility advance. Thresholds and benchmark code are versioned configuration,
+not values duplicated in downstream apps.
+
+The returned `MarketRegimeResult` must contain:
+
+```text
+regime: BULL | BEAR | BALANCE
+source: rule_v1:local_mirror | insufficient_history | stale_or_incomplete
+benchmark_ts_code
+asof_trade_date
+ma20, ma60, ma_ratio, drawdown60, volatility20
+row_count, classifier_version
+```
+
+An empty or invalid result is never persisted as a new state and never replaces
+the last valid state. The first valid state establishes a baseline. A
+`MARKET_STYLE_CHANGED` event is created only when the current and previous
+states are both valid and different.
+
+### Security Regime (`GROWTH`, `BALANCE`, `DEFENSIVE`, `RISK_OFF`)
+
+The individual-security classifier follows the approved `stock_regime.py`
+implementation. It reads at least 60 positive completed close values from
+`MarketBarDailyHistory` for one stock and an explicit as-of date. It calculates:
+
+```text
+ma20 = mean(last 20 closes)
+ma60 = mean(last 60 closes)
+volatility_20d = std(last 20 daily percentage changes)
+peak60 = max(last 60 closes)
+drawdown_60d = close / peak60 - 1
+ma_ratio = close / ma60
+```
+
+The classification order is significant:
+
+1. `RISK_OFF` when `ma20 < ma60` and (`ma_ratio <= 0.94` or
+   `drawdown_60d <= -0.18`).
+2. `DEFENSIVE` when `ma20 < ma60`, or `ma_ratio < 0.98`, or
+   `drawdown_60d <= -0.10`, or `volatility_20d >= 0.035`.
+3. `GROWTH` when `ma20 > ma60`, `ma_ratio >= 1.02`, `drawdown_60d > -0.08`,
+   and `volatility_20d < 0.03`.
+4. Otherwise `BALANCE`.
+
+The returned `SecurityRegimeResult` contains the four-state regime, all five
+metrics, source trade date, row count, and classifier version. With fewer than
+60 valid closes, it returns `INSUFFICIENT_DATA` without creating a regime
+change event.
+
+State confirmation uses the shared transition contract:
+
+```text
+next_regime_state(current, pending, pending_days, detected, confirm_days)
+```
+
+The default `confirm_days` is 2. A first valid observation initializes the
+baseline and does not trigger. If the detected state equals the confirmed
+state, pending state and count reset. If it differs, the pending state must be
+observed on consecutive runs until the confirmation count is reached. Only
+then is `SECURITY_STYLE_CHANGED` emitted. A confirmed change refreshes only the
+affected security's downstream `LATEST,FUSION` or equivalent current outputs;
+it never fans out to the whole market.
+
+### PostgreSQL Regime Read Models
+
+The following models belong to `market_data` because it owns both the source
+bars and the canonical classification state:
+
+| Model | Natural key | Purpose |
+| --- | --- | --- |
+| `MarketRegimeSnapshot` | `(benchmark_security, asof_trade_date, classifier_version)` | Immutable market classification result and metrics |
+| `SecurityRegimeSnapshot` | `(security, asof_trade_date, classifier_version)` | Immutable per-stock classification result and metrics |
+| `MarketRegimeState` | `(scope_key='MARKET/ALL_A')` | Last valid confirmed market state and previous state used for change detection |
+| `SecurityRegimeState` | `(security, classifier_version)` | Confirmed state, pending state, pending count, last valid date, and last event version |
+
+Each snapshot stores `source_trade_date`, `asof_trade_date`, `source`,
+`classifier_version`, `row_count`, metrics JSON, and a quality/status field.
+State rows must retain `current_regime`, `previous_regime`, `pending_regime`,
+`pending_days`, and `last_event_at`. Invalid, empty, or insufficient results do
+not overwrite valid state rows. These models are separate from predictive
+signal tables such as `earnings_stock_regime_state`; the predictive domain may
+consume the market-data service but must not maintain a second classifier.
+
+### Downstream Read-Service Contract
+
+The only supported downstream boundary is a read-only, database-backed service
+owned by `market_data`:
+
+```python
+get_market_regime(
+  *, asof_date: date | None = None,
+  benchmark_ts_code: str = '000001.SH',
+) -> MarketRegimeResult
+
+get_security_regime(
+  *, security: Security | int | str,
+  asof_date: date | None = None,
+) -> SecurityRegimeResult
+
+get_regime_state(*, scope: str, security: Security | int | str | None = None)
+  -> RegimeStateResult
+```
+
+The service resolves the latest completed source date on or before the request
+date, never uses future rows, and returns a typed degraded result rather than
+raising for ordinary data insufficiency. It must not write snapshots or state
+as a side effect of a downstream valuation read. A scheduled detector invokes
+the write-side transition service after ingestion completes:
+
+```python
+detect_regime_events(*, asof_date: date, scope: str = 'all') -> RegimeEventSummary
+```
+
+This detector persists immutable snapshots, updates confirmed state only for
+valid results, and creates idempotent `MARKET_STYLE_CHANGED` or
+`SECURITY_STYLE_CHANGED` events with the source version and metrics payload.
+
+`traditional_valuation` consumes `get_market_regime` for market-style
+parameters and `get_security_regime` for security-style variants. It records
+`market_regime`, `security_regime`, source dates, classifier versions, and
+metrics in `TraditionalValuationSnapshot.provenance`. `predictive_valuation`
+uses the same methods to populate `market_regime`/`security_regime` in
+prediction inputs and to create its event refresh scope. Neither consumer may
+call Tushare, read another service's private state, or reimplement the
+thresholds.
+
+### Event And Refresh Contract
+
+After successful market-data ingestion, the detector runs in this order:
+
+1. Calculate the market result for the latest completed benchmark date.
+2. Compare it with `MarketRegimeState.current_regime`.
+3. On the first valid result, persist baseline only.
+4. On a valid state change, create one idempotent `MARKET_STYLE_CHANGED` event
+   for the affected market scope.
+5. Calculate security results for eligible stocks in bounded chunks.
+6. Apply the two-observation confirmation state machine.
+7. Create one idempotent `SECURITY_STYLE_CHANGED` event per confirmed stock.
+
+The market event fan-out is consumed by downstream modules in bounded batches.
+The required prediction refresh command for a confirmed market switch remains:
+
+```text
+refresh_signal_snapshot --scope 60,00,30,68 --full-refresh --report-types LATEST,FUSION
+```
+
+Traditional valuation uses the same event reason, `MARKET_REGIME_SWITCH`, for
+market-style valuation refresh and `STOCK_REGIME_SWITCH` for a confirmed
+security-style refresh. Event payloads must include old/new regime, source
+trade date, classifier version, metrics, and detection time. Invalid or empty
+classification results do not advance state and do not trigger a refresh.
+
 ### Company, Geography, And Industry
 
 `CompanyProfile` has one optional row per stock `Security`; index securities do not receive a company profile. It stores company fields from `stock_company`, including chairman, manager, secretary, registered capital, establishment date, website, contact data, employees, main business, business scope, and source update timestamps.

@@ -9,6 +9,7 @@ class Command(BaseCommand):
     def add_arguments(self, parser):
         parser.add_argument('--dataset', required=True)
         parser.add_argument('--mode', required=True, choices=['backfill', 'daily'])
+        parser.add_argument('--strategy', default='by-code', choices=['by-code', 'by-date'])
         parser.add_argument('--scope', default='all', choices=['all', 'ts-code', 'index-universe'])
         parser.add_argument('--ts-codes', default='')
         parser.add_argument('--start-date', default='')

@@ -31,6 +31,7 @@ The command supports deterministic historical backfill, EOD daily refresh, persi
 python manage.py sync_market_data \
   --dataset security-master|index-master|company-profile|stock-bars|stock-fundamentals|stock-cost|index-bars|index-fundamentals|corporate-actions|resample \
   --mode backfill|daily \
+  [--strategy by-code|by-date] \
   [--scope all|ts-code|index-universe] [--ts-codes CODE[,CODE...]] \
   [--start-date YYYYMMDD|--history-years N] [--end-date YYYYMMDD] \
   [--frequency D|W|M] [--resume-run RUN_ID] \
@@ -41,6 +42,9 @@ python manage.py sync_market_data \
 
 - `--dataset` is required and accepts exactly one dataset per command invocation. Orchestration scripts invoke datasets in dependency order rather than combining unrelated writes in one transaction.
 - `--mode backfill` uses the following start-date precedence: a compatible `--resume-run` uses its persisted next unfinished chunk; an explicit `--start-date` uses that date; otherwise `--history-years` determines the start date relative to the resolved `--end-date`. `--history-years` defaults to `5`, so a first backfill downloads the latest five years by default. `--start-date` and `--history-years` are mutually exclusive.
+- `--strategy by-code|by-date` controls the fetch strategy for daily market datasets (`stock-bars`, `stock-fundamentals`, `stock-cost`, `index-bars`, `index-fundamentals`). Defaults to `by-code`.
+  - `by-code`: Iterates through target securities sequentially, issuing per-symbol Tushare API requests. Best suited for single-symbol or small-subset deep backfills.
+  - `by-date`: Iterates through target trading dates, issuing per-date all-market Tushare API requests (`stk_factor`, `daily_basic`, `cyq_perf`, `index_daily`, `index_dailybasic` with `trade_date`). Dramatically reduces Tushare API calls and total execution time for daily EOD refresh from ~1.5 hours down to seconds via PostgreSQL ON CONFLICT bulk upserts.
 - `--history-years` accepts a positive whole number. It is valid only with `--mode backfill`; daily mode rejects it. It controls the initial or explicitly requested history window only and never rewinds a newer successful watermark unless the operator supplies an explicit `--start-date`.
 - `--end-date` defaults to the last completed trading date. The calculated default backfill start date is the same calendar date five years before the resolved end date; source responses and the approved trading calendar determine the actual available trading dates.
 - `--mode daily` rejects `--start-date` and uses the last completed trading date plus an overlap window. The default overlap is the matching `IngestionWatermark.overlap_days`, initially `3`.

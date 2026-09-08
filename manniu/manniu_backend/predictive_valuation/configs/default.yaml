@@ -1,7 +1,8 @@
 feature_contract_version: "1"
 model:
   serving_pointer: "serving.yaml"
-  bundle_file: "model_bundle.joblib"
+  serving_slot: "production"
+  report_types: ["Q1", "H1", "Q3", "FY"]
 feature_builder:
   strict_live_features: true
   max_market_feature_gap_days: 5

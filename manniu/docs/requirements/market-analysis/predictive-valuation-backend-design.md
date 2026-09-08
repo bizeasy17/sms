@@ -263,6 +263,139 @@ trigger inference against stale projected features. Market-wide events fan out
 deterministically to eligible active securities and are chunked; they do not hold one
 long database transaction.
 
+### Market Data Regime Contract
+
+`predictive_valuation` consumes market and security style classification from the
+canonical `market_data` regime service. It must not duplicate the classifier,
+read private state from another prediction service, or call Tushare during
+feature construction or event consumption. All regime reads use completed
+PostgreSQL EOD rows and an explicit `asof_date`.
+
+The supported read boundary is:
+
+```python
+from market_data.services.regime import (
+  get_market_regime,
+  get_security_regime,
+  get_regime_state,
+)
+
+market = get_market_regime(
+  asof_date=asof_date,
+  benchmark_ts_code="000001.SH",
+)
+security = get_security_regime(
+  security=security,
+  asof_date=asof_date,
+)
+```
+
+The service resolves the latest completed source date on or before the
+requested as-of date. It returns a typed degraded result for insufficient or
+stale data rather than fabricating a neutral feature row. The prediction
+feature builder persists the returned regime metadata in feature provenance:
+
+```text
+market_regime: BULL | BEAR | BALANCE
+security_regime: GROWTH | BALANCE | DEFENSIVE | RISK_OFF
+market_regime_source
+security_regime_source
+market_regime_source_trade_date
+security_regime_source_trade_date
+regime_classifier_version
+regime_row_count
+regime_status
+```
+
+### Market Regime Semantics
+
+The market classifier uses the completed `000001.SH` benchmark close series
+from `market_data.MarketBarDailyHistory`. It requires at least 80 valid rows
+and calculates MA20, MA60, close/MA60, 20-day volatility, and 60-day drawdown.
+The default states and thresholds are:
+
+| Condition | State |
+| --- | --- |
+| `MA20 > MA60`, `close/MA60 >= 1.03`, and `drawdown60 > -0.12` | `BULL` |
+| `MA20 < MA60` and (`close/MA60 <= 0.97` or `drawdown60 <= -0.12`) | `BEAR` |
+| Other valid observations | `BALANCE` |
+
+If a provisional `BULL` state has 20-day volatility `>= 0.028`, the classifier
+downgrades it to `BALANCE`. These thresholds belong to `market_data`; the
+prediction model configuration may define how a confirmed state scales target
+returns and bands, but may not redefine the state itself.
+
+### Security Regime Semantics
+
+The security classifier uses at least 60 valid positive close values from
+`market_data.MarketBarDailyHistory` and follows this ordered rule set:
+
+1. `RISK_OFF` when `ma20 < ma60` and (`close/ma60 <= 0.94` or
+   `drawdown60 <= -0.18`).
+2. `DEFENSIVE` when `ma20 < ma60`, or `close/ma60 < 0.98`, or
+   `drawdown60 <= -0.10`, or volatility is `>= 0.035`.
+3. `GROWTH` when `ma20 > ma60`, `close/ma60 >= 1.02`, drawdown is `> -0.08`,
+   and volatility is `< 0.03`.
+4. Otherwise `BALANCE`.
+
+The classifier returns `INSUFFICIENT_DATA` when fewer than 60 valid rows exist.
+That result may be recorded in diagnostics but cannot trigger a regime event or
+replace a confirmed state.
+
+### Regime Event Consumption
+
+`market_data` persists `MarketRegimeSnapshot`, `SecurityRegimeSnapshot`,
+`MarketRegimeState`, `SecurityRegimeState`, and idempotent `RegimeEvent` rows.
+The first valid market or security observation establishes a baseline and does
+not trigger prediction refresh. Invalid or empty results do not advance state.
+
+Security state changes require two consecutive observations of the new state.
+The pending state and pending count are held in `SecurityRegimeState`; only a
+confirmed transition creates `SECURITY_STYLE_CHANGED`. A market transition is
+created only when both old and new states are valid and different.
+
+The predictive event service maps upstream events as follows:
+
+| `market_data` event | Predictive scope | Prediction refresh |
+| --- | --- | --- |
+| `MARKET_STYLE_CHANGED` | Market/universe | Deterministic bounded fan-out over eligible active securities |
+| `SECURITY_STYLE_CHANGED` | One security | Only that security's current eligible report panels |
+| `FINANCIAL_DISCLOSED` | One security/report period | Rebuild features, then predict the affected report period |
+
+Older internal names `MARKET_REGIME_CHANGED` and `SECURITY_REGIME_CHANGED`, if
+encountered in existing event payloads, are compatibility aliases only. New
+events must use `MARKET_STYLE_CHANGED` and `SECURITY_STYLE_CHANGED` and retain
+the source classifier version, old/new state, source trade date, metrics,
+detection time, and stable event key.
+
+The market-style event must not hold one transaction for the entire universe.
+The detector creates bounded child work or the consumer claims bounded chunks.
+The security-style event never fans out to other securities. A repeated event
+with the same source version and scope is idempotent and cannot create duplicate
+prediction snapshots.
+
+### Regime-Aware Inference And Refresh Metadata
+
+The inference service may use the confirmed market/security state in its target
+mapping, return caps, risk scaling, or explanation payload. It must record the
+state used for the prediction and the exact source dates. A degraded or stale
+regime input must either follow the configured explicit fallback profile or make
+the prediction ineligible in strict mode; it must not silently present a stale
+state as current.
+
+Every event-triggered prediction snapshot records one of these refresh reasons:
+
+- `MARKET_REGIME_SWITCH`
+- `STOCK_REGIME_SWITCH`
+- `FINANCIAL_DISCLOSURE`
+- `MONTHLY_FULL_REFRESH`
+- `MANUAL_REFRESH`
+
+The dashboard/latest read path consumes persisted `PredictiveValuationSnapshot`
+or `PredictiveValuationCurrent` rows only. Loading a prediction card must not
+call `get_market_regime`, `get_security_regime`, or the inference service in a
+way that writes or computes a new prediction.
+
 ## Consumer And API Boundary
 
 `predictive_valuation` does not define, route, serialize, or expose public HTTP APIs.

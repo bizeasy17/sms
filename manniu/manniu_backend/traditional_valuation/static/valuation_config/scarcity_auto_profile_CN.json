@@ -1,0 +1,38 @@
+{
+  "risk_weights": {
+    "vol_z": 0.3,
+    "risk_disp": 0.25,
+    "data_gap": 0.2,
+    "dd_z": 0.25
+  },
+  "thresholds": {
+    "conservative_min": 0.68,
+    "balanced_min": 0.42
+  },
+  "hysteresis": {
+    "up_shift": 0.03,
+    "down_shift": 0.03
+  },
+  "confirmation_days": 3,
+  "cooldown_days": 5,
+  "missing_policy": {
+    "min_available_indicators": 4,
+    "fallback_profile": "balanced"
+  },
+  "circuit_breaker": {
+    "enabled": true,
+    "extreme_risk_min": 0.9,
+    "force_profile": "conservative",
+    "force_days": 3,
+    "extreme_flags": [
+      "extreme_market",
+      "circuit_breaker",
+      "halted"
+    ]
+  },
+  "legacy_signal_weights": {
+    "score": 1.0,
+    "confidence": 1.0
+  },
+  "fallback_profile": "balanced"
+}
