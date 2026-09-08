@@ -13,12 +13,12 @@ if not exist "%PYTHON_EXE%" (
 
 pushd "%PROJECT_ROOT%" || exit /b 1
 
-call :sync security-master || goto :failure
-call :sync index-master || goto :failure
-call :sync company-profile || goto :failure
-call :sync stock-bars || goto :failure
-call :sync stock-fundamentals || goto :failure
-call :sync stock-cost || goto :failure
+call :sync security-master by-code || goto :failure
+call :sync index-master by-code || goto :failure
+call :sync company-profile by-code || goto :failure
+call :sync stock-bars by-date || goto :failure
+call :sync stock-fundamentals by-date || goto :failure
+call :sync stock-cost by-date || goto :failure
 call :sync_indices index-bars || goto :failure
 call :sync_indices index-fundamentals || goto :failure
 
@@ -28,7 +28,7 @@ exit /b 0
 
 :sync
 echo Synchronizing %~1...
-"%PYTHON_EXE%" manage.py sync_market_data --dataset %~1 --mode daily --scope all --strategy by-date
+"%PYTHON_EXE%" manage.py sync_market_data --dataset %~1 --mode daily --scope all --strategy %~2
 if errorlevel 1 (
     echo ERROR: %~1 synchronization failed.
     exit /b 1

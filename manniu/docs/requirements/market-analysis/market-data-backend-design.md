@@ -2,7 +2,7 @@
 
 ## Status And Ownership
 
-This document is the implementation design for the registered `manniu_backend.market_data` Django application. The first schema layer is implemented and migrated to PostgreSQL: its Django models cover securities, geography/industry dimensions, company profiles, daily trading history/latest snapshots, stock fundamental history/latest snapshots, stock cost history/latest snapshots, index fundamental history/latest snapshots, and ingestion run/watermark control. An initial `sync_market_data` CLI is implemented for master/company/daily datasets; paging/retry/resume, complete adjustment processing, PostgreSQL partition DDL, weekly/monthly derivation, public APIs, and production ingestion runs remain pending.
+This document is the implementation design for the registered `manniu_backend.market_data` Django application. The first schema layer is implemented and migrated to PostgreSQL: its Django models cover securities, geography/industry dimensions, company profiles, daily trading history/latest snapshots, stock fundamental history/latest snapshots, stock cost history/latest snapshots, index fundamental history/latest snapshots, and ingestion run/watermark control. An initial `sync_market_data` CLI is implemented for master/company/daily datasets; paging/retry/resume, complete adjustment processing, PostgreSQL partition DDL, weekly/monthly derivation, and production ingestion runs remain pending.
 
 `market_data` owns end-of-day market-data ingestion, PostgreSQL persistence, reconciliation, and read-optimized query services for stocks and indices. The `indices` application consumes index data for index-domain analysis and does not own index synchronization or tables.
 
@@ -20,7 +20,7 @@ The module supports analysis and decision support only. It must never place or a
 | Trading bars | Indices | `index_daily` | Daily, derived weekly/monthly |
 | Daily fundamentals | Indices | `index_dailybasic` | Daily |
 
-The design deliberately excludes intraday data, request-time calls to Tushare, automated trading, public HTTP endpoints, and access-control implementation. `api_gateway` and `access_control` are future consumers of the read services defined here.
+The design deliberately excludes intraday data, request-time calls to Tushare, automated trading, and public transport-layer concerns. Downstream valuation modules consume the internal read services defined here.
 
 ## Architecture
 
@@ -30,10 +30,8 @@ flowchart LR
     Adapter --> Normalize[Validate and normalize]
     Normalize --> Orchestrator[Ingestion orchestrator]
     Orchestrator --> Repository[PostgreSQL repositories]
-    Repository --> Queries[Read query services]
-    Queries --> API[Future api_gateway]
-    API --> Client[Authorized client]
-    Access[Future access_control] --> API
+    Repository --> Queries[Internal read services]
+    Queries --> Consumers[Valuation and analysis consumers]
     Orchestrator --> Runs[Run and watermark records]
 ```
 
@@ -43,8 +41,8 @@ flowchart LR
 - **Validation and normalization**: validates required columns before any write; converts dates, decimals, units, nulls, and codes; deduplicates natural keys; rejects invalid rows with a reason.
 - **Ingestion orchestrator**: chooses `backfill` or `daily` coverage, divides work into bounded chunks, coordinates transactions, writes run state, and advances a watermark only after a complete successful chunk.
 - **Repositories**: use PostgreSQL bulk upserts and read query methods. They are the only component allowed to write market-data tables.
-- **Read query services**: provide bounded, index-backed EOD reads to future API handlers. They never invoke Tushare as a cache miss fallback.
-- **CLI boundary**: synchronization commands are operator-only maintenance tools, not public HTTP endpoints. Future external reads must pass `access_control` before reaching a read query service.
+- **Read query services**: provide bounded, index-backed EOD reads to internal valuation and analysis consumers. They never invoke Tushare as a cache miss fallback.
+- **CLI boundary**: synchronization and calculation commands are operator-only maintenance tools. Internal consumers call bounded query services and never write market-data state through a read path.
 
 ### Environment Configuration
 
@@ -289,7 +287,7 @@ The geographic and industry design separates raw provider input from canonical d
 
 ### Trading History And Latest Snapshots
 
-Daily trading history is the source of record and is stored separately from current snapshots. This avoids using `MAX(trade_date)`, unbounded ordering, or window functions over tens of millions of rows for a frontend latest-price request.
+Daily trading history is the source of record and is stored separately from current snapshots. This avoids using `MAX(trade_date)`, unbounded ordering, or window functions over tens of millions of rows for a bounded latest-price read.
 
 `MarketBarDailyHistory` stores stock and index EOD bars. It is a PostgreSQL range-partitioned table on `trade_date`, with one monthly partition per calendar month. The parent table has no default partition: a missing future partition fails the ingestion run before data is misplaced. An operator maintenance task creates partitions for the next three months and monitors partition size and index bloat.
 
@@ -307,6 +305,197 @@ For stocks, `stk_factor` is the authoritative Tushare interface for raw daily ba
 For indices, `index_daily` values are raw provider values. Adjustment fields remain null unless a separately approved index factor source is added; raw index prices must not be copied into qfq/hfq fields and labeled as adjusted.
 
 `MarketBarWeeklyHistory` and `MarketBarMonthlyHistory` are independent physical tables, not `frequency` rows mixed into the daily partitioned table. They have the same business columns and unique key `(security_id, trade_date)`, where `trade_date` is the completed period end date. This keeps daily indexes compact and makes 1Y/3Y lower-frequency chart queries predictable.
+
+## A-Share Historical Extremes Analysis
+
+`market_data` owns the calculation and persisted read model for historical
+extreme-return statistics. The feature is derived only from persisted EOD
+market history; it does not calculate in an external request path and does not
+call Tushare as a cache miss fallback. `traditional_valuation` and
+`predictive_valuation` may consume the result as descriptive market context,
+but neither module owns or reimplements the calculation.
+
+### Input And Price Policy
+
+The calculation requires a canonical `Security`, a completed `trade_date`, and
+a positive close price. The preferred price field is adjusted close:
+
+| Frequency | Preferred source field | Fallback policy |
+| --- | --- | --- |
+| Daily | `MarketBarDailyHistory.close_qfq` | Use raw `close` only when the request explicitly selects `price_type=raw` |
+| Weekly | `MarketBarWeeklyHistory.close_qfq` | Same explicit raw-price policy |
+| Monthly | `MarketBarMonthlyHistory.close_qfq` | Same explicit raw-price policy |
+
+The default `price_type` is `qfq` (前复权). A result records `price_type`,
+`source_start_date`, `source_end_date`, source row counts, and the calculation
+version. Missing adjusted prices are not silently mixed with raw prices within
+one calculation. A run either uses the requested field consistently or records
+an insufficient-data/degraded status.
+
+Optional latest fundamental context may be joined from
+`StockDailyFundamentalLatest` or the latest eligible
+`StockDailyFundamentalHistory` row as of `source_end_date`:
+
+- `pe_ttm` exposed as `PE`;
+- `pb` exposed as `PB`;
+- `ps_ttm` exposed as `PS`.
+
+Fundamentals are descriptive fields only and are not required for extreme-return
+calculation. They must be selected with the same as-of boundary and must not be
+looked up from a newer latest row when replaying an older extreme snapshot.
+
+### Calculation Contract
+
+The calculation pipeline is deterministic:
+
+1. Load bounded history for one frequency and price type.
+2. Parse dates and numeric prices; reject missing/non-positive prices.
+3. Sort by `(security, trade_date)` ascending and deduplicate the natural key.
+4. Calculate per-period returns:
+
+$$
+return_t = Close_t / Close_{t-1} - 1
+$$
+
+The first observation for each security has no return and is excluded from
+period-extreme candidates. Missing or suspended observations remain absent;
+the calculation must not forward-fill a price across an unknown trading gap.
+
+For each security and frequency, calculate:
+
+- `max_return`: maximum valid period return;
+- `min_return`: minimum valid period return.
+
+The supported frequencies are `D`, `W`, and `M`, mapped to output fields:
+
+| Frequency | Output fields |
+| --- | --- |
+| Daily | `daily_max_return`, `daily_min_return` |
+| Weekly | `weekly_max_return`, `weekly_min_return` |
+| Monthly | `monthly_max_return`, `monthly_min_return` |
+
+For the full available retained interval, calculate:
+
+$$
+drawdown_t = Close_t / cummax(Close) - 1
+$$
+
+`max_drawdown = min(drawdown_t)`.
+
+`max_runup` is the maximum subsequent rise from a historical low to a later
+high. The implementation must enforce chronological order: a high before the
+low cannot form a run-up pair. Both interval metrics are ratios, not percentage
+points. Presentation formatting is outside the `market_data` module.
+
+One final summary row is produced per stock, price type, source end date, and
+calculation version. A stock with no valid return or interval pair receives an
+explicit `INSUFFICIENT_DATA` result rather than fabricated zero extremes.
+
+### Persistence Design
+
+The proposed read model is `StockHistoricalExtremeSnapshot`:
+
+| Field | Type | Purpose |
+| --- | --- | --- |
+| `security` | FK to `market_data.Security` | Canonical stock identity |
+| `price_type` | constrained text | `qfq` or `raw` |
+| `source_start_date/source_end_date` | date | Exact calculation interval |
+| `calculation_version` | text | Formula and implementation version |
+| `daily_max_return/daily_min_return` | numeric | Daily period extremes |
+| `weekly_max_return/weekly_min_return` | numeric | Weekly period extremes |
+| `monthly_max_return/monthly_min_return` | numeric | Monthly period extremes |
+| `max_runup/max_drawdown` | numeric | Full-interval extremes |
+| `pe/pb/ps` | numeric, nullable | Latest eligible optional valuation context |
+| `status` | constrained text | `VALID`, `INSUFFICIENT_DATA`, `DEGRADED`, `FAILED` |
+| `source_row_counts` | JSONB | Coverage by frequency |
+| `quality` | JSONB | Missing/gap/duplicate and fallback details |
+| `created_at/updated_at` | timestamps | Audit |
+
+Natural key: `(security, price_type, source_end_date, calculation_version)`.
+The model must preserve prior calculation versions and source end dates rather
+than overwrite historical evidence. A separate latest read index may select the
+newest valid row for `(security, price_type)`; it is not a replacement for the
+versioned snapshot.
+
+Required indexes:
+
+- `(security, price_type, source_end_date DESC)`;
+- `(status, source_end_date DESC)`;
+- `(max_drawdown)` and `(max_runup)` for bounded extreme-stock screens;
+- `(daily_max_return)` / `(monthly_max_return)` when cross-sectional ranking is
+  enabled.
+
+### Calculation Service And CLI
+
+The service boundary is internal and database-backed:
+
+```python
+load_market_data(
+    *, security, frequency, start_date=None, end_date=None,
+    price_type='qfq',
+) -> list[MarketBar]
+
+compute_period_extremes(rows) -> dict
+compute_max_drawdown(rows) -> dict
+compute_max_runup(rows) -> dict
+compute_stock_extremes(
+    *, security, source_end_date=None, price_type='qfq',
+    calculation_version='extremes_v1',
+) -> StockHistoricalExtremeSnapshot
+```
+
+The operator command is:
+
+```text
+python manage.py calculate_stock_extremes \
+  --scope all|ts-code --ts-codes CODE[,CODE...] \
+  --price-type qfq|raw --start-date YYYYMMDD --end-date YYYYMMDD \
+  [--calculation-version VERSION] [--dry-run] [--limit N]
+```
+
+The command processes securities in bounded chunks, writes each snapshot
+transactionally, and reports eligible rows, source coverage, valid/insufficient
+counts, duplicates, gaps, and failures. It must return nonzero when a requested
+chunk fails or when reconciliation cannot distinguish complete coverage from
+partial coverage. Re-running the same scope and version is idempotent.
+
+### Data Quality And Scheduling
+
+Quality checks must report:
+
+- missing required price columns/fields;
+- invalid or non-positive prices;
+- duplicate `(security, trade_date)` observations;
+- source row counts and first/last source dates by frequency;
+- insufficient history and missing first-period returns;
+- raw/qfq mixing attempts;
+- optional fundamental rows newer than `source_end_date`.
+
+The normal order is:
+
+1. Complete market-data bar ingestion and watermark updates.
+2. Complete weekly/monthly derivation from persisted daily bars.
+3. Run `calculate_stock_extremes` for the configured interval and price type.
+4. Reconcile snapshot coverage and publish the read model.
+
+Historical extremes are not recalculated by a downstream read. A full retained
+history rebuild is required after adjusted-price history changes or a formula
+version change. A routine daily run may update the current source-end-date
+snapshot, while prior calculation versions remain available for replay.
+
+### Test Contract
+
+- The first observation per security/frequency has no period return.
+- Daily, weekly, and monthly output fields are computed independently from the
+  corresponding frequency, not from calendar resampling in the request path.
+- A descending price sequence produces a negative maximum drawdown and no
+  invalid positive run-up.
+- A low-then-high sequence produces the expected chronological max run-up.
+- Missing adjusted prices do not silently mix with raw prices.
+- Repeating the same calculation version converges to one snapshot.
+- A historical as-of read never uses a newer price or fundamental row.
+- Pagination and sorting reject unallow-listed fields and unbounded limits.
+- A failed chunk does not publish a partial success status.
 
 `MarketBarLatest` has at most one row per `(security_id, frequency)`, where frequency is `D`, `W`, or `M`. It stores the latest completed bar's trade date, selected OHLCV/raw and adjusted values, source revision timestamp, and local sync timestamp. It is a denormalized read model, not a replacement for historical data.
 
@@ -366,24 +555,6 @@ Daily trading, fundamental, and cost history are expected to exceed ten million 
 | `Security` | unique `ts_code`; `(asset_type, list_status)`; `(area_id, industry_id, list_status)` | code resolution and filter panels |
 | `CompanyProfile` | unique `security_id`; `(province_id, city_id)` | company profile and geographic filtering |
 | `IngestionWatermark` | unique dataset/scope/frequency; `(status, updated_at)` | restart and operations monitoring |
-
-### High-Frequency K-Line And Fundamental Reads
-
-The frontend supports these fixed EOD daily windows: `30`, `60`, `90`, `120`, `1Y`, and `3Y`. `1Y` means the latest 252 completed trading bars; `3Y` means the latest 756 completed trading bars. The API layer translates a named window into a bounded row limit after locating the latest completed date; it does not approximate a trading window using calendar days.
-
-| Frontend request | Read model | Query rule |
-| --- | --- | --- |
-| Latest quote and fundamentals | `MarketBarLatest` plus the applicable fundamental/cost latest table | One `security_id` lookup; no history-table scan. |
-| 30/60/90/120 daily K-line | `MarketBarDailyHistory` | Require `security_id`; query descending through `(security_id, trade_date DESC)`, limit by the requested window, then return ascending order. |
-| 1Y/3Y daily K-line | `MarketBarDailyHistory` | Same index-backed pattern with limits 252/756; partition pruning applies when a resolved lower date bound is supplied. |
-| 1Y/3Y lower-resolution chart | Weekly/monthly history | Prefer `W` or `M` after the frontend requests that resolution; never aggregate daily rows in the request path. |
-| Fundamental history aligned to K-line | Corresponding fundamental or cost history partition | Query the same bounded date range and return only fields requested by the chart/panel. |
-
-The query service resolves the latest date from `MarketBarLatest` and passes an explicit lower trade-date bound to each history query. It selects chart columns only, uses one batched fundamental query per security/window, and never issues one query per K-line point. Read endpoints reject an absent window, an unsupported window, a period over 756 daily bars, or a response without an explicit field projection.
-
-Response caching is permitted only for these immutable EOD read models. Cache keys contain `security_id`, frequency, requested window, adjustment mode, field projection, and the source `trade_date`/revision marker from the latest snapshot. The post-ingestion transaction invalidates keys for affected securities after updating historical and latest rows. A cache miss reads PostgreSQL; it must never call Tushare. PostgreSQL remains the source of record, and cache availability must not change response correctness.
-
-Future repository APIs must enforce bounded ranges: chart reads require a security, frequency, and explicit fixed window or start/end date; list reads require page limits; broad cross-sectional reads require a trade date. The read layer selects only displayed fields and uses keyset pagination for large history lists.
 
 ## Ingestion Design
 
@@ -472,17 +643,6 @@ Validation failures are stored with dataset, scope, natural key when available, 
 
 Reconciliation compares persisted coverage with the approved trading calendar and source response coverage before a run is marked successful. Database writes and watermarks are auditable through `IngestionRun` and `IngestionWatermark` rather than terminal output alone.
 
-## Future API And Authorization Boundary
-
-No endpoint is defined by this document. When public reads are implemented, `api_gateway` owns routing, request validation, versioning, serialization, and error envelopes. `access_control` authenticates the caller and applies read permissions before calling a `market_data` query service.
-
-Initial API design constraints are:
-
-- Endpoints return database-backed EOD data only, never a Tushare request-time fallback.
-- Query parameters must bound symbols, frequency, dates, and result size.
-- Public responses expose only documented fields; ingest-run operational detail is restricted to authorized operators.
-- Any new API request fields, response fields, roles, or database fields require user confirmation and a dedicated design update before implementation.
-
 ## Test Case Definition
 
 ### Core Flow
@@ -493,9 +653,6 @@ Initial API design constraints are:
 - An `index_dailybasic` record persists all seven confirmed metrics under `(security, trade_date)`.
 - A daily overlap run upserts a revised provider record and advances the watermark only after its chunk commits.
 - Weekly/monthly derivation produces correct OHLCV and period-end fundamental/cost records from daily rows.
-- A frontend-oriented K-line query uses the security/frequency/date index and returns only bounded EOD database records.
-- A latest quote/fundamental query reads the latest snapshot tables and does not scan a history partition.
-- Each `30`, `60`, `90`, `120`, `1Y`, and `3Y` K-line request returns at most 30, 60, 90, 120, 252, and 756 completed daily bars respectively, ordered ascending for chart rendering.
 - A completed ingestion transaction updates the relevant latest snapshot and invalidates only that security's affected EOD cache keys.
 
 ### Boundary Scenarios
@@ -507,8 +664,6 @@ Initial API design constraints are:
 - A non-trading day does not advance a daily watermark without trading-calendar confirmation.
 - A duplicate dividend event does not queue a second concurrent rebuild; a revised event queues exactly one replacement rebuild.
 - A resample task does not publish an incomplete current week or month.
-- A 3Y K-line request resolves an explicit lower trade-date bound and its query plan prunes unrelated daily-history partitions.
-- A fundamental-history request for a K-line window uses one bounded batched query and aligns records by trade date without issuing per-bar queries.
 
 ### Failure Scenarios
 
@@ -517,9 +672,6 @@ Initial API design constraints are:
 - A failed chunk rolls back its domain rows and does not mark partial coverage as complete.
 - A failed transaction leaves the historical row, latest snapshot, cache-invalidation marker, and watermark at their pre-run state.
 - A failed dividend-triggered rebuild leaves its event pending, does not advance the related adjusted-history watermark, and does not affect unrelated securities.
-- An unsupported K-line window, a window exceeding 756 daily bars, or an unbounded field projection is rejected before querying historical data.
-- An unauthorized future API request is rejected before any `market_data` query service is called.
-- A query without explicit bounded range or page limit is rejected by the future API layer.
 
 ## Implementation Sequence
 
@@ -530,4 +682,3 @@ Initial API design constraints are:
 5. Implement `dividend` event persistence, event-change detection, stock-specific full adjusted-history rebuild, retries, and regression tests.
 6. Implement backfill dry-run, persisted watermarks, daily overlap refresh, reconciliation reports, and failure exit behavior.
 7. Implement weekly/monthly derivation and its source-coverage checks.
-8. Confirm external API and permission contracts, then implement read endpoints through `api_gateway` and `access_control`.

@@ -48,6 +48,7 @@ INSTALLED_APPS = [
     'backtest_engine',
     'financials',
     'market_data',
+    'market_sentiment',
     'indices',
 ]
 
