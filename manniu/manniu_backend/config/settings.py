@@ -50,6 +50,7 @@ INSTALLED_APPS = [
     'market_data',
     'market_sentiment',
     'indices',
+    'ops_logging.apps.OpsLoggingConfig',
 ]
 
 MIDDLEWARE = [
@@ -169,6 +170,17 @@ TIME_ZONE = 'UTC'
 USE_I18N = True
 
 USE_TZ = True
+
+
+OPS_DB_LOG_ENABLED = os.environ.get('OPS_DB_LOG_ENABLED', 'true').strip().lower() == 'true'
+OPS_DB_LOG_LEVEL = os.environ.get('OPS_DB_LOG_LEVEL', 'INFO').strip().upper()
+OPS_DB_LOG_QUEUE_SIZE = int(os.environ.get('OPS_DB_LOG_QUEUE_SIZE', '2000'))
+OPS_DB_LOG_BATCH_SIZE = int(os.environ.get('OPS_DB_LOG_BATCH_SIZE', '100'))
+OPS_DB_LOG_FLUSH_SECONDS = float(os.environ.get('OPS_DB_LOG_FLUSH_SECONDS', '1.0'))
+OPS_DB_LOG_MESSAGE_MAX = int(os.environ.get('OPS_DB_LOG_MESSAGE_MAX', '4000'))
+OPS_DB_LOG_STACK_MAX = int(os.environ.get('OPS_DB_LOG_STACK_MAX', '16000'))
+OPS_DB_LOG_RETENTION_DAYS = int(os.environ.get('OPS_DB_LOG_RETENTION_DAYS', '30'))
+OPS_DB_ERROR_RETENTION_DAYS = int(os.environ.get('OPS_DB_ERROR_RETENTION_DAYS', '90'))
 
 
 # Static files (CSS, JavaScript, Images)
