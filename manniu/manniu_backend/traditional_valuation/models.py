@@ -105,6 +105,43 @@ class TraditionalValuationSnapshotLatest(models.Model):
 		]
 
 
+class TraditionalValuationVariantSummaryLatest(models.Model):
+	security = models.ForeignKey(
+		'market_data.Security', on_delete=models.CASCADE, related_name='latest_traditional_valuation_variant_summaries'
+	)
+	report_type = models.CharField(max_length=16)
+	profit_bucket = models.CharField(max_length=16, default='formal')
+	valuation_variant = models.CharField(max_length=128, default='default')
+	style_profile = models.CharField(max_length=64, default='baseline')
+	snapshot = models.ForeignKey(TraditionalValuationSnapshot, on_delete=models.PROTECT, related_name='+')
+	asof_date = models.DateField(db_index=True)
+	compare_group = models.CharField(max_length=32, blank=True)
+	industry_level = models.CharField(max_length=8, blank=True)
+	industry_code = models.CharField(max_length=32, blank=True)
+	industry_name = models.CharField(max_length=128, blank=True)
+	match_rank = models.PositiveSmallIntegerField(null=True, blank=True)
+	match_score = models.DecimalField(max_digits=12, decimal_places=4, null=True, blank=True)
+	composite_valuation_price = models.DecimalField(max_digits=20, decimal_places=6, null=True, blank=True)
+	conservative_valuation_price = models.DecimalField(max_digits=20, decimal_places=6, null=True, blank=True)
+	method_coverage = models.PositiveSmallIntegerField(default=0)
+	is_active_variant = models.BooleanField(default=False)
+	provenance = models.JSONField(default=dict, blank=True)
+	updated_at = models.DateTimeField(auto_now=True)
+
+	class Meta:
+		db_table = 'traditional_valuation_variant_summary_latest'
+		constraints = [
+			models.UniqueConstraint(
+				fields=['security', 'report_type', 'profit_bucket', 'valuation_variant', 'style_profile'],
+				name='tv_variant_summary_latest_uniq',
+			),
+		]
+		indexes = [
+			models.Index(fields=['security', 'report_type', 'profit_bucket'], name='tv_variant_summary_lookup'),
+			models.Index(fields=['is_active_variant', '-updated_at'], name='tv_variant_summary_active'),
+		]
+
+
 class TraditionalValuationRiskSnapshot(models.Model):
 	snapshot = models.OneToOneField(TraditionalValuationSnapshot, on_delete=models.CASCADE, related_name='risk_snapshot')
 	risk_engine_version = models.CharField(max_length=32, default='1.5')

@@ -372,6 +372,170 @@ class IngestionWatermark(models.Model):
         ]
 
 
+class SWIndustryMappingVersion(models.Model):
+    market = models.CharField(max_length=8, default='CN')
+    taxonomy = models.CharField(max_length=16, default='SW2021')
+    mapping_version = models.CharField(max_length=64)
+    source_hash = models.CharField(max_length=128)
+    source_trade_date = models.DateField(null=True, blank=True)
+    source_metadata = models.JSONField(default=dict, blank=True)
+    validation_summary = models.JSONField(default=dict, blank=True)
+    artifact = models.JSONField(default=dict)
+    is_active = models.BooleanField(default=False)
+    published_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = 'market_data_sw_industry_mapping_version'
+        constraints = [
+            models.UniqueConstraint(
+                fields=['market', 'taxonomy', 'mapping_version'],
+                name='market_data_sw_mapping_version_uniq',
+            ),
+        ]
+        indexes = [
+            models.Index(fields=['market', 'taxonomy', 'is_active'], name='md_sw_mapping_active_idx'),
+            models.Index(fields=['source_hash'], name='md_sw_mapping_hash_idx'),
+        ]
+
+
+class IndustryRegimeRuleVersion(models.Model):
+    mapping_version = models.ForeignKey(
+        SWIndustryMappingVersion,
+        on_delete=models.PROTECT,
+        related_name='regime_rule_versions',
+    )
+    rules_version = models.CharField(max_length=64)
+    rules_hash = models.CharField(max_length=128)
+    fallback_regime = models.CharField(max_length=32, default='balanced')
+    rules = models.JSONField(default=dict)
+    validation_summary = models.JSONField(default=dict, blank=True)
+    is_active = models.BooleanField(default=False)
+    published_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = 'market_data_industry_regime_rule_version'
+        constraints = [
+            models.UniqueConstraint(
+                fields=['mapping_version', 'rules_version'],
+                name='market_data_industry_rule_version_uniq',
+            ),
+        ]
+        indexes = [
+            models.Index(fields=['mapping_version', 'is_active'], name='md_industry_rule_active_idx'),
+            models.Index(fields=['rules_hash'], name='md_industry_rule_hash_idx'),
+        ]
+
+
+class CITICIndustryDimension(models.Model):
+    market = models.CharField(max_length=8, default='CN')
+    level = models.CharField(max_length=2)
+    code = models.CharField(max_length=32)
+    name = models.CharField(max_length=128)
+    parent_code = models.CharField(max_length=32, blank=True)
+    mapping_version = models.CharField(max_length=64)
+    source_trade_date = models.DateField(null=True, blank=True)
+    source_hash = models.CharField(max_length=128)
+    is_active = models.BooleanField(default=False)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = 'market_data_citic_industry_dimension'
+        constraints = [
+            models.UniqueConstraint(
+                fields=['market', 'level', 'code', 'mapping_version'],
+                name='md_citic_dimension_uniq',
+            ),
+        ]
+        indexes = [
+            models.Index(fields=['market', 'level', 'code'], name='md_citic_dim_lookup_idx'),
+            models.Index(fields=['market', 'mapping_version', 'is_active'], name='md_citic_dim_active_idx'),
+        ]
+
+
+class CITICSecurityIndustryMembership(models.Model):
+    security = models.ForeignKey(Security, on_delete=models.PROTECT, related_name='citic_memberships')
+    industry = models.ForeignKey(CITICIndustryDimension, on_delete=models.PROTECT, related_name='security_memberships')
+    level = models.CharField(max_length=2)
+    mapping_version = models.CharField(max_length=64)
+    in_date = models.DateField(null=True, blank=True)
+    out_date = models.DateField(null=True, blank=True)
+    is_current = models.BooleanField(default=True)
+    source_trade_date = models.DateField(null=True, blank=True)
+    source_updated_at = models.DateTimeField(null=True, blank=True)
+    synced_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'market_data_citic_security_membership'
+        constraints = [
+            models.UniqueConstraint(
+                fields=['security', 'industry', 'mapping_version', 'in_date'],
+                name='md_citic_member_uniq',
+            ),
+        ]
+        indexes = [
+            models.Index(fields=['security', 'level', 'mapping_version', 'is_current'], name='md_citic_member_lookup_idx'),
+            models.Index(fields=['mapping_version', 'level'], name='md_citic_member_version_idx'),
+        ]
+
+
+class CITICIndustryMappingRun(models.Model):
+    class Status(models.TextChoices):
+        RUNNING = 'RUNNING', 'Running'
+        SUCCEEDED = 'SUCCEEDED', 'Succeeded'
+        FAILED = 'FAILED', 'Failed'
+
+    market = models.CharField(max_length=8, default='CN')
+    mapping_version = models.CharField(max_length=64)
+    source_trade_date = models.DateField(null=True, blank=True)
+    source_hash = models.CharField(max_length=128)
+    status = models.CharField(max_length=16, choices=Status.choices, default=Status.RUNNING)
+    source_count = models.PositiveIntegerField(default=0)
+    dimension_count = models.PositiveIntegerField(default=0)
+    membership_count = models.PositiveIntegerField(default=0)
+    rejected_count = models.PositiveIntegerField(default=0)
+    error_message = models.TextField(blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    finished_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        db_table = 'market_data_citic_mapping_run'
+        indexes = [
+            models.Index(fields=['market', '-created_at'], name='md_citic_run_created_idx'),
+            models.Index(fields=['status', '-created_at'], name='md_citic_run_status_idx'),
+        ]
+
+
+class BusinessIndustryMatchSnapshot(models.Model):
+    security = models.ForeignKey(Security, on_delete=models.PROTECT, related_name='business_industry_match_snapshots')
+    asof_date = models.DateField()
+    level = models.CharField(max_length=2, default='L2')
+    requested_top_n = models.PositiveSmallIntegerField(default=3)
+    returned_count = models.PositiveSmallIntegerField(default=0)
+    profile_hash = models.CharField(max_length=128, blank=True)
+    profile_source = models.CharField(max_length=64, blank=True)
+    profile_updated_at = models.DateTimeField(null=True, blank=True)
+    mapping_version = models.CharField(max_length=64, blank=True)
+    rules_version = models.CharField(max_length=64, blank=True)
+    status = models.CharField(max_length=32, default='VALID')
+    degraded_reason = models.CharField(max_length=128, blank=True)
+    matches = models.JSONField(default=list, blank=True)
+    fallback = models.JSONField(default=dict, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = 'market_data_business_industry_match_snapshot'
+        constraints = [
+            models.UniqueConstraint(
+                fields=['security', 'asof_date', 'level', 'requested_top_n', 'profile_hash', 'mapping_version', 'rules_version'],
+                name='md_business_match_snapshot_uniq',
+            ),
+        ]
+        indexes = [
+            models.Index(fields=['security', '-asof_date'], name='md_business_match_sec_dt'),
+            models.Index(fields=['status', '-asof_date'], name='md_business_match_status_dt'),
+        ]
+
+
 class MarketRegimeSnapshot(models.Model):
     benchmark_security = models.ForeignKey(
         Security, on_delete=models.PROTECT, related_name='market_regime_snapshots'

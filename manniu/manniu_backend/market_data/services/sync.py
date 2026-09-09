@@ -12,6 +12,7 @@ from django.db import transaction
 from django.utils import timezone
 
 from market_data.models import (
+    BusinessIndustryMatchSnapshot,
     City,
     CompanyProfile,
     IndexDailyFundamentalHistory,
@@ -28,9 +29,12 @@ from market_data.models import (
     StockDailyFundamentalHistory,
     StockDailyFundamentalLatest,
 )
+from market_data.services.business_match import build_business_industry_match
+from market_data.services.citic import sync_citic_memberships
 
 DATASETS = {
-    'security-master', 'index-master', 'company-profile', 'stock-bars',
+    'security-master', 'index-master', 'company-profile', 'citic-industry-membership',
+    'business-industry-matches', 'stock-bars',
     'stock-fundamentals', 'stock-cost', 'index-bars', 'index-fundamentals', 'resample',
 }
 DAILY_DATASETS = {'stock-bars', 'stock-fundamentals', 'stock-cost', 'index-bars', 'index-fundamentals'}
@@ -250,6 +254,25 @@ def _sync_company_profiles(pro, plan: SyncPlan) -> int:
     return count
 
 
+def _sync_citic_industry_memberships(pro, plan: SyncPlan) -> int:
+    return sync_citic_memberships(pro=pro, source_trade_date=plan.end_date, ts_codes=plan.ts_codes)
+
+
+def _sync_business_industry_matches(plan: SyncPlan) -> int:
+    securities = _target_securities(plan, Security.AssetType.STOCK)
+    count = 0
+    for security in securities:
+        result = build_business_industry_match(
+            security=security,
+            asof_date=plan.end_date,
+            level='L2',
+            top_n=3,
+        )
+        if result.get('status') == 'VALID':
+            count += int(result.get('returned_count') or 0)
+    return count
+
+
 def _sync_daily_dataset(pro, plan: SyncPlan) -> int:
     asset_type = Security.AssetType.INDEX if plan.dataset in INDEX_DATASETS else Security.AssetType.STOCK
     securities = _target_securities(plan, asset_type)
@@ -449,7 +472,7 @@ def _format_scope_key(plan: SyncPlan) -> str:
 def execute_sync(plan: SyncPlan) -> int:
     if plan.dry_run:
         return 0
-    pro = _client()
+    pro = None if plan.dataset == 'business-industry-matches' else _client()
     scope = _format_scope_key(plan)
     run = IngestionRun.objects.create(dataset=plan.dataset, mode=plan.mode.upper(), frequency='D', scope_key=scope, requested_start_date=plan.start_date, requested_end_date=plan.end_date, status=IngestionRun.Status.RUNNING, started_at=timezone.now())
     try:
@@ -459,6 +482,10 @@ def execute_sync(plan: SyncPlan) -> int:
             count = _sync_index_master(pro)
         elif plan.dataset == 'company-profile':
             count = _sync_company_profiles(pro, plan)
+        elif plan.dataset == 'citic-industry-membership':
+            count = _sync_citic_industry_memberships(pro, plan)
+        elif plan.dataset == 'business-industry-matches':
+            count = _sync_business_industry_matches(plan)
         elif plan.strategy == 'by-date':
             count = _sync_daily_dataset_by_date(pro, plan)
         else:

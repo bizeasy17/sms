@@ -3,15 +3,15 @@
   "market": "CN",
   "tasks": {
     "sw_mapping_sync": {
-      "enabled": true,
+      "enabled": false,
       "cadence_days": 14,
-      "description": "Refresh SW hierarchy mapping file.",
+      "description": "Moved to market_data.sync_sw_industry_mapping; traditional valuation does not own stock-to-SW mapping.",
       "steps": [
         {
-          "command": "syncswvaluation",
+          "command": "sync_sw_industry_mapping",
           "kwargs": {
-            "mapping_only": true,
-            "request_interval": 0.45
+            "from_tushare": true,
+            "rules_file": "market_data/static/industry_config/industry_regime_rules_CN.json"
           }
         }
       ]

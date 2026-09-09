@@ -77,6 +77,8 @@ def build_financial_sync_plan(options: dict[str, Any], today: date | None = None
 
     if scope == 'announcement-date' and any(ep != 'disclosure_date' for ep in selected_endpoints):
         raise FinancialSyncValidationError('announcement-date scope is valid only for disclosure_date')
+    if mode == 'quarterly' and scope == 'event-driven' and 'disclosure_date' not in selected_endpoints:
+        raise FinancialSyncValidationError('quarterly event-driven scope requires disclosure_date')
 
     period = str(options.get('period') or '').strip()
     page_size = int(options.get('page_size', 5000))
@@ -195,7 +197,8 @@ def execute_financial_sync(plan: FinancialSyncPlan, adapter: FinancialAdapter | 
             total_upserted += ups
             total_rejected += rej
 
-            detected_events = DisclosureEventDetector.detect_events_for_records(disc_rows)
+            new_disclosure_rows = DisclosureEventDetector.filter_new_or_changed_records(disc_rows)
+            detected_events = DisclosureEventDetector.detect_events_for_records(new_disclosure_rows)
             repo.advance_watermark('disclosure_date', scope_key, last_date=plan.end_date, last_period=plan.period, run=run)
 
         # 2. Statement & Event endpoints
@@ -203,9 +206,6 @@ def execute_financial_sync(plan: FinancialSyncPlan, adapter: FinancialAdapter | 
 
         if plan.mode == 'quarterly' and plan.scope == 'event-driven':
             # Event-driven: only query target securities from detected events
-            if not detected_events and plan.period:
-                detected_events = DisclosureEventDetector.get_events_from_db(target_period=plan.period)
-
             logger.info('Event-driven sync: %d events to process', len(detected_events))
             for ts_code, period_val in detected_events:
                 sec = repo.get_security(ts_code)

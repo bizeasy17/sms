@@ -2,6 +2,7 @@
   "version": "SW-CN-1.0",
   "market": "CN",
   "src": "SW2021",
+  "mapping_version": "SW2021-20260909102850",
   "updated_at": "2026-08-21T22:26:14",
   "trade_date": "20260821",
   "sample_size": 3,

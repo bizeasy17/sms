@@ -25,7 +25,7 @@ def raw_number(record, *names):
     return None, None
 
 
-def calculate_ev_ebitda(income, balance, shares, target_multiple):
+def calculate_ev_ebitda(income, balance, shares, target_multiple, per_share_scale=10_000.0):
     ebitda, ebitda_source = raw_number(income, 'ebitda', 'EBITDA', 'n_ebitda')
     cash = positive(getattr(balance, 'money_cap', None)) if balance else None
     short_debt = number(getattr(balance, 'st_borr', None)) if balance else None
@@ -43,7 +43,7 @@ def calculate_ev_ebitda(income, balance, shares, target_multiple):
         return None, 'cash_or_debt_missing'
     enterprise_value = ebitda * multiple
     equity_value = enterprise_value - debt + cash
-    price = equity_value / shares
+    price = equity_value / shares / per_share_scale
     if price <= 0:
         return None, 'equity_value_nonpositive'
     return {
@@ -56,7 +56,7 @@ def calculate_ev_ebitda(income, balance, shares, target_multiple):
     }, None
 
 
-def calculate_sw_history(metrics, shares, net_income, revenue, equity):
+def calculate_sw_history(metrics, shares, net_income, revenue, equity, per_share_scale=10_000.0):
     history = metrics.get('history_quantiles') or {}
     weights = {'3y': 0.2, '5y': 0.5, '10y': 0.3}
     anchors = {}
@@ -81,13 +81,13 @@ def calculate_sw_history(metrics, shares, net_income, revenue, equity):
     prices = []
     price_inputs = {}
     if shares and net_income and anchors.get('pe'):
-        price_inputs['pe'] = (net_income / shares) * anchors['pe']
+        price_inputs['pe'] = (net_income / shares / per_share_scale) * anchors['pe']
         prices.append(price_inputs['pe'])
     if shares and equity and anchors.get('pb'):
-        price_inputs['pb'] = (equity / shares) * anchors['pb']
+        price_inputs['pb'] = (equity / shares / per_share_scale) * anchors['pb']
         prices.append(price_inputs['pb'])
     if shares and revenue and anchors.get('ps'):
-        price_inputs['ps'] = (revenue / shares) * anchors['ps']
+        price_inputs['ps'] = (revenue / shares / per_share_scale) * anchors['ps']
         prices.append(price_inputs['ps'])
     if not prices:
         return None, 'history_anchor_unavailable', {'coverage': coverage, 'anchors': anchors}

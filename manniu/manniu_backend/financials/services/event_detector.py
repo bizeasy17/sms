@@ -6,6 +6,7 @@ from typing import Any
 from django.db.models import Q
 
 from financials.models import FinancialDisclosureRecord
+from financials.services.normalization import compute_row_signature, normalize_value
 
 
 class DisclosureEventDetector:
@@ -28,6 +29,33 @@ class DisclosureEventDetector:
             if ts_code and end_date:
                 events.add((ts_code, end_date))
         return events
+
+    @classmethod
+    def filter_new_or_changed_records(
+        cls,
+        raw_disclosure_records: list[dict[str, Any]],
+    ) -> list[dict[str, Any]]:
+        """Return only disclosure payloads not already persisted for the same signature."""
+        candidates: list[tuple[dict[str, Any], str, str]] = []
+        for record in raw_disclosure_records:
+            ts_code = str(normalize_value(record.get('ts_code')) or '').upper()
+            if ts_code:
+                candidates.append((record, ts_code, compute_row_signature(record)))
+
+        if not candidates:
+            return []
+
+        existing = set(
+            FinancialDisclosureRecord.objects.filter(
+                ts_code__in={ts_code for _, ts_code, _ in candidates},
+                row_signature__in={signature for _, _, signature in candidates},
+            ).values_list('ts_code', 'row_signature')
+        )
+        return [
+            record
+            for record, ts_code, signature in candidates
+            if (ts_code, signature) not in existing
+        ]
 
     @classmethod
     def get_events_from_db(

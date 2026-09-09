@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, datetime
 from decimal import Decimal, InvalidOperation
 import hashlib
 import json
@@ -12,11 +12,20 @@ import pandas as pd
 def normalize_value(value: Any) -> Any:
     if value is None:
         return None
-    if pd.isna(value):
-        return None
     if isinstance(value, str):
         val = value.strip()
         return val if val != '' else None
+    if isinstance(value, (date, datetime)):
+        return value.isoformat()
+    if isinstance(value, Decimal):
+        return str(value) if value.is_finite() else None
+    if isinstance(value, (dict, list, tuple, set)):
+        return json.dumps(value, sort_keys=True, ensure_ascii=True, default=str)
+    try:
+        if bool(pd.isna(value)):
+            return None
+    except (TypeError, ValueError):
+        pass
     return value
 
 

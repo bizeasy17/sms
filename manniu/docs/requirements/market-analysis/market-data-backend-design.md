@@ -241,6 +241,142 @@ prediction inputs and to create its event refresh scope. Neither consumer may
 call Tushare, read another service's private state, or reimplement the
 thresholds.
 
+## Unified Industry-Regime And SW Mapping Service
+
+`market_data` also owns the canonical SW taxonomy snapshot, code
+normalization, and industry-regime resolution used by both valuation modules.
+This is distinct from market and security price regimes: an industry regime
+describes the structural industry profile, while `BULL`/`BEAR`/`BALANCE` and
+`GROWTH`/`DEFENSIVE` describe completed EOD price behavior. Downstream modules
+must not keep their own SW prefix tables or classify an industry from a display
+name alone.
+
+The service resolves only the common classification contract:
+
+```text
+high_growth | balanced | stable_value | cyclical_resource
+```
+
+Traditional valuation owns the regime-specific method weights, tier gaps,
+range multipliers, and position guidance. Predictive valuation owns its model
+range mapping and predictive tier multipliers. Neither module may change a
+resolved industry regime or mapping version.
+
+### Versioned SW Mapping Artifact
+
+The active SW2021 mapping is an immutable, validated artifact published under
+`market_data/static/industry_config/`. Its canonical source is the existing
+SW hierarchy/membership data generated from `index_classify` and
+`index_member_all`. Downstream modules consume it only through the versioned
+read service or immutable artifact reference; no module-local copy may act as a
+second active mapping source.
+
+```text
+market_data/static/industry_config/
+  sw_industry_mapping_CN.json
+  industry_regime_rules_CN.json
+```
+
+`sw_industry_mapping_CN.json` retains `version`, `source_hash`, `updated_at`,
+SW L1/L2/L3 `index_code`, `industry_code`, name, parent/grandparent links, and
+stock-to-level membership. `industry_regime_rules_CN.json` contains its own
+`mapping_version`, `rules_version`, exact code/index assignments, approved
+name-keyword fallback rules, and the mandatory default
+`fallback_regime=balanced`. Both artifacts are validated as a pair before an
+atomic publish; an invalid candidate leaves the previous active pair intact.
+
+Every resolution returns the artifact identities. A mapping refresh that only
+changes membership is still a new `mapping_version`; a rule-only change is a
+new `rules_version` with the mapping version retained. Historical valuation and
+prediction replay load the recorded versions, never the currently active files.
+
+### Industry-Regime Resolution And Read Contract
+
+The read-only service normalizes an `industry_code` or `index_code` by removing
+suffixes such as `.SI`, retaining the numeric root, and resolving canonical SW
+L3/L2/L1 identity. It then applies this deterministic order:
+
+1. exact code/index assignment in the active versioned rules;
+2. parent-level assignment from L3 through L2 to L1;
+3. approved industry-name keyword assignment;
+4. `balanced` fallback with an explicit reason.
+
+The downstream boundary is database/artifact-backed and has no Tushare or
+write-side behavior:
+
+```python
+resolve_industry_regime(
+  *,
+  security: Security | int | str | None = None,
+  industry_code: str | None = None,
+  index_code: str | None = None,
+  industry_name: str | None = None,
+  mapping_version: str | None = None,
+  rules_version: str | None = None,
+) -> IndustryRegimeResult
+```
+
+An `IndustryRegimeResult` contains:
+
+```text
+selected_regime: high_growth | balanced | stable_value | cyclical_resource
+regime_confidence: 0..1
+regime_source: exact | parent | keyword | fallback
+industry_code, index_code, sw_level, sw_name
+mapping_version, rules_version, source_hash
+regime_reasons, fallback_reason, status
+```
+
+`security` resolution uses the mapping membership recorded for the requested
+version. When explicit identifiers and a security disagree, explicit inputs
+are rejected as a typed conflict rather than silently overriding the security
+mapping. Unknown or historical `85xxxx` codes may resolve through compatible
+aliases or parent links; otherwise the result is a valid explainable
+`balanced` fallback, never `none`. Configuration absence/corruption returns a
+typed `CONFIGURATION_UNAVAILABLE` degraded result and does not fabricate a
+mapping version.
+
+### Persistence, Publication, And Consumers
+
+`SWIndustryMappingVersion` records the immutable artifact identity, market,
+taxonomy version, content hash, source trade date, source metadata, validation
+summary, publication time, and activation status. `IndustryRegimeRuleVersion`
+records the linked mapping version, rules hash/version, fallback policy, and
+activation status. Version rows are append-only; exactly one validated active
+pair exists per `(market, taxonomy='SW2021')`.
+
+The mapping generator validates L1/L2/L3 parent links, unique canonical codes,
+membership references to stock `Security` records, code aliases, JSON schema,
+and complete resolution coverage. For every supplied SW code, the service must
+return either an exact/parent/keyword result or an explicit fallback reason.
+The coverage report includes `mapped_count`, `fallback_count`, `invalid_count`,
+and `mapped_ratio`; valid coded input requires `mapped_ratio=100%` when
+fallback is counted as an explainable mapped result.
+
+`traditional_valuation` and `predictive_valuation` call
+`resolve_industry_regime` during their persisted calculation paths and retain
+the complete result in snapshot provenance and tier templates. They do not call
+it from dashboard reads, mutate the active version, or reproduce the rule
+order. A mapping/rules activation emits a versioned `INDUSTRY_MAPPING_CHANGED`
+event. The event consumer determines the bounded affected-security refresh
+scope; it does not overwrite historical valuation/prediction snapshots.
+
+### Implementation And Acceptance Gates
+
+1. Confirm the existing SW mapping generator's artifact schema, canonical
+   `Security` membership source, and all supported `801xxx`/historical
+   `85xxxx` aliases.
+2. Implement immutable version records, validated atomic artifact publication,
+   and the read-only resolver before either valuation module consumes it.
+3. Validate at least ten samples each for high-growth, cyclical-resource,
+   stable-value, balanced, parent-fallback, and historical-code paths.
+4. Verify the same industry identifier resolves to the same
+   `selected_regime`, mapping version, and rules version from traditional and
+   predictive persisted calculation paths.
+5. Verify missing/corrupt configuration and conflicting inputs return typed,
+   explainable failures without a Tushare call, data write, or silent fallback
+   to a different industry.
+
 ### Event And Refresh Contract
 
 After successful market-data ingestion, the detector runs in this order:
@@ -284,6 +420,248 @@ The geographic and industry design separates raw provider input from canonical d
 `Security` stores nullable references to its Tushare `area` province and industry. `CompanyProfile` stores nullable registered `province` and `city` references. The raw `province_name`, `city_name`, and `industry_name` received from Tushare are retained for traceability.
 
 `stock_company.province` maps to registered province and `stock_company.city` maps to registered city. `stock_basic.area` maps to security area, while `stock_basic.industry` maps to security industry. The two province sources can differ and must not silently overwrite each other. A missing source value remains null with an ingestion-quality record; it must never be invented as Shanghai. Region is derived through the active versioned province mapping, not written as an untraceable text value.
+
+### CITIC Stock/Industry Mapping And Persistence
+
+The existing `Industry` model is reserved for the provider's broad
+`stock_basic.industry` taxonomy and must not be reused for CITIC classifications.
+The `ci_index_member` result is a separate, versioned classification source and
+must be persisted in PostgreSQL before it is used as a business-matching prior.
+The JSON cache used by SmartInvestor's `syncvaluationremotecache` is a legacy
+compatibility artifact, not the Maniu source of truth.
+
+#### Source Contract
+
+The market-data adapter calls Tushare `ci_index_member` with `is_new="Y"` and
+the explicit fields:
+
+```text
+ts_code, l1_code, l1_name, l2_code, l2_name, l3_code, l3_name,
+is_new, in_date, out_date
+```
+
+Each row maps one canonical stock `Security` to its active or historical CITIC
+L1/L2/L3 classification. Codes are normalized without changing their source
+meaning; names are trimmed but retained verbatim for audit. `is_new=Y` is an
+active-source marker, not permission to delete historical memberships. A
+provider omission or temporary empty response must not deactivate all existing
+rows.
+
+#### Proposed PostgreSQL Models
+
+`CITICIndustryDimension` stores the hierarchy independently from SW and broad
+Tushare industry dimensions:
+
+| Field | Contract |
+| --- | --- |
+| `market` | Initially `CN`, indexed |
+| `level` | `L1`, `L2`, or `L3` |
+| `code` | Canonical CITIC code, unique within market/level/version |
+| `name` | Provider industry name |
+| `parent_code` | Nullable parent CITIC code for L2/L3 |
+| `mapping_version` | Immutable source/version identity |
+| `source_trade_date` | Effective synchronization date |
+| `source_hash` | Content/version audit hash |
+| `is_active` | Publication status |
+
+`CITICSecurityIndustryMembership` stores the stock-to-industry relationship:
+
+| Field | Contract |
+| --- | --- |
+| `security_id` | Foreign key to stock `Security`; indexes are rejected |
+| `industry_id` | Foreign key to `CITICIndustryDimension` |
+| `level` | Denormalized level for bounded reads, must equal dimension level |
+| `is_current` | Current active membership projection |
+| `in_date/out_date` | Provider effective interval, nullable as supplied |
+| `source_trade_date` | Synchronization effective date |
+| `mapping_version` | Links the source publication |
+| `source_updated_at/synced_at` | Provider/local audit timestamps |
+
+The historical natural key is `(security_id, industry_id, mapping_version,
+in_date)`. The current projection must enforce at most one current membership
+per `(security_id, level, mapping_version)` unless the provider explicitly
+returns multiple valid memberships. A mapping refresh creates a new immutable
+version; it does not rewrite old valuation provenance. Referential integrity
+requires every membership's `Security.asset_type='STOCK'` and every industry
+dimension's parent to exist in the same compatible version.
+
+`CITICIndustryMappingRun` records source trade date, requested scope, row
+counts, active/inactive counts, rejected rows, source hash, mapping version,
+status, and sanitized failure details. It is separate from the generic
+`IngestionRun` when the mapping publication needs an atomic active-version
+pointer, but both records must be cross-referenced.
+
+#### Atomic Sync And Read Contract
+
+The sync flow is:
+
+1. Fetch `ci_index_member` with bounded retry/rate limiting.
+2. Validate codes, levels, parent consistency, dates, and required stock
+  references before any publication.
+3. Build a candidate CITIC hierarchy and stock-membership set, calculate a
+  canonical source hash, and validate duplicate/conflicting rows.
+4. Persist candidate dimensions and memberships in one PostgreSQL transaction.
+5. Activate the new `mapping_version` only after coverage and integrity checks
+  pass; preserve the previous active version on failure or empty provider
+  payload.
+6. Update current projections and emit `CITIC_MAPPING_CHANGED` with the old
+  and new version plus affected-security counts.
+
+The read service is database-backed and has no Tushare fallback:
+
+```python
+get_citic_industry_memberships(
+  *, security: Security | int | str,
+  asof_date: date | None = None,
+  level: str | None = None,
+  mapping_version: str | None = None,
+) -> CITICMembershipResult
+```
+
+The result includes all selected L1/L2/L3 codes and names, effective dates,
+`mapping_version`, source date, and status. `business_industry_matches` uses
+this result to construct CITIC priors and records the exact membership version
+in its match snapshot. The result is empty with an explicit
+`NO_CITIC_MEMBERSHIP` status when unavailable; it must not infer CITIC identity
+from `Security.industry`, SW membership, or company name.
+
+#### CITIC-to-SW Matching Prior
+
+The persisted CITIC stock/industry mapping is an input prior, not the final
+traditional-valuation industry. The matching service applies the versioned
+mapping from CITIC name to SW target in this order:
+
+1. explicit approved `citic_name_targets`;
+2. exact normalized keyword-rule target;
+3. fuzzy SW industry-name similarity above the configured cutoff.
+
+For each target it records `citic_level`, `citic_name`, `target_level`,
+`target_code`, `target_name`, `match_type`, `similarity`, and `boost`. The
+candidate score adds the configured level prior (`L1/L2/L3`) multiplied by
+similarity, and non-target candidates may receive the configured penalty. The
+rule/config version and all CITIC evidence are persisted in the match snapshot
+so a future rule refresh cannot silently change an old valuation replay.
+
+### Business-Text Industry Matching For Downstream Valuation
+
+`market_data` owns the canonical business-text industry matching result used by
+traditional valuation. This is separate from `Security.industry`, which is the
+provider's broad `stock_basic.industry` classification, and separate from the
+SW membership mapping. The matching input is the persisted company profile for
+the same security:
+
+- `CompanyProfile.main_business` as the primary business description;
+- `CompanyProfile.business_scope` as the supplementary scope description;
+- `CompanyProfile.source_updated_at` and profile version as the input
+  freshness boundary;
+- persisted CITIC stock/industry membership and approved industry keyword
+  rules, both resolved at explicit versions.
+
+The matcher must not call Tushare in a downstream valuation request. Company
+profile ingestion refreshes the source text first; a scheduled or explicitly
+requested market-data matching job then creates a versioned result. A missing
+or stale profile produces `NO_PROFILE`/`STALE_PROFILE` diagnostics and does
+not invent an industry match.
+
+#### Matching And Ranking Contract
+
+The compatibility behavior is the one consumed by the SmartInvestor
+`estmktv --match-business-industries` flow:
+
+1. Resolve the security's canonical identity and read its latest eligible
+   `main_business` and `business_scope` values as one normalized text input.
+2. Apply the approved business keyword/rule matcher and the persisted CITIC
+  membership prior to generate SW industry candidates at the requested level. The default
+   downstream level is `L2`; the service may support `L1`/`L3` only when the
+   request explicitly selects them.
+3. Calculate a deterministic `match_score` for every candidate, retain matched
+   keywords/evidence, and sort candidates by descending score.
+4. Apply deterministic tie-breakers: canonical industry level, industry code,
+   then normalized industry name. The same profile text, rules version, and
+   mapping version must produce the same order.
+5. Return the requested TopN candidates after ranking. `top_n=0` means no
+   business candidates, not “return all”. The response must state requested
+   versus returned counts and whether a fallback was applied.
+
+The exact scoring formula belongs to the versioned matcher implementation, not
+to downstream valuation code. A result is valid only when it includes the
+formula/rules version and evidence used to calculate the score. Low-confidence
+results may be marked for `business_fallback` according to the versioned
+fallback profile, but fallback selection is still returned by market data as an
+explicit result and must not be silently performed by traditional valuation.
+
+#### Read-Service Contract
+
+The internal read boundary is database-backed and side-effect free:
+
+```python
+get_business_industry_matches(
+  *,
+  security: Security | int | str,
+  asof_date: date | None = None,
+  level: str = 'L2',
+  top_n: int = 3,
+  mapping_version: str | None = None,
+  rules_version: str | None = None,
+) -> BusinessIndustryMatchResult
+```
+
+The result contains:
+
+```text
+security_id, ts_code, asof_date
+profile_source, profile_source_updated_at, profile_hash
+input_fields = [main_business, business_scope]
+level, requested_top_n, returned_count
+matches[
+  rank, score, industry_level, industry_code, industry_name,
+  matched_keywords, evidence, mapping_version, rules_version
+]
+fallback = {
+  applied, reason, profile_name, selected_match
+}
+status, degraded_reason, generated_at
+```
+
+`rank` is one-based and must be consecutive after filtering invalid candidates.
+`matches[0]` is the highest-ranked candidate; consumers must use `rank` and
+`score`, never database row order. `selected_match` is present only when the
+fallback policy explicitly chooses one. The service returns no candidates for
+an empty profile or `top_n=0`, with a typed status rather than a fabricated
+global industry.
+
+#### Persistence And Versioning
+
+The recommended market-data read model is
+`BusinessIndustryMatchSnapshot`, keyed by
+`(security_id, asof_date, level, top_n, mapping_version, rules_version,
+profile_hash)`. It stores the complete ordered candidate array, normalized
+profile input metadata, score/evidence payload, fallback decision, and
+generation status. A separate latest projection may be keyed by
+`(security_id, level, top_n)` for current reads, but it must retain the source
+snapshot/version references.
+
+Profile text changes, keyword-rule changes, CITIC context changes, or SW
+mapping changes create a new snapshot version. Historical valuation replay
+must request the matching snapshot by its recorded profile/mapping/rules
+versions and must never use today's TopN ranking for an older as-of date.
+Ranking output is analysis metadata only; it does not alter `Security.industry`
+or SW membership tables.
+
+#### Downstream Consumer Contract
+
+`traditional_valuation` consumes this result to construct its baseline plus
+business-match valuation contexts. For each returned match it resolves the
+corresponding SW valuation parameters, then persists the returned `rank`,
+`score`, industry identity, evidence reference, and source versions in the
+valuation variant provenance. It must not import `BusinessIndustryMatcher`,
+read `CompanyProfile` directly for matching, call Tushare, rerank candidates,
+or generate a different TopN list.
+
+`predictive_valuation` may consume the same ranked candidates for feature or
+context selection, but it also must treat market data as the source of truth.
+Both consumers may choose how to weight valid variants; neither may change the
+upstream candidate order or reinterpret a missing match as a successful one.
 
 ### Trading History And Latest Snapshots
 
@@ -601,7 +979,7 @@ The detailed command contract, source projections, dataset ordering, and recover
 
 ```text
 python manage.py sync_market_data \
-  --dataset security-master|company-profile|stock-bars|stock-fundamentals|stock-cost|index-bars|index-fundamentals|resample \
+  --dataset security-master|company-profile|citic-industry-membership|business-industry-matches|stock-bars|stock-fundamentals|stock-cost|index-bars|index-fundamentals|resample \
   --mode backfill|daily \
   --frequency D|W|M \
   --scope all|ts-code|index-universe \
@@ -611,7 +989,11 @@ python manage.py sync_market_data \
 
 Rules:
 
-- `security-master` and `company-profile` ignore `frequency`.
+- `security-master`, `company-profile`, `citic-industry-membership`, and
+  `business-industry-matches` ignore `frequency`.
+- `citic-industry-membership` is an upstream Tushare dataset and publishes an
+  immutable CITIC mapping version; `business-industry-matches` is a derived
+  PostgreSQL dataset and reads persisted profile/CITIC/SW inputs only.
 - `stock-bars` accepts daily provider data only; `W` and `M` are generated through `resample`.
 - `stock-fundamentals`, `stock-cost`, and `index-fundamentals` are daily provider datasets; weekly/monthly values are only created when a documented derived table exists.
 - `index-bars` supports daily provider data and derived weekly/monthly records.
@@ -654,6 +1036,22 @@ Reconciliation compares persisted coverage with the approved trading calendar an
 - A daily overlap run upserts a revised provider record and advances the watermark only after its chunk commits.
 - Weekly/monthly derivation produces correct OHLCV and period-end fundamental/cost records from daily rows.
 - A completed ingestion transaction updates the relevant latest snapshot and invalidates only that security's affected EOD cache keys.
+- A valid `ci_index_member` response persists a new CITIC mapping version,
+  hierarchy dimensions, and stock memberships in PostgreSQL without changing
+  the broad `Industry` or SW mapping tables.
+- Repeating the same CITIC source payload produces the same source hash and
+  converges without duplicate memberships.
+- A successful CITIC version activation emits one idempotent
+  `CITIC_MAPPING_CHANGED` event with affected-security counts.
+- A company profile containing `main_business` and/or `business_scope` produces a
+  versioned ordered industry-match snapshot with consecutive ranks and source
+  profile hash.
+- Repeating a match request with the same profile, mapping, rules, as-of date,
+  level, and TopN converges to the same ordered candidates and scores.
+- A profile/rules/mapping change creates a new match snapshot and does not
+  overwrite the historical result used by an older valuation replay.
+- A TopN read returns candidates in explicit rank order, with requested versus
+  returned counts and evidence/source versions.
 
 ### Boundary Scenarios
 
@@ -664,6 +1062,18 @@ Reconciliation compares persisted coverage with the approved trading calendar an
 - A non-trading day does not advance a daily watermark without trading-calendar confirmation.
 - A duplicate dividend event does not queue a second concurrent rebuild; a revised event queues exactly one replacement rebuild.
 - A resample task does not publish an incomplete current week or month.
+- An empty, malformed, or partial CITIC response does not deactivate the last
+  active mapping version or publish a partially validated hierarchy.
+- A stock membership cannot reference an index security, an unknown parent, or
+  an incompatible mapping version.
+- A business match with a persisted CITIC membership applies the documented
+  explicit-target, keyword-rule, or fuzzy prior and records similarity/boost
+  evidence; without membership it returns an explicit degraded status.
+- Empty or stale profile text returns a typed no-match status and never a
+  fabricated global industry.
+- `top_n=0` returns no business candidates and does not mean unlimited results.
+- Equal-score candidates resolve in the documented deterministic tie-break
+  order, independent of database insertion order.
 
 ### Failure Scenarios
 
@@ -672,6 +1082,9 @@ Reconciliation compares persisted coverage with the approved trading calendar an
 - A failed chunk rolls back its domain rows and does not mark partial coverage as complete.
 - A failed transaction leaves the historical row, latest snapshot, cache-invalidation marker, and watermark at their pre-run state.
 - A failed dividend-triggered rebuild leaves its event pending, does not advance the related adjusted-history watermark, and does not affect unrelated securities.
+- A malformed matcher candidate, invalid industry code, or score conversion
+  failure is rejected with a row-level reason and cannot change the rank of
+  valid candidates silently.
 
 ## Implementation Sequence
 
@@ -681,4 +1094,7 @@ Reconciliation compares persisted coverage with the approved trading calendar an
 4. Replace the initial stock-bar `daily` adapter with the validated `stk_factor` adapter and tests for direct qfq/hfq persistence.
 5. Implement `dividend` event persistence, event-change detection, stock-specific full adjusted-history rebuild, retries, and regression tests.
 6. Implement backfill dry-run, persisted watermarks, daily overlap refresh, reconciliation reports, and failure exit behavior.
-7. Implement weekly/monthly derivation and its source-coverage checks.
+7. Implement the versioned company-profile business matcher, ordered TopN
+  snapshot/latest read model, deterministic tie-breaks, and downstream read
+  service before enabling multi-industry valuation.
+8. Implement weekly/monthly derivation and its source-coverage checks.

@@ -164,6 +164,84 @@ the provider field of the same name. This preserves compatibility with the legac
 Feature values must be normalized according to `schema.yaml`. In particular,
 ratio-scale upstream values must not be mixed with percentage-scale model features.
 
+## Authoritative Predictive Three-Tier Template
+
+Predictive valuation produces an additive three-tier display template from a
+persisted inference result. The tiers are `conservative`, `balanced`, and
+`aggressive`; each contains a target price/range, expected return/range, risk
+level, and position guidance. They are derived after model inference and
+regime-aware target mapping. They are not model features, separate model
+artifacts, or an instruction to trade.
+
+### Shared Industry-Regime Contract
+
+Predictive valuation calls the same backend `industry_regime_service` and
+versioned SW mapping used by `traditional_valuation`. It supplies the canonical
+security/industry identity available from `market_data`, plus the selected
+financial-panel and inference quality metadata. The returned contract is:
+
+```text
+selected_regime: high_growth | balanced | stable_value | cyclical_resource
+regime_confidence: 0..1
+regime_source: exact | parent | keyword | fallback
+regime_reasons, industry_code, mapping_version, fallback_reason
+```
+
+Code normalization and lookup follow exact industry/index mapping, SW parent
+walk, keyword rule, then an explainable `balanced` fallback. A code with no
+explicit rule therefore never yields an unexplained `none` regime. The frontend
+may retain a compatibility fallback only when this backend metadata is absent;
+it must not maintain an independent authoritative prefix mapping.
+
+The predictive path deliberately does not consume `business_match` variants or
+calculate `variant_weights`/`blend`: its approved input contract has one
+security, one feature panel, and one inference result per report type/as-of
+identity. Adding industry-variant model inference is a separate model-contract
+change and is out of scope for three-tier serving.
+
+### Tier Construction And Degradation
+
+The active model's capped target return/price output is the balanced anchor.
+The selected industry regime chooses a versioned template pack with lower/upper
+range multipliers, minimum tier gaps, and position-guidance caps. Confirmed
+`market_data` market/security regimes and inference risk/quality may narrow
+or widen that pack but cannot alter the canonical industry-regime result.
+After applying those controls, the mapper enforces:
+
+$$
+conservative \le balanced \le aggressive
+$$
+
+and the recorded minimum down/up gaps. It records values before and after the
+spacing correction. Low `regime_confidence`, degraded/stale live features,
+high inference uncertainty, or a `BEAR`/`RISK_OFF` market-data state invokes
+the configured conservative fallback: widen downside protection and cap the
+aggressive position. Strict live-feature mode remains authoritative; an
+ineligible prediction returns its existing typed failure rather than a
+fabricated tier template.
+
+### Persistence And Read Contract
+
+`PredictiveValuationSnapshot` stores the immutable
+`predictive_tiered_template` and the source prediction/range values used to
+derive it. `PredictiveValuationCurrent` stores the corresponding latest
+template only after the successful current projection upsert. At minimum the
+template contains:
+
+- `conservative`, `balanced`, `aggressive`, each with price/return range and
+  position guidance;
+- `selected_regime`, `regime_confidence`, `regime_source`, `regime_reasons`,
+  `industry_code`, and `mapping_version`;
+- `tier_spacing` with configured rule and before/after targets;
+- model/risk/market/security regime inputs, range multiplier, and
+  `downgrade_applied`/`downgrade_reason`.
+
+The template is additive to existing target-range fields. Future gateway
+responses expose it from persisted snapshot/current rows only, alongside
+`asof_date`, `source_market_date`, `financial_end_date`, `model_version`, and
+the mapping/template versions. Request-time inference, industry lookup writes,
+or frontend recalculation are prohibited.
+
 ## Predictive Domain Persistence
 
 The only proposed predictive tables are:
@@ -179,7 +257,9 @@ Each snapshot records source market date, financial `end_date`, `ann_date`,
 `source_as_of_date`, report type, model/artifact hash, feature-contract version, input
 data source, market regime, security regime, trigger type, and error text. Prediction
 values include raw and market-adjusted target ranges so consumers can select a display
-policy without recalculating a target.
+policy without recalculating a target. A successful snapshot additionally records the
+immutable `predictive_tiered_template`, including its industry-regime mapping and
+spacing/downgrade audit payload.
 
 No event is marked consumed until its prediction transaction has committed. Failed
 events retain their error and retry count; a later event with the same idempotency key
@@ -420,8 +500,16 @@ model artifact, or execute a trading action.
 2. Confirm the four predictive inference persistence models and the internal read-query contract for `api_gateway`.
 3. Confirm scheduling ownership and exact cadence after the existing market/financial
    jobs are identified.
-4. Run `predictive_valuation validate` against PostgreSQL and write a side-by-side local
+4. Confirm the shared industry-regime service/configuration, SW mapping-version
+  lifecycle, predictive tier multipliers/gaps/position caps, and the additive
+  gateway response schema before tier serving.
+5. Run `predictive_valuation validate` against PostgreSQL and write a side-by-side local
    artifact before any five-year database backfill.
-5. Enable event jobs only after historical snapshot coverage and idempotency checks pass.
+6. Validate representative growth, cyclical, stable-value, and unmapped-SW samples:
+  all coded samples must return an explainable regime; complete templates must
+  be ordered, meet their recorded gaps, and preserve the same regime as the
+  traditional path for the same industry code.
+7. Enable event jobs only after historical snapshot coverage and idempotency checks pass.
 
-Implementation begins only after the relevant data, CLI, and API contracts are approved.
+Implementation begins only after the relevant data, CLI, API, and three-tier
+template contracts are approved.

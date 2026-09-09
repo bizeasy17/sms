@@ -28,6 +28,7 @@ class Command(BaseCommand):
         parser.add_argument('--asof-date', default='')
         parser.add_argument('--report-type', default='FY', choices=['Q1', 'H1', 'Q3', 'FY'])
         parser.add_argument('--profit-bucket', default='formal', choices=['formal', 'blended', 'both'])
+        parser.add_argument('--business-match-topn', type=int, default=3)
         parser.add_argument('--limit', type=int, default=100)
         parser.add_argument('--retry-failed', action='store_true')
         parser.add_argument('--dry-run', action='store_true')
@@ -67,7 +68,7 @@ class Command(BaseCommand):
             'template_root': str(loader.root),
             'template_version': data['template_version'],
             'source_hash': data['source_hash'],
-            'sw_mapping_entries': len(data['mapping'].get('ts_code_to_levels') or {}),
+            'mapping_version': data['mapping_version'],
         }, sort_keys=True)))
 
     def _status(self):
@@ -118,7 +119,10 @@ class Command(BaseCommand):
             for security in securities.iterator(chunk_size=100):
                 for bucket in buckets:
                     try:
-                        result = engine.calculate(security, asof_date, options['report_type'], profit_bucket=bucket, trigger_type='BACKFILL')
+                        result = engine.calculate(
+                            security, asof_date, options['report_type'], profit_bucket=bucket,
+                            trigger_type='BACKFILL', business_match_topn=options['business_match_topn'],
+                        )
                         engine.persist(result, options['report_type'], profit_bucket=bucket)
                         completed += 1
                     except Exception:

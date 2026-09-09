@@ -48,6 +48,10 @@ class TushareAPIError(RuntimeError):
     pass
 
 
+class PaginationIncompleteError(TushareAPIError):
+    pass
+
+
 class FinancialAdapter:
     def __init__(self, token: str | None = None):
         tok = token or getattr(settings, 'TUSHARE_TOKEN', '')
@@ -112,7 +116,7 @@ class FinancialAdapter:
         offset = 0
         seen_page_signatures: set[str] = set()
 
-        for _ in range(max_pages):
+        for page_number in range(max_pages):
             params = dict(base_params)
             params['limit'] = page_size
             params['offset'] = offset
@@ -128,8 +132,9 @@ class FinancialAdapter:
             # Loop detection by first row signature
             first_row_sig = str(records[0])
             if first_row_sig in seen_page_signatures:
-                logger.warning('Loop detected on endpoint %s offset %s, stopping pagination', endpoint, offset)
-                break
+                raise PaginationIncompleteError(
+                    f'Repeated page detected for endpoint {endpoint} at offset {offset}'
+                )
             seen_page_signatures.add(first_row_sig)
 
             all_rows.extend(records)
@@ -138,5 +143,9 @@ class FinancialAdapter:
                 break
 
             offset += len(records)
+            if page_number == max_pages - 1:
+                raise PaginationIncompleteError(
+                    f'Maximum page limit reached for endpoint {endpoint} at offset {offset}'
+                )
 
         return all_rows
