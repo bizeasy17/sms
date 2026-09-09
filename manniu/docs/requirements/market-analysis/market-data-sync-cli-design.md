@@ -221,3 +221,7 @@ Exit code `0` means every requested scope completed, coverage reconciled, and al
 4. Add persisted chunk-level resume and scoped locks; until this step completes, `--resume-run` is explicitly rejected rather than silently ignored.
 5. Replace the initial stock-bar `daily` path with `stk_factor` direct qfq/hfq persistence, then implement `dividend` event detection and stock-specific adjusted-history rebuilds.
 6. After weekly/monthly physical tables are approved and migrated, implement `resample` and its completeness checks.
+
+## TODO List
+
+- [ ] 按本文档完成市场数据同步 CLI 剩余实现、失败恢复验证和单元测试，并在测试通过后更新本条状态。

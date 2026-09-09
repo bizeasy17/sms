@@ -1674,3 +1674,7 @@ failed case.
 9. Enable multi-industry valuation only after market-data TopN ranking passes
   deterministic ordering, profile freshness, versioned replay, and baseline
   isolation checks.
+
+## TODO List
+
+- [ ] 按本文档完成传统估值后端实现、基线一致性验证和单元测试，并在测试通过后更新本条状态。

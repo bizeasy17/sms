@@ -1098,3 +1098,7 @@ Reconciliation compares persisted coverage with the approved trading calendar an
   snapshot/latest read model, deterministic tie-breaks, and downstream read
   service before enabling multi-industry valuation.
 8. Implement weekly/monthly derivation and its source-coverage checks.
+
+## TODO List
+
+- [ ] 按本文档完成市场数据后端剩余实现、PostgreSQL 验证和单元测试，并在测试通过后更新本条状态。

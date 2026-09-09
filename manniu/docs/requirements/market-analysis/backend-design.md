@@ -78,3 +78,7 @@ No external API endpoints, request fields, or response fields are currently impl
 
 - A missing `INSTALLED_APPS` entry or application-name mismatch fails the unit test.
 - A request with insufficient permission is denied before any domain write operation.
+
+### TODO List
+
+- [ ] 按本文档完成模块注册、访问控制边界及对应单元测试，并在测试通过后更新本条状态。

@@ -34,3 +34,7 @@ Create and register empty Django applications under `manniu_backend`:
 ### Failure Scenarios
 
 - An omitted registration or mismatched application configuration causes the focused test to fail.
+
+### TODO List
+
+- [ ] 按本文档完成 Django 应用注册核验及对应单元测试，并在测试通过后更新本条状态。

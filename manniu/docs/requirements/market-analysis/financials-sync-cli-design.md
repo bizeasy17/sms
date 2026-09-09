@@ -101,3 +101,7 @@ Each run outputs endpoint, scope, requested/completed coverage, source/accepted/
 - Missing Tushare credentials, invalid endpoint/scope combinations, or conflicting date arguments fail before a request.
 - A required response-column failure, retry exhaustion, page-limit exhaustion, or transaction error preserves the prior watermark.
 - Logs and persisted error summaries contain no token, password, or connection-string value.
+
+## TODO List
+
+- [ ] 按本文档完成财务同步 CLI 的实现、失败恢复验证和单元测试，并在测试通过后更新本条状态。

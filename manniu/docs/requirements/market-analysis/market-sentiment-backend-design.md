@@ -179,3 +179,7 @@ Initial constraints are database-backed EOD reads only, fixed pagination/range l
 4. Implement the daily factor engine, no-lookahead safeguards, market/stock snapshots, and deterministic replay tests.
 5. Implement the operator command, daily dependency gating, and local reconciliation artifacts.
 6. Confirm API and authorization contracts, then implement authorized read endpoints through `api_gateway` and `access_control`.
+
+## TODO List
+
+- [ ] 按本文档完成市场情绪后端实现、数据覆盖校验和单元测试，并在测试通过后更新本条状态。

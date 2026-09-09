@@ -247,3 +247,7 @@ chains and must not log environment values or credentials.
 - A duplicate event cannot create duplicate historical snapshots.
 - Dry-run writes no feature data, snapshot/current rows, run state, event state, or
   completion watermarks.
+
+## TODO List
+
+- [ ] 按本文档完成预测估值 CLI 实现、干运行和失败回滚验证及单元测试，并在测试通过后更新本条状态。

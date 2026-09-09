@@ -136,3 +136,7 @@ No API is defined or implemented. Future `api_gateway` read APIs must accept bou
 4. Implement disclosure-date ingestion and event detection; downstream domains rebuild their own as-of projections with no-lookahead tests.
 5. Implement the operator CLI, backfill/quarterly scheduling, reconciliation artifacts, and failure exit behavior.
 6. Confirm API and authorization contracts before implementing read endpoints.
+
+## TODO List
+
+- [ ] 按本文档完成财务数据后端设计对应的实现、PostgreSQL 迁移和单元测试，并在测试通过后更新本条状态。
