@@ -34,3 +34,7 @@ No application API is introduced by this initial empty-project bootstrap.
 ### Failure Scenarios
 
 - Database configuration cannot silently select SQLite after a PostgreSQL configuration failure.
+
+## TODO List
+
+- [ ] 按本文档完成项目后端 PostgreSQL 配置校验及单元测试，并在测试通过后更新本条状态。

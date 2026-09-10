@@ -90,6 +90,7 @@ class PredictiveValuationSnapshot(models.Model):
 	security = models.ForeignKey(Security, on_delete=models.CASCADE, related_name='predictive_valuation_snapshots')
 	asof_date = models.DateField(db_index=True)
 	horizon = models.CharField(max_length=16, default='1M')
+	report_type = models.CharField(max_length=16, blank=True)
 	model_version = models.CharField(max_length=128, db_index=True)
 	feature_contract_version = models.CharField(max_length=64)
 	artifact_hash = models.CharField(max_length=64, blank=True)
@@ -98,6 +99,7 @@ class PredictiveValuationSnapshot(models.Model):
 	financial_ann_date = models.DateField(null=True, blank=True)
 	financial_source_as_of_date = models.DateField(null=True, blank=True)
 	financial_report_type = models.CharField(max_length=16, blank=True)
+	financial_fiscal_year = models.IntegerField(null=True, blank=True)
 	feature_data_source = models.CharField(max_length=32, blank=True)
 	market_regime = models.CharField(max_length=32, blank=True)
 	security_regime = models.CharField(max_length=32, blank=True)
@@ -112,6 +114,18 @@ class PredictiveValuationSnapshot(models.Model):
 	target_price_high = models.DecimalField(max_digits=20, decimal_places=6, null=True, blank=True)
 	target_market_cap = models.DecimalField(max_digits=24, decimal_places=4, null=True, blank=True)
 	risk_level = models.CharField(max_length=16, default='MEDIUM')
+	action = models.CharField(max_length=16, default='HOLD')
+	batch_key = models.CharField(max_length=128, blank=True)
+	refresh_reason = models.CharField(max_length=64, blank=True)
+	refresh_detail = models.JSONField(default=dict, blank=True)
+	triggered_at = models.DateTimeField(null=True, blank=True)
+	last_error = models.TextField(blank=True)
+	snapshot_source = models.CharField(max_length=32, blank=True)
+	anchor_mode = models.CharField(max_length=16, blank=True)
+	run_key = models.CharField(max_length=32, blank=True)
+	is_backfill = models.BooleanField(default=False)
+	backfill_run_id = models.CharField(max_length=32, blank=True)
+	predictive_tiered_template = models.JSONField(default=dict, blank=True)
 	explain = models.JSONField(default=dict, blank=True)
 	raw_result = models.JSONField(default=dict, blank=True)
 	created_at = models.DateTimeField(auto_now_add=True)
@@ -120,7 +134,7 @@ class PredictiveValuationSnapshot(models.Model):
 		db_table = 'predictive_valuation_snapshot'
 		constraints = [
 			models.UniqueConstraint(
-				fields=['security', 'asof_date', 'financial_report_type', 'horizon', 'model_version', 'feature_contract_version'],
+				fields=['security', 'report_type', 'asof_date'],
 				name='pv_snapshot_uniq',
 			),
 		]
@@ -135,13 +149,32 @@ class PredictiveValuationCurrent(models.Model):
 
 	security = models.ForeignKey(Security, on_delete=models.CASCADE, related_name='current_predictive_valuations')
 	horizon = models.CharField(max_length=16, default='1M')
+	report_type = models.CharField(max_length=16, blank=True)
 	snapshot = models.ForeignKey(PredictiveValuationSnapshot, on_delete=models.PROTECT, related_name='+')
 	model_version = models.CharField(max_length=128, db_index=True)
+	feature_contract_version = models.CharField(max_length=64, blank=True)
+	artifact_hash = models.CharField(max_length=64, blank=True)
 	asof_date = models.DateField(db_index=True)
 	signal_score = models.DecimalField(max_digits=10, decimal_places=4, null=True, blank=True)
+	up_probability = models.DecimalField(max_digits=10, decimal_places=8, null=True, blank=True)
 	target_return_pct = models.DecimalField(max_digits=12, decimal_places=6, null=True, blank=True)
+	target_return_low_pct = models.DecimalField(max_digits=12, decimal_places=6, null=True, blank=True)
+	target_return_high_pct = models.DecimalField(max_digits=12, decimal_places=6, null=True, blank=True)
 	target_price = models.DecimalField(max_digits=20, decimal_places=6, null=True, blank=True)
+	target_price_low = models.DecimalField(max_digits=20, decimal_places=6, null=True, blank=True)
+	target_price_high = models.DecimalField(max_digits=20, decimal_places=6, null=True, blank=True)
+	target_market_cap = models.DecimalField(max_digits=24, decimal_places=4, null=True, blank=True)
 	risk_level = models.CharField(max_length=16, default='MEDIUM')
+	action = models.CharField(max_length=16, default='HOLD')
+	feature_data_source = models.CharField(max_length=32, blank=True)
+	batch_key = models.CharField(max_length=128, blank=True)
+	refresh_reason = models.CharField(max_length=64, blank=True)
+	refresh_detail = models.JSONField(default=dict, blank=True)
+	triggered_at = models.DateTimeField(null=True, blank=True)
+	last_error = models.TextField(blank=True)
+	explain = models.JSONField(default=dict, blank=True)
+	raw_result = models.JSONField(default=dict, blank=True)
+	predictive_tiered_template = models.JSONField(default=dict, blank=True)
 	market_regime = models.CharField(max_length=32, blank=True)
 	security_regime = models.CharField(max_length=32, blank=True)
 	updated_at = models.DateTimeField(auto_now=True)
@@ -149,7 +182,7 @@ class PredictiveValuationCurrent(models.Model):
 	class Meta:
 		db_table = 'predictive_valuation_current'
 		constraints = [
-			models.UniqueConstraint(fields=['security', 'horizon', 'model_version'], name='pv_current_uniq'),
+			models.UniqueConstraint(fields=['security', 'report_type'], name='pv_current_uniq'),
 		]
 		indexes = [
 			models.Index(fields=['horizon', '-asof_date'], name='pv_current_horizon_dt'),

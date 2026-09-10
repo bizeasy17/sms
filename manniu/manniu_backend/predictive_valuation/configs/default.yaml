@@ -7,10 +7,138 @@ feature_builder:
   strict_live_features: true
   max_market_feature_gap_days: 5
 valuation_mapping:
-  quant_target_max_abs_return: 0.30
+  rules_version: "v1"
+  weight_prob: 0.7
+  weight_earnings: 0.3
+  earnings_growth_min: -0.3
+  earnings_growth_max: 0.3
+  quant_target_max_abs_return: 0.35
+  quant_target_prob_coef: 0.10
+  quant_target_earnings_coef: 0.10
+  quant_target_industry_coef: 0.05
+  quant_target_earnings_clip: 0.40
+  quant_target_risk_scales: { LOW: 1.15, MEDIUM: 1.05, HIGH: 0.90 }
   quant_target_base_band: 0.04
+  quant_target_volatility_mult: 1.50
+  target_band_pct: 0.10
+  score_bands:
+    - { min: 70, stance: STRONG_BUY, confidence: HIGH }
+    - { min: 60, stance: BUY, confidence: MEDIUM }
+    - { min: 45, stance: HOLD, confidence: MEDIUM }
+    - { min: 30, stance: REDUCE, confidence: LOW }
+    - { min: 0, stance: SELL, confidence: LOW }
+  fusion:
+    base_weights: { Q1: 0.9, H1: 1.0, Q3: 1.1, FY: 1.0 }
+    confidence_weights: { HIGH: 1.0, MEDIUM: 0.8, LOW: 0.6 }
+    freshness_half_life_days: 365
+  bull_tail:
+    enabled: true
+    allowed_regimes: [BULL, BALANCE]
+    min_score: 93
+    min_prob: 0.88
+    min_earnings_growth: 0.60
+    max_risk_levels: [LOW, MEDIUM]
+    max_abs_return: 1.20
+  quality_risk_guard:
+    enabled: true
+    min_revenue_base: 1000000
+    max_score_penalty: 30
+    max_risk_upgrade: 2
+    thresholds:
+      min_ocf_to_or: 0.0
+      min_positive_profit: 0.0
+      max_negative_operating_cashflow: 0.0
+      max_receiv_to_revenue: 0.45
+      max_inventory_to_revenue: 0.60
+    rules:
+      ocf_to_or_low: { score_penalty: 8, risk_upgrade: 1 }
+      profit_cashflow_mismatch: { score_penalty: 10, risk_upgrade: 1 }
+      receivables_ratio_high: { score_penalty: 6, risk_upgrade: 1 }
+      inventory_ratio_high: { score_penalty: 6, risk_upgrade: 1 }
   market_regime:
     enabled: true
     benchmark_ts_code: "000001.SH"
+    benchmark_asset: I
+    use_tushare_fallback: true
+    fallback_lookback_days: 360
+    bull_ma_ratio_min: 1.03
+    bear_ma_ratio_max: 0.97
+    bear_drawdown_max: -0.12
+    high_vol_threshold: 0.028
+    profiles:
+      bull:
+        {
+          return_scale: 1.15,
+          band_scale: 1.10,
+          risk_scales: { LOW: 1.20, MEDIUM: 1.10, HIGH: 0.95 },
+        }
+      balance: { return_scale: 1.00, band_scale: 1.00 }
+      bear:
+        {
+          return_scale: 0.75,
+          band_scale: 1.20,
+          risk_scales: { LOW: 1.00, MEDIUM: 0.90, HIGH: 0.70 },
+        }
+  market_overall_adjustment:
+    enabled: true
+    prefer_local_source: true
+    lookback_years: 5
+    overvalued_threshold: 0.8
+    undervalued_threshold: 0.2
+    multiplier_overvalued: 0.95
+    multiplier_neutral: 1.0
+    multiplier_undervalued: 1.05
+    index_weights:
+      {
+        "000001.SH": 0.30,
+        "399001.SZ": 0.30,
+        "000300.SH": 0.20,
+        "000905.SH": 0.15,
+        "399006.SZ": 0.05,
+      }
+    metric_weights: { pe_ttm: 0.45, pb: 0.40, turnover_rate_f: 0.15 }
+tier_template:
+  minimum_regime_confidence: 0.5
+  position_guidance:
+    conservative: LOW
+    balanced: MEDIUM
+    aggressive: HIGH
+  regimes:
+    high_growth:
+      {
+        lower_multiplier: 0.75,
+        upper_multiplier: 1.25,
+        minimum_gap_pct: 0.03,
+        downgrade_upper_multiplier: 1.08,
+        risk_off_lower_multiplier: 0.90,
+        risk_off_upper_multiplier: 1.10,
+      }
+    balanced:
+      {
+        lower_multiplier: 0.80,
+        upper_multiplier: 1.20,
+        minimum_gap_pct: 0.03,
+        downgrade_upper_multiplier: 1.08,
+        risk_off_lower_multiplier: 0.90,
+        risk_off_upper_multiplier: 1.10,
+      }
+    stable_value:
+      {
+        lower_multiplier: 0.70,
+        upper_multiplier: 1.15,
+        minimum_gap_pct: 0.02,
+        downgrade_upper_multiplier: 1.06,
+        risk_off_lower_multiplier: 0.90,
+        risk_off_upper_multiplier: 1.08,
+      }
+    cyclical_resource:
+      {
+        lower_multiplier: 0.85,
+        upper_multiplier: 1.25,
+        minimum_gap_pct: 0.04,
+        downgrade_upper_multiplier: 1.08,
+        risk_off_lower_multiplier: 0.90,
+        risk_off_upper_multiplier: 1.10,
+      }
 event_processing:
   debounce_seconds: 900

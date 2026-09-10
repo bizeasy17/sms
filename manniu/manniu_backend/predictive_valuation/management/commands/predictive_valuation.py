@@ -30,7 +30,7 @@ class Command(BaseCommand):
     help = 'Operate predictive valuation feature construction and model-serving validation.'
 
     def add_arguments(self, parser):
-        parser.add_argument('subcommand', choices=['validate', 'build-features', 'backfill-features', 'backfill-valuations', 'detect-events', 'consume-events', 'refresh', 'status'])
+        parser.add_argument('subcommand', choices=['validate', 'build-features', 'backfill', 'backfill-features', 'backfill-valuations', 'detect-events', 'consume-events', 'refresh', 'status'])
         parser.add_argument('--ts-codes', default='', help='Comma-separated stock ts_codes')
         parser.add_argument('--asof-date', default='', help='Maximum public date in YYYYMMDD format')
         parser.add_argument('--scope', choices=['all', 'ts-code'], default='all')
@@ -57,6 +57,10 @@ class Command(BaseCommand):
             return
         if subcommand == 'backfill-features':
             self._backfill_features(options)
+            return
+        if subcommand == 'backfill':
+            self._backfill_features(options)
+            self._backfill_valuations(options)
             return
         if subcommand == 'backfill-valuations':
             self._backfill_valuations(options)
@@ -214,16 +218,52 @@ class Command(BaseCommand):
             return
         run = self._start_run('backfill-valuations', options, start_date, end_date)
         service = PredictiveInferenceService()
-        completed = 0
+        ok_count = 0
+        fail_count = 0
         try:
             for panel in panels.iterator(chunk_size=100):
-                service.predict_panel(panel, horizon=options['horizon'], trigger_type='HISTORICAL_BACKFILL')
-                completed += 1
-            self._finish_run(run, PredictiveValuationRun.Status.SUCCEEDED, {'processed_panels': completed})
+                try:
+                    service.predict_panel(
+                        panel,
+                        horizon=options['horizon'],
+                        trigger_type='HISTORICAL_BACKFILL',
+                        batch_key=run.run_key,
+                        refresh_reason='historical_backfill',
+                        run_key=run.run_key,
+                        is_backfill=True,
+                    )
+                    ok_count += 1
+                except (FileNotFoundError, KeyError, OSError, RuntimeError, TypeError, ValueError) as exc:
+                    fail_count += 1
+                    self.stderr.write(
+                        self.style.WARNING(
+                            f'Valuation prediction failed: ts_code={panel.security.ts_code} '
+                            f'report_type={panel.report_type} asof_date={panel.source_as_of_date} '
+                            f'error={str(exc)[:2000]}'
+                        )
+                    )
+            summary = {
+                'processed_panels': ok_count + fail_count,
+                'ok': ok_count,
+                'fail': fail_count,
+            }
+            if fail_count > 0 and ok_count == 0:
+                error = f'Valuation backfill finished with all predictions failed (ok={ok_count}, fail={fail_count})'
+                self._finish_run(run, PredictiveValuationRun.Status.FAILED, summary, error)
+                raise CommandError(error)
+            self._finish_run(run, PredictiveValuationRun.Status.SUCCEEDED, summary)
+        except CommandError:
+            raise
         except Exception as exc:
-            self._finish_run(run, PredictiveValuationRun.Status.FAILED, {'processed_panels': completed}, str(exc))
+            summary = {'processed_panels': ok_count + fail_count, 'ok': ok_count, 'fail': fail_count}
+            self._finish_run(run, PredictiveValuationRun.Status.FAILED, summary, str(exc))
             raise CommandError(f'Valuation backfill failed: {exc}') from exc
-        self.stdout.write(self.style.SUCCESS(f'Valuation backfill completed: run_key={run.run_key} snapshots={completed}'))
+        self.stdout.write(
+            self.style.SUCCESS(
+                f'Valuation backfill completed: run_key={run.run_key} '
+                f'snapshots={ok_count} failed={fail_count}'
+            )
+        )
 
     def _consume_events(self, options: dict) -> None:
         statuses = [PredictiveValuationEventState.Status.PENDING]
@@ -265,18 +305,18 @@ class Command(BaseCommand):
             panel = PredictiveFinancialFeaturePanel.objects.filter(security=event.security, end_date=end_date).order_by('-source_as_of_date').first()
             if panel is None:
                 return 0
-            service.predict_panel(panel, horizon=horizon, trigger_type=event.event_type)
+            service.predict_panel(panel, horizon=horizon, trigger_type=event.event_type, refresh_reason=event.event_type)
             return 1
         if event.event_type == PredictiveValuationEventService.SECURITY_REGIME_EVENT:
             panel = PredictiveFinancialFeaturePanel.objects.filter(security=event.security).order_by('-source_as_of_date').first()
             if panel is None:
                 return 0
-            service.predict_panel(panel, horizon=horizon, trigger_type=event.event_type)
+            service.predict_panel(panel, horizon=horizon, trigger_type=event.event_type, refresh_reason=event.event_type)
             return 1
         if event.event_type == PredictiveValuationEventService.MARKET_REGIME_EVENT:
             panels = PredictiveFinancialFeaturePanel.objects.filter(report_type__in=self._report_types({'report_types': ''})).order_by('security_id', '-source_as_of_date').distinct('security_id')[:limit]
             for panel in panels:
-                service.predict_panel(panel, horizon=horizon, trigger_type=event.event_type)
+                service.predict_panel(panel, horizon=horizon, trigger_type=event.event_type, refresh_reason=event.event_type)
             return len(panels)
         raise ValueError(f'Unsupported predictive event type: {event.event_type}')
 

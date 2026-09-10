@@ -28,3 +28,7 @@ Create two independent empty application projects under `UAT/manniu`:
 ### Failure Scenarios
 
 - Invalid PostgreSQL connection settings must not silently fall back to SQLite.
+
+## TODO List
+
+- [ ] 按本文档完成初始项目配置、前端构建验证和单元测试，并在测试通过后更新本条状态。
