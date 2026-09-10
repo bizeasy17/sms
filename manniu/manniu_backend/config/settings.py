@@ -24,10 +24,12 @@ load_dotenv(BASE_DIR / '.env')
 # See https://docs.djangoproject.com/en/5.1/howto/deployment/checklist/
 
 # SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = 'django-insecure-61i)2msem((r-ca&e^1+ftxa_yl$6jfb$*)#r7n7lo&4p#5sx('
-
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = True
+DEBUG = os.environ.get('DEBUG', 'true').strip().lower() == 'true'
+
+SECRET_KEY = os.environ.get('SECRET_KEY', '').strip()
+if not SECRET_KEY and DEBUG:
+    SECRET_KEY = 'django-insecure-local-development-only'
 
 ALLOWED_HOSTS = []
 
@@ -41,6 +43,8 @@ INSTALLED_APPS = [
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
+    'manniu_auth.apps.ManniuAuthConfig',
+    'api_gateway.apps.ApiGatewayConfig',
     'core',
     'traditional_valuation',
     'predictive_valuation',
@@ -55,6 +59,7 @@ INSTALLED_APPS = [
 
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
+    'api_gateway.middleware.RequestContextMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
@@ -128,6 +133,21 @@ PREDICTIVE_VALUATION_MAX_FEATURE_GAP_DAYS = int(
 PREDICTIVE_VALUATION_STRICT_LIVE_FEATURES = (
     os.environ.get('PREDICTIVE_VALUATION_STRICT_LIVE_FEATURES', 'true').strip().lower() == 'true'
 )
+
+AUTH_ACCESS_TOKEN_TTL_SECONDS = int(os.environ.get('AUTH_ACCESS_TOKEN_TTL_SECONDS', '900'))
+AUTH_REFRESH_TOKEN_TTL_SECONDS = int(os.environ.get('AUTH_REFRESH_TOKEN_TTL_SECONDS', '2592000'))
+AUTH_LOGIN_MAX_FAILURES = int(os.environ.get('AUTH_LOGIN_MAX_FAILURES', '5'))
+AUTH_LOGIN_LOCK_SECONDS = int(os.environ.get('AUTH_LOGIN_LOCK_SECONDS', '900'))
+AUTH_TOKEN_HASH_SECRET = os.environ.get('AUTH_TOKEN_HASH_SECRET', '').strip()
+AUTH_COOKIE_SECURE = os.environ.get('AUTH_COOKIE_SECURE', 'true').strip().lower() == 'true'
+AUTH_ALLOWED_CORS_ORIGINS = [
+    origin.strip()
+    for origin in os.environ.get('AUTH_ALLOWED_CORS_ORIGINS', '').split(',')
+    if origin.strip()
+]
+SECURE_SSL_REDIRECT = os.environ.get('SECURE_SSL_REDIRECT', 'false').strip().lower() == 'true'
+SESSION_COOKIE_SECURE = AUTH_COOKIE_SECURE
+CSRF_COOKIE_SECURE = AUTH_COOKIE_SECURE
 
 DATABASES = {
     'default': {

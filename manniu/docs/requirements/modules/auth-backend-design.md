@@ -493,8 +493,13 @@ Auth 错误沿用 API Gateway 错误封套：
 
 ## 15 TODO
 
-- [ ] 确认身份模型和公共 auth API 契约。
-- [ ] 创建 `manniu_auth` Django app 和 PostgreSQL migrations。
-- [ ] 实现 Token 生命周期、Scope 授权和安全审计。
-- [ ] 接入 `api_gateway` 并完成认证/权限合约测试。
-- [ ] 完成生产部署安全检查后开放基础只读 API。
+- [x] 确认身份模型和公共 auth API 契约：采用 `manniu_auth`、默认 `auth.User`、Bearer header 和 opaque access token + rotating refresh token。
+- [x] 创建 `manniu_auth` Django app、认证模型及 PostgreSQL migration 文件。
+- [x] 实现 Token 生命周期、登录失败锁定、Scope 解析、会话撤销和安全审计。
+- [x] 实现 `/api/v1/auth` 基础 API、统一响应封套和 Bearer Token 校验。
+- [x] 在目标 PostgreSQL 环境执行认证 migration，并完成迁移验证。
+- [x] 接入 `api_gateway` 的认证 facade 和 Scope permission；领域 API 合约测试仍待各领域接口契约确认。
+- [ ] 补齐并发 refresh、迁移、secret redaction、限流和 CSRF/CORS 安全测试。
+- [x] 提供并执行幂等初始化命令，开放 `market_analysis:read` 默认只读 Scope；其他业务 Scope 仍按确认结果开放。
+- [x] 增加生产配置 system check，阻止缺失 `SECRET_KEY`/`AUTH_TOKEN_HASH_SECRET`、不安全 Cookie 和通配 CORS。
+- [ ] 完成生产部署安全检查，包括 HTTPS、CORS、CSRF、Cookie、密钥轮换和限流策略的运行环境验证。

@@ -1102,3 +1102,184 @@ Reconciliation compares persisted coverage with the approved trading calendar an
 ## 13 TODO List
 
 - [ ] 按本文档完成市场数据后端剩余实现、PostgreSQL 验证和单元测试，并在测试通过后更新本条状态。
+
+## 14 API Gateway 接入需求
+
+### 14.1 目标与边界
+
+本节定义 `market_data` 接入 `api_gateway` 的 v1 公共只读契约，作为
+[API Gateway Design](api-gateway-design.md) 中 Market Data 领域的落地需求。
+本节只冻结接口边界和数据契约，不提前实现 Django URL、serializer 或权限代码。
+
+接入必须满足以下边界：
+
+- 公共基础路径为 `/api/v1/market-analysis`，Market Data 不创建第二套版本前缀。
+- Gateway 只负责认证上下文、scope 授权、参数校验、代码规范化、分页、统一响应和错误映射。
+- `market_data` 负责数据库查询、as-of 选择、数据状态和 provenance；Gateway 不直接拼接 ORM 查询。
+- 查询只能读取 PostgreSQL 中已经持久化的数据，不得在 cache miss 时调用 Tushare、运行同步 CLI、写入快照或推进 watermark。
+- 首期只开放 GET；不开放同步、回填、重算、缓存刷新、交易或任何 POST/PUT/PATCH/DELETE 接口。
+- 所有日期均使用 `YYYY-MM-DD`；`ts_code` 对外使用规范代码，例如 `000001.SZ`、`000001.SH`。
+
+### 14.2 公共响应封套
+
+所有接口必须使用 Gateway 统一封套。成功响应至少包含：
+
+```json
+{
+  "success": true,
+  "api_version": "v1",
+  "request_id": "uuid",
+  "data": {},
+  "meta": {
+    "asof_date": "2026-09-09",
+    "source_trade_date": "2026-09-09",
+    "data_status": "COMPLETE",
+    "warnings": []
+  }
+}
+```
+
+列表接口的 `data` 为数组，`meta` 还必须包含 `page`、`page_size`、`total`、
+`has_next` 和 `next_cursor`。默认 `page_size=50`，最大 `page_size=200`。
+历史接口默认最多 366 个自然日、单次最多 2,000 条记录；超出限制返回
+`RANGE_TOO_LARGE`，不得由领域服务自行放宽。
+
+每个请求支持 `X-Request-ID`。缺失时由 Gateway 生成 UUID，并在响应、结构化日志
+和下游 query service 上下文中复用。`meta` 中的日期、来源日期、状态和警告不得在
+序列化时丢失；数据不足、过期或部分成功必须保留业务状态，不能改写为空数组或零值。
+
+### 14.3 v1 公共接口
+
+#### 14.3.1 证券主数据
+
+| 方法 | 路径 | 请求参数 | 返回内容 |
+| --- | --- | --- | --- |
+| GET | `/securities` | `asset_type`、`market`、`industry`、`list_status`、`q`、`page`、`page_size` | 证券列表及分页信息 |
+| GET | `/securities/:ts_code` | 无 | 证券身份、分类和公司资料摘要 |
+
+`/securities` 只允许白名单过滤字段，不支持任意字段排序、任意 ORM filter 或无界
+全市场导出。每条证券记录至少返回 `ts_code`、`asset_type`、`symbol`、`name`、
+`full_name`、`market`、`exchange`、`list_status`、`list_date`、`delist_date`、
+`is_hs`、`industry`、`area` 和 `source_updated_at`。详情接口在有数据时返回
+`company_profile` 摘要，但不得返回 Tushare 原始凭证或内部同步错误。
+
+Gateway 可接受无交易所后缀的代码，但必须通过唯一解析补齐后缀；无法唯一解析时
+返回 `INVALID_SYMBOL`，不存在时返回 `SECURITY_NOT_FOUND`。代码规范化结果必须
+传给下游并写入审计上下文。
+
+#### 14.3.2 EOD 行情历史
+
+| 方法 | 路径 | 请求参数 | 返回内容 |
+| --- | --- | --- | --- |
+| GET | `/securities/:ts_code/bars` | `start_date`、`end_date`、`adjust`、`page`、`page_size` | 有界日/周/月 K 线 |
+
+`adjust` 白名单为 `raw`、`qfq`、`hfq`，默认 `qfq`。频率由已确认的领域查询
+参数或版本化接口约定提供；不得把不同频率混在同一个结果集中。每条记录至少返回
+`ts_code`、`trade_date`、`frequency`、`open`、`high`、`low`、`close`、
+`pre_close`、`change`、`pct_change`、`volume`、`amount`、`adjust`、
+`source_updated_at` 和 `synced_at`。选择 `qfq`/`hfq` 时必须来自对应调整列；
+调整列缺失时返回明确的 `INSUFFICIENT_DATA` 或 `STALE` 状态，不得静默混用 raw。
+
+行情查询按 `(security_id, trade_date)` 和分区索引执行，必须要求有界日期范围。
+`end_date` 不得返回未来数据；未提供时只允许使用领域规定的最近完成交易日。
+
+#### 14.3.3 日基本面历史
+
+| 方法 | 路径 | 请求参数 | 返回内容 |
+| --- | --- | --- | --- |
+| GET | `/securities/:ts_code/fundamentals` | `start_date`、`end_date`、`page`、`page_size` | `daily_basic` 日基本面历史 |
+
+每条记录至少返回 `ts_code`、`trade_date`、`close`、`turnover_rate`、
+`turnover_rate_f`、`volume_ratio`、`pe`、`pe_ttm`、`pb`、`ps`、`ps_ttm`、
+`dv_ratio`、`dv_ttm`、`total_share`、`float_share`、`free_share`、`total_mv`、
+`circ_mv`、`source_updated_at` 和 `synced_at`。响应必须声明单位：股本保持
+Tushare 的“万股”，市值保持 Tushare 的“万元”，比率字段保持文档规定的比例/百分
+点语义，不得在 Gateway 中隐式换算。
+
+Fundamental history 只能读取 `StockDailyFundamentalHistory` 的有界结果。没有同日
+记录时返回缺失状态，不得向前/向后填充，也不得使用较新的 Latest 行冒充历史 as-of。
+
+#### 14.3.4 市场风格状态
+
+| 方法 | 路径 | 请求参数 | 返回内容 |
+| --- | --- | --- | --- |
+| GET | `/market/regime` | `asof_date`、`benchmark_ts_code` | 市场 regime 及计算 provenance |
+| GET | `/securities/:ts_code/regime` | `asof_date` | 个股 regime 及计算 provenance |
+
+市场接口默认 benchmark 为 `000001.SH`；benchmark 必须解析为 `asset_type=INDEX`。
+个股接口必须解析为 `asset_type=STOCK`。响应至少返回 `regime`、`source`、
+`benchmark_ts_code`（市场接口）、`ts_code`（个股接口）、`asof_trade_date`、
+`ma20`、`ma60`、`ma_ratio`、`drawdown60`/`drawdown_60d`、`volatility20`/
+`volatility_20d`、`row_count`、`classifier_version` 和 `status`。
+
+`source`、`asof_trade_date`、`row_count` 和 `classifier_version` 必须来自
+`MarketRegimeSnapshot`/`SecurityRegimeSnapshot` 或对应只读服务。历史不足返回
+`INSUFFICIENT_DATA`，数据过期/不完整返回 `STALE` 或 `stale_or_incomplete`；
+Gateway 不得把 degraded 结果改成正常的 `BULL`、`BALANCE` 或中性值。
+
+### 14.4 内部 Query Service 契约
+
+Gateway 只能依赖 `market_data` 导出的类型化、无副作用服务，不得依赖 Django
+`QuerySet`、HTTP `Response`、管理命令或私有 repository。建议冻结以下最小边界：
+
+```python
+list_securities(*, filters, page, page_size) -> SecurityPage
+get_security(*, ts_code: str) -> SecurityResult
+get_bars(*, ts_code: str, start_date, end_date, adjust: str,
+         frequency: str = 'D', page, page_size) -> BarPage
+get_fundamentals(*, ts_code: str, start_date, end_date,
+                 page, page_size) -> FundamentalPage
+get_market_regime(*, asof_date, benchmark_ts_code: str) -> MarketRegimeResult
+get_security_regime(*, ts_code: str, asof_date) -> SecurityRegimeResult
+```
+
+每个返回类型必须区分 `found`、`status`、`data`、`source_trade_date`、
+`asof_date`、`warnings` 和必要的 provenance。普通数据缺失应返回可序列化的
+typed result，而不是依赖异常控制流程；安全身份、日期范围和白名单参数由 Gateway
+先校验，领域服务仍必须执行最终的 as-of/no-lookahead 校验。
+
+### 14.5 权限、缓存与可观测性
+
+- 所有五类接口均需要 `market_analysis:read`；带日期范围的 bars/fundamentals
+  历史查询还需要 `market_analysis:history`。
+- 首期不开放匿名访问、operator 原始同步信息、Tushare payload、数据库字段诊断
+  和 ingestion run 明细；这些信息不得通过普通 Market Data 响应泄露。
+- 可缓存只读结果，但 key 必须包含 API 版本、规范化参数、as-of、频率、adjust
+  和权限可见性。当前结果可使用短 TTL，历史结果必须按 source/version 失效。
+- Gateway 取消请求时必须取消下游查询；只读下游最多重试一次，且仅针对明确的
+  暂时连接失败。不得用重试掩盖数据缺失。
+- 日志至少记录 `request_id`、主体、scope、endpoint、规范化代码、日期范围、
+  下游域、状态、耗时和 cache hit；不得记录 Authorization、Tushare token、密码、
+  连接串或完整原始异常。
+
+### 14.6 验收标准与实施闸门
+
+在实现前必须由产品/后端共同确认 PostgreSQL 字段、响应字段、单位、默认频率、
+`adjust` 允许值、认证方式和 scope。确认后按以下顺序实施：
+
+1. 为 `market_data` query service 建立类型化返回对象和 no-lookahead/bounded-query 测试。
+2. 建立 `api_gateway` v1 路由、request context、统一成功/错误封套和认证授权中间件。
+3. 先接入证券、bars、fundamentals，再接入 market/security regime；禁止跨应用 ORM。
+4. 验证 `X-Request-ID` 透传、无后缀代码规范化、分页/日期上限、单位保持和 secret redaction。
+5. 验证 Tushare 不可用、watermark 未完成、历史不足、调整列缺失、非法代码和下游超时
+   时的错误/业务状态映射；所有查询不得写库或推进 watermark。
+6. 完成 PostgreSQL 集成、权限、缓存 key、性能和故障隔离验收后，才允许外部客户端接入。
+
+本节完成标准：公共 v1 schema、内部 service 契约、权限范围和验收用例获得确认；
+在此之前不得以“接口已接入”为由实现或暴露公共 endpoint。
+
+## 15 API Gateway 接入 TODO List
+
+- [ ] 确认 PostgreSQL 字段、公共响应字段、数据单位、默认频率、`adjust` 白名单、认证方式和 scope。
+- [ ] 冻结 Market Data v1 OpenAPI/schema，并记录 `request_id`、日期、代码和数据状态字段。
+- [ ] 实现 `market_data` 类型化内部 query service：证券、详情、bars、fundamentals、market regime、security regime。
+- [ ] 为 query service 增加 bounded query、as-of/no-lookahead、无 Tushare fallback 和只读副作用测试。
+- [ ] 创建并注册 `api_gateway` v1 路由、request context、统一成功/错误响应和认证授权边界。
+- [ ] 接入证券主数据接口：`/securities`、`/securities/:ts_code`。
+- [ ] 接入 EOD 行情接口：`/securities/:ts_code/bars`，完成 raw/qfq/hfq 和频率校验。
+- [ ] 接入日基本面接口：`/securities/:ts_code/fundamentals`，验证原始单位不被隐式换算。
+- [ ] 接入市场和个股 regime 接口：`/market/regime`、`/securities/:ts_code/regime`。
+- [ ] 实现分页、日期范围、代码规范化、`X-Request-ID` 透传和错误码映射。
+- [ ] 实现权限、限流、缓存 key、下游超时/单次重试和敏感信息脱敏。
+- [ ] 完成 PostgreSQL 集成、权限、no-lookahead、故障隔离、性能和合约测试。
+- [ ] 完成外部客户端发布前验收；确认所有查询不会写库、调用 Tushare 或推进 ingestion watermark。

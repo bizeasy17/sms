@@ -12,7 +12,7 @@
 
 本文档只定义外部 HTTP 边界和 Gateway 的编排责任，不替代各领域的计算、模型、数据表和任务设计。领域详细设计仍以本目录下对应模块文档为准。
 
-当前状态：**设计阶段，尚未实现公共 API**。现有 Django 路由仅包含 `/admin/`，不存在 `api_gateway` 应用或公共领域路由。
+当前状态：**首期实现进行中**。`api_gateway` 已提供 Market Data 首批只读路由，以及登录授权的 Public API 目录接口；其他领域接口和完整公共 API 契约仍按本文档实施闸门推进。
 
 ## 2 设计原则
 
@@ -222,6 +222,107 @@ Gateway 只转发 `market_data` 的 bounded query service。不得在 cache miss
 
 `FUSION` 是多个季度预测的组合，不是第五个模型 artifact。部分成功必须保留组件状态并返回 `PARTIAL_SUCCESS`；全部失败返回明确错误或失败快照语义，不能返回空的“正常预测”。
 
+### 5.6 Public API 浏览测试页面
+
+提供一个登录后访问的最小 Public API 浏览测试页面，用于查看和试调用已经明确对外开放的只读接口。这里的“Public”表示接口面向外部客户端开放，不表示匿名访问。该页面是 API 目录和调试入口，不提供接口配置、权限配置、数据写入或任务执行能力。
+
+#### 5.6.1 页面边界
+
+- 页面地址建议为 `/public/api`，页面本身必须登录后访问，并使用现有登录态获得的 Bearer Token；未登录访问时跳转登录或返回统一 `401`。
+- 页面只展示 API 目录中 `visibility=public` 且 `access_mode=authenticated` 的接口；未明确标记为 public 的接口不得因为出现在某个领域章节中而自动公开。
+- 页面调用必须沿用当前登录用户的 Token 和 scope，不提供页面内 Token 明文输入、生成、保存或猜测功能。
+- 页面只允许调用 GET/HEAD 等幂等只读接口；不展示或执行 POST、PUT、PATCH、DELETE、导出、回源、训练、发布、运维和交易接口。
+- “管理页面”仅指接口目录管理和试调用体验，不意味着登录用户拥有 Gateway、scope 或领域数据的管理权限；接口权限仍由 `access_control` 在每次请求时校验。
+
+#### 5.6.2 页面布局和交互
+
+页面采用“接口列表 + 接口说明/请求面板”的两栏布局；移动端顺序调整为先列表、后详情。
+
+| 区域 | 需求 |
+| --- | --- |
+| 顶部 | 显示页面名称、当前 API 版本、目录更新时间、当前登录用户/权限状态和页面级错误状态；提供退出登录入口。 |
+| 接口列表 | 按领域分组展示接口；每项显示 HTTP 方法、路径、名称、简要说明、是否需要参数、数据状态提示和 `public` 标签。支持按关键字搜索路径/名称/说明，并按领域、HTTP 方法筛选。 |
+| 接口说明 | 单击列表项后显示完整说明、用途、数据范围、来源日期语义、分页/日期限制、响应状态和访问限制。默认选中第一项时不得自动发起请求。 |
+| 请求参数 | 根据接口目录动态生成参数表单，显示参数名、位置（path/query/header）、类型、是否必填、默认值、允许值、格式、示例和说明。必填参数缺失或格式错误时在前端阻止请求，并标出具体字段。 |
+| 请求操作 | 提供“发送请求”和“重置参数”操作；发送前展示最终 URL 和 query 参数预览，禁止编辑受控 header（尤其是 Authorization）。请求按钮在请求期间禁用并显示进行中状态。 |
+| 响应区域 | 显示 HTTP 状态码、请求耗时、`X-Request-ID`、响应头中的安全允许字段，以及格式化 JSON 响应；长响应支持折叠/展开和复制 JSON，不提供无界下载。 |
+| 空态/错误 | 未登录、Token 过期、无 scope、目录加载失败、接口超时、429、参数错误和 5xx 均使用可理解的错误提示；不得把错误响应改写成“无数据”，不得显示堆栈、Token、数据库连接串或内部路径。 |
+
+#### 5.6.3 Public API 目录契约
+
+页面不得从前端源码硬编码完整接口列表，建议由 Gateway 提供需要登录授权的只读目录接口：
+
+```text
+GET /api/v1/public-api/catalog
+```
+
+目录接口自身要求 `market_analysis:read` scope，只返回已审核公开的接口元数据，不返回内部 scope、数据库字段、管理接口或敏感诊断信息。目录返回的 endpoint 仍可能需要额外 scope；页面必须保留并展示调用返回的 `403/SCOPE_REQUIRED`，不能为了展示而扩大用户权限。建议响应如下：
+
+```json
+{
+  "success": true,
+  "api_version": "v1",
+  "request_id": "7d7c3c5e-...",
+  "data": {
+    "catalog_version": "2026-09-10",
+    "groups": [
+      {
+        "key": "market_data",
+        "name": "Market Data",
+        "endpoints": [
+          {
+            "id": "market_data.securities.list",
+            "method": "GET",
+            "path": "/api/v1/market-analysis/securities",
+            "name": "证券主数据列表",
+            "description": "按条件查询已持久化的证券主数据",
+            "visibility": "public",
+            "access_mode": "authenticated",
+            "parameters": [
+              {
+                "name": "q",
+                "in": "query",
+                "type": "string",
+                "required": false,
+                "example": "平安"
+              }
+            ],
+            "limits": {
+              "page_size_default": 50,
+              "page_size_max": 200
+            },
+            "response_example": {}
+          }
+        ]
+      }
+    ]
+  },
+  "meta": {"warnings": []}
+}
+```
+
+目录元数据最少必须包含：唯一 `id`、HTTP 方法、完整路径、名称、说明、所属领域、`visibility`、`access_mode`、参数定义、调用限制、响应示例和页面展示用的业务状态说明。参数定义必须来自已冻结的公共契约，不能把 Django model 字段或任意 URL 参数直接暴露给前端。
+
+#### 5.6.4 请求和安全规则
+
+1. 页面只向当前页面显示的 `path` 发起请求；前端不得允许用户输入任意 URL，避免把页面变成开放代理。
+2. 页面请求必须携带当前登录用户的 `Authorization: Bearer <token>` 和 `X-Request-ID`，沿用 Gateway 的统一成功/错误封套；同时按用户、IP、endpoint 和全局配额限流。
+3. Gateway 对 public endpoint 仍执行认证、scope、路径、方法、参数、日期范围、分页、超时和响应大小校验；“对外开放”不等于绕过业务数据边界。
+4. public endpoint 不得触发 Tushare 回源、模型推理、写库、缓存污染或任何副作用；缓存 key 必须区分认证用户可见性和 scope。
+5. 公开响应只能包含已批准的业务字段和 provenance 字段。Token、内部 scope、SQL、异常堆栈、连接串、文件路径和 operator 诊断永不进入目录或响应。
+6. 若某接口后来不再对外开放，目录应下线或标记为不可调用，并由 Gateway 同步拒绝请求，不能仅隐藏前端列表。
+
+#### 5.6.5 首期页面范围和验收标准
+
+首期只实现既有登录态下的接口目录、搜索/筛选、参数表单、单接口 GET 试调用、统一响应展示和基础限流提示；不在本页面实现用户登录、Token 管理、收藏、批量调用、历史记录、在线编辑接口定义和数据导出。
+
+- 未登录打开 `/public/api` 会被引导登录或收到统一 `401`；登录且拥有 `market_analysis:read` 时可以加载 public catalog，目录中不存在内部参数。
+- 单击接口只打开说明和参数面板，不自动请求；填写合法参数后使用当前登录态发送一次 GET 请求，并看到真实 HTTP 状态、`X-Request-ID` 和 JSON 响应。
+- 必填参数、日期、证券代码、枚举值、分页大小和日期范围在前后端均被校验；前端校验不能替代 Gateway 校验。
+- public endpoint 返回统一成功/错误封套；Token 过期、scope 不足、`429`、`503` 等状态在页面上可区分，并保留错误码和 `retryable` 语义。
+- public endpoint 不会因为页面调用而写入 PostgreSQL、触发外部数据请求、执行模型推理或改变领域快照。
+- 目录和请求失败时页面仍保持可操作，且所有用户可见错误均经过 secret-safe sanitization；页面不会在浏览器日志、URL 或响应展示区泄露 Token。
+
 ## 6 跨领域聚合接口
 
 为减少客户端多次请求，可提供一个只读聚合接口：
@@ -261,7 +362,7 @@ GET /api/v1/market-analysis/securities/:ts_code/overview
 | `predictive:status_read` | 预测模型/数据可用性状态 |
 | `market_analysis:admin` | 仅预留给配置和运维管理；首期不开放写操作 |
 
-默认客户端仅授予 `market_analysis:read`；历史、排名、诊断和运维数据单独授权。匿名访问不在首期范围内。
+默认客户端仅授予 `market_analysis:read`；历史、排名、诊断和运维数据单独授权。Public API 页面、目录接口和 public endpoint 均要求登录认证；具体历史、排名、诊断和运维接口仍按额外 scope 授权。
 
 ### 7.2 安全边界
 
@@ -382,4 +483,6 @@ predictive_valuation.get_status(*, report_type, model_version)
 - [ ] 建立 `api_gateway` 和 `access_control` 应用及 Django URL 挂载。
 - [ ] 为五个领域实现类型化内部 read service 和 contract tests。
 - [ ] 实现 v1 只读 endpoints、统一错误、分页、限流和 request context。
+- [x] 实现登录授权的 `/public/api` 浏览测试页面及 `GET /api/v1/public-api/catalog` 目录接口。
+- [x] 将页面请求绑定到当前 Bearer Token，并验证 `401`、`403/SCOPE_REQUIRED`、`429`、`503` 等状态展示和敏感信息脱敏。
 - [ ] 完成 PostgreSQL、as-of、权限、故障隔离和敏感信息脱敏验收。
