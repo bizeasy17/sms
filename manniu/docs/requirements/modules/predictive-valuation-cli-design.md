@@ -1,6 +1,6 @@
 # Predictive Valuation CLI Design
 
-## Status And Purpose
+## 1 Status And Purpose
 
 This document defines the operator-only `predictive_valuation` Django command for
 `manniu_backend.predictive_valuation`. The currently implemented command supports
@@ -17,7 +17,7 @@ All state is stored in the shared PostgreSQL `manniu` database. The command is n
 available through `api_gateway`; `api_gateway` is a read-only downstream consumer of
 completed snapshots through an internal query service.
 
-## Command Interface
+## 2 Command Interface
 
 ```text
 python manage.py predictive_valuation \
@@ -28,7 +28,7 @@ python manage.py predictive_valuation \
   [--run-key RUN_KEY] [--limit N] [--retry-failed] [--dry-run]
 ```
 
-### Subcommands
+### 2.1 Subcommands
 
 | Subcommand | Status | Purpose |
 | --- | --- | --- |
@@ -41,7 +41,7 @@ python manage.py predictive_valuation \
 | `refresh` | Implemented baseline | Runs event detection followed by consumption. It never initiates a historical backfill. |
 | `status` | Implemented baseline | Reports feature, snapshot, event, and run counts. |
 
-## Argument Rules
+## 3 Argument Rules
 
 - `--scope` defaults to `all` for historical backfills and requires either `all` or
   `ts-code`. `--scope ts-code` requires `--ts-codes`; all codes must be canonical stock
@@ -65,7 +65,7 @@ python manage.py predictive_valuation \
   coverage, and planned work. It writes no feature rows, snapshots, current rows, runs,
   events, or watermarks.
 
-## Feature History Backfill
+## 4 Feature History Backfill
 
 `backfill-features` rebuilds only predictive-owned feature projections. It does not
 synchronize financial data and does not call Tushare. `financials` raw records and
@@ -94,7 +94,7 @@ reserved for current serving data. Feature rows upsert by `(security, end_date,
 report_type, source_as_of_date)`. Re-running an identical scope converges to the same
 state, while a raw-record/disclosure revision updates only the matching projection key.
 
-## Historical Valuation Backfill
+## 5 Historical Valuation Backfill
 
 `backfill-valuations` consumes persisted predictive financial panels and persisted market
 history. It must not trigger raw-financial ingestion, fetch market data, or construct an
@@ -131,9 +131,9 @@ feature_contract_version)`. A rerun with unchanged inputs must not duplicate a s
 A changed artifact hash, model version, or feature-contract version creates a separately
 auditable result rather than overwriting historical evidence.
 
-## Ordering And Prerequisites
+## 6 Ordering And Prerequisites
 
-### Initial Five-Year Initialization
+### 6.1 Initial Five-Year Initialization
 
 1. Confirm `market_data` historical bars and daily fundamentals cover the target window.
 2. Confirm `financials` raw records and public dates cover requested securities/report
@@ -154,7 +154,7 @@ Feature backfill can run before historical valuation backfill, but valuation bac
 not start while feature backfill is mutating the same security scope. A lock derived from
 `(command, scope_key, date_range, report_types)` prevents conflicting runs.
 
-### Event-Driven Refresh
+### 6.2 Event-Driven Refresh
 
 1. Complete market-data and financial raw-data ingestion.
 2. Detect market-regime, security-regime, and public financial-disclosure changes.
@@ -165,7 +165,7 @@ not start while feature backfill is mutating the same security scope. A lock der
 A failed event preserves its error and retry count and remains retryable. No event is
 marked succeeded until its associated snapshot transaction commits.
 
-## Run State, Transactions, And Recovery
+## 7 Run State, Transactions, And Recovery
 
 Every non-dry historical command creates a `PredictiveValuationRun` with command, scope,
 date window, report types, horizon, active model versions, artifact hashes, and feature
@@ -181,7 +181,7 @@ key and resumes only remaining chunks.
 `PredictiveValuationEventState` is the idempotency and retry record for event consumption;
 it is not used as a substitute for a historical backfill watermark.
 
-## Operator Output And Exit Status
+## 8 Operator Output And Exit Status
 
 The CLI emits compact, sanitized summaries. It never prints `TUSHARE_TOKEN`, database
 credentials, raw connection strings, complete provider payloads, or model internals.
@@ -197,7 +197,7 @@ arguments, missing prerequisites, feature-contract mismatch, missing/stale marke
 input, failed chunk, unreconciled coverage gap, or incomplete
 page/resume state returns nonzero. No partial backfill may be reported as successful.
 
-## Windows Batch Schedules
+## 9 Windows Batch Schedules
 
 Implemented operator script under `manniu_backend/schedule/`:
 
@@ -212,9 +212,9 @@ creates a timestamped log under `manniu_backend/log/predictive_valuation/`, and 
 the first nonzero command. Batch files must not use semicolons inside `cmd.exe` command
 chains and must not log environment values or credentials.
 
-## Test Case Definition
+## 10 Test Case Definition
 
-### Core Flow
+### 10.1 Core Flow
 
 - A default `backfill-features` invocation resolves exactly five calendar years and plans
   Q1/H1/Q3/FY panels from direct financial raw fields.
@@ -225,7 +225,7 @@ chains and must not log environment values or credentials.
 - A repeated feature or valuation backfill converges by its documented natural key.
 - A latest/current valuation read model is updated only by a newer eligible snapshot.
 
-### Boundary Scenarios
+### 10.2 Boundary Scenarios
 
 - A security with no disclosure record uses the relevant raw record `ann_date` as its
   public-date fallback.
@@ -236,7 +236,7 @@ chains and must not log environment values or credentials.
   the command must not use Q3 as fallback.
 - A historical feature rebuild does not modify `PredictiveFinancialFeatureLatest`.
 
-### Failure Scenarios
+### 10.3 Failure Scenarios
 
 - An invalid scope/date/report-type combination fails before data writes.
 - A missing financial raw prerequisite, model artifact, incomplete feature contract, or
@@ -248,6 +248,6 @@ chains and must not log environment values or credentials.
 - Dry-run writes no feature data, snapshot/current rows, run state, event state, or
   completion watermarks.
 
-## TODO List
+## 11 TODO List
 
 - [ ] 按本文档完成预测估值 CLI 实现、干运行和失败回滚验证及单元测试，并在测试通过后更新本条状态。

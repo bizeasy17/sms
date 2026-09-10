@@ -1,12 +1,12 @@
 # Lightweight Database Logging Design
 
-## Status And Ownership
+## 1 Status And Ownership
 
 本设计面向 `manniu/manniu_backend`，规划新增独立 Django app `ops_logging`，统一保存 Web 请求、management command、定时批任务和后台计算中的结构化运营日志。日志唯一持久化存储为项目现有 PostgreSQL；控制台输出只用于实时观察和数据库不可用时的降级，不作为历史记录来源。
 
 本文仅定义方案，不新增模型、迁移、接口或运行配置。实施前必须确认文末列出的数据库字段与未来 API 请求/响应字段。
 
-## Goals And Non-Goals
+## 2 Goals And Non-Goals
 
 目标：
 
@@ -25,7 +25,7 @@
 - 不提供自动交易、告警处置或日志驱动的业务操作。
 - 不承诺日志与业务事务原子提交；运营日志失败不能导致业务事务回滚。
 
-## Architecture
+## 3 Architecture
 
 ```mermaid
 flowchart LR
@@ -48,7 +48,7 @@ flowchart LR
 
 首期不记录所有 HTTP 访问。可选 middleware 仅记录服务端异常和超过阈值的慢请求，避免健康检查、静态资源和正常高频请求淹没有效事件。
 
-## Event Model
+## 4 Event Model
 
 日志分为两层：
 
@@ -67,9 +67,9 @@ system.unhandled_exception
 
 动态内容放在 `context`，例如 `dataset=stock-bars`、`trade_date=2026-09-08`、`row_count=5231`。面向人的 `message` 可以调整，监控和查询应依赖 `event_code`。
 
-## PostgreSQL Persistence Design
+## 5 PostgreSQL Persistence Design
 
-### LogRun
+### 5.1 LogRun
 
 建议数据库表名为 `ops_log_run`。
 
@@ -96,7 +96,7 @@ system.unhandled_exception
 
 建议索引：`(name, started_at DESC)`、`(status, started_at DESC)`、`(parent_run_id, started_at)`、`correlation_id`。`id` 已提供唯一性，不再增加高基数字段的冗余索引。
 
-### LogEntry
+### 5.2 LogEntry
 
 建议数据库表名为 `ops_log_entry`。
 
@@ -131,7 +131,7 @@ system.unhandled_exception
 
 首期使用普通表，不做 PostgreSQL 分区。只有当明细稳定超过约 100 万条/月或清理明显影响线上写入时，才评估按月范围分区。
 
-## Write Path And Failure Isolation
+## 6 Write Path And Failure Isolation
 
 标准 logger 同时绑定控制台 handler 和数据库队列 handler：
 
@@ -146,7 +146,7 @@ system.unhandled_exception
 
 多进程 Web 部署时，每个 worker 拥有自己的小队列和 writer，不共享进程内队列。数据库唯一 `event_id` 负责重试去重。首期不追求进程崩溃前尚未 flush 的 INFO 日志绝对不丢；关键业务结果应由领域表或审计表保证，而不是依赖运营日志。
 
-## Python Usage Contract
+## 7 Python Usage Contract
 
 普通代码保持标准用法：
 
@@ -174,7 +174,7 @@ with log_run(
 
 上下文通过 `contextvars` 传播 `run_id/correlation_id/request_id`，logging filter 将其补入 `LogRecord`。业务模块不直接创建 `LogEntry` ORM 对象，也不直接控制 writer。
 
-## Batch And Command Integration
+## 8 Batch And Command Integration
 
 现有 `schedule/daily.bat` 依次运行多个 `sync_market_data` 命令，并以非零退出码中止。建议后续提供一个轻量包装命令或环境参数：父批次先创建 `BATCH` 类型 `LogRun`，把 `run_id` 通过 `MANNIU_PARENT_RUN_ID` 传给各子命令；每个 management command 创建自己的 `COMMAND` 子运行。
 
@@ -187,7 +187,7 @@ with log_run(
 
 批处理脚本仍保留当前控制台输出，便于任务计划程序查看即时结果。数据库记录用于跨批次检索、统计和问题归因。
 
-## Configuration
+## 9 Configuration
 
 建议通过环境变量提供小范围配置，并在 Django settings 中解析：
 
@@ -206,7 +206,7 @@ with log_run(
 
 配置解析失败应在启动时明确报错；不允许静默采用危险的无限队列、无限文本或无限保留期。
 
-## Data Safety And Redaction
+## 10 Data Safety And Redaction
 
 禁止写入：数据库密码、Tushare token、Cookie、Authorization、session、CSRF token、私钥、完整请求体、完整响应体、个人身份信息以及未经筛选的环境变量。
 
@@ -218,7 +218,7 @@ with log_run(
 - 异常消息和栈执行二次脱敏并截断。
 - SQL 参数、Django connection 对象和完整模型实例不得进入 context。
 
-## Retention And Maintenance
+## 11 Retention And Maintenance
 
 提供 `prune_ops_logs` management command，每日低峰运行：
 
@@ -230,7 +230,7 @@ python manage.py prune_ops_logs [--dry-run] [--before YYYY-MM-DD] [--batch-size 
 
 容量观察至少包含：每日新增条数、每日存储字节估算、各级别数量、队列丢弃数、数据库写入失败数和最老记录时间。达到容量阈值时先调整噪声 logger 级别或事件采样，再考虑分区和外部日志平台。
 
-## Query And API Boundary
+## 12 Query And API Boundary
 
 首期仅实现 Django admin 或 management command 的受控查询，不暴露公网接口。推荐查询条件为：时间范围、级别、app/logger、事件码、运行名称、运行状态、`run_id`、`correlation_id` 和 `fingerprint`；默认最近 24 小时，强制分页并限制最大时间跨度。
 
@@ -244,7 +244,7 @@ GET /api/ops/log-entries
 
 接口必须经过独立管理员权限校验，响应再次脱敏，不提供任意 JSONPath/正则查询，不提供通过 API 删除日志。具体请求字段、响应字段、分页上限和权限模型须由用户确认后才能实现。
 
-## Observability Of The Logger
+## 13 Observability Of The Logger
 
 日志系统自身不得只依赖数据库日志证明其健康。每个进程维护以下内存计数，并定期以单行方式输出到控制台：
 
@@ -257,9 +257,9 @@ GET /api/ops/log-entries
 
 可选 `check_ops_logging` 命令执行无敏感内容的探针写入、读取和删除，用于部署验证。该命令失败返回非零，但正常应用流量不会因 logger 不可用而失败。
 
-## Validation Definition
+## 14 Validation Definition
 
-### Core Flow
+### 14.1 Core Flow
 
 - 标准 logger 的 INFO 事件最终进入 PostgreSQL，字段、UTC 时间和结构化 context 正确。
 - 同一运行内的事件共享 `run_id`，父日批与子命令通过 `parent_run_id` 关联。
@@ -267,7 +267,7 @@ GET /api/ops/log-entries
 - management command 成功、失败和未正常收尾分别得到正确状态与退出码。
 - 批量 writer 在阈值或等待时间到达时提交，命令退出前执行限时 flush。
 
-### Failure And Load Scenarios
+### 14.2 Failure And Load Scenarios
 
 - PostgreSQL 不可用、表未迁移和连接中断时，业务请求/命令不被日志写入阻塞，错误限频输出到 `stderr`。
 - 队列满时低级别日志按策略丢弃，WARNING 以上降级输出，丢弃计数可见。
@@ -276,14 +276,14 @@ GET /api/ops/log-entries
 - 进程突然终止最多丢失队列中尚未提交的运营日志，不损坏领域数据。
 - 超长消息、异常栈和 context 被截断或拒绝，不产生无限行宽。
 
-### Security And Retention Scenarios
+### 14.3 Security And Retention Scenarios
 
 - token、密码、Authorization、Cookie 和嵌套敏感键均被脱敏。
 - 非 JSON 对象不能绕过 sanitizer 或导致 writer 崩溃。
 - 普通用户无法访问未来运营日志接口。
 - `prune_ops_logs --dry-run` 只报告数量；正式清理遵守级别保留期并分批提交。
 
-## Implementation Sequence
+## 15 Implementation Sequence
 
 1. 与用户确认 `LogRun`、`LogEntry` 的 PostgreSQL 表字段、保留期、日志级别和是否需要未来 API。
 2. 新建并注册 `ops_logging` app，增加模型、短索引名和迁移；先在 UAT PostgreSQL 验证迁移计划。
@@ -293,7 +293,7 @@ GET /api/ops/log-entries
 6. 实现清理命令、admin 只读视图和容量统计；根据真实数据调整阈值。
 7. 如确认需要 API，再单独确认权限及请求/响应契约后实施。
 
-## Decisions Required Before Coding
+## 16 Decisions Required Before Coding
 
 - 表名和上述字段类型、长度、外键删除行为是否接受。
 - INFO/WARNING 30 天、ERROR/CRITICAL 90 天的保留期是否满足管理要求。

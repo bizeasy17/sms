@@ -1,6 +1,6 @@
 # Market Data Backend Design
 
-## Status And Ownership
+## 1 Status And Ownership
 
 This document is the implementation design for the registered `manniu_backend.market_data` Django application. The first schema layer is implemented and migrated to PostgreSQL: its Django models cover securities, geography/industry dimensions, company profiles, daily trading history/latest snapshots, stock fundamental history/latest snapshots, stock cost history/latest snapshots, index fundamental history/latest snapshots, and ingestion run/watermark control. An initial `sync_market_data` CLI is implemented for master/company/daily datasets; paging/retry/resume, complete adjustment processing, PostgreSQL partition DDL, weekly/monthly derivation, and production ingestion runs remain pending.
 
@@ -8,7 +8,7 @@ This document is the implementation design for the registered `manniu_backend.ma
 
 The module supports analysis and decision support only. It must never place or automate trading orders.
 
-## Scope
+## 2 Scope
 
 | Dataset | Asset scope | Tushare source | Frequency |
 | --- | --- | --- | --- |
@@ -22,7 +22,7 @@ The module supports analysis and decision support only. It must never place or a
 
 The design deliberately excludes intraday data, request-time calls to Tushare, automated trading, and public transport-layer concerns. Downstream valuation modules consume the internal read services defined here.
 
-## Architecture
+## 3 Architecture
 
 ```mermaid
 flowchart LR
@@ -35,7 +35,7 @@ flowchart LR
     Orchestrator --> Runs[Run and watermark records]
 ```
 
-### Layer Responsibilities
+### 3.1 Layer Responsibilities
 
 - **Tushare adapter**: owns SDK access, explicit field selection, paging, timeouts, rate-limit backoff, and conversion of provider exceptions into typed ingestion failures. Credentials remain server-side and are never returned through APIs or CLI logs.
 - **Validation and normalization**: validates required columns before any write; converts dates, decimals, units, nulls, and codes; deduplicates natural keys; rejects invalid rows with a reason.
@@ -44,15 +44,15 @@ flowchart LR
 - **Read query services**: provide bounded, index-backed EOD reads to internal valuation and analysis consumers. They never invoke Tushare as a cache miss fallback.
 - **CLI boundary**: synchronization and calculation commands are operator-only maintenance tools. Internal consumers call bounded query services and never write market-data state through a read path.
 
-### Environment Configuration
+### 3.2 Environment Configuration
 
 `manniu_backend/.env` is the local runtime configuration file and is excluded from version control. It uses `DB_ENGINE`, `DB_NAME`, `DB_USER`, `DB_PASSWORD`, `DB_HOST`, `DB_PORT`, and `TUSHARE_TOKEN`, aligned with the UAT earnings-service environment contract. `DB_ENGINE` must be `django.db.backends.postgresql`; missing database variables or any other engine stops Django during settings loading. The Tushare token is available only to future server-side adapters and must never be returned in an API response, written to a report, or emitted in CLI logs.
 
-## PostgreSQL Data Model
+## 4 PostgreSQL Data Model
 
 All identifiers, timestamps, and lifecycle fields use Django conventions when implemented. All monetary and price fields use `NUMERIC`, not binary floating point. Provider text values are trimmed, but source values are retained where they are business-significant.
 
-### Security Master
+### 4.1 Security Master
 
 `Security`
 
@@ -69,7 +69,7 @@ All identifiers, timestamps, and lifecycle fields use Django conventions when im
 
 Unique key: `ts_code`. Check constraint: `asset_type IN ('STOCK', 'INDEX')`.
 
-## Market And Security Regime Data
+## 5 Market And Security Regime Data
 
 `market_data` owns the canonical end-of-day regime inputs and read services
 used by both `traditional_valuation` and `predictive_valuation`. The valuation
@@ -83,7 +83,7 @@ No request-time Tushare fallback is allowed. If upstream ingestion is stale or
 incomplete, the service returns a deterministic degraded result with source and
 coverage metadata.
 
-### Market Regime (`BULL`, `BEAR`, `BALANCE`)
+### 5.1 Market Regime (`BULL`, `BEAR`, `BALANCE`)
 
 The market regime follows the `earnings_forecast` pipeline rule currently used
 by prediction serving. The default benchmark is `000001.SH`; the benchmark is
@@ -134,7 +134,7 @@ the last valid state. The first valid state establishes a baseline. A
 `MARKET_STYLE_CHANGED` event is created only when the current and previous
 states are both valid and different.
 
-### Security Regime (`GROWTH`, `BALANCE`, `DEFENSIVE`, `RISK_OFF`)
+### 5.2 Security Regime (`GROWTH`, `BALANCE`, `DEFENSIVE`, `RISK_OFF`)
 
 The individual-security classifier follows the approved `stock_regime.py`
 implementation. It reads at least 60 positive completed close values from
@@ -178,7 +178,7 @@ then is `SECURITY_STYLE_CHANGED` emitted. A confirmed change refreshes only the
 affected security's downstream `LATEST,FUSION` or equivalent current outputs;
 it never fans out to the whole market.
 
-### PostgreSQL Regime Read Models
+### 5.3 PostgreSQL Regime Read Models
 
 The following models belong to `market_data` because it owns both the source
 bars and the canonical classification state:
@@ -198,7 +198,7 @@ not overwrite valid state rows. These models are separate from predictive
 signal tables such as `earnings_stock_regime_state`; the predictive domain may
 consume the market-data service but must not maintain a second classifier.
 
-### Downstream Read-Service Contract
+### 5.4 Downstream Read-Service Contract
 
 The only supported downstream boundary is a read-only, database-backed service
 owned by `market_data`:
@@ -241,7 +241,7 @@ prediction inputs and to create its event refresh scope. Neither consumer may
 call Tushare, read another service's private state, or reimplement the
 thresholds.
 
-## Unified Industry-Regime And SW Mapping Service
+## 6 Unified Industry-Regime And SW Mapping Service
 
 `market_data` also owns the canonical SW taxonomy snapshot, code
 normalization, and industry-regime resolution used by both valuation modules.
@@ -262,7 +262,7 @@ range multipliers, and position guidance. Predictive valuation owns its model
 range mapping and predictive tier multipliers. Neither module may change a
 resolved industry regime or mapping version.
 
-### Versioned SW Mapping Artifact
+### 6.1 Versioned SW Mapping Artifact
 
 The active SW2021 mapping is an immutable, validated artifact published under
 `market_data/static/industry_config/`. Its canonical source is the existing
@@ -290,7 +290,7 @@ changes membership is still a new `mapping_version`; a rule-only change is a
 new `rules_version` with the mapping version retained. Historical valuation and
 prediction replay load the recorded versions, never the currently active files.
 
-### Industry-Regime Resolution And Read Contract
+### 6.2 Industry-Regime Resolution And Read Contract
 
 The read-only service normalizes an `industry_code` or `index_code` by removing
 suffixes such as `.SI`, retaining the numeric root, and resolving canonical SW
@@ -336,7 +336,7 @@ aliases or parent links; otherwise the result is a valid explainable
 typed `CONFIGURATION_UNAVAILABLE` degraded result and does not fabricate a
 mapping version.
 
-### Persistence, Publication, And Consumers
+### 6.3 Persistence, Publication, And Consumers
 
 `SWIndustryMappingVersion` records the immutable artifact identity, market,
 taxonomy version, content hash, source trade date, source metadata, validation
@@ -361,7 +361,7 @@ order. A mapping/rules activation emits a versioned `INDUSTRY_MAPPING_CHANGED`
 event. The event consumer determines the bounded affected-security refresh
 scope; it does not overwrite historical valuation/prediction snapshots.
 
-### Implementation And Acceptance Gates
+### 6.4 Implementation And Acceptance Gates
 
 1. Confirm the existing SW mapping generator's artifact schema, canonical
    `Security` membership source, and all supported `801xxx`/historical
@@ -377,7 +377,7 @@ scope; it does not overwrite historical valuation/prediction snapshots.
    explainable failures without a Tushare call, data write, or silent fallback
    to a different industry.
 
-### Event And Refresh Contract
+### 6.5 Event And Refresh Contract
 
 After successful market-data ingestion, the detector runs in this order:
 
@@ -403,7 +403,7 @@ security-style refresh. Event payloads must include old/new regime, source
 trade date, classifier version, metrics, and detection time. Invalid or empty
 classification results do not advance state and do not trigger a refresh.
 
-### Company, Geography, And Industry
+### 6.6 Company, Geography, And Industry
 
 `CompanyProfile` has one optional row per stock `Security`; index securities do not receive a company profile. It stores company fields from `stock_company`, including chairman, manager, secretary, registered capital, establishment date, website, contact data, employees, main business, business scope, and source update timestamps.
 
@@ -421,7 +421,7 @@ The geographic and industry design separates raw provider input from canonical d
 
 `stock_company.province` maps to registered province and `stock_company.city` maps to registered city. `stock_basic.area` maps to security area, while `stock_basic.industry` maps to security industry. The two province sources can differ and must not silently overwrite each other. A missing source value remains null with an ingestion-quality record; it must never be invented as Shanghai. Region is derived through the active versioned province mapping, not written as an untraceable text value.
 
-### CITIC Stock/Industry Mapping And Persistence
+### 6.7 CITIC Stock/Industry Mapping And Persistence
 
 The existing `Industry` model is reserved for the provider's broad
 `stock_basic.industry` taxonomy and must not be reused for CITIC classifications.
@@ -430,7 +430,7 @@ must be persisted in PostgreSQL before it is used as a business-matching prior.
 The JSON cache used by SmartInvestor's `syncvaluationremotecache` is a legacy
 compatibility artifact, not the Maniu source of truth.
 
-#### Source Contract
+#### 6.7.1 Source Contract
 
 The market-data adapter calls Tushare `ci_index_member` with `is_new="Y"` and
 the explicit fields:
@@ -447,7 +447,7 @@ active-source marker, not permission to delete historical memberships. A
 provider omission or temporary empty response must not deactivate all existing
 rows.
 
-#### Proposed PostgreSQL Models
+#### 6.7.2 Proposed PostgreSQL Models
 
 `CITICIndustryDimension` stores the hierarchy independently from SW and broad
 Tushare industry dimensions:
@@ -491,7 +491,7 @@ status, and sanitized failure details. It is separate from the generic
 `IngestionRun` when the mapping publication needs an atomic active-version
 pointer, but both records must be cross-referenced.
 
-#### Atomic Sync And Read Contract
+#### 6.7.3 Atomic Sync And Read Contract
 
 The sync flow is:
 
@@ -525,7 +525,7 @@ in its match snapshot. The result is empty with an explicit
 `NO_CITIC_MEMBERSHIP` status when unavailable; it must not infer CITIC identity
 from `Security.industry`, SW membership, or company name.
 
-#### CITIC-to-SW Matching Prior
+#### 6.7.4 CITIC-to-SW Matching Prior
 
 The persisted CITIC stock/industry mapping is an input prior, not the final
 traditional-valuation industry. The matching service applies the versioned
@@ -542,7 +542,7 @@ similarity, and non-target candidates may receive the configured penalty. The
 rule/config version and all CITIC evidence are persisted in the match snapshot
 so a future rule refresh cannot silently change an old valuation replay.
 
-### Business-Text Industry Matching For Downstream Valuation
+### 6.8 Business-Text Industry Matching For Downstream Valuation
 
 `market_data` owns the canonical business-text industry matching result used by
 traditional valuation. This is separate from `Security.industry`, which is the
@@ -563,7 +563,7 @@ requested market-data matching job then creates a versioned result. A missing
 or stale profile produces `NO_PROFILE`/`STALE_PROFILE` diagnostics and does
 not invent an industry match.
 
-#### Matching And Ranking Contract
+#### 6.8.1 Matching And Ranking Contract
 
 The compatibility behavior is the one consumed by the SmartInvestor
 `estmktv --match-business-industries` flow:
@@ -590,7 +590,7 @@ results may be marked for `business_fallback` according to the versioned
 fallback profile, but fallback selection is still returned by market data as an
 explicit result and must not be silently performed by traditional valuation.
 
-#### Read-Service Contract
+#### 6.8.2 Read-Service Contract
 
 The internal read boundary is database-backed and side-effect free:
 
@@ -630,7 +630,7 @@ fallback policy explicitly chooses one. The service returns no candidates for
 an empty profile or `top_n=0`, with a typed status rather than a fabricated
 global industry.
 
-#### Persistence And Versioning
+#### 6.8.3 Persistence And Versioning
 
 The recommended market-data read model is
 `BusinessIndustryMatchSnapshot`, keyed by
@@ -648,7 +648,7 @@ versions and must never use today's TopN ranking for an older as-of date.
 Ranking output is analysis metadata only; it does not alter `Security.industry`
 or SW membership tables.
 
-#### Downstream Consumer Contract
+#### 6.8.4 Downstream Consumer Contract
 
 `traditional_valuation` consumes this result to construct its baseline plus
 business-match valuation contexts. For each returned match it resolves the
@@ -663,7 +663,7 @@ context selection, but it also must treat market data as the source of truth.
 Both consumers may choose how to weight valid variants; neither may change the
 upstream candidate order or reinterpret a missing match as a successful one.
 
-### Trading History And Latest Snapshots
+### 6.9 Trading History And Latest Snapshots
 
 Daily trading history is the source of record and is stored separately from current snapshots. This avoids using `MAX(trade_date)`, unbounded ordering, or window functions over tens of millions of rows for a bounded latest-price read.
 
@@ -684,7 +684,7 @@ For indices, `index_daily` values are raw provider values. Adjustment fields rem
 
 `MarketBarWeeklyHistory` and `MarketBarMonthlyHistory` are independent physical tables, not `frequency` rows mixed into the daily partitioned table. They have the same business columns and unique key `(security_id, trade_date)`, where `trade_date` is the completed period end date. This keeps daily indexes compact and makes 1Y/3Y lower-frequency chart queries predictable.
 
-## A-Share Historical Extremes Analysis
+## 7 A-Share Historical Extremes Analysis
 
 `market_data` owns the calculation and persisted read model for historical
 extreme-return statistics. The feature is derived only from persisted EOD
@@ -693,7 +693,7 @@ call Tushare as a cache miss fallback. `traditional_valuation` and
 `predictive_valuation` may consume the result as descriptive market context,
 but neither module owns or reimplements the calculation.
 
-### Input And Price Policy
+### 7.1 Input And Price Policy
 
 The calculation requires a canonical `Security`, a completed `trade_date`, and
 a positive close price. The preferred price field is adjusted close:
@@ -722,7 +722,7 @@ Fundamentals are descriptive fields only and are not required for extreme-return
 calculation. They must be selected with the same as-of boundary and must not be
 looked up from a newer latest row when replaying an older extreme snapshot.
 
-### Calculation Contract
+### 7.2 Calculation Contract
 
 The calculation pipeline is deterministic:
 
@@ -769,7 +769,7 @@ One final summary row is produced per stock, price type, source end date, and
 calculation version. A stock with no valid return or interval pair receives an
 explicit `INSUFFICIENT_DATA` result rather than fabricated zero extremes.
 
-### Persistence Design
+### 7.3 Persistence Design
 
 The proposed read model is `StockHistoricalExtremeSnapshot`:
 
@@ -803,7 +803,7 @@ Required indexes:
 - `(daily_max_return)` / `(monthly_max_return)` when cross-sectional ranking is
   enabled.
 
-### Calculation Service And CLI
+### 7.4 Calculation Service And CLI
 
 The service boundary is internal and database-backed:
 
@@ -837,7 +837,7 @@ counts, duplicates, gaps, and failures. It must return nonzero when a requested
 chunk fails or when reconciliation cannot distinguish complete coverage from
 partial coverage. Re-running the same scope and version is idempotent.
 
-### Data Quality And Scheduling
+### 7.5 Data Quality And Scheduling
 
 Quality checks must report:
 
@@ -861,7 +861,7 @@ history rebuild is required after adjusted-price history changes or a formula
 version change. A routine daily run may update the current source-end-date
 snapshot, while prior calculation versions remain available for replay.
 
-### Test Contract
+### 7.6 Test Contract
 
 - The first observation per security/frequency has no period return.
 - Daily, weekly, and monthly output fields are computed independently from the
@@ -877,7 +877,7 @@ snapshot, while prior calculation versions remain available for replay.
 
 `MarketBarLatest` has at most one row per `(security_id, frequency)`, where frequency is `D`, `W`, or `M`. It stores the latest completed bar's trade date, selected OHLCV/raw and adjusted values, source revision timestamp, and local sync timestamp. It is a denormalized read model, not a replacement for historical data.
 
-### Corporate Actions And Adjustment Rebuilds
+### 7.7 Corporate Actions And Adjustment Rebuilds
 
 Stock qfq/hfq history is mutable when a new ex-dividend or ex-rights event becomes effective. A routine daily `stk_factor` refresh only obtains current-period records; it must not be assumed to rewrite previously stored adjusted prices. The planned `dividend` event handler addresses this explicitly:
 
@@ -889,7 +889,7 @@ Stock qfq/hfq history is mutable when a new ex-dividend or ex-rights event becom
 
 The event handler must not rewrite other securities, invoke real-time trading behavior, or advance a normal stock-bars watermark until the rebuild succeeds. A failed rebuild preserves its event as pending/retryable and keeps existing history visible with a data-quality warning.
 
-### Fundamentals And Cost Distribution
+### 7.8 Fundamentals And Cost Distribution
 
 `StockDailyFundamentalHistory` stores `daily_basic` with unique key `(security_id, trade_date)`. Its `StockDailyFundamentalLatest` counterpart has unique `security_id`. Both use the identical business field set below, plus `trade_date`, `source_updated_at`, and `synced_at`.
 
@@ -909,13 +909,13 @@ The first implementation preserves these Tushare raw units. It does not silently
 
 All three latest tables are updated only when an incoming record is newer than the stored snapshot date, or has the same date with a newer source revision. Historical backfills for older dates must not overwrite latest snapshots.
 
-### Ingestion Control Plane
+### 7.9 Ingestion Control Plane
 
 `IngestionRun` records each operator request: `id`, dataset, mode, frequency, requested scope/date range, started/finished timestamps, status, source row count, accepted/upserted/rejected row counts, retry count, and sanitized error summary.
 
 `IngestionWatermark` has unique key `(dataset, scope_key, frequency)`. It records the last complete source date, last complete run, current status, overlap configuration, retry metadata, and updated timestamp. `scope_key` is `ALL`, a canonical `ts_code`, or a named index universe. A failed, truncated, or partially committed chunk does not advance the corresponding watermark.
 
-## Physical Design And Read Performance
+## 8 Physical Design And Read Performance
 
 Daily trading, fundamental, and cost history are expected to exceed ten million rows. Daily history tables therefore use monthly PostgreSQL range partitions by `trade_date` from their first production release; this allows partition pruning for all date-bounded reads and keeps index maintenance localized. Weekly and monthly histories remain independent non-partitioned tables until their measured volume requires partitioning.
 
@@ -934,9 +934,9 @@ Daily trading, fundamental, and cost history are expected to exceed ten million 
 | `CompanyProfile` | unique `security_id`; `(province_id, city_id)` | company profile and geographic filtering |
 | `IngestionWatermark` | unique dataset/scope/frequency; `(status, updated_at)` | restart and operations monitoring |
 
-## Ingestion Design
+## 9 Ingestion Design
 
-### Source Validation And Normalization
+### 9.1 Source Validation And Normalization
 
 Every adapter response is checked for required columns before transformation:
 
@@ -948,7 +948,7 @@ Every adapter response is checked for required columns before transformation:
 
 Codes are trimmed and validated against the `VARCHAR(16)` limit. Trade dates must parse to a calendar date. Numeric values use explicit decimal conversion; invalid, infinite, or out-of-range values are rejected per row. Duplicate source rows collapse by the target natural key, retaining the last provider row while recording the duplicate count.
 
-### Backfill And Daily Refresh
+### 9.2 Backfill And Daily Refresh
 
 Backfill and daily refresh use the same orchestrator and repository methods.
 
@@ -962,7 +962,7 @@ Daily all-market requests are preferred where Tushare supports a single trade-da
 
 The completed trading day comes from an approved trading-calendar source. It must not be inferred by skipping weekends alone. If calendar availability is unavailable, the run fails safely rather than advancing a watermark on an assumed holiday.
 
-### Weekly And Monthly Derivation
+### 9.3 Weekly And Monthly Derivation
 
 Derived records are created only from persisted daily rows, not separate provider calls. For each complete period:
 
@@ -973,7 +973,7 @@ Derived records are created only from persisted daily rows, not separate provide
 
 Incomplete current weeks and months are not marked complete. The resample watermark advances only after all required daily source dates for that period are present.
 
-### CLI Contract
+### 9.4 CLI Contract
 
 The detailed command contract, source projections, dataset ordering, and recovery behavior are maintained in [Market Data Sync CLI Design](market-data-sync-cli-design.md). The following is the root command summary:
 
@@ -1004,13 +1004,13 @@ Rules:
 
 The command reports structured counts and failed scopes. Any failed scope, page-limit truncation, malformed required payload, or unresolved complete-coverage gap produces nonzero exit status. It must not log provider credentials or raw secret-bearing configuration.
 
-### Rate Limiting, Pagination, And Idempotency
+### 9.5 Rate Limiting, Pagination, And Idempotency
 
 The adapter uses explicit per-endpoint request budgets, bounded exponential backoff with jitter for retryable provider throttling, request timeouts, and a maximum page count. Hitting the page limit is a failure, not a warning followed by a partial watermark advance.
 
 Repository writes use PostgreSQL `INSERT ... ON CONFLICT ... DO UPDATE` or Django bulk upsert with an explicit unique constraint. `ignore_conflicts=True` alone is not acceptable for daily overlap jobs because it cannot accept provider corrections. Each chunk is transactional: it writes historical rows, applies eligible latest-snapshot updates, records chunk statistics, and then commits. A run watermark advances only after every chunk covering its declared interval commits. Retrying a chunk produces the same target state from the latest provider payload.
 
-## Data Quality, Observability, And Reconciliation
+## 10 Data Quality, Observability, And Reconciliation
 
 Each run records expected scope, requested coverage, source/accepted/upserted/rejected counts, duplicate count, null required-field count, first/last successfully written date, pagination count, retry count, failure reason, and status.
 
@@ -1025,9 +1025,9 @@ Validation failures are stored with dataset, scope, natural key when available, 
 
 Reconciliation compares persisted coverage with the approved trading calendar and source response coverage before a run is marked successful. Database writes and watermarks are auditable through `IngestionRun` and `IngestionWatermark` rather than terminal output alone.
 
-## Test Case Definition
+## 11 Test Case Definition
 
-### Core Flow
+### 11.1 Core Flow
 
 - A valid `stk_factor` stock row persists raw and provider qfq/hfq values under its `(security, trade_date, D)` key.
 - A newly detected or revised `dividend` event queues one idempotent full retained-history `stk_factor` rebuild for the affected stock and updates historical adjusted prices.
@@ -1053,7 +1053,7 @@ Reconciliation compares persisted coverage with the approved trading calendar an
 - A TopN read returns candidates in explicit rank order, with requested versus
   returned counts and evidence/source versions.
 
-### Boundary Scenarios
+### 11.2 Boundary Scenarios
 
 - A code of length 16 is accepted; longer codes are rejected before a database write.
 - Null province, city, or industry values remain unknown and do not create an artificial Shanghai mapping.
@@ -1075,7 +1075,7 @@ Reconciliation compares persisted coverage with the approved trading calendar an
 - Equal-score candidates resolve in the documented deterministic tie-break
   order, independent of database insertion order.
 
-### Failure Scenarios
+### 11.3 Failure Scenarios
 
 - Missing required Tushare columns, invalid dates, numeric conversion errors, or page-limit truncation fail the affected run and prevent watermark advance.
 - A rate-limited source retries within its budget, then records failure and returns nonzero when exhausted.
@@ -1086,7 +1086,7 @@ Reconciliation compares persisted coverage with the approved trading calendar an
   failure is rejected with a row-level reason and cannot change the rank of
   valid candidates silently.
 
-## Implementation Sequence
+## 12 Implementation Sequence
 
 1. Completed: implement Django models and migrations for security, dimensions, company profiles, daily raw trading records, latest snapshots, and ingestion control plane.
 2. Create PostgreSQL monthly partition parent tables and forward partitions; run migration and database-index verification on the target PostgreSQL instance.
@@ -1099,6 +1099,6 @@ Reconciliation compares persisted coverage with the approved trading calendar an
   service before enabling multi-industry valuation.
 8. Implement weekly/monthly derivation and its source-coverage checks.
 
-## TODO List
+## 13 TODO List
 
 - [ ] 按本文档完成市场数据后端剩余实现、PostgreSQL 验证和单元测试，并在测试通过后更新本条状态。

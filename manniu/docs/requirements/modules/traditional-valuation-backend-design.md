@@ -1,6 +1,6 @@
 # Traditional Valuation Backend Design
 
-## Status And Scope
+## 1 Status And Scope
 
 This document defines the planned `manniu_backend.traditional_valuation` Django
 application. It ports the SW-industry-based traditional valuation flow described
@@ -17,9 +17,9 @@ This is a design and contract document. Models, migrations, services, commands,
 and external read APIs remain unimplemented until the database and interface
 contracts in the implementation gates are confirmed.
 
-## Goals And Non-Goals
+## 2 Goals And Non-Goals
 
-### Goals
+### 2.1 Goals
 
 - Use SW L3/L2/L1 industry parameters as the primary traditional valuation
   assumption source.
@@ -34,7 +34,7 @@ contracts in the implementation gates are confirmed.
 - Allow market-style and security-style changes to refresh the affected scope
   without waiting for a financial disclosure.
 
-### Non-goals
+### 2.2 Non-goals
 
 - This module does not own securities, trading bars, daily fundamentals,
   financial statements, disclosure records, Tushare adapters, or market-style
@@ -45,7 +45,7 @@ contracts in the implementation gates are confirmed.
 - It does not silently substitute another report period, SW level, valuation
   variant, or profit bucket when the requested input is unavailable.
 
-## SmartInvestor Parity Target
+## 3 SmartInvestor Parity Target
 
 The first Maniu release is a compatibility implementation, not a new valuation
 definition. The reference behavior is the SmartInvestor traditional valuation
@@ -68,7 +68,7 @@ gap and must not be hidden behind a generic `degraded=true` response. Parity
 comparison uses a fixed security/date/report/bucket/variant corpus and stores
 side-by-side JSON artifacts before any historical backfill.
 
-## Ownership And Data Flow
+## 4 Ownership And Data Flow
 
 ```mermaid
 flowchart LR
@@ -95,7 +95,7 @@ market-style inputs. `financials` remains the source of typed `FinancialIncomeRe
 valuation configuration versions, calculation outputs, risk outputs, event
 state, and run control data.
 
-## Industry Valuation Template
+## 5 Industry Valuation Template
 
 The industry template is a first-class input to traditional valuation. It is
 not a hard-coded dictionary inside the calculation service and it is not
@@ -104,7 +104,7 @@ SmartInvestor `static/valuation_config` valuation files and their loader/service
 behavior as-is first; later changes require a versioned migration and a
 comparison artifact.
 
-### Static Configuration Files
+### 5.1 Static Configuration Files
 
 The initial Maniu layout is:
 
@@ -140,7 +140,7 @@ dependency. Static inputs are read-only during valuation. A generated file is
 published atomically only after validation; a failed refresh must leave the
 previous active file usable.
 
-### File Schema And Provenance
+### 5.2 File Schema And Provenance
 
 `valuation_defaults_CN.json` contains `version`, `market`, `changelog`,
 `global_defaults`, and legacy `industries`. Each parameter set uses the direct
@@ -176,7 +176,7 @@ The `source_hash` is calculated over canonical JSON content. It is used to
 detect material changes, create a new parameter version, and decide whether a
 market-wide valuation refresh is required.
 
-### Template Resolution In `ValuationConfig`
+### 5.3 Template Resolution In `ValuationConfig`
 
 The loader behavior is part of the compatibility contract. It must:
 
@@ -199,7 +199,7 @@ The normalized parameter object is passed directly to the valuation engine. A
 loader error for a missing mapping or missing active SW template is a typed
 configuration failure, not permission to use an unrelated industry bucket.
 
-### Template Generation Algorithm
+### 5.4 Template Generation Algorithm
 
 `traditional_valuation` owns parameter generation only. `market_data` owns the
 separate SW mapping generation from `index_classify` and `index_member_all`,
@@ -208,7 +208,7 @@ version activation, and `INDUSTRY_MAPPING_CHANGED` emission. Traditional
 generation consumes one explicit, active `mapping_version` and cannot publish
 or replace stock-to-SW membership.
 
-#### Parameter Generation
+#### 5.4.1 Parameter Generation
 
 For each L3 node, the generator:
 
@@ -239,7 +239,7 @@ The generated payload is an immutable candidate until validation completes.
 Validation must check all level counts, parent links, parameter key shape,
 numeric bounds, history metadata, and JSON serialization before publication.
 
-### Parameter Version Activation
+### 5.5 Parameter Version Activation
 
 The generated JSON is copied into a database-backed
 `TraditionalValuationParameterVersion` record or a content-addressed local
@@ -252,9 +252,9 @@ The calculation snapshot always records the exact active template version and
 source hash. This permits replaying an old valuation even after a new SW
 template is published.
 
-## Core Valuation Entry And Template Refresh
+## 6 Core Valuation Entry And Template Refresh
 
-### Single-Security Calculation Path
+### 6.1 Single-Security Calculation Path
 
 The compatible core entry is the following sequence, based on the existing
 `prefillvaluationsnapshot` implementation:
@@ -290,7 +290,7 @@ The method extraction layer supports aliases for `pe`, `pb`, `ps`, `sw_history`,
 implied price, equity value, industry context, comparison group, match score,
 and variant. A method with no valid positive result is omitted with a reason.
 
-### Multi-Industry Traditional Valuation
+### 6.2 Multi-Industry Traditional Valuation
 
 One security may legitimately require more than one traditional valuation
 context. The default SW industry is the baseline, while business-text matching
@@ -298,7 +298,7 @@ provides alternative industry assumptions for comparison. These are parallel
 valuation variants, not multiple copies of the same method and not a frontend
 concatenation feature.
 
-#### Variant Context Resolution
+#### 6.2.1 Variant Context Resolution
 
 For each security, the Maniu implementation consumes the ranked result from
 `market_data.get_business_industry_matches`; it does not run the business-text
@@ -346,7 +346,7 @@ valuation fail or silently claim a business match. Traditional valuation must
 never call `stock_company`/`ci_index_member` or instantiate the matcher as a
 fallback.
 
-#### Variant Calculation Semantics
+#### 6.2.2 Variant Calculation Semantics
 
 The stock input snapshot is built once per security/report/bucket/as-of identity
 and reused for every context. Each context then invokes the same
@@ -388,7 +388,7 @@ blend. It uses normalized positive weights derived from match score, data
 quality, and method coverage, then reapplies tier monotonicity, minimum gaps,
 position caps, and downgrade rules. Each source variant remains queryable.
 
-### Verified Backfill Example
+### 6.3 Verified Backfill Example
 
 The following example records the expected persistence shape for a single-stock
 backfill. It is an implementation verification sample, not a separate
@@ -473,7 +473,7 @@ summary table or infer the active variant from row order. The active choice is
 the row with `is_active_variant=true` (or the backend's explicit active
 variant field).
 
-### Market-Style Adjustment Boundary
+### 6.4 Market-Style Adjustment Boundary
 
 The existing market-overall adjustment is applied to method output before
 summary aggregation only when the selected style profile enables it. It reads
@@ -490,7 +490,7 @@ diagnostic; it must not make the calculation appear to have used a valid market
 style observation. Method-level and summary-level adjustments remain separate
 from the raw valuation rows.
 
-### Prefill And Event Refresh Modes
+### 6.5 Prefill And Event Refresh Modes
 
 The copied prefill behavior supports these independent dimensions:
 
@@ -508,7 +508,7 @@ The traditional event consumer uses the same calculation path as prefill, but
 restricts the scope to the event's affected security/report/variant. It must not
 create a second calculation implementation for event refresh.
 
-### Template Update Commands
+### 6.6 Template Update Commands
 
 The Maniu operator interface should preserve the source command semantics:
 
@@ -558,7 +558,7 @@ profit buckets, refreshed/skipped counts, disclosure reasons, method coverage,
 and failures. A run with all requested items failing returns nonzero even if the
 process itself did not raise an exception.
 
-### Schedule And Dependency Rules
+### 6.7 Schedule And Dependency Rules
 
 The copied `update_schedule_CN.json` should initially preserve these tasks:
 
@@ -592,9 +592,9 @@ semantics. It must not import Django models from `smartinvestor_be`; the Maniu
 implementation reads approved shared projections and uses an explicit adapter
 for the valuation formulas and SW parameter shape.
 
-## Valuation Contract
+## 7 Valuation Contract
 
-### Input Resolution
+### 7.1 Input Resolution
 
 Every calculation receives an explicit:
 
@@ -626,7 +626,7 @@ all gates pass; otherwise the result records the block reason and the exact
 effective source. A blended request must not silently be reported as an
 express-backed result when it fell back to formal data.
 
-### SW Parameter Resolution
+### 7.2 SW Parameter Resolution
 
 Parameter lookup proceeds from the canonical security SW L3 mapping, then the
 approved L2/L1 fallback rules. The selected row records:
@@ -643,7 +643,7 @@ same bounded rules as the source design. Scarcity overlay remains a separate
 method row and must expose its profile, confidence, beta, cap, and risk-state
 reason.
 
-### Method And Summary Outputs
+### 7.3 Method And Summary Outputs
 
 The engine returns one row per available method. Missing prerequisites skip only
 that method and record a machine-readable reason; they do not fabricate a price.
@@ -728,7 +728,7 @@ separate:
   industry variant. It converts valuation rows into the method map, adds
   anchor and display fields, and returns the API-facing subset of the summary.
 
-#### Buy-Candidate Decision Contract
+#### 7.3.1 Buy-Candidate Decision Contract
 
 The following is the normative SmartInvestor-compatible decision rule. The
 rule version must be persisted as
@@ -802,7 +802,7 @@ price produces `buy_candidate=false` with an explicit reason and no fabricated
 gap. The implementation must persist the counts, method lists, prices, gap
 values, band, and rule version so each decision can be replayed and audited.
 
-#### `_build_valuation_summary_payload` Compatibility Contract
+#### 7.3.2 `_build_valuation_summary_payload` Compatibility Contract
 
 For parity with SmartInvestor, Maniu's summary adapter must implement the
 following sequence exactly:
@@ -917,7 +917,7 @@ Optimization is summary-only. It may use method coverage, method dispersion,
 risk, and the documented market-cap factor, but it must not alter PE/PB/PS/PEG,
 FCFF DCF, DDM, or other single-method rows.
 
-### Method Execution Contract
+### 7.4 Method Execution Contract
 
 Each method receives one normalized point-in-time snapshot and one resolved
 parameter set. It returns either a valid positive `implied_price` or a skipped
@@ -944,7 +944,7 @@ dates, parameter keys used, unit metadata, `valuation_variant`, and the exact
 eligibility/skip diagnostic. This is required to explain differences from
 SmartInvestor and to replay an old result.
 
-### Composite, Conservative, And Market-Style Outputs
+### 7.5 Composite, Conservative, And Market-Style Outputs
 
 The summary layer has three separate responsibilities:
 
@@ -976,7 +976,7 @@ market-style result are separate fields. No optimization or risk adjustment may
 overwrite the raw result. Current-price gaps use the same current-price anchor:
 `gap_pct = (valuation_price - current_price) / current_price`.
 
-### Authoritative Three-Tier Valuation And Position Template
+### 7.6 Authoritative Three-Tier Valuation And Position Template
 
 Traditional valuation additionally produces one authoritative three-tier template
 from the completed method rows. `conservative`, `balanced`, and `aggressive`
@@ -985,7 +985,7 @@ additional valuation methods, and a client must not recreate them from raw rows.
 The output is deterministic for the same snapshot identity and is calculated
 once per valuation variant before any top-level aggregation.
 
-#### Industry Regime Resolution
+#### 7.6.1 Industry Regime Resolution
 
 The shared `industry_regime_service` resolves one of `high_growth`, `balanced`,
 `stable_value`, or `cyclical_resource`. It accepts the variant's SW L1/L2/L3
@@ -1010,7 +1010,7 @@ parameters, not for missing SW mapping. The same `market_data` service and
 mapping version are the required source of truth for predictive valuation; a
 frontend prefix table is not an authority.
 
-#### Tier Calculation, Variant Blend, And Guardrails
+#### 7.6.2 Tier Calculation, Variant Blend, And Guardrails
 
 Each regime pack defines separate method-weight matrices for all three tiers,
 down/up minimum gaps, volatility-specific range multipliers, and position
@@ -1042,7 +1042,7 @@ the aggressive position. The triggering condition and chosen fallback are
 always recorded; no output may claim a high-confidence aggressive tier after a
 downgrade.
 
-#### Template Contract
+#### 7.6.3 Template Contract
 
 `TraditionalValuationSnapshot.summary` and the current read model retain both
 the top-level `traditional_tiered_template` and
@@ -1064,14 +1064,14 @@ The fields are additive. A missing template remains an explicit coverage error
 with a reason so legacy clients can retain their fallback, but new clients must
 prefer the top-level backend template and never blend variants locally.
 
-### Extended Valuation Methods
+### 7.7 Extended Valuation Methods
 
 The following methods belong to `traditional_valuation`, not to
 `market_data`. They consume point-in-time inputs from `market_data` and
 `financials`, while their formulas, eligibility rules, fallback behavior, and
 audit payloads are owned by the valuation engine.
 
-#### `ev_ebitda`
+#### 7.7.1 `ev_ebitda`
 
 Inputs:
 
@@ -1100,7 +1100,7 @@ but must not label that fallback as `ev_ebitda`. Banks and other sectors where
 EBITDA is not meaningful require an explicit SW-level exclusion or fallback
 rule.
 
-#### `sw_history`
+#### 7.7.2 `sw_history`
 
 `sw_history` uses SW industry history as a valuation anchor. Inputs are the
 canonical SW `index_code`, historical positive PE/PB/PS series, configured
@@ -1121,7 +1121,7 @@ be used for an older valuation replay. If no window is valid, the engine either
 skips the method or uses the explicitly configured cross-sectional/global
 template anchor and records that fallback in provenance.
 
-#### `scarcity_overlay`
+#### 7.7.3 `scarcity_overlay`
 
 `scarcity_overlay` is a controlled premium over a valid base valuation, not an
 independent fundamental method. Inputs are `base_price`, `beta`, `score`,
@@ -1143,14 +1143,14 @@ base price produces an explicit skip/fallback result. The method records its
 profile, inputs, confidence, cap, premium, and reason. It must never overwrite
 the raw PE/PB/PS/PEG/DCF/DDM results or conceal the base valuation.
 
-## PostgreSQL Persistence
+## 8 PostgreSQL Persistence
 
 All tables use the existing PostgreSQL database. Monetary values and ratios use
 `NUMERIC`; large explanations and source payloads use `JSONField`/PostgreSQL
 JSONB. Database table names and exact foreign-key targets must be confirmed
 against the current `market_data` and `financials` migrations before coding.
 
-### `TraditionalValuationParameterVersion`
+### 8.1 `TraditionalValuationParameterVersion`
 
 Stores an immutable normalized parameter set imported from the approved SW
 configuration source.
@@ -1170,7 +1170,7 @@ Unique key: `(market, sw_level, sw_code, parameter_version)`.
 The row is immutable after activation; a changed parameter set receives a new
 version.
 
-### `TraditionalValuationSnapshot`
+### 8.2 `TraditionalValuationSnapshot`
 
 Append-only evidence for one calculation.
 
@@ -1197,7 +1197,7 @@ The idempotency key is the complete identity above. A changed engine,
 parameter, style profile, or input bucket creates a new auditable snapshot; it
 does not overwrite historical evidence.
 
-### `TraditionalValuationSnapshotLatest`
+### 8.3 `TraditionalValuationSnapshotLatest`
 
 Read model upserted only when a successful snapshot is newer for the same
 `(security_id, report_type, profit_bucket, valuation_variant, style_profile)`.
@@ -1205,7 +1205,7 @@ It stores the snapshot reference, as-of dates, selected summary, risk reference,
 parameter/engine versions, and freshness metadata. A failed event never replaces
 a successful current row.
 
-### `TraditionalValuationVariantSummaryLatest`
+### 8.4 `TraditionalValuationVariantSummaryLatest`
 
 This is the current read model for one completed industry variant. It is
 required in addition to method-level snapshots because a multi-industry result
@@ -1231,7 +1231,7 @@ candidate may be absent from this table when all of its methods are invalid,
 but that absence must be represented in the run diagnostics rather than
 silently treated as the baseline.
 
-### `TraditionalValuationRiskSnapshot`
+### 8.5 `TraditionalValuationRiskSnapshot`
 
 Stores the `valuation_risk` V1.5+ result independently from valuation methods.
 It records the snapshot reference, active variant, risk score/level/confidence,
@@ -1246,7 +1246,7 @@ The adjusted composite and conservative prices are persisted beside, not in
 place of, the original summary values. Financial ratios such as debt-to-assets
 are normalized to the documented percentage scale before threshold evaluation.
 
-#### Valuation Risk V1.5 Contract
+#### 8.5.1 Valuation Risk V1.5 Contract
 
 Risk is a reliability assessment of the valuation conclusion, not a second
 valuation engine. The risk service cleans rows with `valuation_price <= 0`,
@@ -1302,7 +1302,7 @@ The risk row records the factor catalog/version, weights, dimensions, valid
 method names, score thresholds, adjustment formula/version, and the valuation
 snapshot identity used as input.
 
-### `TraditionalValuationEventState`
+### 8.6 `TraditionalValuationEventState`
 
 Idempotency, debounce, and retry state for one event.
 
@@ -1321,7 +1321,7 @@ Idempotency, debounce, and retry state for one event.
 Unique key: `(event_type, event_key)`. The event is not marked successful until
 the affected snapshot/current/risk transaction commits.
 
-### `TraditionalValuationRun`
+### 8.7 `TraditionalValuationRun`
 
 Records `validate`, `backfill`, `detect-events`, `consume-events`, and `refresh`
 runs, including scope, date/report filters, parameter and engine versions,
@@ -1332,7 +1332,7 @@ Required indexes include `security_id` plus as-of date, report/bucket/variant
 plus as-of date descending, latest identity, pending event status plus retry
 time, and parameter lookup by SW level/code/version.
 
-### Cross-Module Model Naming And Foreign Keys
+### 8.8 Cross-Module Model Naming And Foreign Keys
 
 The model names and associations must follow the existing `market_data` and
 `financials` design documents:
@@ -1363,9 +1363,9 @@ its own schema. `ts_code` may be retained as a denormalized audit field, but
 `security_id` is the canonical relational key, matching the financials and
 market-data designs.
 
-## Event-Driven Refresh
+## 9 Event-Driven Refresh
 
-### Event Types
+### 9.1 Event Types
 
 | Event | Detection source | Scope | Recalculation |
 | --- | --- | --- | --- |
@@ -1373,7 +1373,7 @@ market-data designs.
 | `MARKET_STYLE_CHANGED` | Persisted market-style version differs from the last consumed state | Market or configured universe | Fan out to eligible securities in bounded chunks and run the market-style full refresh |
 | `SECURITY_STYLE_CHANGED` | Persisted individual-style version differs from the last consumed state and passes confirmation | One security | Recalculate only that security's eligible report periods and configured variants |
 
-### Regime State And Full-Refresh Rules
+### 9.2 Regime State And Full-Refresh Rules
 
 The market-style detector and the valuation event consumer must implement the
 following state contract. The only valid market styles are `BULL`, `BEAR`, and
@@ -1437,7 +1437,7 @@ Debounce rules coalesce repeated style revisions within the configured window.
 A newer source version supersedes an unclaimed older event for the same scope,
 but an already committed snapshot remains immutable.
 
-### Event Processing Transaction
+### 9.3 Event Processing Transaction
 
 For each claimed event:
 
@@ -1456,7 +1456,7 @@ On failure, roll back domain writes, retain the event as retryable, increment
 the attempt count, and store a sanitized error code. Exceeded retry limits move
 the event to `DEAD_LETTER` and return a nonzero command status.
 
-## Services And Command Layout
+## 10 Services And Command Layout
 
 ```text
 traditional_valuation/
@@ -1482,7 +1482,7 @@ and method-level provenance. `summary_service` owns optimized summaries.
 `query_service` exposes bounded internal reads to a future gateway and never
 calculates or writes on a cache miss.
 
-### Operator CLI
+### 10.1 Operator CLI
 
 ```text
 python manage.py traditional_valuation \
@@ -1506,7 +1506,7 @@ The command returns nonzero for invalid contracts, missing source coverage,
 failed chunks, unresolved event failures, or reconciliation mismatches. Dry-run
 writes no domain rows, run rows, event state, or watermarks.
 
-## Scheduling And Dependency Order
+## 11 Scheduling And Dependency Order
 
 The scheduler must execute the following order:
 
@@ -1533,7 +1533,7 @@ Each script resolves the project root from its own location, uses the approved
 Python runtime, writes sanitized timestamped logs, and stops on the first
 nonzero command. No secret or connection string is logged.
 
-## Read Boundary
+## 12 Read Boundary
 
 This module exposes no public HTTP endpoint in the first implementation.
 `api_gateway` may later call `query_service` after authorization and a separate
@@ -1556,9 +1556,9 @@ The query layer must support bounded security/date/report/variant filters and
 pagination. It must never invoke Tushare, insert a snapshot, or silently fall
 back across report periods or variants.
 
-## Test And Reconciliation Contract
+## 13 Test And Reconciliation Contract
 
-### Core Tests
+### 13.1 Core Tests
 
 - A repeated calculation with the same identity converges without duplicate
   snapshots.
@@ -1590,7 +1590,7 @@ back across report periods or variants.
 - A failed event rolls back output rows and remains retryable.
 - A market-style event fans out deterministically and does not duplicate work.
 
-### Boundary And Failure Tests
+### 13.2 Boundary And Failure Tests
 
 - A non-trading `asof_date` resolves to the latest completed trading date.
 - A future requested financial end date resolves to the latest available period
@@ -1626,7 +1626,7 @@ Reconciliation reports must include requested versus eligible securities,
 report-period coverage, formal/blended counts, method coverage, event counts by
 type/status, current-row freshness, risk coverage, and failure reasons.
 
-### SmartInvestor Comparison Acceptance
+### 13.3 SmartInvestor Comparison Acceptance
 
 Before enabling a broad backfill, run a fixed parity corpus through the
 SmartInvestor reference and Maniu with the same `ts_code`, trade date, report
@@ -1649,7 +1649,7 @@ financial row, mixed ratio units, or a missing source/skip reason. The artifact
 must include counts by classification and the complete JSON payload for each
 failed case.
 
-## Implementation Gates
+## 14 Implementation Gates
 
 1. Confirm exact PostgreSQL table and field names for `market_data` securities,
    EOD bars/fundamentals, company profiles, business-industry match snapshots,
@@ -1675,6 +1675,6 @@ failed case.
   deterministic ordering, profile freshness, versioned replay, and baseline
   isolation checks.
 
-## TODO List
+## 15 TODO List
 
 - [ ] 按本文档完成传统估值后端实现、基线一致性验证和单元测试，并在测试通过后更新本条状态。

@@ -1,12 +1,12 @@
 # Market Sentiment Backend Design
 
-## Status And Ownership
+## 1 Status And Ownership
 
 `market_sentiment` is a planned `manniu_backend` Django app. It calculates, stores, replays, and serves end-of-day sentiment indicators for the overall Chinese A-share market and individual stocks. It is not registered or implemented yet.
 
 The app consumes only validated PostgreSQL records owned by `market_data`. It does not call Tushare, own market-data synchronization, provide intraday estimates, or create automated trading instructions.
 
-## Module Boundary
+## 2 Module Boundary
 
 ```mermaid
 flowchart LR
@@ -20,7 +20,7 @@ flowchart LR
 
 `market_data` owns `Security`, daily adjusted trading history, daily basic fundamentals, latest snapshots, and ingestion watermarks. `market_sentiment` reads those tables after their daily watermarks have completed successfully. It owns sentiment universe selection, factor calculation, engine versioning, snapshot persistence, replay, and read-model queries.
 
-## Indicator Scope
+## 3 Indicator Scope
 
 | Scope | Identifier | Purpose |
 | --- | --- | --- |
@@ -29,7 +29,7 @@ flowchart LR
 
 The initial release is daily EOD only. A result uses only source rows dated on or before its `trade_date`; no later trading, fundamental, corporate-action, or membership data may influence a historical result.
 
-## Data Dependencies And Eligibility
+## 4 Data Dependencies And Eligibility
 
 The default market universe contains securities with `Security.asset_type='STOCK'`, an active listing status, and a valid daily trading record. A stock requires `close > 0` and `pre_close > 0`; index records, delisted securities, and records without a completed `market_data` daily watermark are excluded. ST, Beijing Exchange, STAR Market, and ChiNext inclusion rules remain versioned configuration to be confirmed before implementation.
 
@@ -43,9 +43,9 @@ The daily engine reads these `market_data` sources using strict `(security_id, t
 
 The calculation must not use fundamental `close` to replace the trading-bar close, forward/backward-fill a missing same-day fundamental row, or use a future revision without an explicit as-of revision policy.
 
-## Calculation Design
+## 5 Calculation Design
 
-### Stock Factors
+### 5.1 Stock Factors
 
 For stock $s$ and trade date $t$, the engine calculates daily and rolling inputs using only $t$ and prior completed market dates:
 
@@ -82,7 +82,7 @@ $$
 
 `turnover_rate_f` is preferred; `turnover_rate` is used only when free-float turnover is unavailable. Component weights are renormalized only across valid inputs. If available weight is below 70 percent, the affected dimension is null and records an availability reason.
 
-### Market And Stock Scores
+### 5.2 Market And Stock Scores
 
 The market dimensions are the median of each valid stock dimension within the eligible universe. The market raw score is:
 
@@ -100,7 +100,7 @@ $$
 
 Each stock snapshot records its normalization mode, peer type/code/name, valid peer count, stock-history count, and calculation-engine version. A stock with fewer than 20 valid trading days is `INSUFFICIENT_DATA`; it does not receive a fabricated neutral score.
 
-## PostgreSQL Persistence Design
+## 6 PostgreSQL Persistence Design
 
 All sentiment results persist in PostgreSQL. Redis, if added later, only caches latest read responses and is not a source of record.
 
@@ -118,7 +118,7 @@ Required read indexes:
 - Stock snapshots: `(security_id, engine_version, trade_date DESC)` and `(trade_date, engine_version, score DESC)` for dated ranking views.
 - Factor details: `(snapshot_id, factor_code)` unique.
 
-## Job Design
+## 7 Job Design
 
 The planned operator command is `refresh_market_sentiment`.
 
@@ -140,22 +140,22 @@ Daily ordering is:
 
 A missing source watermark, insufficient core-field coverage, or failed dependent adjustment rebuild returns nonzero and records `FAILED` or `INSUFFICIENT_DATA`; it must not publish a normal score from partial data.
 
-## API And Authorization Boundary
+## 8 API And Authorization Boundary
 
 No endpoint is implemented by this design. Future `api_gateway` handlers may expose latest and date-bounded history only after request/response fields and `access_control` permissions are separately confirmed.
 
 Initial constraints are database-backed EOD reads only, fixed pagination/range limits, no request-time Tushare fallback, and no automatic trade execution. Operational runs, factor details, and failure metadata are operator-only.
 
-## Test Case Definition
+## 9 Test Case Definition
 
-### Core Flow
+### 9.1 Core Flow
 
 - Given complete same-day `market_data` rows, the engine writes idempotent market and stock snapshots under the documented unique keys.
 - Market factors use strict same-day trading/fundamental joins and never replace a trading close with a fundamental close.
 - Stock peer selection follows the industry, Tushare-industry, and all-A fallback order with recorded normalization metadata.
 - A rerun with the same trade date and engine version updates the same snapshot; a different engine version retains a separate snapshot.
 
-### Boundary Scenarios
+### 9.2 Boundary Scenarios
 
 - A market history shorter than 252 valid dates remains `WARMING_UP` with no formal score.
 - A stock with 20 or more valid dates but insufficient peer coverage records its configured fallback peer group.
@@ -163,7 +163,7 @@ Initial constraints are database-backed EOD reads only, fixed pagination/range l
 - Missing turnover-rate-f falls back to turnover-rate and records the selected source.
 - A missing same-day fundamental row remains missing; it is not forward/backward-filled.
 
-### Failure Scenarios
+### 9.3 Failure Scenarios
 
 - Source rows dated after the requested trade date cause the calculation to fail its no-lookahead validation.
 - A missing or failed market-data watermark prevents normal score publication.
@@ -171,7 +171,7 @@ Initial constraints are database-backed EOD reads only, fixed pagination/range l
 - A request for an unbounded stock history/ranking range is rejected by the future API layer.
 - No calculation path emits a trading command, broker credential, or automatic execution request.
 
-## Implementation Sequence
+## 10 Implementation Sequence
 
 1. Confirm PostgreSQL table/field types, engine version naming, market-universe rules, peer taxonomy, coverage threshold, and future API request/response contracts.
 2. Create and register the `market_sentiment` Django app; implement PostgreSQL models and migrations with the documented unique keys and indexes.
@@ -180,6 +180,6 @@ Initial constraints are database-backed EOD reads only, fixed pagination/range l
 5. Implement the operator command, daily dependency gating, and local reconciliation artifacts.
 6. Confirm API and authorization contracts, then implement authorized read endpoints through `api_gateway` and `access_control`.
 
-## TODO List
+## 11 TODO List
 
 - [ ] 按本文档完成市场情绪后端实现、数据覆盖校验和单元测试，并在测试通过后更新本条状态。

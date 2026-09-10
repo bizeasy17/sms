@@ -1,12 +1,12 @@
 # Financials Backend Design
 
-## Status And Ownership
+## 1 Status And Ownership
 
 `financials` is an already registered but currently empty `manniu_backend` Django app. It will own the ingestion, PostgreSQL persistence, auditability, period/as-of selection, and read-optimized snapshots of Tushare corporate financial data. No financial models, migrations, sync command, public API, or data write is implemented by this design.
 
 `financials` consumes `market_data.Security` for stock identity and listing lifecycle. `market_data` remains the owner of trading bars, market master data, and Tushare market-data ingestion. `financials` supports research, valuation, selection, backtesting, and decision support only; it must never create or execute trading orders.
 
-## Source Coverage
+## 2 Source Coverage
 
 | Domain dataset | Tushare endpoint | Primary use |
 | --- | --- | --- |
@@ -23,7 +23,7 @@
 
 All source records retain the provider response identity and dates. The data model does not collapse revisions into a single untraceable row.
 
-## Architecture
+## 3 Architecture
 
 ```mermaid
 flowchart LR
@@ -45,9 +45,9 @@ Financial data updates are event-driven: the upstream `disclosure_date` endpoint
 
 The adapter owns explicit endpoint projections, Tushare paging, transient-error handling, and secret-safe errors. Normalization owns `NaN` conversion, scalar conversion, endpoint date selection, and deterministic row signatures. Repositories own PostgreSQL writes. Query services select only data that was public at an explicit `as_of_date`; public API handlers must delegate to those services after `access_control` authorization.
 
-## PostgreSQL Persistence Design
+## 4 PostgreSQL Persistence Design
 
-### Raw Endpoint Records
+### 4.1 Raw Endpoint Records
 
 Each Tushare endpoint uses a dedicated raw-record table instead of a single sparse mega-table. Every table has a `security_id` foreign key to `market_data.Security`, original `ts_code`, provider dates, `row_signature`, `source_revision_at` when available, `source`, `imported_at`, and raw endpoint fields.
 
@@ -68,7 +68,7 @@ The common natural key is `(security_id, ann_date, end_date, period, row_signatu
 
 Date fields are PostgreSQL `DATE` when supplied in valid `YYYYMMDD` format. Provider values that have no date meaning remain text. Financial amounts and ratios use documented `NUMERIC` precision, not floats: monetary quantities and shares use `NUMERIC(24, 4)`, per-share values use `NUMERIC(18, 6)`, and percentages/ratios use signed `NUMERIC(18, 6)`. The implementation must document the provider unit for each endpoint field and never silently convert units.
 
-### Consumer Projections
+### 4.2 Consumer Projections
 
 Raw endpoint records optimize audit and replay. `financials` does not own generic
 feature-panel or latest-feature tables. Each downstream domain owns its own projection
@@ -76,7 +76,7 @@ schema and rebuild policy so persisted fields match its feature contract.
 `predictive_valuation`, for example, owns its point-in-time financial panel/latest
 projections and constructs them from these raw records before inference.
 
-## As-Of And Revision Rules
+## 5 As-Of And Revision Rules
 
 Financial data is publication-time sensitive. A feature used on trade date $t$ may only use a raw record with an effective public date no later than $t$:
 
@@ -94,19 +94,19 @@ They remain endpoint records and are selected by explicit consumer policy; they 
 silently merged into a statement value. Backtests must request an explicit `as_of_date`;
 each consumer enforces its own point-in-time projection boundary.
 
-## Ingestion Control And Reliability
+## 6 Ingestion Control And Reliability
 
 `FinancialIngestionRun` stores endpoint list, requested scope/date coverage, start/finish time, status, source/accepted/upserted/rejected counts, pagination/retry counts, and sanitized error summary. `FinancialIngestionWatermark` is unique by `(endpoint, scope_key)` and records the last complete announcement-date or endpoint-specific source cursor.
 
 Endpoint writes occur in transactions per bounded page/chunk. A successful chunk writes raw records and its counters together. A watermark advances only after every requested page and coverage check succeeds. Logs, database records, and errors must never contain `TUSHARE_TOKEN`, database passwords, or raw connection strings.
 
-## Consumer And API Boundary
+## 7 Consumer And API Boundary
 
 No API is defined or implemented. Future `api_gateway` read APIs must accept bounded symbol/date/range queries and delegate to `financials` as-of query services. `access_control` must authorize public reads before the service call. Operational import runs, raw endpoints, error details, and broad export access are operator-only.
 
-## Test Case Definition
+## 8 Test Case Definition
 
-### Core Flow
+### 8.1 Core Flow
 
 - Every endpoint maps to its dedicated raw model, deterministic natural key, and documented projection fields.
 - `disclosure_date` detects new/amended disclosure events and accurately drives targeted statement and event ingestion for affected securities without all-market scanning.
@@ -114,21 +114,21 @@ No API is defined or implemented. Future `api_gateway` read APIs must accept bou
 - An eligible statement/indicator set is available for an authorized downstream consumer projection rebuild.
 - A consumer historical as-of projection uses only disclosure records public on or before the requested date.
 
-### Boundary Scenarios
+### 8.2 Boundary Scenarios
 
 - Multiple dividend or main-business rows for one security/report period remain distinct through row signatures.
 - Missing/invalid optional publication dates are retained as raw data but excluded from time-sensitive projections.
 - Consumers that require latest projections maintain their own one-row snapshots rather than scanning raw history.
 - A provider field not in a typed projection remains in the endpoint raw payload under the endpoint schema policy.
 
-### Failure Scenarios
+### 8.3 Failure Scenarios
 
 - A malformed required endpoint payload, exhausted page limit, or failed chunk leaves the endpoint watermark unchanged.
 - A projection cannot use a statement whose effective date is after the requested as-of date.
 - Tokens, passwords, and connection strings are absent from command output and persisted error summaries.
 - No financial calculation or API path creates an automatic trading action.
 
-## Implementation Sequence
+## 9 Implementation Sequence
 
 1. Confirm concrete table names, core typed field list/units for every endpoint, row-signature policy, and effective-date precedence.
 2. Implement raw endpoint models, run/watermark models, PostgreSQL migrations, indexes, and model-contract tests.
@@ -137,6 +137,6 @@ No API is defined or implemented. Future `api_gateway` read APIs must accept bou
 5. Implement the operator CLI, backfill/quarterly scheduling, reconciliation artifacts, and failure exit behavior.
 6. Confirm API and authorization contracts before implementing read endpoints.
 
-## TODO List
+## 10 TODO List
 
 - [ ] 按本文档完成财务数据后端设计对应的实现、PostgreSQL 迁移和单元测试，并在测试通过后更新本条状态。

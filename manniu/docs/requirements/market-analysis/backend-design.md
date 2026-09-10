@@ -1,6 +1,6 @@
 # Market Analysis Module Design
 
-## Ownership
+## 1 Ownership
 
 `manniu_backend` owns the following domain module boundaries. The seven domain applications listed below are registered in the current Django project.
 
@@ -21,7 +21,7 @@ The detailed financial-data and CLI designs for the registered `financials` app 
 
 `market_sentiment` is a planned Django application and is not yet registered or implemented. Its market-level and stock-level daily indicator design is maintained in [Market Sentiment Backend Design](market-sentiment-backend-design.md). It consumes PostgreSQL data from `market_data` and never owns Tushare ingestion, trading history, or automated trading execution.
 
-## Backend Architecture
+## 2 Backend Architecture
 
 The backend separates HTTP transport and access control from domain capabilities. Domain applications own their calculation, query, and persistence logic; they must not implement automated trading execution.
 
@@ -33,19 +33,19 @@ flowchart LR
 	Domain --> Postgres[(PostgreSQL)]
 ```
 
-### External API Module: `api_gateway`
+### 2.1 External API Module: `api_gateway`
 
 `api_gateway` is the planned boundary for external HTTP APIs. It will own URL routing under `/api/`, request parsing, response serialization, versioning, and consistent error envelopes. It delegates business operations to the domain applications and must not duplicate their valuation, selection, backtest, financial, market-data, or index logic.
 
 No external API endpoint is implemented in the current project. The only existing route is Django Admin at `/admin/`.
 
-### Access Control Module: `access_control`
+### 2.2 Access Control Module: `access_control`
 
 `access_control` is the planned boundary for authentication and authorization of external APIs. It will own credential validation, identity resolution, permission checks, and audit-context propagation before requests reach domain services.
 
 The Django project currently includes the standard `django.contrib.auth` application and `AuthenticationMiddleware`; it does not yet implement API authentication, role/permission policy, access-control models, or authorization endpoints.
 
-### Request Flow
+### 2.3 Request Flow
 
 1. A client sends a request to an endpoint owned by `api_gateway`.
 2. `api_gateway` routes the request to `access_control` for identity and permission validation.
@@ -53,32 +53,32 @@ The Django project currently includes the standard `django.contrib.auth` applica
 4. The domain application reads or writes PostgreSQL through its own data layer.
 5. `api_gateway` serializes the result using the documented response contract.
 
-## Database Contract
+## 3 Database Contract
 
 No database models, migrations, tables, or schema fields are added by the current scaffold. Future domain data and access-control persistence remain PostgreSQL-only under the existing backend database configuration. SQLite must not be introduced as a persistence fallback.
 
-## API Contract
+## 4 API Contract
 
 No external API endpoints, request fields, or response fields are currently implemented. When `api_gateway` is implemented, endpoint-specific request and response schemas must be documented in this module directory and confirmed before development.
 
-## Test Case Definition
+## 5 Test Case Definition
 
-### Core Flow
+### 5.1 Core Flow
 
 - Every declared application configuration has the expected Django application name.
 - Every application is present in `INSTALLED_APPS`.
 - A future external request reaches a domain service only after `access_control` grants permission.
 
-### Boundary Scenarios
+### 5.2 Boundary Scenarios
 
 - All empty modules load under Django's static configuration check.
 - An unauthenticated request to a future protected external API receives a documented authentication failure response.
 
-### Failure Scenarios
+### 5.3 Failure Scenarios
 
 - A missing `INSTALLED_APPS` entry or application-name mismatch fails the unit test.
 - A request with insufficient permission is denied before any domain write operation.
 
-### TODO List
+### 5.4 TODO List
 
 - [ ] 按本文档完成模块注册、访问控制边界及对应单元测试，并在测试通过后更新本条状态。

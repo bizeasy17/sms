@@ -1,6 +1,6 @@
 # Predictive Valuation Backend Design
 
-## Status And Scope
+## 1 Status And Scope
 
 This document defines the target predictive valuation design for `manniu_backend` and
 uses the current `tushare_earnings_service` implementation as its compatibility
@@ -25,9 +25,9 @@ signal, quality-risk correction, bounded return range, target price and market-c
 ranges, market-regime and overall-market adjustments, quarterly/fusion routing, and
 traceability metadata.
 
-## Reference Baseline And Gap Analysis
+## 2 Reference Baseline And Gap Analysis
 
-### Reference Execution Contract
+### 2.1 Reference Execution Contract
 
 The reference implementation has three distinct responsibilities:
 
@@ -47,7 +47,7 @@ automatically disables latest alignment and enables point-in-time replay. Suppor
 requested report types are `Q1`, `H1`, `Q3`, `FY`, `FUSION`, and `LATEST`; the default
 work set is the four standalone quarter types.
 
-### Required Parity And Intentional Enhancements
+### 2.2 Required Parity And Intentional Enhancements
 
 | Area | Reference behavior | Maniu target |
 | --- | --- | --- |
@@ -72,7 +72,7 @@ market-wide adjustment, fusion audit, fallback state, failure state, and replay
 idempotency. Those omissions prevent reliable comparison and must be closed before the
 three-tier or event-driven layers are treated as production-ready.
 
-## Ownership Boundaries
+## 3 Ownership Boundaries
 
 `predictive_valuation` owns:
 
@@ -92,9 +92,9 @@ It stores only model-specific financial feature projections plus predictive infe
 data. All reads and writes use the existing PostgreSQL connection; SQLite is not
 supported.
 
-## Configuration And Static Artifacts
+## 4 Configuration And Static Artifacts
 
-### Environment Variables
+### 4.1 Environment Variables
 
 Add the following documented variables to the project's `.env` example. Existing
 database configuration is reused and must not be duplicated under a second URL.
@@ -116,7 +116,7 @@ All paths must be resolved relative to `settings.BASE_DIR` unless explicitly abs
 The process must validate that configured artifacts remain within their configured roots,
 that the serving pointer exists, and that the selected bundle contains `feature_cols`.
 
-### `configs/` Layout
+### 4.2 `configs/` Layout
 
 Proposed files:
 
@@ -147,7 +147,7 @@ outside this module's scheduled inference jobs. A serving pointer promotion is a
 explicit deployment operation with its own audit record; a batch job must never
 overwrite model artifacts.
 
-### Quarterly Production Model Routing
+### 4.3 Quarterly Production Model Routing
 
 Production inference is report-type-specific. `serving.yaml` contains `production` and
 optional `candidate` slots. Each slot identifies a versioned dataset and a required
@@ -178,7 +178,7 @@ output; it does not block prediction. The registry must never silently fall back
 different quarter's model. The operator `validate` command checks all configured
 report-type mappings before a batch or event consumer runs.
 
-## Shared Feature Contract
+## 5 Shared Feature Contract
 
 The reference pipeline loads its ordered feature names from the selected model bundle and
 uses `reindex(columns=feature_cols)`, followed by hierarchical imputation. The Maniu
@@ -207,7 +207,7 @@ offline compatibility, must set `feature_data_source=dataset_fallback` and
 `LIVE_FEATURE_UNAVAILABLE` failure containing requested as-of date, source trade date,
 data source, and feature gap days; it must not silently fabricate a current result.
 
-### Module-Owned Financial Feature Schema
+### 5.1 Module-Owned Financial Feature Schema
 
 The former `financials_feature_panel` and `financials_feature_latest` tables have been
 removed. `PredictiveFinancialFeaturePanel` and `PredictiveFinancialFeatureLatest` replace
@@ -240,7 +240,7 @@ the provider field of the same name. This preserves compatibility with the legac
 Feature values must be normalized according to `schema.yaml`. In particular,
 ratio-scale upstream values must not be mixed with percentage-scale model features.
 
-## Authoritative Predictive Three-Tier Template
+## 6 Authoritative Predictive Three-Tier Template
 
 This section is a Maniu enhancement and is not part of the reference service parity
 baseline. It may be enabled only after the underlying persisted prediction matches the
@@ -253,7 +253,7 @@ level, and position guidance. They are derived after model inference and
 regime-aware target mapping. They are not model features, separate model
 artifacts, or an instruction to trade.
 
-### Shared Industry-Regime Contract
+### 6.1 Shared Industry-Regime Contract
 
 After baseline parity, predictive valuation calls the same backend `industry_regime_service` and
 versioned SW mapping used by `traditional_valuation`. It supplies the canonical
@@ -279,7 +279,7 @@ security, one feature panel, and one inference result per report type/as-of
 identity. Adding industry-variant model inference is a separate model-contract
 change and is out of scope for three-tier serving.
 
-### Tier Construction And Degradation
+### 6.2 Tier Construction And Degradation
 
 The active model's capped target return/price output is the balanced anchor.
 The selected industry regime chooses a versioned template pack with lower/upper
@@ -300,7 +300,7 @@ aggressive position. Strict live-feature mode remains authoritative; an
 ineligible prediction returns its existing typed failure rather than a
 fabricated tier template.
 
-### Persistence And Read Contract
+### 6.3 Persistence And Read Contract
 
 `PredictiveValuationSnapshot` stores the immutable
 `predictive_tiered_template` and the source prediction/range values used to
@@ -323,7 +323,7 @@ responses expose it from persisted snapshot/current rows only, alongside
 the mapping/template versions. Request-time inference, industry lookup writes,
 or frontend recalculation are prohibited.
 
-## Predictive Domain Persistence
+## 7 Predictive Domain Persistence
 
 The predictive tables and their identities are:
 
@@ -371,7 +371,7 @@ No event is marked consumed until its prediction transaction has committed. Fail
 events retain their error and retry count; a later event with the same idempotency key
 does not create duplicate snapshots.
 
-## Inference Service
+## 8 Inference Service
 
 Proposed package shape:
 
@@ -398,7 +398,7 @@ imputation (security recent history, industry median, bundle global median), the
 the score through capped, risk- and regime-aware target ranges. `event_service` detects,
 coalesces, claims, and completes events transactionally.
 
-### Signal And Action Mapping
+### 8.1 Signal And Action Mapping
 
 The classifier returns `valuation_up_prob` in $[0,1]$. The optional regressor returns
 predicted earnings growth. Earnings growth is clipped to configured bounds and normalized
@@ -419,7 +419,7 @@ and inventory/revenue. It subtracts a capped score penalty and can only increase
 The final score is passed through the score bands again. The output records every fired
 rule, metric value, threshold, score penalty, and risk upgrade.
 
-### Quantitative Valuation Mapping
+### 8.2 Quantitative Valuation Mapping
 
 The bounded center return is the sum of four configured components before risk scaling:
 
@@ -447,7 +447,7 @@ target\_market\_cap = current\_market\_cap \times
 \frac{target\_price}{current\_price}
 $$
 
-### Target-Mapping Configuration Contract
+### 8.3 Target-Mapping Configuration Contract
 
 The target mapping above is not a fixed score-to-price lookup. It is a versioned,
 configuration-driven compatibility contract with the reference earnings service. The
@@ -508,7 +508,7 @@ frontend. A missing industry percentile or market-overall input uses the documen
 neutral contribution/multiplier and records the degraded input state; it must not
 silently substitute a different valuation metric.
 
-### Fusion Mapping
+### 8.4 Fusion Mapping
 
 Fusion calls each requested quarter model independently. For each successful component:
 
@@ -529,7 +529,7 @@ only for offline historical initialization when the active profile explicitly en
 it; its use must be persisted in the snapshot. This is intentionally stricter than the
 reference command's compatibility default and must be covered by parity tests.
 
-## CLI And Batch Jobs
+## 9 CLI And Batch Jobs
 
 The proposed single entry point is:
 
@@ -578,7 +578,7 @@ and feature-projection rebuild, then event scan, then event consumption. The com
 are lock-protected per run class and scope; `--security`, `--asof-date`, `--limit`,
 `--run-key`, `--dry-run`, and `--retry-failed` are proposed common controls.
 
-## Event Contract
+## 10 Event Contract
 
 Event detection is pull-based against shared PostgreSQL data, which makes it compatible
 with current batch ingestion and avoids cross-app in-process signals.
@@ -595,7 +595,7 @@ trigger inference against stale projected features. Market-wide events fan out
 deterministically to eligible active securities and are chunked; they do not hold one
 long database transaction.
 
-### Market Data Regime Contract
+### 10.1 Market Data Regime Contract
 
 `predictive_valuation` consumes market and security style classification from the
 canonical `market_data` regime service. It must not duplicate the classifier,
@@ -639,7 +639,7 @@ regime_row_count
 regime_status
 ```
 
-### Market Regime Semantics
+### 10.2 Market Regime Semantics
 
 The market classifier uses the completed `000001.SH` benchmark close series
 from `market_data.MarketBarDailyHistory`. It requires at least 80 valid rows
@@ -657,7 +657,7 @@ downgrades it to `BALANCE`. These thresholds belong to `market_data`; the
 prediction model configuration may define how a confirmed state scales target
 returns and bands, but may not redefine the state itself.
 
-### Security Regime Semantics
+### 10.3 Security Regime Semantics
 
 The security classifier uses at least 60 valid positive close values from
 `market_data.MarketBarDailyHistory` and follows this ordered rule set:
@@ -674,7 +674,7 @@ The classifier returns `INSUFFICIENT_DATA` when fewer than 60 valid rows exist.
 That result may be recorded in diagnostics but cannot trigger a regime event or
 replace a confirmed state.
 
-### Regime Event Consumption
+### 10.4 Regime Event Consumption
 
 `market_data` persists `MarketRegimeSnapshot`, `SecurityRegimeSnapshot`,
 `MarketRegimeState`, `SecurityRegimeState`, and idempotent `RegimeEvent` rows.
@@ -706,7 +706,7 @@ The security-style event never fans out to other securities. A repeated event
 with the same source version and scope is idempotent and cannot create duplicate
 prediction snapshots.
 
-### Regime-Aware Inference And Refresh Metadata
+### 10.5 Regime-Aware Inference And Refresh Metadata
 
 The inference service may use the confirmed market/security state in its target
 mapping, return caps, risk scaling, or explanation payload. It must record the
@@ -728,7 +728,7 @@ or `PredictiveValuationCurrent` rows only. Loading a prediction card must not
 call `get_market_regime`, `get_security_regime`, or the inference service in a
 way that writes or computes a new prediction.
 
-## Consumer And API Boundary
+## 11 Consumer And API Boundary
 
 `predictive_valuation` does not define, route, serialize, or expose public HTTP APIs.
 Its public boundary is an internal, read-only query service used by `api_gateway` after
@@ -745,7 +745,7 @@ Any gateway response must identify `asof_date`, `source_market_date`,
 current valuation. No request-time path may invoke Tushare, write a prediction, alter a
 model artifact, or execute a trading action.
 
-## Implementation Gates
+## 12 Implementation Gates
 
 1. Freeze a representative reference fixture set for `Q1`, `H1`, `Q3`, `FY`, and
   partial-success `FUSION`, including `raw_result` and persisted latest/history rows.
