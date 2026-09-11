@@ -390,9 +390,184 @@ gap = (current_close - implied_price) / implied_price
 - 对相同输入、相同上游快照和相同计算版本保持确定性。
 - 支持 API 层批量查询，避免首页逐个指数请求造成 N+1 查询。
 
-## 17 测试与验收
+## 17 API Gateway 接入需求
 
-### 17.1 单元测试
+本节定义 `indices` 接入 `api_gateway` 的 v1 公共只读契约，作为
+[API Gateway Design](api-gateway-design.md) 中指数领域的落地需求。
+本节只冻结外部 HTTP 边界和领域服务调用约束，不提前实现 Django URL、serializer、
+权限代码或新的数据库表。
+
+### 17.1 接入边界
+
+- 所有接口使用 `/api/v1/market-analysis` 基础路径，不创建指数专用版本前缀。
+- 首期只开放 GET；不开放同步、回填、重算、缓存刷新、配置写入、通知、交易或任何
+  POST/PUT/PATCH/DELETE 接口。
+- Gateway 负责路由、Bearer 认证、scope 授权、参数白名单、日期和业务键校验、分页、
+  限流、审计上下文、统一响应和错误映射。
+- `indices` 领域服务负责指数代码别名解析、数据读取、日期对齐、分位/估值/健康度/
+  股债利差计算和领域状态；Gateway 不复制公式，不直接拼接 `market_data` ORM 查询。
+- 查询只能读取 PostgreSQL 已落库数据。cache miss 不得调用 Tushare、运行同步命令、
+  写入 `market_data` 或 `indices` 表、推进 watermark，或触发模型推理。
+- API 适配层不得返回 HTML、SVG 或前端文案拼接结果；状态、警告、来源日期和质量覆盖率
+  必须原样保留在响应中。
+
+请求链路应保持为：
+
+```mermaid
+sequenceDiagram
+    participant Client
+    participant Gateway as api_gateway
+    participant Access as access_control
+    participant Indices as indices query service
+    participant Sources as market_data/providers
+    participant DB as PostgreSQL
+
+    Client->>Gateway: GET index endpoint + Bearer token
+    Gateway->>Access: authenticate(request, required_scopes)
+    Access-->>Gateway: principal, scopes, request context
+    Gateway->>Indices: bounded typed query
+    Indices->>Sources: read-only domain/provider query
+    Sources->>DB: indexed read
+    DB-->>Sources: persisted facts and provenance
+    Sources-->>Indices: normalized input
+    Indices-->>Gateway: typed result/status
+    Gateway-->>Client: v1 success/error envelope
+```
+
+### 17.2 外部路由
+
+首期路由如下。路径中的 `index_key` 必须是配置中的业务键；不接受将
+`ts_code` 直接当作业务键使用。需要批量分析时使用逗号分隔的 `index_keys`，由 Gateway
+校验数量和重复项后一次调用领域服务，避免首页逐指数 N+1 请求。
+
+| 方法 | 路径 | 说明 | 主要查询参数 |
+| --- | --- | --- | --- |
+| GET | `/indices/catalog` | 指数目录、能力和数据新鲜度 | `index_keys` |
+| GET | `/indices/:index_key/valuation` | 单指数当前估值和历史分位 | `metric`、`window`、`start_date`、`end_date`、`band_pct` |
+| GET | `/indices/health` | 当前市场健康度和 A 股温度计 | `asof_date`、`style`、`calculation_version` |
+| GET | `/indices/equity-bond` | 股债收益率、利差和资产倾向 | `index_key`、`window`、`start_date`、`end_date` |
+| GET | `/indices/health/history` | 历史健康度序列 | `window`、`start_date`、`end_date`、`calculation_version`、`page`、`page_size` |
+| GET | `/indices/health/events` | 历史估值/健康度关键事件 | `start_date`、`end_date`、`event_type`、`page`、`page_size` |
+
+Gateway 必须拒绝未知路径参数、未知指标、未知窗口、未知风格、重复指数和不合法日期，
+不得静默回退到默认值。首期白名单为：
+
+- `metric`: `PE`、`PETTM`、`PB`；默认值由接口版本明确规定，建议调用方显式传入。
+- `window`: `30D`、`60D`、`90D`、`1Y`、`3Y`、`5Y`、`10Y`、`ALL`。
+- `style`: `overall`、`defensive`、`balanced`、`aggressive`。
+- `event_type`: `valuation_opportunity`、`valuation_risk`、`health_below_threshold`、
+  `health_above_threshold`。
+- `index_key`: `sh`、`sz`、`hs300`、`sse50`、`csi500`、`sme`、`cyb`，除非后续版本
+  显式扩展配置。
+
+日期使用 `YYYY-MM-DD`，不得请求未来日期。历史接口遵守 Gateway 全局限制：默认最多
+366 个自然日、单次最多 2,000 条记录，超限返回 `RANGE_TOO_LARGE`。`page_size` 默认
+50、最大 200。`window` 与明确日期范围同时提供时，Gateway 返回
+`INVALID_REQUEST`，避免两套窗口语义竞争。
+
+### 17.3 认证、scope 和只读授权
+
+建议 scope 如下，具体 scope 名称须与 `access_control` 的最终注册表保持一致：
+
+| scope | 允许范围 |
+| --- | --- |
+| `indices:read` | 指数目录、单指数估值、健康度、股债利差和历史只读查询 |
+| `indices:history_read` | 健康度历史和关键事件历史查询；可作为 `indices:read` 的附加 scope |
+| `indices:operator_read` | 仅在未来需要返回数据覆盖诊断时使用，不开放同步写入能力 |
+| `indices:internal_read` | 服务间调用；必须使用独立 service token，不等同于用户 scope |
+
+普通用户接口至少要求 `indices:read`；`/health/history` 和 `/health/events` 还要求
+`indices:history_read`，或由授权策略明确声明该 scope 被 `indices:read` 包含。未认证、
+token 无效、scope 不足分别映射为 `AUTHENTICATION_REQUIRED`、`TOKEN_INVALID`、
+`SCOPE_REQUIRED`。Gateway 必须把认证主体和规范化后的 `index_key`、`source_ts_code`
+（如已解析）写入审计上下文，但不得记录 token、数据库连接串或 provider 凭证。
+
+### 17.4 统一响应和领域 DTO
+
+所有接口复用 Gateway 的 v1 成功封套：
+
+```json
+{
+  "success": true,
+  "api_version": "v1",
+  "request_id": "uuid",
+  "data": {},
+  "meta": {
+    "asof_date": "2026-09-09",
+    "source_trade_date": "2026-09-09",
+    "data_status": "COMPLETE",
+    "warnings": [],
+    "calculation_version": "indices-v1"
+  }
+}
+```
+
+`meta` 至少保留 `asof_date`（适用时）、`source_trade_date`、`data_status`、
+`warnings`、`calculation_version` 和 `coverage`；`generated_at`、`source_tables`、
+`source_ts_code` 可放在 `data` 的结果级元数据中，但不得在 Gateway 序列化时丢失。
+指数目录至少返回 `index_key`、需求 `ts_code`、实际 `source_ts_code`、名称、支持指标、
+支持窗口、最新行情/估值日期、`data_status` 和 `warnings`。
+
+领域状态映射保持语义，不把缺失结果改成 0、空价格或“正常”：
+
+| 领域状态 | Gateway 表达 |
+| --- | --- |
+| `VALID` | 成功响应，`data_status=COMPLETE` |
+| `PARTIAL` | 成功响应，`data_status=PARTIAL`，保留缺失项和 warnings |
+| `NO_DATA` | 成功响应，`data_status=NO_DATA`；无法形成合法资源时可映射 `RESULT_NOT_FOUND` |
+| `INSUFFICIENT_DATA` | 成功响应，`data_status=INSUFFICIENT_DATA`，不得输出伪精确分位/估值 |
+| `UNAVAILABLE` | 成功响应，`data_status=UNAVAILABLE`；依赖服务不可用时映射 503 `UPSTREAM_DEPENDENCY_UNAVAILABLE` |
+
+### 17.5 各路由返回要求
+
+- `/indices/catalog` 返回目录数组和整体覆盖率，不返回未配置的任意指数；`index_keys` 省略
+  时返回固定 7 指数目录。
+- `/indices/:index_key/valuation` 返回选定 `metric` 的当前值、percentile、P10/P50/P90、
+  样本数、窗口范围、实际最新日期、方法状态和来源信息。不得把 PE、PETTM、PB 混算；
+  `band_pct` 必须为有限且非负的百分比配置值。
+- `/indices/health` 返回四项分数、温度、状态标签键、规则版本、共同有效交易日、
+  `explanation_factors` 和缺失因子。`style` 只能选择已配置风格，不得由 Gateway 自行
+  修改权重。
+- `/indices/equity-bond` 返回股票股息率、10Y 国债收益率、共同交易日、spread、历史分位、
+  资产倾向和来源。任一端缺失时不得返回定投动作或示例收益率。
+- 历史和事件接口返回分页信息、覆盖率和每条记录的 `trade_date`、状态及
+  `calculation_version`；后续收益窗口未完成时返回 `PENDING/UNAVAILABLE`，不能填充收益。
+
+### 17.6 错误映射和调用约束
+
+除 Gateway 总体设计中的通用错误外，指数接口至少使用：
+
+| HTTP | 错误码 | 场景 |
+| --- | --- | --- |
+| 400 | `INVALID_INDEX_KEY` | 业务键未知、重复或格式非法 |
+| 400 | `INVALID_METRIC` / `INVALID_WINDOW` / `INVALID_STYLE` | 参数不在白名单 |
+| 400 | `INVALID_DATE` / `RANGE_TOO_LARGE` | 日期非法、未来日期或历史范围超限 |
+| 403 | `SCOPE_REQUIRED` | 缺少指数读权限或历史读权限 |
+| 404 | `RESULT_NOT_FOUND` | 指定业务键或合法查询没有可返回结果 |
+| 409 | `VERSION_CONFLICT` | 指定计算版本不可用，不得静默换版本 |
+| 503 | `UPSTREAM_DEPENDENCY_UNAVAILABLE` | 情绪、流动性、风险或债券 provider 不可用 |
+
+Gateway 调用 `indices` 时必须传递结构化、已校验的 typed request，包括规范化业务键、
+日期边界、指标/窗口/风格、分页和 `request_id`。领域服务返回 typed result，不得返回
+DRF `Response`。Gateway 不得捕获所有异常并伪装成 `NO_DATA`；数据库连接、模型字段变更
+和程序错误应进入统一 `INTERNAL_ERROR` 处理并记录脱敏日志。
+
+### 17.7 接入验收闸门
+
+1. 未认证、无 scope、非法业务键和非法参数均按统一错误封套返回，且不会访问领域查询服务。
+2. 7 个固定指数目录可通过一次请求返回，目录保留需求代码与实际源代码的区别。
+3. 单指数估值的 `metric` 切换只影响选定指标；缺数据时保留 `INSUFFICIENT_DATA` 或
+   `UNAVAILABLE`，不输出默认点位、估值或收益率。
+4. 健康度、股债性价比和历史接口能原样传递 provider 缺失、共同日期、覆盖率、规则版本
+   和 warnings；不得把部分结果伪装成 COMPLETE。
+5. 历史接口执行日期范围、记录数和分页限制，不能通过查询参数触发无界导出。
+6. Gateway 查询链路只读，不调用外部网络、同步 CLI、交易能力或写入任何领域表。
+7. 相同请求、相同上游快照和相同计算版本返回确定性结果，并在响应和日志中保留同一
+   `request_id`。
+
+## 18 测试与验收
+
+### 18.1 单元测试
 
 - 4 套权重总和为 1，未知风格、重复指数和不完整权重被拒绝。
 - 7 指数完整数据可以生成组合序列；缺失一个指数时共同日期被排除。
@@ -401,7 +576,7 @@ gap = (current_close - implied_price) / implied_price
 - 隐含估值公式、零/负分母、带宽边界和单方法汇总正确。
 - 代码别名只能通过显式映射命中，并保留实际源代码。
 
-### 17.2 集成验收
+### 18.2 集成验收
 
 1. `000001.SH` 有本地行情和估值历史时，能得到当前点位、至少一个有效方法及 P50。
 2. 7 指数分别计算四种风格，并输出曲线统计和覆盖率。
@@ -413,9 +588,14 @@ gap = (current_close - implied_price) / implied_price
 8. 历史事件携带计算版本，未完成后续收益窗口时不输出伪造收益。
 9. `get_index_catalog`、`get_index_valuation`、`get_market_health` 等内部用例可被 API 层批量调用，且不返回 HTML。
 
-## 18 扩展约束
+## 19 扩展约束
 
 - 新增指数、风格或指标必须扩展配置、结果契约和覆盖率测试。
 - 支持周频/月频前需重新定义窗口、最新值和日期对齐规则。
 - 动态带宽、非 P50 基准或分层市场权重必须版本化，保证历史结果可解释。
 - API 和前端变化不能直接改变领域口径，应先确认 `indices` 内部数据与计算契约，再由适配层承接。
+
+## 20 TODO List
+
+- [x] 完成 `indices` 到 `api_gateway` 的 v1 核心只读接入：指数目录、单指数估值、路由注册、参数校验、统一响应、错误映射和 Gateway 测试。
+- [ ] 在 `indices` 完成市场健康度、股债性价比、健康度历史和关键事件的领域 provider/计算服务后，接通对应 Gateway 路由并完成集成验收；当前接口对这些能力返回明确的 `UPSTREAM_DEPENDENCY_UNAVAILABLE`，不返回占位数据。

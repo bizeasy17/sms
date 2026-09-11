@@ -2,7 +2,7 @@
 
 ## 1 Status And Ownership
 
-`financials` is an already registered but currently empty `manniu_backend` Django app. It will own the ingestion, PostgreSQL persistence, auditability, period/as-of selection, and read-optimized snapshots of Tushare corporate financial data. No financial models, migrations, sync command, public API, or data write is implemented by this design.
+`financials` is an already registered `manniu_backend` Django app. It owns the ingestion, PostgreSQL persistence, auditability, period/as-of selection, and read-optimized snapshots of Tushare corporate financial data. Its read-only financial and disclosure routes are exposed through `api_gateway`; ingestion and other data-write operations remain internal.
 
 `financials` consumes `market_data.Security` for stock identity and listing lifecycle. `market_data` remains the owner of trading bars, market master data, and Tushare market-data ingestion. `financials` supports research, valuation, selection, backtesting, and decision support only; it must never create or execute trading orders.
 
@@ -35,8 +35,8 @@ flowchart LR
     StmtAdapter --> Normalize[Validation and normalization]
     Normalize --> Raw[Endpoint raw-record repositories]
     Raw --> Consumer[valuation, selection, backtesting, sentiment]
-    Raw --> API[Future api_gateway]
-    Access[Future access_control] --> API
+    Raw --> API[api_gateway]
+    Access[access_control] --> API
     DiscAdapter --> Run[Financial ingestion runs & watermarks]
     StmtAdapter --> Run
 ```
@@ -100,9 +100,199 @@ each consumer enforces its own point-in-time projection boundary.
 
 Endpoint writes occur in transactions per bounded page/chunk. A successful chunk writes raw records and its counters together. A watermark advances only after every requested page and coverage check succeeds. Logs, database records, and errors must never contain `TUSHARE_TOKEN`, database passwords, or raw connection strings.
 
-## 7 Consumer And API Boundary
+## 7 API Gateway And Auth Integration Requirements
 
-No API is defined or implemented. Future `api_gateway` read APIs must accept bounded symbol/date/range queries and delegate to `financials` as-of query services. `access_control` must authorize public reads before the service call. Operational import runs, raw endpoints, error details, and broad export access are operator-only.
+This section defines the financials integration contract with `api_gateway` and
+`manniu_auth`/`access_control`. It is a requirements boundary, not an
+implementation of HTTP views, auth models, or financial query services.
+
+### 7.1 Integration ownership
+
+The request path must be:
+
+```mermaid
+sequenceDiagram
+        participant Client
+        participant Gateway as api_gateway
+        participant Access as access_control / manniu_auth
+        participant Financials as financials query service
+        participant DB as PostgreSQL
+
+        Client->>Gateway: GET financial endpoint + Bearer token
+        Gateway->>Access: authenticate(request, required_scopes)
+        Access-->>Gateway: principal, session, scopes, request context
+        Gateway->>Financials: bounded typed query with as-of boundary
+        Financials->>DB: read-only indexed query
+        DB-->>Financials: records and provenance
+        Financials-->>Gateway: typed result/status
+        Gateway-->>Client: versioned success/error envelope
+```
+
+Responsibilities are split as follows:
+
+| Component | Financial integration responsibility | Explicit non-responsibility |
+| --- | --- | --- |
+| `api_gateway` | Route/version, request parsing, symbol/date/dataset allowlists, pagination limits, auth context, response envelope, error mapping, rate limiting, audit context | Financial calculations, as-of row selection, Tushare calls, raw ORM queries, writes |
+| `manniu_auth` / `access_control` | Bearer token validation, session/user status, required Scope checks, principal context, authorization-denied audit event | Financial data visibility rules, report-period selection, query construction |
+| `financials` | Typed read services, effective-public-date filtering, revision/provenance selection, domain statuses | Public HTTP routes, token validation, role management, cross-domain response envelopes |
+
+Gateway views must call public `financials` query services and must not import
+financial models, Tushare adapters, management commands, or Django `QuerySet`
+objects directly. The query service must return a typed result containing at
+least `found`, `status`, `records`, `provenance`, and `warnings`; it must not
+return a DRF `Response`.
+
+### 7.2 External routes
+
+All routes use the existing Gateway base path and response contract:
+
+```text
+GET /api/v1/market-analysis/securities/:ts_code/financials
+GET /api/v1/market-analysis/securities/:ts_code/disclosures
+```
+
+`ts_code` is normalized to an exchange-suffixed code before the domain call.
+The Gateway must reject an ambiguous or unknown symbol and must never pass an
+unresolved user string to the financial query service.
+
+`/financials` accepts:
+
+| Parameter | Required | Contract |
+| --- | --- | --- |
+| `dataset` | yes | `income`, `balance_sheet`, `cashflow`, `indicator`, `forecast`, `express`, `dividend`, `audit`, or `main_business` |
+| `asof_date` | conditional | Required for historical/as-of access; `YYYY-MM-DD`; cannot be future-dated |
+| `end_date` | no | Report period, `YYYY-MM-DD`; must be a valid provider period boundary |
+| `start_date` | no | Publication/report date lower bound; requires `end_date` and the bounded range rules |
+| `page` | no | Positive integer, default `1` |
+| `page_size` | no | Default `50`, maximum `200` |
+
+`/disclosures` accepts `start_date`, `end_date`, `asof_date`, `page`, and
+`page_size`. It returns disclosure schedule records and effective-public-date
+provenance, not raw provider payloads.
+
+The Gateway must enforce the global history limits from the API Gateway design:
+default maximum 366 calendar days and maximum 2,000 records per request. A
+request outside those limits returns `RANGE_TOO_LARGE`; it must not silently
+truncate or fall back to the latest snapshot.
+
+### 7.3 Scope and data classification
+
+Financial routes require authentication even when listed as public API catalog
+entries. Scope checks are additive:
+
+| Request/data class | Required Scope | Notes |
+| --- | --- | --- |
+| Current public financial record query without a date range | `market_analysis:read` | Still applies effective-date and dataset allowlists |
+| Historical query with `asof_date`, `start_date/end_date`, or report history | `market_analysis:read` + `market_analysis:history` | The additional Scope prevents broad historical access by default |
+| Disclosure calendar query | `market_analysis:read`; add `market_analysis:history` for bounded historical ranges | Current schedule is not anonymous access |
+| Raw endpoint payload, import run status, rejected rows, sanitized operator diagnostics | `financials:operator_read` | Never included in ordinary financial responses |
+| Service-to-service ingestion or rebuild trigger | No public Gateway route | Use an independently issued service identity and an internal command boundary |
+
+`is_staff` and `is_superuser` do not replace these API Scope checks. Auth must
+evaluate active user/session/token state and the token's current revocation
+status before the Gateway invokes a query service. Scope failures return
+`403 SCOPE_REQUIRED`; authentication failures return `401` using the shared
+Gateway error envelope.
+
+### 7.4 Request and response contract
+
+Successful responses use the shared `success`, `api_version`, `request_id`,
+`data`, and `meta` envelope. Every financial record returned to a consumer
+must include, where available:
+
+- `ts_code`, `dataset`, `end_date` and the provider report period;
+- `ann_date`, `actual_date`, and computed `effective_date`;
+- `source`, `source_revision` or equivalent revision identity;
+- `data_status` and warnings when records are incomplete or stale.
+
+The domain query service must apply this predicate before pagination:
+
+```text
+effective_date IS NOT NULL AND effective_date <= requested_asof_date
+```
+
+where `effective_date = actual_date` when valid, otherwise `ann_date`. The
+Gateway may validate the requested date and range, but must not implement this
+selection rule itself. Pagination metadata must describe the filtered result,
+not the raw table count.
+
+The following semantics are required:
+
+| Condition | HTTP/result behavior |
+| --- | --- |
+| Valid query with no matching record | `200` with `data_status=NOT_AVAILABLE`, or `404 RESULT_NOT_FOUND` only when the route contract requires one specific result |
+| Requested record exists only after `asof_date` | `200` with no future row, or `409 ASOF_CONFLICT` when an exact requested period/version was required; never leak the future row |
+| Valid data with missing optional fields | `200`, preserve nulls and return a warning; do not synthesize zero |
+| Domain dependency unavailable | `503 UPSTREAM_DEPENDENCY_UNAVAILABLE` with `retryable=true` |
+| Invalid dataset, symbol, date, or range | `400` with `INVALID_REQUEST`, `INVALID_SYMBOL`, `INVALID_DATE`, or `RANGE_TOO_LARGE` |
+| Operator-only data without operator Scope | `403 SCOPE_REQUIRED` |
+
+Raw provider columns not approved by the public contract must remain in the
+raw persistence layer and must not be exposed through these routes. Diagnostic
+details are Scope-sensitive: ordinary users receive stable reason codes only;
+SQL, stack traces, connection strings, file paths, tokens, and provider
+credentials are never returned.
+
+### 7.5 Authentication, audit, and cache requirements
+
+- The Gateway reads `Authorization: Bearer <access_token>` and delegates token
+    validation to `access_control`; it never reads token tables directly.
+- Every request receives or propagates `X-Request-ID`. The same ID is passed to
+    Auth, the financial query service, structured logs, and security/domain audit
+    records.
+- Authorization audit records contain principal, required Scope, endpoint,
+    normalized symbol, result, and request ID, but never the raw Authorization
+    header or token.
+- Financial reads are strictly side-effect free: no Tushare fallback, import,
+    watermark advancement, snapshot rebuild, or cache mutation that changes
+    financial truth may occur in a public request.
+- If response caching is added, the key must include API version, normalized
+    parameters, `asof_date`, dataset, and authorization visibility. Operator
+    diagnostics must not share a cache namespace with ordinary users.
+- Gateway and Auth rate limits apply before the domain query. Query timeouts
+    cancel the downstream call and return a bounded dependency error.
+
+### 7.6 Internal query service contract
+
+The first implementation must expose the following internal read boundaries (the
+names are contract proposals and require confirmation before coding):
+
+```python
+financials.query_records(
+        *, ts_code, dataset, asof_date, end_date=None,
+        date_range=None, page=1, page_size=50,
+)
+financials.query_disclosures(
+        *, ts_code, asof_date, date_range=None, page=1, page_size=50,
+)
+```
+
+Both methods must use bounded, indexed PostgreSQL queries, return typed results,
+and expose provenance without returning a Django `QuerySet`. They must not
+accept an authorization token or make authorization decisions; the Gateway
+passes the authenticated principal only when needed for audit or field-level
+visibility.
+
+### 7.7 Integration acceptance criteria
+
+- Unauthenticated, expired, revoked, and disabled-user requests are rejected by
+    the shared Auth boundary before any financial query executes.
+- A user with only `market_analysis:read` can read current public financial data
+    but receives `403 SCOPE_REQUIRED` for bounded historical/as-of access.
+- A user with `market_analysis:read` plus `market_analysis:history` receives
+    only records public on or before `asof_date`, including after a disclosure
+    amendment and repeated ingestion.
+- `financials:operator_read` is required for raw payload and run-status routes;
+    no such route is added to the ordinary public API catalog.
+- Gateway tests prove symbol/date/dataset/range validation and shared error
+    envelopes; financials tests prove effective-date filtering and revision
+    provenance independently of HTTP.
+- An integration test proves the chain
+    `Bearer token -> access_control -> financial query service -> PostgreSQL`
+    and verifies that the query path performs no Tushare call or database write.
+- Audit/log assertions prove that request IDs and authorization outcomes are
+    retained while tokens, passwords, connection strings, and stack traces are
+    absent.
 
 ## 8 Test Case Definition
 
@@ -139,4 +329,29 @@ No API is defined or implemented. Future `api_gateway` read APIs must accept bou
 
 ## 10 TODO List
 
-- [ ] 按本文档完成财务数据后端设计对应的实现、PostgreSQL 迁移和单元测试，并在测试通过后更新本条状态。
+- [ ] 需求确认：确认 10 个 Tushare endpoint 的 typed fields、provider units、日期字段、表名、索引和 row signature 规则。
+- [ ] 需求确认：确认 `effective_date = actual_date` 优先、否则使用 `ann_date` 的 as-of 规则，以及无有效公开日期记录的消费边界。
+- [ ] 需求确认：确认 `api_gateway` 路由、统一响应封套、错误码、分页和日期范围限制。
+- [ ] 需求确认：确认 `market_analysis:read`、`market_analysis:history`、`financials:operator_read` 的授权范围和默认角色绑定。
+- [ ] 数据模型：实现 10 个 endpoint 对应的 raw record 模型、公共 provenance 字段、自然键和 PostgreSQL 索引。
+- [ ] 数据模型：实现 `FinancialIngestionRun`、`FinancialIngestionWatermark` 及其状态、计数器、唯一约束和索引。
+- [ ] 数据库：生成并应用 PostgreSQL migrations，确认不使用 SQLite，校验金额、比例、日期和文本字段精度/长度。
+- [ ] 规范化：实现 provider 空值、日期、数值、单位和 deterministic row signature 的规范化逻辑。
+- [ ] 采集：实现 Tushare adapter、分页、重试、限流、secret-safe error，以及按 disclosure event 定向拉取数据。
+- [ ] 持久化：实现按 bounded page/chunk 的事务写入、幂等 upsert、修订保留和 watermark 仅成功推进规则。
+- [x] 查询服务：实现 `financials.query_records()` 和 `financials.query_disclosures()` 的 typed read service、bounded query 和 provenance 返回。
+- [ ] 查询服务：实现 effective-date/as-of 过滤、报告期选择、多事件选择策略和 `NOT_AVAILABLE`、`STALE`、`PARTIAL_SUCCESS` 等状态。
+- [x] Auth 接入：通过 `access_control` 校验 Bearer token、用户/会话状态、token 撤销状态和所需 Scope，不在 financials 内维护第二套权限。
+- [x] Gateway 接入：实现 financials/disclosures 只读路由、参数白名单、证券代码规范化、分页/日期范围校验和统一错误映射。
+- [ ] Gateway 接入：接入 `X-Request-ID`、结构化审计、限流、超时和响应字段裁剪，确保普通用户无法读取 raw/operator 数据。
+- [x] API 目录：将已审核的 financials 只读 endpoint 加入 Public API catalog；不公开导入运行、raw payload 和运维接口。
+- [ ] 测试：补充模型契约、自然键、索引、迁移和字段精度测试。
+- [ ] 测试：补充 adapter mock、分页/重试、空值规范化、幂等 upsert、修订审计和 watermark 失败回滚测试。
+- [ ] 测试：补充 disclosure event 定向同步测试，证明不会触发全市场扫描。
+- [ ] 测试：补充 as-of/no-lookahead、无效日期、未来披露、重复披露和多 dividend/main-business 行测试。
+- [ ] 测试：补充 Gateway/Auth 集成测试，覆盖未登录、过期/撤销 token、disabled 用户、缺少 Scope 和 operator Scope。
+- [ ] 测试：验证 API 请求只读，不调用 Tushare、不写 financials 表、不推进 watermark、不触发快照重建。
+- [ ] 安全验收：检查日志、审计、响应和错误中不包含 Token、密码、Tushare token、数据库连接串、堆栈和内部路径。
+- [ ] 运维：实现 operator CLI、backfill/quarterly 调度、reconciliation artifact、失败退出码和恢复/重跑说明。
+- [ ] 验证：运行 Django checks、迁移检查、financials 单元测试、Gateway/Auth 集成测试和最小 PostgreSQL smoke test。
+- [ ] 文档：补充部署配置、Scope 初始化、API catalog、查询服务调用示例和回滚/重跑操作说明。

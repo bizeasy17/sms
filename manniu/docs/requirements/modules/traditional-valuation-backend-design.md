@@ -1677,4 +1677,13 @@ failed case.
 
 ## 15 TODO List
 
-- [ ] 按本文档完成传统估值后端实现、基线一致性验证和单元测试，并在测试通过后更新本条状态。
+- [ ] 确认并冻结传统估值 API/Auth 接入合同：数据库字段、请求参数、响应字段、空结果语义和诊断字段白名单。
+- [x] 实现传统估值只读 query service 和规范化结果 payload，覆盖 snapshot、method rows、risk、variant summary、tiered template 及 provenance；typed DTO 仍可作为后续强化项。
+- [x] 实现当前估值快照接口：`GET /api/v1/market-analysis/securities/:ts_code/valuations/traditional`。
+- [x] 实现传统估值历史接口：`GET /api/v1/market-analysis/securities/:ts_code/valuations/traditional/history`，包含日期范围和分页限制。
+- [x] 实现多变体比较接口：`GET /api/v1/market-analysis/securities/:ts_code/valuations/traditional/compare`，保留后端 active variant 和 match rank。
+- [x] 接入 `manniu_auth` scope：当前读取使用 `market_analysis:read`，历史读取追加 `market_analysis:history`，诊断字段使用 `valuation:diagnostics_read`。
+- [x] 接入 `api_gateway` 统一参数校验、证券代码规范化、响应封套、错误映射、request ID 和只读 query service 调用边界。
+- [x] 更新 `api_gateway` Public API catalog，登记三个传统估值接口、参数枚举、分页/日期限制和认证模式。
+- [x] 增加认证授权、点时/no-lookahead、report/variant 不静默替换、字段脱敏、只读性和错误映射测试。
+- [ ] 使用固定证券/日期/报告期/利润口径/变体生成 SmartInvestor parity JSON artifact，通过 API 集成验收后再开放前端调用和历史回填。

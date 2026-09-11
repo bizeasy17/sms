@@ -11,6 +11,7 @@ class Command(BaseCommand):
         for code, name, description in (
             ('market_analysis:read', 'Market analysis read', 'Read-only market analysis results.'),
             ('market_analysis:history', 'Market analysis history', 'Date-bounded market analysis history.'),
+            ('valuation:diagnostics_read', 'Valuation diagnostics read', 'Read valuation method and provenance diagnostics.'),
         ):
             scope, scope_created = AuthScope.objects.get_or_create(
                 code=code,

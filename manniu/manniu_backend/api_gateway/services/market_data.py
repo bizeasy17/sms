@@ -2,6 +2,9 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import date, timedelta
+from functools import lru_cache
+
+import pypinyin
 
 from market_data.models import (
     MarketBarDailyHistory,
@@ -140,6 +143,22 @@ def security_payload(security, *, include_profile=False):
     return payload
 
 
+def _normalized_search_text(value):
+    return ''.join(char for char in str(value or '').strip().lower() if char.isalnum())
+
+
+@lru_cache(maxsize=8192)
+def _security_search_keys(name):
+    syllables = pypinyin.pinyin(name or '', style=pypinyin.NORMAL)
+    full_pinyin = ''.join(item[0] for item in syllables if item)
+    initials = ''.join(item[0][0] for item in syllables if item and item[0])
+    return (
+        _normalized_search_text(name),
+        _normalized_search_text(full_pinyin),
+        _normalized_search_text(initials),
+    )
+
+
 def list_securities(*, filters, page, page_size):
     queryset = Security.objects.select_related('industry', 'area').order_by('ts_code')
     asset_type = filters.get('asset_type')
@@ -154,7 +173,17 @@ def list_securities(*, filters, page, page_size):
             queryset = queryset.filter(**({f'{field}__name' if field == 'industry' else field: value}))
     query = str(filters.get('q', '')).strip()
     if query:
-        queryset = queryset.filter(name__icontains=query) | queryset.filter(ts_code__icontains=query)
+        normalized_query = _normalized_search_text(query)
+        securities = list(queryset)
+        securities = [
+            security for security in securities
+            if query.lower() in (security.name or '').lower()
+            or query.lower() in security.ts_code.lower()
+            or any(normalized_query in key for key in _security_search_keys(security.name))
+        ]
+        total = len(securities)
+        items = securities[(page - 1) * page_size:page * page_size]
+        return Page([security_payload(item) for item in items], page, page_size, total)
     total = queryset.count()
     items = list(queryset[(page - 1) * page_size:page * page_size])
     return Page([security_payload(item) for item in items], page, page_size, total)

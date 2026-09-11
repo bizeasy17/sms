@@ -176,6 +176,8 @@ Gateway view 只依赖各应用公开的内部 `query_service`。禁止从 Gatew
 | GET | `/market/regime` | 市场风格状态 | `asof_date`, `benchmark_ts_code` |
 | GET | `/securities/:ts_code/regime` | 个股风格状态 | `asof_date` |
 
+`/securities` 的 `q` 支持按证券中文名、交易代码、中文名完整拼音或拼音首字母进行不区分大小写的模糊匹配。例如，`万科`、`wanke` 和 `wk` 均可匹配名称为“万科”的证券。
+
 Gateway 只转发 `market_data` 的 bounded query service。不得在 cache miss 时调用 Tushare。regime 响应至少包括 `regime`、`source`、`asof_trade_date`、分类版本、指标和数据行数。
 
 ### 5.2 Financials
@@ -483,6 +485,10 @@ predictive_valuation.get_status(*, report_type, model_version)
 - [ ] 建立 `api_gateway` 和 `access_control` 应用及 Django URL 挂载。
 - [ ] 为五个领域实现类型化内部 read service 和 contract tests。
 - [ ] 实现 v1 只读 endpoints、统一错误、分页、限流和 request context。
+- [x] 接入传统估值三个只读 endpoints：当前快照、历史和多变体比较；调用 `traditional_valuation` typed query service，不直接拼接 ORM 查询。
+- [x] 为传统估值实现 `market_analysis:read`、`market_analysis:history` 和 `valuation:diagnostics_read` 的 scope/字段级授权校验。
+- [x] 在 Public API catalog 登记传统估值路由、参数枚举、分页/日期限制、认证模式和响应示例。
+- [x] 为传统估值补齐点时参数、report/variant 不静默替换、统一错误、脱敏和只读性 contract tests。
 - [x] 实现登录授权的 `/public/api` 浏览测试页面及 `GET /api/v1/public-api/catalog` 目录接口。
 - [x] 将页面请求绑定到当前 Bearer Token，并验证 `401`、`403/SCOPE_REQUIRED`、`429`、`503` 等状态展示和敏感信息脱敏。
 - [ ] 完成 PostgreSQL、as-of、权限、故障隔离和敏感信息脱敏验收。

@@ -241,6 +241,44 @@ Scope 应采用最小权限。`is_staff` 或 `is_superuser` 不能直接替代 A
 6. refresh token 只能在 `/auth/token/refresh` 使用，刷新成功后旧 token 立即标记 `used_at`，并签发新 refresh token。
 7. 修改密码、锁定用户、全局登出和检测到 refresh replay 时，撤销该用户或会话的所有相关 Token。
 
+### 6.3 `AUTH_TOKEN_HASH_SECRET` 登录流程示例
+
+`AUTH_TOKEN_HASH_SECRET` 只用于保护 access token 和 refresh token 的存储与校验，不用于校验用户密码。
+
+以 `POST /api/v1/auth/login` 为例：
+
+1. 客户端提交 `username` 和 `password`。
+2. 服务端先通过 Django `authenticate()` 校验用户名和密码。Django 使用 `User.password` 中的密码哈希完成校验，此步骤不使用 `AUTH_TOKEN_HASH_SECRET`。
+3. 用户名和密码校验成功后，服务端创建 `AuthSession`，并生成随机的 access token 和 refresh token。
+4. 服务端使用环境变量中的 Secret 对每个原始 Token 计算 keyed hash：
+
+   ```text
+   token_hash = HMAC-SHA-256(AUTH_TOKEN_HASH_SECRET, raw_token)
+   ```
+
+5. PostgreSQL 只保存 `token_hash`，原始 Token 只在登录响应中返回一次。
+6. 客户端后续使用 `Authorization: Bearer <access_token>` 访问接口时，服务端使用同一个 Secret 重新计算摘要，再根据摘要查询 Token、会话、用户状态和过期时间。
+
+密码错误、用户不存在、用户锁定或用户禁用时，登录流程在第 2 步失败，不生成 Token，也不会执行 Token 摘要计算。
+
+简化流程如下：
+
+```text
+登录请求
+  -> Django authenticate(username, password)
+  -> 校验成功后生成随机 raw access/refresh token
+  -> HMAC-SHA-256(secret, raw token)
+  -> PostgreSQL 保存 token_hash
+  -> 响应返回一次 raw token
+
+受保护请求
+  -> 读取 Bearer token
+  -> 使用同一个 Secret 重新计算 token_hash
+  -> 查询并校验 Token、session、用户状态和有效期
+```
+
+该 Secret 不应写入代码、数据库、日志、审计 metadata 或文档示例；文档和部署配置中只保留变量名。更换 Secret 会使使用旧 Secret 生成的现有 Token 无法通过校验，通常需要用户重新登录。
+
 ## 7 公共 API 设计
 
 基础路径：`/api/v1/auth`。
@@ -272,7 +310,7 @@ POST /api/v1/auth/login
   "data": {
     "access_token": "<opaque-access-token>",
     "token_type": "Bearer",
-    "expires_in": 900,
+    "expires_in": 1800,
     "refresh_token": "<opaque-refresh-token>",
     "refresh_expires_in": 2592000,
     "session_id": "uuid",
@@ -431,7 +469,7 @@ Auth 错误沿用 API Gateway 错误封套：
 
 | 配置 | 建议默认值 | 说明 |
 | --- | --- | --- |
-| `AUTH_ACCESS_TOKEN_TTL_SECONDS` | `900` | access token 15 分钟 |
+| `AUTH_ACCESS_TOKEN_TTL_SECONDS` | `1800` | access token 30 分钟 |
 | `AUTH_REFRESH_TOKEN_TTL_SECONDS` | `2592000` | refresh token 30 天 |
 | `AUTH_LOGIN_MAX_FAILURES` | `5` | 锁定阈值 |
 | `AUTH_LOGIN_LOCK_SECONDS` | `900` | 临时锁定时长 |
@@ -499,6 +537,8 @@ Auth 错误沿用 API Gateway 错误封套：
 - [x] 实现 `/api/v1/auth` 基础 API、统一响应封套和 Bearer Token 校验。
 - [x] 在目标 PostgreSQL 环境执行认证 migration，并完成迁移验证。
 - [x] 接入 `api_gateway` 的认证 facade 和 Scope permission；领域 API 合约测试仍待各领域接口契约确认。
+- [x] 为传统估值接口确认并初始化 `valuation:diagnostics_read` Scope，明确与 `market_analysis:read`、`market_analysis:history` 的最小权限边界。
+- [x] 验证传统估值当前/历史/比较接口的 scope 拒绝和字段级诊断脱敏边界；token 撤销/过期和安全审计专测仍由通用 Auth 安全测试覆盖。
 - [ ] 补齐并发 refresh、迁移、secret redaction、限流和 CSRF/CORS 安全测试。
 - [x] 提供并执行幂等初始化命令，开放 `market_analysis:read` 默认只读 Scope；其他业务 Scope 仍按确认结果开放。
 - [x] 增加生产配置 system check，阻止缺失 `SECRET_KEY`/`AUTH_TOKEN_HASH_SECRET`、不安全 Cookie 和通配 CORS。

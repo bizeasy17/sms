@@ -779,3 +779,214 @@ implementation begins, database fields and internal/public request-response fiel
 be reviewed and confirmed. Implementation then proceeds baseline-first: single-quarter
 parity, fusion parity, latest/history persistence parity, followed by shared-regime,
 three-tier, event, scheduler, and gateway enhancements.
+
+## 13 API Gateway Integration Requirements
+
+本节冻结 `predictive_valuation` 接入 `api_gateway` 的首期公共只读边界，作为
+[API Gateway Design](api-gateway-design.md) 中预测估值领域的落地需求。它只定义 HTTP
+路由、请求/响应语义和领域服务调用约束，不替代本模块的推理、快照持久化、事件消费或
+数据表设计。实现前仍必须完成本节末尾的字段确认闸门。
+
+### 13.1 Integration boundary
+
+- 所有接口使用 `/api/v1/market-analysis` 基础路径，不创建预测估值专用版本前缀。
+- 首期只开放 `GET`。不开放推理触发、刷新、回填、重算、模型发布、事件消费、配置写入、
+	导出、交易或任何 `POST`/`PUT`/`PATCH`/`DELETE` 接口。
+- `api_gateway` 负责版本路由、Bearer 认证委托、scope 授权、参数白名单、证券代码和日期
+	校验、分页、限流、超时、审计上下文、统一响应和错误映射。
+- `predictive_valuation` 公开有界的只读 `query_service`，负责当前/历史快照查询、FUSION
+	组件状态、点时约束、数据质量和领域 DTO。Gateway 不复制目标收益/价格公式、风险规则、
+	行业 regime、季度融合或 as-of 选择逻辑，也不直接拼接预测模型或 PostgreSQL ORM 查询。
+- 查询只能读取 PostgreSQL 已提交的 `PredictiveValuationCurrent`、
+	`PredictiveValuationSnapshot` 及必要的只读来源状态。请求不得调用 inference、写入快照、
+	推进 watermark、触发 Tushare、修改模型文件或创建事件；Redis（若启用）只能缓存可失效的
+	已持久化只读结果。
+- 预测结果必须原样保留 `feature_data_source`、`live_feature_compliant`、`anchor_mode`、
+	`refresh_reason`、数据新鲜度和降级/失败原因。Gateway 不得把 `dataset_fallback`、
+	`PARTIAL_SUCCESS`、`STALE` 或失败快照改写成正常预测。
+
+请求链路：
+
+```mermaid
+sequenceDiagram
+		participant Client
+		participant Gateway as api_gateway
+		participant Access as access_control
+		participant Predictive as predictive_valuation query service
+		participant DB as PostgreSQL
+
+		Client->>Gateway: GET predictive valuation + Bearer token
+		Gateway->>Access: authenticate(request, required_scopes)
+		Access-->>Gateway: principal, scopes, request context
+		Gateway->>Predictive: bounded typed read query
+		Predictive->>DB: indexed read-only query
+		DB-->>Predictive: persisted current/history snapshot
+		Predictive-->>Gateway: typed result/status
+		Gateway-->>Client: v1 success/error envelope
+```
+
+### 13.2 External routes
+
+首期路由如下。路径中的 `:ts_code` 必须解析为带交易所后缀的规范代码，例如
+`000001.SZ`。Gateway 可以接受唯一可解析的无后缀代码，但必须在审计上下文和下游调用中
+使用规范代码；无法唯一解析时返回 `INVALID_SYMBOL`。
+
+| 方法 | 路径 | 说明 | 主要查询参数 |
+| --- | --- | --- | --- |
+| GET | `/securities/:ts_code/valuations/predictive` | 指定证券的当前预测估值 | `asof_date`, `report_type`, `anchor_mode`, `model_version`, `serving_slot` |
+| GET | `/securities/:ts_code/valuations/predictive/history` | 指定证券的历史预测快照 | `start_date`, `end_date`, `report_type`, `page`, `page_size` |
+| GET | `/securities/:ts_code/valuations/predictive/fusion` | 当前或指定点时的季度融合结果 | `asof_date`, `anchor_mode`, `model_version` |
+| GET | `/valuations/predictive/status` | 模型、数据和快照可用性状态 | `report_type`, `model_version`, `serving_slot` |
+
+`report_type` 白名单为 `Q1`、`H1`、`Q3`、`FY`、`FUSION`、`LATEST`。当前结果接口缺省
+`report_type` 时使用领域规定的 `LATEST` 语义；Gateway 不自行按最新日期或报告期猜测。
+`LATEST` 的实际季度必须在响应中返回。`FUSION` 不接受季度模型版本替代，也不得被解释为
+第五个模型 artifact。
+
+所有日期使用 `YYYY-MM-DD`，不得请求未来日期。历史接口要求
+`start_date`/`end_date` 成对出现且 `start_date <= end_date`，默认最多 366 个自然日、
+单次最多 2,000 条记录；`page_size` 默认 50、最大 200，超限返回 `RANGE_TOO_LARGE`。
+历史接口不接受 `asof_date` 与日期范围同时出现。`model_version` 和 `serving_slot` 若同时
+提供，显式 `model_version` 优先，但必须校验它属于允许的 serving 根目录；未知版本或
+slot 返回 `VERSION_CONFLICT`，不得静默回退。`anchor_mode` 仅允许领域已支持的
+`ann`、`live_latest`，不支持的值返回 `INVALID_REQUEST`。
+
+### 13.3 Authorization, audit and read limits
+
+scope 名称须在实现前与 `access_control` 最终注册表确认，建议如下：
+
+| scope | 允许范围 |
+| --- | --- |
+| `predictive_valuation:read` | 当前预测结果、有限状态查询和 FUSION 读取 |
+| `predictive_valuation:history_read` | 历史快照查询；可由授权策略明确包含于 `read` |
+| `predictive_valuation:operator_read` | `raw_result` 诊断、融合失败组件、特征来源和运行降级详情 |
+| `predictive_valuation:internal_read` | 服务间调用，必须使用独立 service token |
+
+当前和 FUSION 路由至少要求 `predictive_valuation:read`；history 路由要求
+`predictive_valuation:read` 加 `predictive_valuation:history_read`，除非授权策略明确声明
+前者包含后者。未认证、Token 无效、scope 不足分别映射为
+`AUTHENTICATION_REQUIRED`、`TOKEN_INVALID`、`SCOPE_REQUIRED`。
+
+审计上下文至少记录认证主体、规范化 `ts_code`、endpoint、请求参数摘要、实际
+`report_type`、结果状态和 `X-Request-ID`。不得记录 Authorization header、Token、模型文件
+绝对路径、数据库连接串或 provider 凭证。Gateway 和领域 query service 都必须有超时约束；
+依赖不可用时返回可重试的 `UPSTREAM_DEPENDENCY_UNAVAILABLE`。
+
+### 13.4 Response contract
+
+所有接口使用 Gateway 通用成功封套。单证券成功响应的 `data` 至少包括：
+
+- 身份和点时：`ts_code`、`asof_date`、`source_market_date`、`financial_end_date`、
+	`report_type`、`anchor_mode`、`model_version`、`feature_contract_version`；
+- 基础信号：`signal_score`、`action`、`risk_level`、概率/收益组成、`confidence`；
+- 目标范围：raw 与 adjusted 的 return、price、market-cap 的 `low`/`center`/`high`；
+- 数据与解释：`feature_data_source`、`live_feature_compliant`、`market_regime`、
+	`stock_regime`、质量风险规则、市场整体估值调整和 `refresh_reason`；
+- 可选增强：成功且已启用时返回持久化的 `predictive_tiered_template`，包括
+	`selected_regime`、`regime_confidence`、`regime_source`、`mapping_version`、
+	`tier_spacing` 和 `downgrade_reason`。Gateway 不重新计算三层模板。
+
+历史列表的每条记录必须保留上述身份、来源日期、模型版本、状态和目标摘要；默认不返回
+完整 `raw_result`，除非调用方具有 `predictive_valuation:operator_read`。状态接口至少返回
+当前 serving slot/model、四个季度模型可用性、特征新鲜度、最近成功/失败时间和可读的
+`data_status`，不得泄露堆栈、SQL 或内部文件路径。
+
+`FUSION` 响应必须包含成功组件、规范化权重、各组件的报告期/来源日期/模型版本、失败组件
+及 `data_status`。部分组件成功时返回成功封套并将 `data_status=PARTIAL_SUCCESS`；全部
+组件失败时返回明确的 `RESULT_NOT_FOUND` 或领域定义的失败状态，不得返回空的正常预测。
+失败快照若通过内部 operator 读取，必须保留 `last_error` 和失败类型；普通读取不得把失败
+快照包装成成功结果。
+
+### 13.5 Error and data-status mapping
+
+Gateway 沿用 [API Gateway Design](api-gateway-design.md) 的统一错误封套。除通用错误外，
+预测估值至少使用以下语义：
+
+| 场景 | HTTP/状态 | 约束 |
+| --- | --- | --- |
+| 证券或结果不存在 | `404 RESULT_NOT_FOUND` | 不用其他报告期、版本或证券静默替代 |
+| 报告类型/anchor 不支持 | `422 UNSUPPORTED_REPORT_TYPE` / `400 INVALID_REQUEST` | 返回允许值 |
+| 模型版本、slot 或特征契约不匹配 | `409 VERSION_CONFLICT` | 不回退到其他季度模型 |
+| 严格 live 特征不可用 | `503 DATA_NOT_READY` | 保留 requested as-of、source date、gap 和数据源详情 |
+| 预测已有失败快照 | 成功封套 `data_status=FAILED` 或 `404 RESULT_NOT_FOUND` | 取决于领域查询契约，必须统一确认 |
+| FUSION 部分成功 | 成功封套 `data_status=PARTIAL_SUCCESS` | 保留所有组件审计状态 |
+| 领域服务/数据库不可用 | `503 UPSTREAM_DEPENDENCY_UNAVAILABLE` | `retryable=true`，不得泄露内部异常 |
+
+`STALE`、`INSUFFICIENT_DATA`、`WARMING_UP` 和 `DATASET_FALLBACK` 是有业务意义的数据状态，
+优先放入成功响应的 `meta.data_status` 或领域 DTO；只有无法形成合法响应时才映射为 HTTP
+错误。任何缓存必须以 `model_version`、`report_type`、`asof_date`、`anchor_mode` 和领域
+快照版本为键，并在失败刷新替换 current 记录后失效，不能继续提供旧成功结果作为当前值。
+
+### 13.6 Query-service and acceptance requirements
+
+建议公开以下内部只读服务，不规定具体类名：
+
+```python
+get_predictive_current(
+		*, security, asof_date=None, report_type="LATEST",
+		anchor_mode=None, model_version=None, serving_slot=None,
+)
+get_predictive_history(
+		*, security, start_date, end_date, report_type=None,
+		page, page_size,
+)
+get_predictive_fusion(
+		*, security, asof_date=None, anchor_mode=None, model_version=None,
+)
+get_predictive_status(
+		*, report_type=None, model_version=None, serving_slot=None,
+)
+```
+
+这些服务必须只读取已持久化结果，返回 typed DTO 和数据状态，不接受 request 对象，不执行
+模型推理或写操作。Gateway 实现验收至少包括：
+
+1. 相同输入只读取同一快照身份，响应中的 `asof_date`、来源日期、财务期和模型版本完整且
+	 与数据库一致。
+2. `Q1`、`H1`、`Q3`、`FY`、`LATEST` 和 `FUSION` 路由分别验证；不存在的季度模型不会
+	 静默改用其他模型。
+3. FUSION 的部分成功、全部失败、严格 live 不合规和普通失败快照均能按本节状态语义呈现。
+4. 分页、日期范围、规范化代码、未知 query 参数、未来日期、scope 和统一错误均有接口测试。
+5. 通过日志/数据库断言证明 GET 请求不写入预测表、不推进事件状态、不调用 Tushare 或
+	 inference；重复读取不产生新 snapshot。
+6. 普通 scope 与 operator scope 的 `raw_result`、失败诊断、特征来源和运行字段暴露范围
+	 符合确认后的权限矩阵。
+
+## 14 API Gateway 接入 TODO List
+
+### 14.1 Contract confirmation
+
+- [ ] 与产品、前端和 `access_control` 确认四条路由是否按本节冻结，尤其是 `LATEST`、
+	`FUSION` 和失败快照的 HTTP/`data_status` 语义。
+- [ ] 逐项确认 Gateway 请求字段与预测表字段：`report_type`、`asof_date`、
+	`source_market_date`、`financial_end_date`、`model_version`、`anchor_mode`、
+	`feature_data_source`、raw/adjusted ranges、`last_error` 和 tier template。
+- [ ] 确认 `predictive_valuation:read`、`history_read`、`operator_read`、
+	`internal_read` 是否与 `access_control` 最终 scope 注册表一致。
+- [ ] 冻结单季度、`LATEST`、部分成功 FUSION、全失败和 strict-live 失败的代表性 fixture，
+	作为 Gateway 序列化与回归基线。
+
+### 14.2 Gateway implementation
+
+- [x] 新增 `api_gateway` 的 predictive valuation URL、view、serializer、分页和参数校验，
+	仅依赖 `predictive_valuation` 的 typed query service。
+- [x] 实现规范化 `ts_code`、日期/范围、报告类型、anchor、model version、serving slot 和
+	未知参数校验，并复用统一 `X-Request-ID`、错误封套、限流和超时中间件。
+- [x] 实现当前、历史、FUSION、status 四类响应映射；保留来源日期、数据状态、警告和
+	operator-only 字段边界，不在 Gateway 重新计算模板或目标范围。
+- [x] 为四条路由注册 scope、审计事件和 OpenAPI/API catalog 元数据；确认 Public API 页面
+	只展示已审核的 authenticated GET 接口。
+- [ ] 配置按快照身份失效的只读缓存策略，明确 current 失败替换后的缓存清理行为。
+
+### 14.3 Validation and rollout
+
+- [x] 运行 API contract、权限、分页、日期、错误映射测试；验证 PostgreSQL
+	是唯一事实来源且 GET 不触发 inference/Tushare/写操作。
+- [ ] 使用代表性 Q1/H1/Q3/FY 与 FUSION fixture 做响应逐字段对比，确认数值容差和分类字段
+	精确一致。
+- [ ] 先执行 `predictive_valuation validate` 和本地 side-by-side 响应 artifact，再在测试环境
+	注册 public catalog；未通过 parity 前不开放生产路由。
+- [ ] 监控 `RESULT_NOT_FOUND`、`PARTIAL_SUCCESS`、`DATA_NOT_READY`、`VERSION_CONFLICT`、
+	429、延迟和 cache hit/miss，确认日志不包含 Token、连接串、堆栈或模型绝对路径。
+- [ ] 完成灰度读流量和回滚方案，确认模型 promotion、快照失败、schema 变更和 Gateway
+	API 版本升级不会留下旧 current 或旧缓存结果。

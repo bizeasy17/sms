@@ -140,11 +140,157 @@ Daily ordering is:
 
 A missing source watermark, insufficient core-field coverage, or failed dependent adjustment rebuild returns nonzero and records `FAILED` or `INSUFFICIENT_DATA`; it must not publish a normal score from partial data.
 
-## 8 API And Authorization Boundary
+## 8 API Gateway Integration Contract
 
-No endpoint is implemented by this design. Future `api_gateway` handlers may expose latest and date-bounded history only after request/response fields and `access_control` permissions are separately confirmed.
+本节冻结 `market_sentiment` 接入 `api_gateway` 的首期外部只读契约。它定义 HTTP 边界和
+领域服务调用约束，不提前实现 URL、serializer、权限代码或新的数据库表；具体实现必须
+在请求/响应字段、数据库字段和 `access_control` scope 注册表确认后开始。
 
-Initial constraints are database-backed EOD reads only, fixed pagination/range limits, no request-time Tushare fallback, and no automatic trade execution. Operational runs, factor details, and failure metadata are operator-only.
+### 8.1 Integration boundary
+
+- 所有接口使用 `/api/v1/market-analysis` 基础路径；不创建情绪模块专用版本前缀。
+- 首期只开放 `GET`。不开放刷新、回填、重算、缓存刷新、配置写入、通知、交易或任何
+  `POST`/`PUT`/`PATCH`/`DELETE` 接口。
+- `api_gateway` 负责版本路由、Bearer 认证委托、scope 授权、参数白名单、日期和代码
+  校验、分页、限流、审计上下文、统一响应和错误映射。
+- `market_sentiment` 公开 `query_service`，负责快照读取、状态语义、历史点时约束、
+  数据质量和领域 DTO。Gateway 不复制情绪公式，不直接拼接 `market_data` ORM 查询，
+  不导入同步命令或计算 engine。
+- 查询只能读取 PostgreSQL 已落库快照。请求不得回源 Tushare、触发计算、推进
+  watermark、修改任何情绪/行情表或改变数据事实；Redis（若启用）只能缓存已生成的
+  只读响应。
+- 普通用户不返回 factor 明细、失败诊断、覆盖率原始明细或运行记录；这些数据仅供
+  `market_sentiment:operator_read` 使用，且不得包含 SQL、堆栈、连接串或凭证。
+
+请求链路：
+
+```mermaid
+sequenceDiagram
+    participant Client
+    participant Gateway as api_gateway
+    participant Access as access_control
+    participant Sentiment as market_sentiment query service
+    participant DB as PostgreSQL
+
+    Client->>Gateway: GET sentiment endpoint + Bearer token
+    Gateway->>Access: authenticate(request, required_scopes)
+    Access-->>Gateway: principal, scopes, request context
+    Gateway->>Sentiment: bounded typed query
+    Sentiment->>DB: indexed read-only query
+    DB-->>Sentiment: persisted snapshot and provenance
+    Sentiment-->>Gateway: typed result/status
+    Gateway-->>Client: v1 success/error envelope
+```
+
+### 8.2 External routes
+
+| 方法 | 路径 | 说明 | 主要查询参数 |
+| --- | --- | --- | --- |
+| GET | `/sentiment/market` | 指定日期的市场情绪快照 | `asof_date`, `engine_version` |
+| GET | `/sentiment/market/history` | 市场情绪历史序列 | `start_date`, `end_date`, `engine_version`, `page`, `page_size` |
+| GET | `/sentiment/stocks/:ts_code` | 指定股票的情绪快照 | `asof_date`, `engine_version` |
+| GET | `/sentiment/stocks/:ts_code/history` | 指定股票的情绪历史序列 | `start_date`, `end_date`, `engine_version`, `page`, `page_size` |
+| GET | `/sentiment/stocks/ranking` | 指定日期的个股情绪排名 | `asof_date`, `engine_version`, `status`, `page`, `page_size` |
+
+路由中的 `:ts_code` 必须解析为带交易所后缀的规范代码，例如 `000001.SZ`。Gateway
+可以接受唯一可解析的无后缀代码，但必须在审计上下文和下游调用中使用规范代码；无法
+唯一解析时返回 `INVALID_SYMBOL`。`/sentiment/stocks/ranking` 必须在动态
+`:ts_code` 路由之前注册或由路由器明确区分。
+
+日期统一为 `YYYY-MM-DD`，不得请求未来日期。`asof_date` 缺省时使用领域服务定义的
+最近完成交易日，不得由 Gateway 自行猜测；响应必须返回实际 `source_trade_date`。
+历史接口默认最多 366 个自然日、单次最多 2,000 条记录；`page_size` 默认 50、最大
+200，超限返回 `RANGE_TOO_LARGE`。排名接口必须分页，禁止无界全市场导出。
+
+`start_date`/`end_date` 必须成对出现且 `start_date <= end_date`；历史接口不接受
+`asof_date` 与日期范围同时出现。`engine_version` 缺省时使用当前公开版本，但响应
+必须返回实际版本；请求指定不存在的版本时返回 `VERSION_CONFLICT`，不得静默回退。
+
+### 8.3 Authorization and operational visibility
+
+scope 名称须在实现前与 `access_control` 最终注册表确认，建议如下：
+
+| scope | 允许范围 |
+| --- | --- |
+| `market_sentiment:read` | 市场/个股当前快照和有限排名查询 |
+| `market_sentiment:history_read` | 市场或个股历史查询；可明确配置为包含于 `read` |
+| `market_sentiment:operator_read` | 因子明细、覆盖率、失败原因和运行诊断，只读 |
+| `market_sentiment:internal_read` | 服务间调用，必须使用独立 service token |
+
+当前快照和排名至少要求 `market_sentiment:read`；所有 history 路由要求
+`market_sentiment:read` 加 `market_sentiment:history_read`，除非授权策略明确声明
+前者包含后者。未认证、token 无效、scope 不足分别映射为
+`AUTHENTICATION_REQUIRED`、`TOKEN_INVALID`、`SCOPE_REQUIRED`。
+
+认证主体、规范化 `ts_code`、请求参数摘要、endpoint、结果状态和 `X-Request-ID` 写入
+审计上下文；不得记录 Authorization header、token、数据库连接串或 provider 凭证。
+认证和领域查询均受 Gateway 限流与超时约束，超时返回可重试的依赖错误。
+
+### 8.4 Request and response contract
+
+所有成功响应复用 Gateway v1 封套：
+
+```json
+{
+  "success": true,
+  "api_version": "v1",
+  "request_id": "7d7c3c5e-...",
+  "data": {},
+  "meta": {
+    "asof_date": "2026-09-09",
+    "source_trade_date": "2026-09-09",
+    "engine_version": "v1",
+    "data_status": "COMPLETE",
+    "warnings": []
+  }
+}
+```
+
+快照 `data` 至少包含：`scope`、`scope_code`、`trade_date`、`score`、`level`、`status`、
+`raw_score`、`standardized_score`、`momentum`、`activity`、`fear`、`coverage`、
+`sample_count`、`engine_version`、`calculated_at` 和 `metadata`。市场结果的
+`scope` 为 `MARKET`、`scope_code` 为 `ALL_A`；个股结果还必须包含 `ts_code`、
+`normalization_mode`、`peer_type`、`peer_code`、`peer_name`、`valid_peer_count` 和
+`stock_history_count`。不存在的数值保持 `null`，不得用 0 或中性分数填充。
+
+`status`/`meta.data_status` 使用领域状态原值，包括 `COMPLETE`、`WARMING_UP`、
+`INSUFFICIENT_DATA`、`STALE`、`PARTIAL_SUCCESS` 和 `FAILED`。其中
+`WARMING_UP`、`INSUFFICIENT_DATA` 是合法的 200 响应业务状态，不应被 Gateway 改写成
+普通服务器错误；无法形成合法响应时才使用错误封套。历史和排名响应还必须提供
+`page`、`page_size`、`total`、`has_next`、`next_cursor`（如适用）。
+
+错误复用 Gateway 错误封套：参数、日期、代码和范围错误使用 `INVALID_REQUEST`、
+`INVALID_DATE`、`INVALID_SYMBOL`、`RANGE_TOO_LARGE`；指定快照不存在使用
+`RESULT_NOT_FOUND`；依赖 watermark 未完成或数据不可用使用 `DATA_NOT_READY`（503，
+`retryable=true`）；领域服务不可用使用 `UPSTREAM_DEPENDENCY_UNAVAILABLE`；未授权
+访问遵循 8.3 的认证和 scope 错误映射。
+
+### 8.5 Internal query-service boundary
+
+Gateway 仅调用以下类型化只读边界（名称为实现建议，编码前须确认）：
+
+```python
+get_market_snapshot(*, asof_date, engine_version=None)
+get_market_history(*, start_date, end_date, page, page_size, engine_version=None)
+get_stock_snapshot(*, ts_code, asof_date, engine_version=None)
+get_stock_history(*, ts_code, start_date, end_date, page, page_size, engine_version=None)
+get_stock_ranking(*, asof_date, page, page_size, engine_version=None, status=None)
+```
+
+这些方法必须返回已序列化前的领域 DTO 和质量状态，不接受 Django `HttpRequest`、
+token 或原始 query string，不执行写操作，不在 cache miss 时补算。历史服务必须在
+分页前应用 `trade_date <= end_date` 的无未来数据约束；Gateway 只负责传递已经校验的
+边界参数。
+
+### 8.6 API integration acceptance criteria
+
+- 相同快照、engine version 和请求参数的重复读取返回确定性结果，且不会产生数据库写入。
+- 指定 `asof_date` 时不会读取更晚交易日；返回的 `source_trade_date` 与实际快照一致。
+- `WARMING_UP`、`INSUFFICIENT_DATA`、`STALE` 等状态和 warnings 不被丢失或改写。
+- 非法代码、未来日期、越界范围、未知 engine version、无 scope 请求均被 Gateway 在
+  领域查询前拒绝，并返回统一错误结构。
+- 普通用户无法读取 factor、运行、失败和覆盖率诊断；operator scope 也只能只读。
+- API 测试覆盖认证、授权、参数校验、分页、点时约束、业务状态、错误映射和无副作用。
 
 ## 9 Test Case Definition
 
@@ -182,4 +328,17 @@ Initial constraints are database-backed EOD reads only, fixed pagination/range l
 
 ## 11 TODO List
 
-- [ ] 按本文档完成市场情绪后端实现、数据覆盖校验和单元测试，并在测试通过后更新本条状态。
+- [ ] 确认 PostgreSQL 实际表名、字段类型、`engine_version` 命名规则、市场 universe、
+  peer taxonomy、coverage threshold，以及 8.4 中的 DTO 字段是否与实现一致。
+- [ ] 与 `access_control` 确认并注册 `market_sentiment:read`、`history_read`、
+  `operator_read`、`internal_read` 的最终 scope 和包含关系。
+- [x] 按第 8 节实现 `market_sentiment` 只读 query service，并注册 API Gateway v1 路由、
+  响应 DTO、参数校验、分页、错误映射、限流和审计上下文。
+- [ ] 创建并注册 `market_sentiment` Django app，完成 PostgreSQL 模型、迁移、唯一键和
+  索引；不得使用 SQLite 作为事实来源。
+- [ ] 实现严格的 `market_data` 只读 repository、watermark/覆盖率校验和 no-lookahead 检查。
+- [ ] 实现每日因子计算、市场/个股快照、engine version 隔离、幂等 upsert 和 replay。
+- [ ] 实现 `refresh_market_sentiment` 管理命令及依赖失败时的非零退出和诊断记录。
+- [x] 为 query service 和 API Gateway 接入补充确定性接口测试，覆盖认证、路由、DTO、
+  分页、排名、点时读取、范围校验和业务状态；计算与持久化测试仍待实现。
+- [ ] 测试通过后，将本 TODO 列表和文档状态更新为已完成，并记录验证命令和结果。
