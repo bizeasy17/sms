@@ -124,6 +124,19 @@ class FinancialRepository:
         if not instances_to_create:
             return accepted, 0, rejected
 
+        # PostgreSQL rejects one upsert statement when its input contains duplicate conflict keys.
+        unique_instances: dict[tuple[Any, ...], RawFinancialAuditModel] = {}
+        for instance in instances_to_create:
+            key = (
+                instance.security_id,
+                instance.ann_date,
+                instance.end_date,
+                instance.period,
+                instance.row_signature,
+            )
+            unique_instances[key] = instance
+        instances_to_create = list(unique_instances.values())
+
         upserted = 0
         update_fields = [
             f.name

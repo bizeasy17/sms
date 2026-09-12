@@ -496,14 +496,12 @@ def security_financials(request, ts_code):
             raise MarketDataRequestError('INVALID_DATE', 'asof_date 不能晚于当前日期')
         if dataset not in DATASET_MODELS:
             raise MarketDataRequestError('INVALID_REQUEST', 'dataset 无效')
-        date_range = _financial_range(request.GET)
-        start_date, publication_end = date_range or (None, None)
+        _financial_range(request.GET)
         page, page_size = parse_pagination(request.GET)
         canonical = normalize_ts_code(ts_code)
         result = query_records(
             ts_code=canonical, dataset=dataset, asof_date=asof_date,
-            end_date=parse_date(request.GET.get('end_date'), 'end_date') if not start_date else None,
-            date_range=(start_date, publication_end) if start_date else None,
+            end_date=parse_date(request.GET.get('end_date'), 'end_date'),
             page=page, page_size=page_size,
         )
     except (MarketDataRequestError, KeyError) as error:

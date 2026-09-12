@@ -13,11 +13,12 @@ class Command(BaseCommand):
     help = 'Synchronize corporate financial data from Tushare into PostgreSQL.'
 
     def add_arguments(self, parser):
-        parser.add_argument('--mode', required=True, choices=['backfill', 'quarterly'], help='Sync mode')
+        parser.add_argument('--mode', required=True, choices=['backfill', 'quarterly', 'daily'], help='Sync mode')
         parser.add_argument('--endpoints', default='', help='Comma-separated endpoints to sync')
-        parser.add_argument('--scope', default='', choices=['', 'all', 'ts-code', 'event-driven', 'announcement-date'])
+        parser.add_argument('--scope', default='', choices=['', 'all', 'ts-code', 'event-driven', 'announcement-date', 'actual-date'])
         parser.add_argument('--ts-codes', default='', help='Comma-separated ts_codes for ts-code scope')
         parser.add_argument('--period', default='', help='Target financial period YYYYMMDD (e.g. 20250331)')
+        parser.add_argument('--actual-date', default='', help='Daily trigger date YYYYMMDD (defaults to today)')
         parser.add_argument('--start-date', default='', help='Start date YYYYMMDD for backfill mode')
         parser.add_argument('--end-date', default='', help='End date YYYYMMDD')
         parser.add_argument('--history-years', type=int, default=None, help='History years for backfill mode (default 5)')

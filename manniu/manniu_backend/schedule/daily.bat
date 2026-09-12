@@ -21,6 +21,7 @@ call :sync stock-fundamentals by-date || goto :failure
 call :sync stock-cost by-date || goto :failure
 call :sync_indices index-bars || goto :failure
 call :sync_indices index-fundamentals || goto :failure
+call :sync_financials || goto :failure
 
 popd
 echo Daily market-data synchronization completed.
@@ -40,6 +41,15 @@ echo Synchronizing %~1 for core indices...
 "%PYTHON_EXE%" manage.py sync_market_data --dataset %~1 --mode daily --scope ts-code --ts-codes "%CORE_INDICES%"
 if errorlevel 1 (
     echo ERROR: %~1 synchronization failed.
+    exit /b 1
+)
+exit /b 0
+
+:sync_financials
+echo Synchronizing financial data for disclosures due today...
+"%PYTHON_EXE%" manage.py sync_financials --mode daily --scope actual-date
+if errorlevel 1 (
+    echo ERROR: financial synchronization failed.
     exit /b 1
 )
 exit /b 0

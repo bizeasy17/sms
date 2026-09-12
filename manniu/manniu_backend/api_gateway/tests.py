@@ -12,7 +12,13 @@ from api_gateway.services.market_data import (
     parse_history_range,
 )
 from market_data.models import MarketBarDailyHistory, Security, StockDailyFundamentalHistory
-from financials.models import FinancialIncomeRecord, FinancialDisclosureRecord
+from financials.models import (
+    FinancialDisclosureRecord,
+    FinancialExpressRecord,
+    FinancialForecastRecord,
+    FinancialIncomeRecord,
+    FinancialMainBusinessRecord,
+)
 from manniu_auth.models import AuthRole, AuthScope, RoleScope, UserRole
 from traditional_valuation.models import (
     TraditionalValuationRiskSnapshot,
@@ -311,6 +317,51 @@ class MarketDataGatewayTests(TestCase):
         )
         self.assertEqual(disclosures.status_code, 200)
         self.assertEqual(disclosures.json()['data'][0]['effective_date'], '2026-08-30')
+
+    def test_financials_end_date_matches_report_period(self):
+        FinancialExpressRecord.objects.create(
+            security=self.security, ts_code='000001.SZ', ann_date=date(2022, 1, 14),
+            end_date=date(2021, 12, 31), period='20211231', row_signature='express-period',
+        )
+        FinancialForecastRecord.objects.create(
+            security=self.security, ts_code='000001.SZ', ann_date=date(2026, 1, 31),
+            end_date=date(2025, 12, 31), period='20251231', row_signature='forecast-old',
+        )
+        FinancialForecastRecord.objects.create(
+            security=self.security, ts_code='000001.SZ', ann_date=date(2026, 7, 31),
+            end_date=date(2026, 6, 30), period='20260630', row_signature='forecast-period',
+        )
+        FinancialMainBusinessRecord.objects.create(
+            security=self.security, ts_code='000001.SZ', ann_date=None,
+            end_date=date(2026, 6, 30), period='20260630', row_signature='main-business-period',
+            bz_item='主营业务',
+        )
+
+        express = self.client.get(
+            '/api/v1/market-analysis/securities/000001.SZ/financials',
+            {'dataset': 'express', 'asof_date': '2026-09-10',
+             'start_date': '2021-01-01', 'end_date': '2021-12-31'}, **self.headers,
+        )
+        forecast = self.client.get(
+            '/api/v1/market-analysis/securities/000001.SZ/financials',
+            {'dataset': 'forecast', 'asof_date': '2026-09-10',
+             'start_date': '2026-01-01', 'end_date': '2026-06-30'}, **self.headers,
+        )
+        main_business = self.client.get(
+            '/api/v1/market-analysis/securities/000001.SZ/financials',
+            {'dataset': 'main_business', 'asof_date': '2026-09-10',
+             'start_date': '2026-01-01', 'end_date': '2026-06-30'}, **self.headers,
+        )
+
+        self.assertEqual(express.status_code, 200)
+        self.assertEqual(express.json()['meta']['total'], 1)
+        self.assertEqual(express.json()['data'][0]['end_date'], '2021-12-31')
+        self.assertEqual(forecast.status_code, 200)
+        self.assertEqual(forecast.json()['meta']['total'], 1)
+        self.assertEqual(forecast.json()['data'][0]['end_date'], '2026-06-30')
+        self.assertEqual(main_business.status_code, 200)
+        self.assertEqual(main_business.json()['meta']['total'], 1)
+        self.assertEqual(main_business.json()['data'][0]['end_date'], '2026-06-30')
 
     def test_traditional_valuation_current_history_and_compare(self):
         current = self.client.get(

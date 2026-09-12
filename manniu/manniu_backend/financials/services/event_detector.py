@@ -85,3 +85,45 @@ class DisclosureEventDetector:
             if code and period:
                 events.add((code, period))
         return events
+
+    @classmethod
+    def get_actual_date_events(
+        cls,
+        actual_date: date,
+        ts_codes: list[str] | None = None,
+    ) -> set[tuple[str, str]]:
+        """Return report targets whose confirmed disclosure date is the run date."""
+        qs = FinancialDisclosureRecord.objects.filter(actual_date=actual_date)
+        if ts_codes:
+            qs = qs.filter(ts_code__in=ts_codes)
+
+        events: set[tuple[str, str]] = set()
+        for rec in qs.values('ts_code', 'end_date', 'period'):
+            code = rec['ts_code']
+            period = rec['period'] or (rec['end_date'].strftime('%Y%m%d') if rec['end_date'] else '')
+            if code and period:
+                events.add((code, period))
+        return events
+
+    @classmethod
+    def detect_actual_date_events_from_records(
+        cls,
+        records: list[dict[str, Any]],
+        actual_date: date,
+        ts_codes: list[str] | None = None,
+    ) -> set[tuple[str, str]]:
+        """Extract due report targets from the current disclosure response."""
+        allowed_codes = {code.upper() for code in ts_codes} if ts_codes else None
+        events: set[tuple[str, str]] = set()
+        for record in records:
+            code = str(normalize_value(record.get('ts_code')) or '').upper()
+            row_actual_date = record.get('actual_date')
+            if normalize_value(row_actual_date) != actual_date and str(row_actual_date or '') != actual_date.strftime('%Y%m%d'):
+                continue
+            if not code or (allowed_codes is not None and code not in allowed_codes):
+                continue
+            end_date = normalize_value(record.get('end_date'))
+            period = str(normalize_value(record.get('period')) or end_date or '')
+            if code and period:
+                events.add((code, period))
+        return events

@@ -92,19 +92,17 @@ def _payload(row, dataset):
     return payload
 
 
-def _queryset(model, security, asof_date, start_date=None, end_date=None):
+def _queryset(model, security, asof_date):
     queryset = model.objects.select_related('security').filter(security=security)
-    if hasattr(model, 'actual_date'):
+    if model is FinancialMainBusinessRecord:
+        pass
+    elif hasattr(model, 'actual_date'):
         queryset = queryset.filter(
             Q(actual_date__isnull=False, actual_date__lte=asof_date)
             | Q(actual_date__isnull=True, ann_date__isnull=False, ann_date__lte=asof_date)
         )
     else:
         queryset = queryset.filter(ann_date__isnull=False, ann_date__lte=asof_date)
-    if start_date is not None:
-        queryset = queryset.filter(ann_date__gte=start_date)
-    if end_date is not None:
-        queryset = queryset.filter(ann_date__lte=end_date)
     return queryset.order_by('-end_date', '-ann_date', '-id')
 
 
@@ -113,7 +111,7 @@ def query_records(*, ts_code, dataset, asof_date, end_date=None, date_range=None
     security = Security.objects.get(ts_code=ts_code)
     start_date = date_range[0] if date_range else None
     publication_end = date_range[1] if date_range else None
-    queryset = _queryset(model, security, asof_date, start_date, publication_end)
+    queryset = _queryset(model, security, asof_date)
     if end_date is not None:
         queryset = queryset.filter(end_date=end_date)
     total = queryset.count()
@@ -126,7 +124,11 @@ def query_disclosures(*, ts_code, asof_date, date_range=None, page=1, page_size=
     security = Security.objects.get(ts_code=ts_code)
     start_date = date_range[0] if date_range else None
     end_date = date_range[1] if date_range else None
-    queryset = _queryset(FinancialDisclosureRecord, security, asof_date, start_date, end_date)
+    queryset = _queryset(FinancialDisclosureRecord, security, asof_date)
+    if start_date is not None:
+        queryset = queryset.filter(ann_date__gte=start_date)
+    if end_date is not None:
+        queryset = queryset.filter(ann_date__lte=end_date)
     total = queryset.count()
     rows = queryset[(page - 1) * page_size:page * page_size]
     items = []

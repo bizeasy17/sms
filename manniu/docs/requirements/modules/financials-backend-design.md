@@ -43,6 +43,17 @@ flowchart LR
 
 Financial data updates are event-driven: the upstream `disclosure_date` endpoint serves as the primary event definition source. When new announcements, confirmed actual disclosure dates (`actual_date`), or modified schedules are detected from `disclosure_date`, the system identifies the affected securities and reporting periods `(security_id, period)`. The statement and event adapters (`income_vip`, `balancesheet_vip`, `cashflow_vip`, `fina_indicator_vip`, `fina_audit`, `fina_mainbz_vip`, `forecast_vip`, `express_vip`, `dividend`) then execute targeted queries for only the affected symbols rather than scanning the entire market. Downstream consumers own any model-specific projection rebuild after raw records commit.
 
+Operationally, this event-driven design has two complementary paths. The daily job requests `disclosure_date` by `ann_date` for the run date, selects confirmed `actual_date=run_date` rows, and targets only those `(security_id, period)` values. The quarterly job remains an operator-run reconciliation/backfill path for missed daily runs, late disclosure changes, or incomplete endpoint coverage; it does not replace the daily path.
+
+For the current predictive valuation contract, `predictive_valuation` reads the
+`income_vip`, `balancesheet_vip`, `cashflow_vip`, `fina_indicator_vip`, and
+`disclosure_date` raw records, then rebuilds its own
+`PredictiveFinancialFeaturePanel` and `PredictiveFinancialFeatureLatest`. The
+`forecast_vip`, `express_vip`, `dividend`, `fina_audit`, and `fina_mainbz_vip` records
+remain auditable raw data but are not currently consumed by that predictive feature
+builder. Running `sync_financials` therefore does not imply that predictive
+projections or prediction snapshots have been refreshed.
+
 The adapter owns explicit endpoint projections, Tushare paging, transient-error handling, and secret-safe errors. Normalization owns `NaN` conversion, scalar conversion, endpoint date selection, and deterministic row signatures. Repositories own PostgreSQL writes. Query services select only data that was public at an explicit `as_of_date`; public API handlers must delegate to those services after `access_control` authorization.
 
 ## 4 PostgreSQL Persistence Design
@@ -74,7 +85,10 @@ Raw endpoint records optimize audit and replay. `financials` does not own generi
 feature-panel or latest-feature tables. Each downstream domain owns its own projection
 schema and rebuild policy so persisted fields match its feature contract.
 `predictive_valuation`, for example, owns its point-in-time financial panel/latest
-projections and constructs them from these raw records before inference.
+projections and constructs them from the approved raw records before inference. The
+financial ingestion run may report affected securities and periods, but it does not
+rebuild these downstream projections; projection freshness and rebuild counts belong
+to the downstream consumer run.
 
 ## 5 As-Of And Revision Rules
 
@@ -323,8 +337,8 @@ visibility.
 1. Confirm concrete table names, core typed field list/units for every endpoint, row-signature policy, and effective-date precedence.
 2. Implement raw endpoint models, run/watermark models, PostgreSQL migrations, indexes, and model-contract tests.
 3. Implement adapter, normalization, pagination, and endpoint repository upserts with mocked Tushare tests.
-4. Implement disclosure-date ingestion and event detection; downstream domains rebuild their own as-of projections with no-lookahead tests.
-5. Implement the operator CLI, backfill/quarterly scheduling, reconciliation artifacts, and failure exit behavior.
+4. Implement disclosure-date ingestion and event detection for the daily actual-date path and quarterly reconciliation path; downstream domains rebuild their own as-of projections with no-lookahead tests.
+5. Implement the operator CLI, daily scheduling, backfill/quarterly reconciliation, artifacts, and failure exit behavior.
 6. Confirm API and authorization contracts before implementing read endpoints.
 
 ## 10 TODO List
@@ -347,11 +361,11 @@ visibility.
 - [x] API 目录：将已审核的 financials 只读 endpoint 加入 Public API catalog；不公开导入运行、raw payload 和运维接口。
 - [ ] 测试：补充模型契约、自然键、索引、迁移和字段精度测试。
 - [ ] 测试：补充 adapter mock、分页/重试、空值规范化、幂等 upsert、修订审计和 watermark 失败回滚测试。
-- [ ] 测试：补充 disclosure event 定向同步测试，证明不会触发全市场扫描。
+- [ ] 测试：补充 disclosure event 定向同步测试，证明 daily actual-date 和 quarterly reconciliation 都不会触发全市场扫描。
 - [ ] 测试：补充 as-of/no-lookahead、无效日期、未来披露、重复披露和多 dividend/main-business 行测试。
 - [ ] 测试：补充 Gateway/Auth 集成测试，覆盖未登录、过期/撤销 token、disabled 用户、缺少 Scope 和 operator Scope。
 - [ ] 测试：验证 API 请求只读，不调用 Tushare、不写 financials 表、不推进 watermark、不触发快照重建。
 - [ ] 安全验收：检查日志、审计、响应和错误中不包含 Token、密码、Tushare token、数据库连接串、堆栈和内部路径。
-- [ ] 运维：实现 operator CLI、backfill/quarterly 调度、reconciliation artifact、失败退出码和恢复/重跑说明。
+- [ ] 运维：实现 operator CLI、daily 调度、backfill/quarterly 调度、reconciliation artifact、失败退出码和恢复/重跑说明。
 - [ ] 验证：运行 Django checks、迁移检查、financials 单元测试、Gateway/Auth 集成测试和最小 PostgreSQL smoke test。
 - [ ] 文档：补充部署配置、Scope 初始化、API catalog、查询服务调用示例和回滚/重跑操作说明。

@@ -34,6 +34,7 @@ class FinancialSyncPlan:
     scope: str
     ts_codes: tuple[str, ...]
     period: str
+    actual_date: date | None
     start_date: date | None
     end_date: date
     page_size: int
@@ -51,7 +52,7 @@ def _years_before(value: date, years: int) -> date:
 
 def build_financial_sync_plan(options: dict[str, Any], today: date | None = None) -> FinancialSyncPlan:
     mode = str(options.get('mode') or 'quarterly').strip().lower()
-    if mode not in {'backfill', 'quarterly'}:
+    if mode not in {'backfill', 'quarterly', 'daily'}:
         raise FinancialSyncValidationError(f'Unsupported mode: {mode}')
 
     raw_endpoints = str(options.get('endpoints') or '').strip()
@@ -64,8 +65,9 @@ def build_financial_sync_plan(options: dict[str, Any], today: date | None = None
         # Default order: disclosure_date first, then statements and events
         selected_endpoints = tuple(ALL_ENDPOINTS)
 
-    scope = str(options.get('scope') or ('event-driven' if mode == 'quarterly' else 'all')).strip().lower()
-    if scope not in {'all', 'ts-code', 'event-driven', 'announcement-date'}:
+    default_scope = 'event-driven' if mode == 'quarterly' else ('actual-date' if mode == 'daily' else 'all')
+    scope = str(options.get('scope') or default_scope).strip().lower()
+    if scope not in {'all', 'ts-code', 'event-driven', 'announcement-date', 'actual-date'}:
         raise FinancialSyncValidationError(f'Unsupported scope: {scope}')
 
     raw_codes = str(options.get('ts_codes') or '').strip()
@@ -79,6 +81,11 @@ def build_financial_sync_plan(options: dict[str, Any], today: date | None = None
         raise FinancialSyncValidationError('announcement-date scope is valid only for disclosure_date')
     if mode == 'quarterly' and scope == 'event-driven' and 'disclosure_date' not in selected_endpoints:
         raise FinancialSyncValidationError('quarterly event-driven scope requires disclosure_date')
+
+    actual_date_str = str(options.get('actual_date') or '').strip()
+    actual_date = normalize_date(actual_date_str) if actual_date_str else None
+    if actual_date_str and not actual_date:
+        raise FinancialSyncValidationError('Invalid --actual-date')
 
     period = str(options.get('period') or '').strip()
     page_size = int(options.get('page_size', 5000))
@@ -96,6 +103,28 @@ def build_financial_sync_plan(options: dict[str, Any], today: date | None = None
     start_date_str = str(options.get('start_date') or '').strip()
     history_years = options.get('history_years')
 
+    if mode == 'daily':
+        if scope not in {'', 'actual-date'}:
+            raise FinancialSyncValidationError('daily mode requires --scope actual-date')
+        if 'disclosure_date' not in selected_endpoints:
+            raise FinancialSyncValidationError('daily mode requires disclosure_date')
+        if period or start_date_str or history_years is not None:
+            raise FinancialSyncValidationError('daily mode does not accept --period, --start-date, or --history-years')
+        return FinancialSyncPlan(
+            mode=mode,
+            endpoints=selected_endpoints,
+            scope='actual-date',
+            ts_codes=codes,
+            period='',
+            actual_date=actual_date or end_date,
+            start_date=None,
+            end_date=end_date,
+            page_size=page_size,
+            max_pages=max_pages,
+            batch_size=batch_size,
+            dry_run=bool(options.get('dry_run')),
+        )
+
     if mode == 'quarterly':
         if start_date_str or history_years is not None:
             raise FinancialSyncValidationError('quarterly mode does not accept --start-date or --history-years')
@@ -105,6 +134,7 @@ def build_financial_sync_plan(options: dict[str, Any], today: date | None = None
             scope=scope,
             ts_codes=codes,
             period=period,
+            actual_date=actual_date,
             start_date=None,
             end_date=end_date,
             page_size=page_size,
@@ -131,6 +161,7 @@ def build_financial_sync_plan(options: dict[str, Any], today: date | None = None
         scope=scope,
         ts_codes=codes,
         period=period,
+        actual_date=actual_date,
         start_date=start_date,
         end_date=end_date,
         page_size=page_size,
@@ -179,7 +210,9 @@ def execute_financial_sync(plan: FinancialSyncPlan, adapter: FinancialAdapter | 
         if 'disclosure_date' in plan.endpoints:
             logger.info('Syncing disclosure_date (mode=%s, scope=%s)...', plan.mode, plan.scope)
             disc_params: dict[str, Any] = {}
-            if plan.period:
+            if plan.mode == 'daily':
+                disc_params['ann_date'] = plan.actual_date.strftime('%Y%m%d')
+            elif plan.period:
                 disc_params['end_date'] = plan.period
             elif plan.start_date:
                 disc_params['start_date'] = plan.start_date.strftime('%Y%m%d')
@@ -192,19 +225,33 @@ def execute_financial_sync(plan: FinancialSyncPlan, adapter: FinancialAdapter | 
                 max_pages=plan.max_pages,
             )
             total_source += len(disc_rows)
+            if plan.mode == 'daily':
+                detected_events = DisclosureEventDetector.get_actual_date_events(
+                    plan.actual_date,
+                    ts_codes=list(plan.ts_codes) if plan.ts_codes else None,
+                )
+                detected_events.update(
+                    DisclosureEventDetector.detect_actual_date_events_from_records(
+                        disc_rows,
+                        plan.actual_date,
+                        ts_codes=list(plan.ts_codes) if plan.ts_codes else None,
+                    )
+                )
+            else:
+                new_disclosure_rows = DisclosureEventDetector.filter_new_or_changed_records(disc_rows)
+                detected_events = DisclosureEventDetector.detect_events_for_records(new_disclosure_rows)
+
             acc, ups, rej = repo.upsert_raw_records('disclosure_date', disc_rows, batch_size=plan.batch_size)
             total_accepted += acc
             total_upserted += ups
             total_rejected += rej
 
-            new_disclosure_rows = DisclosureEventDetector.filter_new_or_changed_records(disc_rows)
-            detected_events = DisclosureEventDetector.detect_events_for_records(new_disclosure_rows)
             repo.advance_watermark('disclosure_date', scope_key, last_date=plan.end_date, last_period=plan.period, run=run)
 
         # 2. Statement & Event endpoints
         other_endpoints = [ep for ep in plan.endpoints if ep != 'disclosure_date']
 
-        if plan.mode == 'quarterly' and plan.scope == 'event-driven':
+        if plan.mode in {'daily', 'quarterly'} and plan.scope in {'actual-date', 'event-driven'}:
             # Event-driven: only query target securities from detected events
             logger.info('Event-driven sync: %d events to process', len(detected_events))
             for ts_code, period_val in detected_events:

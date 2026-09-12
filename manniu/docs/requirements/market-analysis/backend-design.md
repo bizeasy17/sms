@@ -53,6 +53,54 @@ The Django project currently includes the standard `django.contrib.auth` applica
 4. The domain application reads or writes PostgreSQL through its own data layer.
 5. `api_gateway` serializes the result using the documented response contract.
 
+### 2.4 Feature And Projection Ownership Principles
+
+The system separates canonical financial facts from model-specific features:
+
+```text
+Tushare
+  -> financials raw records
+	  -> predictive_valuation feature builder
+		  -> PredictiveFinancialFeaturePanel / PredictiveFinancialFeatureLatest
+			  -> predictive inference and prediction snapshots
+```
+
+`financials` owns trusted, auditable financial facts and their publication-time
+semantics. Its responsibilities include Tushare raw-record ingestion, provider-field
+normalization, disclosure and effective-public-date resolution, revision history,
+as-of queries, ingestion audit, and idempotent persistence. It must not own a generic
+feature panel whose fields are defined by one downstream model contract.
+
+`predictive_valuation` owns the feature contract required by its active models. Its
+responsibilities include selecting report types and eligible records, constructing
+`PredictiveFinancialFeaturePanel` and `PredictiveFinancialFeatureLatest`, applying
+model-specific field mappings and feature provenance, enforcing point-in-time rules,
+and performing model-specific imputation and inference. These projections are
+downstream, rebuildable views of `financials` records rather than a second source of
+financial truth.
+
+The predictive feature builder currently consumes raw records from `income_vip`,
+`balancesheet_vip`, `cashflow_vip`, `fina_indicator_vip`, and `disclosure_date`.
+Synchronizing `forecast_vip`, `express_vip`, `dividend`, `fina_audit`, or
+`fina_mainbz_vip` stores auditable financial raw data but does not imply that those
+records are part of the current predictive feature contract. A future consumer may
+adopt them through an explicit feature-contract change.
+
+`sync_financials` and predictive projection rebuild are separate operational steps.
+`sync_financials` commits raw records and can identify affected securities and report
+periods for downstream consumers; it does not write predictive projection tables,
+invoke predictive inference, or guarantee that predictive feature tables or prediction
+snapshots are current. Projection freshness and rebuild counts belong to the downstream
+consumer run. In particular, the legacy `projection_rebuild_count` field on a
+financial ingestion run is a compatibility placeholder and must not be interpreted as
+an actual predictive rebuild count until an explicit integration contract is
+implemented.
+
+If a projection becomes useful to multiple domains, it must first be defined as a
+stable, domain-neutral canonical financial fact with an explicit unit, provenance, and
+as-of contract. Model-specific naming, imputation, normalization, report-type logic,
+and model-version dependencies remain inside the owning downstream domain.
+
 ## 3 Database Contract
 
 No database models, migrations, tables, or schema fields are added by the current scaffold. Future domain data and access-control persistence remain PostgreSQL-only under the existing backend database configuration. SQLite must not be introduced as a persistence fallback.
@@ -73,6 +121,9 @@ No external API endpoints, request fields, or response fields are currently impl
 
 - All empty modules load under Django's static configuration check.
 - An unauthenticated request to a future protected external API receives a documented authentication failure response.
+- `financials` raw ingestion does not imply a predictive projection rebuild.
+- Predictive feature projections remain owned by `predictive_valuation` and are built only from their explicit feature contract.
+- Financial raw records consumed by predictive features preserve publication-time and as-of boundaries.
 
 ### 5.3 Failure Scenarios
 
