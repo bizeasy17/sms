@@ -32,6 +32,7 @@
 - 指数身份、行情和估值历史的只读查询。
 - 日频序列清洗、去重、日期对齐和有效值过滤。
 - PE、PE_TTM、PB 的历史分位和 P10/P50/P90 计算。
+- 7 指数 `overall` 基本面组合序列及其历史分位、P10/P50/P90 计算。
 - 7 指数 `overall`、`defensive`、`balanced`、`aggressive` 四套风格组合计算。
 - 单指数 PE、PE_TTM、PB 简化估值。
 - 组合估值、保守估值和估值状态汇总。
@@ -97,7 +98,7 @@
 | --- | --- | --- |
 | `sh` | `000001.SH` | 上证综指 |
 | `sz` | `399001.SZ` | 深证成指 |
-| `hs300` | `399300.SZ` | 沪深300 |
+| `hs300` | `000300.SH` | 沪深300 |
 | `sse50` | `000016.SH` | 上证50 |
 | `csi500` | `000905.SH` | 中证500 |
 | `sme` | `399005.SZ` | 中小板指 |
@@ -192,6 +193,57 @@ composite_s(t) = sum(value_i(t) * weight_s_i)
 5. 结果记录实际参与指数、缺失指数和有效日期数。
 
 如未来支持非交集策略，必须作为显式策略配置并重新定义权重归一化规则。
+
+### 8.2.1 7 指数 overall 基本面组合接口
+
+本节定义一个面向 API Gateway 的后台计算用例，用于一次返回 7 个综合指数按
+`overall` 权重合成的基本面历史结果。该用例不提供风格参数，不负责前端风格切换，
+也不暴露其他三套风格；`overall` 是本接口固定且唯一的计算口径。
+
+固定指数池为 `sh`、`sz`、`hs300`、`sse50`、`csi500`、`sme`、`cyb`，固定权重为：
+
+| 指数 | 需求代码 | overall 权重 |
+| --- | --- | ---: |
+| `sh` | `000001.SH` | 0.18 |
+| `sz` | `399001.SZ` | 0.16 |
+| `hs300` | `000300.SH` | 0.20 |
+| `sse50` | `000016.SH` | 0.14 |
+| `csi500` | `000905.SH` | 0.14 |
+| `sme` | `399005.SZ` | 0.08 |
+| `cyb` | `399006.SZ` | 0.10 |
+| **合计** |  | **1.00** |
+
+接口支持 `PE`、`PETTM`、`PB` 三种基本面指标，但一次请求只计算并返回一个指标。
+计算规则如下：
+
+1. 从 `IndexDailyFundamentalHistory` 读取 7 个指数在同一指标下的日频有效值。
+2. 按指数和交易日去重，并仅保留 7 个指数均有正数、有限值的共同交易日。
+3. 按固定权重计算 `composite_overall(t) = sum(value_i(t) * weight_overall_i)`，不对缺失指数
+  补零，也不对剩余指数重新归一化权重。
+4. 按 `30D`、`60D`、`90D`、`1Y`、`3Y`、`5Y`、`10Y`、`ALL` 窗口计算当前值、分位、P10、
+  P50、P90、样本数、窗口边界和实际最新日期。
+5. 返回参与指数、缺失指数、有效日期数、各指数实际数据代码和覆盖率，保证结果可审计。
+
+`metric`、`window`、日期范围的校验和分位计算由后台完成。请求不得接受 `style` 参数；
+若调用方传入未知参数，Gateway 必须拒绝，不能静默忽略或切换到其他风格。默认不得用
+示例值、最近值或 0 填充缺失基本面数据；共同有效样本不足时返回
+`INSUFFICIENT_DATA`。
+
+### 8.2.2 7 指数 overall 综合 CLOSE 接口
+
+本接口独立于基本面组合接口，不接受 `metric` 或 `style` 参数，固定使用 7 指数
+`overall` 权重计算收盘点位：`sh` 0.18、`sz` 0.16、`hs300` 0.20、`sse50` 0.14、
+`csi500` 0.14、`sme` 0.08、`cyb` 0.10。
+
+1. 从 `MarketBarDailyHistory` 读取 7 个指数的日频有效 `close`。
+2. 按指数和交易日去重，仅保留 7 个指数均有正数、有限收盘值的共同交易日。
+3. 按固定权重计算 `composite_close(t) = sum(close_i(t) * weight_overall_i)`，不补零，
+  不对剩余指数重新归一化权重。
+4. 按支持的窗口计算当前值、分位、P10/P50/P90、样本数、窗口范围和实际最新日期。
+5. 数据不足时返回对应状态和 warnings，不使用默认点位、最近值或示例值填充。
+
+对应 Gateway 路由为 `GET /api/v1/market-analysis/indices/composite/close`，支持
+`window` 或明确日期范围，但不接受 `metric`、`style` 或其他未知参数。
 
 ### 8.3 时间窗口与分位
 
@@ -377,6 +429,8 @@ gap = (current_close - implied_price) / implied_price
 | --- | --- | --- |
 | `get_index_catalog` | 可选 `index_keys` | 目录、能力、数据新鲜度 |
 | `get_index_valuation` | `index_key`, `metric`, `window`, 日期范围 | 当前估值、分位、P10/P50/P90、状态 |
+| `get_overall_composite_fundamentals` | `metric`, `window` 或日期范围 | 7 指数 overall 组合序列、当前值、分位、P10/P50/P90、覆盖率 |
+| `get_overall_composite_close` | `window` 或日期范围 | 7 指数 overall 收盘组合序列、当前值、分位、P10/P50/P90、覆盖率 |
 | `get_market_health` | `asof_date`, `style`, 规则版本 | 健康度四分项、温度、解释因子 |
 | `get_equity_bond_spread` | `index_key`, `window`, 日期范围 | 股息率、国债收益率、利差、历史分位 |
 | `get_health_history` | 时间窗口、规则版本 | 健康度历史序列、覆盖率 |
@@ -443,6 +497,10 @@ sequenceDiagram
 | 方法 | 路径 | 说明 | 主要查询参数 |
 | --- | --- | --- | --- |
 | GET | `/indices/catalog` | 指数目录、能力和数据新鲜度 | `index_keys` |
+| GET | `/indices/:index_key/bars` | 指数 EOD 日线行情历史 | `start_date`、`end_date`、`adjust`、`page`、`page_size` |
+| GET | `/indices/:index_key/fundamentals` | 指数日基本面历史 | `start_date`、`end_date`、`page`、`page_size` |
+| GET | `/indices/composite/fundamentals` | 7 指数 overall 基本面组合及历史分位 | `metric`、`window`、`start_date`、`end_date` |
+| GET | `/indices/composite/close` | 7 指数 overall 收盘点位组合及历史分位 | `window`、`start_date`、`end_date` |
 | GET | `/indices/:index_key/valuation` | 单指数当前估值和历史分位 | `metric`、`window`、`start_date`、`end_date`、`band_pct` |
 | GET | `/indices/health` | 当前市场健康度和 A 股温度计 | `asof_date`、`style`、`calculation_version` |
 | GET | `/indices/equity-bond` | 股债收益率、利差和资产倾向 | `index_key`、`window`、`start_date`、`end_date` |
@@ -459,6 +517,14 @@ Gateway 必须拒绝未知路径参数、未知指标、未知窗口、未知风
   `health_above_threshold`。
 - `index_key`: `sh`、`sz`、`hs300`、`sse50`、`csi500`、`sme`、`cyb`，除非后续版本
   显式扩展配置。
+
+行情接口的 `adjust` 白名单为 `raw`、`qfq`、`hfq`，默认 `raw`；基本面接口不接受
+调整参数。两者均要求 `start_date` 和 `end_date`，返回倒序分页数据，`page_size` 默认
+50、最大 200。行情记录至少包含 `ts_code`、`source_ts_code`、`trade_date`、`frequency`、
+OHLC、涨跌和成交量/成交额；基本面记录至少包含 `ts_code`、`source_ts_code`、
+`trade_date`、`pe`、`pe_ttm`、`pb`、`turnover_rate`、`turnover_rate_f`、`total_mv`、
+`float_mv`、来源时间和单位说明。缺少记录返回空列表及 `data_status=NO_DATA`，不使用
+默认点位或估值填充。
 
 日期使用 `YYYY-MM-DD`，不得请求未来日期。历史接口遵守 Gateway 全局限制：默认最多
 366 个自然日、单次最多 2,000 条记录，超限返回 `RANGE_TOO_LARGE`。`page_size` 默认
@@ -522,6 +588,13 @@ token 无效、scope 不足分别映射为 `AUTHENTICATION_REQUIRED`、`TOKEN_IN
 
 - `/indices/catalog` 返回目录数组和整体覆盖率，不返回未配置的任意指数；`index_keys` 省略
   时返回固定 7 指数目录。
+- `/indices/composite/fundamentals` 固定使用 7 指数 `overall` 权重，返回选定 `metric` 的
+  组合当前值、历史序列、percentile、P10/P50/P90、样本数、窗口范围、实际最新日期、
+  参与指数、缺失指数、实际数据代码和覆盖率。该路由不接受 `style`，不得返回或计算
+  `defensive`、`balanced`、`aggressive` 结果。
+- `/indices/composite/close` 固定使用 7 指数 `overall` 权重，返回组合 `close` 当前值、
+  历史序列、percentile、P10/P50/P90、样本数、窗口范围、实际最新日期、参与指数、
+  缺失指数、实际数据代码和覆盖率；不接受 `metric` 或 `style`。
 - `/indices/:index_key/valuation` 返回选定 `metric` 的当前值、percentile、P10/P50/P90、
   样本数、窗口范围、实际最新日期、方法状态和来源信息。不得把 PE、PETTM、PB 混算；
   `band_pct` 必须为有限且非负的百分比配置值。
@@ -556,13 +629,16 @@ DRF `Response`。Gateway 不得捕获所有异常并伪装成 `NO_DATA`；数据
 
 1. 未认证、无 scope、非法业务键和非法参数均按统一错误封套返回，且不会访问领域查询服务。
 2. 7 个固定指数目录可通过一次请求返回，目录保留需求代码与实际源代码的区别。
-3. 单指数估值的 `metric` 切换只影响选定指标；缺数据时保留 `INSUFFICIENT_DATA` 或
+3. `/indices/composite/fundamentals` 使用固定 `overall` 权重完成 7 指数共同日期计算；
+  不接受 `style`，缺数据或样本不足时保留 `NO_DATA`、`PARTIAL` 或 `INSUFFICIENT_DATA`，
+  不输出默认基本面值。
+4. 单指数估值的 `metric` 切换只影响选定指标；缺数据时保留 `INSUFFICIENT_DATA` 或
    `UNAVAILABLE`，不输出默认点位、估值或收益率。
-4. 健康度、股债性价比和历史接口能原样传递 provider 缺失、共同日期、覆盖率、规则版本
+5. 健康度、股债性价比和历史接口能原样传递 provider 缺失、共同日期、覆盖率、规则版本
    和 warnings；不得把部分结果伪装成 COMPLETE。
-5. 历史接口执行日期范围、记录数和分页限制，不能通过查询参数触发无界导出。
-6. Gateway 查询链路只读，不调用外部网络、同步 CLI、交易能力或写入任何领域表。
-7. 相同请求、相同上游快照和相同计算版本返回确定性结果，并在响应和日志中保留同一
+6. 历史接口执行日期范围、记录数和分页限制，不能通过查询参数触发无界导出。
+7. Gateway 查询链路只读，不调用外部网络、同步 CLI、交易能力或写入任何领域表。
+8. 相同请求、相同上游快照和相同计算版本返回确定性结果，并在响应和日志中保留同一
    `request_id`。
 
 ## 18 测试与验收
@@ -570,6 +646,7 @@ DRF `Response`。Gateway 不得捕获所有异常并伪装成 `NO_DATA`；数据
 ### 18.1 单元测试
 
 - 4 套权重总和为 1，未知风格、重复指数和不完整权重被拒绝。
+- `overall` 7 指数权重总和为 1，组合基本面接口固定使用该权重且不接受 `style`。
 - 7 指数完整数据可以生成组合序列；缺失一个指数时共同日期被排除。
 - PE、PE_TTM、PB 不发生字段串用。
 - 分位窗口、空序列、样本不足和重复日期结果确定。
@@ -587,6 +664,10 @@ DRF `Response`。Gateway 不得捕获所有异常并伪装成 `NO_DATA`；数据
 7. 股债利差两端使用共同交易日和统一百分比单位。
 8. 历史事件携带计算版本，未完成后续收益窗口时不输出伪造收益。
 9. `get_index_catalog`、`get_index_valuation`、`get_market_health` 等内部用例可被 API 层批量调用，且不返回 HTML。
+10. `get_overall_composite_fundamentals` 可被 API Gateway 调用，`PE`、`PETTM`、`PB` 切换
+  只影响选定指标，并返回组合统计、共同日期覆盖率和实际来源代码。
+11. `get_overall_composite_close` 固定使用已确认的 overall 权重返回综合 CLOSE，且不接受
+  `metric` 或 `style` 参数。
 
 ## 19 扩展约束
 
@@ -598,4 +679,5 @@ DRF `Response`。Gateway 不得捕获所有异常并伪装成 `NO_DATA`；数据
 ## 20 TODO List
 
 - [x] 完成 `indices` 到 `api_gateway` 的 v1 核心只读接入：指数目录、单指数估值、路由注册、参数校验、统一响应、错误映射和 Gateway 测试。
+- [x] 接入指数日线行情和日基本面只读接口，登记 Public API catalog 并完成边界测试。
 - [ ] 在 `indices` 完成市场健康度、股债性价比、健康度历史和关键事件的领域 provider/计算服务后，接通对应 Gateway 路由并完成集成验收；当前接口对这些能力返回明确的 `UPSTREAM_DEPENDENCY_UNAVAILABLE`，不返回占位数据。

@@ -36,6 +36,10 @@ from .services.indices import (
     parse_index_keys,
     parse_metric,
     parse_window,
+    index_bars as index_bars_result,
+    index_fundamentals as index_fundamentals_result,
+    overall_composite_fundamentals as overall_composite_fundamentals_result,
+    overall_composite_close as overall_composite_close_result,
     unavailable as index_unavailable,
     valuation as index_valuation_result,
 )
@@ -401,6 +405,139 @@ def indices_catalog(request):
     return api_response(request, data=items, meta=_meta(data_status=status))
 
 
+def _index_history_params(request):
+    allowed = {'start_date', 'end_date', 'adjust', 'page', 'page_size'}
+    unknown = sorted(set(request.GET.keys()) - allowed)
+    if unknown:
+        raise IndexGatewayRequestError(
+            'INVALID_REQUEST', '包含不支持的查询参数', details={'unknown_parameters': unknown},
+        )
+    start_date, end_date = parse_history_range(request.GET)
+    if end_date > date.today():
+        raise IndexGatewayRequestError('INVALID_DATE', 'end_date 不能晚于当前日期')
+    page, page_size = parse_pagination(request.GET)
+    return start_date, end_date, page, page_size
+
+
+def _index_history_auth(request):
+    return authenticate_request(request, 'market_analysis:read', 'market_analysis:history')
+
+
+def index_bars(request, index_key):
+    if (response := _require_get(request)) is not None:
+        return response
+    if (response := _index_history_auth(request)) is not None:
+        return response
+    try:
+        start_date, end_date, page, page_size = _index_history_params(request)
+        result = index_bars_result(
+            index_key=parse_index_key(index_key),
+            start_date=start_date,
+            end_date=end_date,
+            adjust=request.GET.get('adjust', 'raw'),
+            page=page,
+            page_size=page_size,
+        )
+    except (IndexGatewayRequestError, MarketDataRequestError) as error:
+        return _index_error(request, error)
+    status = 'NO_DATA' if result.total == 0 else 'COMPLETE'
+    return api_response(request, data=result.items, meta=_meta(result, data_status=status, asof_date=end_date))
+
+
+def index_fundamentals(request, index_key):
+    if (response := _require_get(request)) is not None:
+        return response
+    if (response := _index_history_auth(request)) is not None:
+        return response
+    try:
+        start_date, end_date, page, page_size = _index_history_params(request)
+        result = index_fundamentals_result(
+            index_key=parse_index_key(index_key),
+            start_date=start_date,
+            end_date=end_date,
+            page=page,
+            page_size=page_size,
+        )
+    except (IndexGatewayRequestError, MarketDataRequestError) as error:
+        return _index_error(request, error)
+    status = 'NO_DATA' if result.total == 0 else 'COMPLETE'
+    return api_response(request, data=result.items, meta=_meta(result, data_status=status, asof_date=end_date))
+
+
+@require_scopes('market_analysis:read')
+def indices_composite_fundamentals(request):
+    if (response := _require_get(request)) is not None:
+        return response
+    try:
+        allowed = {'metric', 'window', 'start_date', 'end_date'}
+        unknown = sorted(set(request.GET.keys()) - allowed)
+        if unknown:
+            raise IndexGatewayRequestError(
+                'INVALID_REQUEST', '包含不支持的查询参数',
+                details={'unknown_parameters': unknown},
+            )
+        metric = parse_metric(request.GET.get('metric'))
+        window = parse_window(request.GET.get('window', 'ALL'))
+        start_date, end_date = parse_index_dates(request.GET, allow_window=True)
+        payload, status, warnings, coverage = overall_composite_fundamentals_result(
+            metric=metric,
+            window=window,
+            start_date=start_date,
+            end_date=end_date,
+        )
+    except (IndexGatewayRequestError, ValueError) as error:
+        if not isinstance(error, IndexGatewayRequestError):
+            error = IndexGatewayRequestError('INVALID_REQUEST', str(error))
+        return _index_error(request, error)
+    source_trade_date = coverage.end_date
+    return api_response(
+        request,
+        data=payload,
+        meta=_meta(
+            data_status='COMPLETE' if status == 'VALID' else status,
+            asof_date=source_trade_date,
+            source_trade_date=source_trade_date,
+            warnings=warnings,
+        ),
+    )
+
+
+@require_scopes('market_analysis:read')
+def indices_composite_close(request):
+    if (response := _require_get(request)) is not None:
+        return response
+    try:
+        allowed = {'window', 'start_date', 'end_date'}
+        unknown = sorted(set(request.GET.keys()) - allowed)
+        if unknown:
+            raise IndexGatewayRequestError(
+                'INVALID_REQUEST', '包含不支持的查询参数',
+                details={'unknown_parameters': unknown},
+            )
+        window = parse_window(request.GET.get('window', 'ALL'))
+        start_date, end_date = parse_index_dates(request.GET, allow_window=True)
+        payload, status, warnings, coverage = overall_composite_close_result(
+            window=window,
+            start_date=start_date,
+            end_date=end_date,
+        )
+    except (IndexGatewayRequestError, ValueError) as error:
+        if not isinstance(error, IndexGatewayRequestError):
+            error = IndexGatewayRequestError('INVALID_REQUEST', str(error))
+        return _index_error(request, error)
+    source_trade_date = coverage.end_date
+    return api_response(
+        request,
+        data=payload,
+        meta=_meta(
+            data_status='COMPLETE' if status == 'VALID' else status,
+            asof_date=source_trade_date,
+            source_trade_date=source_trade_date,
+            warnings=warnings,
+        ),
+    )
+
+
 @require_scopes('market_analysis:read')
 def index_valuation(request, index_key):
     if (response := _require_get(request)) is not None:
@@ -575,12 +712,14 @@ def security_traditional_valuation_history(request, ts_code):
             return response
         start_date = parse_date(request.GET.get('start_date'), 'start_date')
         end_date = parse_date(request.GET.get('end_date'), 'end_date')
+        financial_end_date = parse_date(request.GET.get('financial_end_date'), 'financial_end_date')
         page, page_size = parse_pagination(request.GET)
         canonical = normalize_ts_code(ts_code)
         result = get_history(
             ts_code=canonical,
             start_date=start_date,
             end_date=end_date,
+            financial_end_date=financial_end_date,
             report_type=request.GET.get('report_type') or None,
             profit_bucket=request.GET.get('profit_bucket') or None,
             variant=request.GET.get('variant') or None,

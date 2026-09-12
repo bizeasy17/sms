@@ -39,6 +39,7 @@ class Command(BaseCommand):
         parser.add_argument('--history-years', type=int, default=None, help='Backfill years, default 5')
         parser.add_argument('--report-types', default='', help='Comma-separated Q1,H1,Q3,FY values')
         parser.add_argument('--horizon', default='1M')
+        parser.add_argument('--anchor-mode', default='latest', help='Snapshot anchor mode, default latest')
         parser.add_argument('--limit', type=int, default=0)
         parser.add_argument('--retry-failed', action='store_true')
         parser.add_argument('--all', action='store_true', help='Build features for all stock securities')
@@ -207,7 +208,12 @@ class Command(BaseCommand):
         self._validate()
         start_date, end_date = self._backfill_range(options)
         report_types = self._report_types(options)
-        panels = PredictiveFinancialFeaturePanel.objects.filter(end_date__range=(start_date, end_date), report_type__in=report_types).select_related('security').order_by('security_id', 'end_date')
+        anchor_mode = str(options.get('anchor_mode') or 'latest').strip()
+        if not anchor_mode or len(anchor_mode) > 16:
+            raise CommandError('--anchor-mode must be 1-16 characters')
+        requested_fusion = 'FUSION' in report_types
+        panel_report_types = ('Q1', 'H1', 'Q3', 'FY') if requested_fusion else report_types
+        panels = PredictiveFinancialFeaturePanel.objects.filter(end_date__range=(start_date, end_date), report_type__in=panel_report_types).select_related('security').order_by('security_id', 'end_date', 'report_type')
         codes = self._codes(options)
         if codes:
             panels = panels.filter(security__ts_code__in=codes)
@@ -221,24 +227,27 @@ class Command(BaseCommand):
         ok_count = 0
         fail_count = 0
         try:
-            for panel in panels.iterator(chunk_size=100):
+            if requested_fusion:
+                grouped = {}
+                for panel in panels.iterator(chunk_size=100):
+                    grouped.setdefault((panel.security_id, panel.fiscal_year), []).append(panel)
+                work_items = grouped.values()
+            else:
+                work_items = ([panel] for panel in panels.iterator(chunk_size=100))
+            for item in work_items:
                 try:
-                    service.predict_panel(
-                        panel,
-                        horizon=options['horizon'],
-                        trigger_type='HISTORICAL_BACKFILL',
-                        batch_key=run.run_key,
-                        refresh_reason='historical_backfill',
-                        run_key=run.run_key,
-                        is_backfill=True,
-                    )
+                    if requested_fusion:
+                        service.predict_fusion(item, horizon=options['horizon'], trigger_type='HISTORICAL_BACKFILL', batch_key=run.run_key, refresh_reason='historical_backfill', run_key=run.run_key, is_backfill=True, anchor_mode=anchor_mode)
+                    else:
+                        service.predict_panel(item[0], horizon=options['horizon'], trigger_type='HISTORICAL_BACKFILL', batch_key=run.run_key, refresh_reason='historical_backfill', run_key=run.run_key, is_backfill=True, anchor_mode=anchor_mode)
                     ok_count += 1
                 except (FileNotFoundError, KeyError, OSError, RuntimeError, TypeError, ValueError) as exc:
                     fail_count += 1
+                    panel = item[0]
                     self.stderr.write(
                         self.style.WARNING(
                             f'Valuation prediction failed: ts_code={panel.security.ts_code} '
-                            f'report_type={panel.report_type} asof_date={panel.source_as_of_date} '
+                            f'report_type={"FUSION" if requested_fusion else panel.report_type} asof_date={panel.source_as_of_date} '
                             f'error={str(exc)[:2000]}'
                         )
                     )
@@ -339,8 +348,8 @@ class Command(BaseCommand):
         configured = yaml.safe_load(self._resolve_base_path(settings.PREDICTIVE_VALUATION_CONFIG).read_text(encoding='utf-8')) or {}
         allowed = tuple(str(value).upper() for value in configured.get('model', {}).get('report_types', []))
         requested = tuple(value.strip().upper() for value in str(options.get('report_types') or '').split(',') if value.strip()) or allowed
-        if not requested or any(value not in allowed for value in requested):
-            raise CommandError(f'--report-types must be a subset of {",".join(allowed)}')
+        if not requested or any(value not in allowed and value != 'FUSION' for value in requested):
+            raise CommandError(f'--report-types must be a subset of {",".join(allowed)} plus FUSION')
         return requested
 
     def _backfill_range(self, options: dict) -> tuple[date, date]:

@@ -43,6 +43,7 @@ class PredictiveInferenceService:
         refresh_reason: str = '',
         run_key: str = '',
         is_backfill: bool = False,
+        anchor_mode: str = 'latest',
     ) -> PredictiveValuationSnapshot:
         try:
             return self._predict_panel(
@@ -53,6 +54,7 @@ class PredictiveInferenceService:
                 refresh_reason=refresh_reason,
                 run_key=run_key,
                 is_backfill=is_backfill,
+                anchor_mode=anchor_mode,
             )
         except Exception as exc:
             self._persist_failure(
@@ -63,9 +65,171 @@ class PredictiveInferenceService:
                 refresh_reason=refresh_reason,
                 run_key=run_key,
                 is_backfill=is_backfill,
+                anchor_mode=anchor_mode,
                 error=str(exc),
             )
             raise
+
+    def predict_fusion(
+        self,
+        panels: list[PredictiveFinancialFeaturePanel],
+        horizon: str = '1M',
+        trigger_type: str = 'MANUAL',
+        *,
+        batch_key: str = '',
+        refresh_reason: str = '',
+        run_key: str = '',
+        is_backfill: bool = False,
+        anchor_mode: str = 'latest',
+    ) -> PredictiveValuationSnapshot:
+        """Predict quarter components independently and persist their weighted fusion."""
+        if not panels:
+            raise ValueError('Fusion requires at least one quarter panel')
+        security = panels[0].security
+        if any(panel.security_id != security.id for panel in panels):
+            raise ValueError('Fusion panels must belong to one security')
+
+        config = (self._load_config().get('valuation_mapping', {}) or {}).get('fusion', {}) or {}
+        base_weights = {str(key).upper(): float(value) for key, value in (config.get('base_weights') or {}).items()}
+        confidence_weights = {str(key).upper(): float(value) for key, value in (config.get('confidence_weights') or {}).items()}
+        half_life = max(1.0, float(config.get('freshness_half_life_days', 365)))
+        component_rows: list[tuple[PredictiveValuationSnapshot, str]] = []
+        failures: dict[str, str] = {}
+        for panel in sorted(panels, key=lambda item: item.report_type):
+            report_type = panel.report_type.upper()
+            try:
+                snapshot = self.predict_panel(
+                    panel, horizon=horizon, trigger_type=trigger_type,
+                    batch_key=batch_key, refresh_reason=refresh_reason,
+                    run_key=run_key, is_backfill=is_backfill,
+                    anchor_mode=anchor_mode,
+                )
+                if snapshot.last_error:
+                    raise RuntimeError(snapshot.last_error)
+                component_rows.append((snapshot, report_type))
+            except Exception as exc:
+                failures[report_type] = f'{type(exc).__name__}: {exc}'
+
+        if not component_rows:
+            raise ValueError(f'Fusion failed: no quarter component succeeded ({failures})')
+
+        fusion_asof = max(snapshot.asof_date for snapshot, _ in component_rows)
+        component: dict[str, dict[str, Any]] = {}
+        weights: dict[str, float] = {}
+        for snapshot, report_type in component_rows:
+            age_days = max(0, (fusion_asof - snapshot.asof_date).days)
+            freshness = float(np.exp(-age_days / half_life))
+            confidence = self._fusion_confidence(snapshot.signal_score)
+            base = base_weights.get(report_type, 1.0)
+            confidence_factor = confidence_weights.get(confidence, 1.0)
+            weights[report_type] = base * freshness * confidence_factor
+            component[report_type] = {
+                'status': 'SUCCEEDED', 'report_type': report_type,
+                'asof_date': snapshot.asof_date.isoformat(),
+                'financial_end_date': snapshot.financial_end_date.isoformat() if snapshot.financial_end_date else None,
+                'model_version': snapshot.model_version,
+                'signal_score': float(snapshot.signal_score) if snapshot.signal_score is not None else None,
+                'up_probability': float(snapshot.up_probability) if snapshot.up_probability is not None else None,
+                'earnings_growth': (snapshot.explain or {}).get('pred_earnings_growth'),
+                'target_return_pct': float(snapshot.target_return_pct) if snapshot.target_return_pct is not None else None,
+                'target_return_low_pct': float(snapshot.target_return_low_pct) if snapshot.target_return_low_pct is not None else None,
+                'target_return_high_pct': float(snapshot.target_return_high_pct) if snapshot.target_return_high_pct is not None else None,
+                'target_price': float(snapshot.target_price) if snapshot.target_price is not None else None,
+                'target_price_low': float(snapshot.target_price_low) if snapshot.target_price_low is not None else None,
+                'target_price_high': float(snapshot.target_price_high) if snapshot.target_price_high is not None else None,
+                'base_weight': base, 'freshness_factor': freshness,
+                'confidence': confidence, 'confidence_factor': confidence_factor,
+            }
+        for report_type, error in failures.items():
+            component[report_type] = {'status': 'FAILED', 'report_type': report_type, 'error': error}
+
+        total_weight = sum(weights.values())
+        if total_weight <= 0:
+            raise ValueError('Fusion failed: component weights are zero')
+        normalized = {report_type: weight / total_weight for report_type, weight in weights.items()}
+
+        def weighted(field: str) -> float | None:
+            values = [
+                (component[report_type].get(field), normalized[report_type])
+                for report_type in normalized if component[report_type].get(field) is not None
+            ]
+            return None if not values else sum(float(value) * weight for value, weight in values) / sum(weight for _, weight in values)
+
+        center_score = weighted('signal_score')
+        probability = weighted('up_probability')
+        latest = max((snapshot for snapshot, _ in component_rows), key=lambda snapshot: snapshot.asof_date)
+        fusion_trace = {
+            'components': component, 'normalized_weights': normalized,
+            'failed_components': failures,
+            'data_status': 'PARTIAL_SUCCESS' if failures else 'COMPLETE',
+            'strict_live_eligible': not failures,
+        }
+        snapshot_defaults = {
+            'horizon': horizon, 'report_type': 'FUSION', 'model_version': 'fusion',
+            'feature_contract_version': latest.feature_contract_version, 'artifact_hash': '',
+            'source_market_date': latest.source_market_date,
+            'financial_end_date': latest.financial_end_date,
+            'financial_ann_date': latest.financial_ann_date,
+            'financial_source_as_of_date': latest.financial_source_as_of_date,
+            'financial_report_type': 'FUSION', 'financial_fiscal_year': latest.financial_fiscal_year,
+            'feature_data_source': latest.feature_data_source, 'trigger_type': trigger_type,
+            'signal_score': self._decimal(center_score), 'up_probability': self._decimal(probability),
+            'target_return_pct': self._decimal(weighted('target_return_pct')),
+            'target_return_low_pct': self._decimal(weighted('target_return_low_pct')),
+            'target_return_high_pct': self._decimal(weighted('target_return_high_pct')),
+            'target_price': self._decimal(weighted('target_price')),
+            'target_price_low': self._decimal(weighted('target_price_low')),
+            'target_price_high': self._decimal(weighted('target_price_high')),
+            'target_market_cap': None, 'risk_level': self._fusion_risk(center_score),
+            'action': self._action(center_score or 50.0), 'batch_key': batch_key,
+            'refresh_reason': refresh_reason or trigger_type,
+            'refresh_detail': {'trigger_type': trigger_type, 'component_count': len(component_rows)},
+            'triggered_at': timezone.now(), 'last_error': '',
+            'snapshot_source': 'historical_backfill' if is_backfill else 'event_refresh',
+            'anchor_mode': latest.anchor_mode, 'run_key': run_key, 'is_backfill': is_backfill,
+            'backfill_run_id': run_key if is_backfill else '', 'market_regime': latest.market_regime,
+            'security_regime': latest.security_regime, 'predictive_tiered_template': {},
+            'explain': {'fusion': fusion_trace},
+            'raw_result': {'report_type': 'FUSION', 'model_version': 'fusion', 'fusion': fusion_trace},
+        }
+        snapshot, _ = PredictiveValuationSnapshot.objects.update_or_create(
+            security=security, report_type='FUSION', asof_date=fusion_asof, defaults=snapshot_defaults,
+        )
+        PredictiveValuationCurrent.objects.update_or_create(
+            security=security, report_type='FUSION',
+            defaults={
+                'snapshot': snapshot, 'horizon': horizon, 'report_type': 'FUSION',
+                'model_version': 'fusion', 'feature_contract_version': snapshot.feature_contract_version,
+                'artifact_hash': '', 'asof_date': snapshot.asof_date,
+                'signal_score': snapshot.signal_score, 'up_probability': snapshot.up_probability,
+                'target_return_pct': snapshot.target_return_pct,
+                'target_return_low_pct': snapshot.target_return_low_pct,
+                'target_return_high_pct': snapshot.target_return_high_pct,
+                'target_price': snapshot.target_price, 'target_price_low': snapshot.target_price_low,
+                'target_price_high': snapshot.target_price_high, 'target_market_cap': None,
+                'risk_level': snapshot.risk_level, 'action': snapshot.action,
+                'feature_data_source': snapshot.feature_data_source, 'batch_key': snapshot.batch_key,
+                'refresh_reason': snapshot.refresh_reason, 'refresh_detail': snapshot.refresh_detail,
+                'triggered_at': snapshot.triggered_at, 'last_error': '', 'explain': snapshot.explain,
+                'raw_result': snapshot.raw_result, 'market_regime': snapshot.market_regime,
+                'security_regime': snapshot.security_regime, 'predictive_tiered_template': {},
+            },
+        )
+        return snapshot
+
+    @staticmethod
+    def _fusion_confidence(score: Decimal | None) -> str:
+        value = float(score) if score is not None else 50.0
+        return 'HIGH' if value >= 65 else ('MEDIUM' if value >= 50 else 'LOW')
+
+    @staticmethod
+    def _fusion_risk(score: float | None) -> str:
+        value = float(score) if score is not None else 50.0
+        return 'LOW' if value >= 65 else ('MEDIUM' if value >= 50 else 'HIGH')
+
+    @staticmethod
+    def _decimal(value: float | None) -> Decimal | None:
+        return None if value is None else Decimal(str(round(value, 8)))
 
     def _predict_panel(
         self,
@@ -77,6 +241,7 @@ class PredictiveInferenceService:
         refresh_reason: str = '',
         run_key: str = '',
         is_backfill: bool = False,
+        anchor_mode: str = 'latest',
     ) -> PredictiveValuationSnapshot:
         artifact = self.registry.load_production(panel.report_type)
         bundle = self._load_bundle(artifact.report_type, artifact.model_path)
@@ -121,6 +286,8 @@ class PredictiveInferenceService:
         )
         defaults = {
             'report_type': panel.report_type,
+            'model_version': artifact.model_version,
+            'feature_contract_version': str(self._load_config().get('feature_contract_version') or '').strip(),
             'artifact_hash': artifact.artifact_hash,
             'source_market_date': market_date,
             'financial_end_date': panel.end_date,
@@ -146,7 +313,7 @@ class PredictiveInferenceService:
             'triggered_at': timezone.now(),
             'last_error': '',
             'snapshot_source': 'historical_backfill' if is_backfill else 'event_refresh',
-            'anchor_mode': 'latest',
+            'anchor_mode': anchor_mode,
             'run_key': run_key,
             'is_backfill': is_backfill,
             'backfill_run_id': run_key if is_backfill else '',
@@ -179,8 +346,7 @@ class PredictiveInferenceService:
         if current is None or snapshot.asof_date >= current.asof_date:
             PredictiveValuationCurrent.objects.update_or_create(
                 security=panel.security,
-                horizon=horizon,
-                model_version=artifact.model_version,
+                report_type=panel.report_type,
                 defaults={
                     'snapshot': snapshot, 'horizon': snapshot.horizon, 'report_type': snapshot.report_type,
                     'model_version': snapshot.model_version, 'feature_contract_version': snapshot.feature_contract_version,
@@ -202,8 +368,8 @@ class PredictiveInferenceService:
             )
         return snapshot
 
-    @staticmethod
     def _persist_failure(
+        self,
         panel: PredictiveFinancialFeaturePanel,
         *,
         horizon: str,
@@ -212,6 +378,7 @@ class PredictiveInferenceService:
         refresh_reason: str,
         run_key: str,
         is_backfill: bool,
+        anchor_mode: str,
         error: str,
     ) -> PredictiveValuationSnapshot:
         now = timezone.now()
@@ -221,6 +388,7 @@ class PredictiveInferenceService:
             asof_date=panel.source_as_of_date,
             defaults={
                 'horizon': horizon,
+                'feature_contract_version': str(self._load_config().get('feature_contract_version') or '').strip(),
                 'financial_end_date': panel.end_date,
                 'financial_ann_date': panel.ann_date,
                 'financial_source_as_of_date': panel.source_as_of_date,
@@ -245,7 +413,7 @@ class PredictiveInferenceService:
                 'triggered_at': now,
                 'last_error': error[:2000],
                 'snapshot_source': 'historical_backfill' if is_backfill else 'event_refresh',
-                'anchor_mode': 'latest',
+                'anchor_mode': anchor_mode,
                 'run_key': run_key,
                 'is_backfill': is_backfill,
                 'backfill_run_id': run_key if is_backfill else '',

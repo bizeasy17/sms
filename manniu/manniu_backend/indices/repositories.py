@@ -53,6 +53,18 @@ class MarketDataIndexRepository:
             query = query.filter(trade_date__lte=end_date)
         return query.order_by('trade_date').values('trade_date', 'close')
 
+    def index_bar_history(self, security, start_date, end_date):
+        return MarketBarDailyHistory.objects.filter(
+            security=security,
+            trade_date__range=(start_date, end_date),
+        ).order_by('-trade_date')
+
+    def index_fundamental_history(self, security, start_date, end_date):
+        return IndexDailyFundamentalHistory.objects.filter(
+            security=security,
+            trade_date__range=(start_date, end_date),
+        ).order_by('-trade_date')
+
     def latest_bar(self, security):
         return MarketBarLatest.objects.filter(
             security=security,

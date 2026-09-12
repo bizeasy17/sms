@@ -8,6 +8,7 @@ from django.test import TestCase
 
 from api_gateway.services.market_data import (
     MarketDataRequestError,
+    Page,
     normalize_ts_code,
     parse_history_range,
 )
@@ -493,7 +494,7 @@ class MarketDataGatewayTests(TestCase):
             parse_history_range({'start_date': '2025-01-01', 'end_date': '2026-09-10'})
 
     @patch('api_gateway.views.index_catalog', return_value=(
-        [{'index_key': 'hs300', 'ts_code': '399300.SZ', 'data_status': 'VALID'}],
+        [{'index_key': 'hs300', 'ts_code': '000300.SH', 'data_status': 'VALID'}],
         'COMPLETE',
     ))
     def test_indices_catalog_route(self, catalog_mock):
@@ -506,10 +507,120 @@ class MarketDataGatewayTests(TestCase):
         self.assertEqual(response.json()['data'][0]['index_key'], 'hs300')
         catalog_mock.assert_called_once_with(['hs300'])
 
+    @patch('api_gateway.views.index_bars_result')
+    def test_index_bars_route_forwards_bounded_history_request(self, bars_mock):
+        bars_mock.return_value = Page(
+            [{'ts_code': '000300.SH', 'source_ts_code': '000300.SH', 'frequency': 'D'}],
+            1, 50, 1,
+        )
+        response = self.client.get(
+            '/api/v1/market-analysis/indices/hs300/bars',
+            {'start_date': '2026-09-08', 'end_date': '2026-09-09', 'adjust': 'qfq'},
+            **self.headers,
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()['meta']['data_status'], 'COMPLETE')
+        bars_mock.assert_called_once_with(
+            index_key='hs300', start_date=date(2026, 9, 8), end_date=date(2026, 9, 9),
+            adjust='qfq', page=1, page_size=50,
+        )
+
+    @patch('api_gateway.views.index_fundamentals_result')
+    def test_index_fundamentals_route_preserves_no_data(self, fundamentals_mock):
+        fundamentals_mock.return_value = Page([], 1, 50, 0)
+        response = self.client.get(
+            '/api/v1/market-analysis/indices/hs300/fundamentals',
+            {'start_date': '2026-09-08', 'end_date': '2026-09-09'},
+            **self.headers,
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()['meta']['data_status'], 'NO_DATA')
+        fundamentals_mock.assert_called_once_with(
+            index_key='hs300', start_date=date(2026, 9, 8), end_date=date(2026, 9, 9),
+            page=1, page_size=50,
+        )
+
+    @patch('api_gateway.views.overall_composite_fundamentals_result', return_value=(
+        {
+            'metric': 'PE',
+            'style': 'overall',
+            'summary': {'status': 'VALID', 'sample_count': 20},
+            'series': {},
+        },
+        'VALID',
+        [],
+        SimpleNamespace(end_date=date(2026, 9, 9)),
+    ))
+    def test_composite_fundamentals_route_forwards_overall_request(self, composite_mock):
+        response = self.client.get(
+            '/api/v1/market-analysis/indices/composite/fundamentals',
+            {'metric': 'PE', 'window': '1Y'},
+            **self.headers,
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()['data']['style'], 'overall')
+        composite_mock.assert_called_once_with(
+            metric='PE', window='1Y', start_date=None, end_date=None,
+        )
+
+    @patch('api_gateway.views.overall_composite_close_result', return_value=(
+        {'metric': 'CLOSE', 'style': 'overall', 'close': 119.0, 'summary': {}, 'series': {}},
+        'VALID', [], SimpleNamespace(end_date=date(2026, 9, 9)),
+    ))
+    def test_composite_close_route_forwards_overall_request(self, composite_mock):
+        response = self.client.get(
+            '/api/v1/market-analysis/indices/composite/close',
+            {'window': '1Y'},
+            **self.headers,
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()['data']['metric'], 'CLOSE')
+        self.assertEqual(response.json()['data']['close'], 119.0)
+        composite_mock.assert_called_once_with(
+            window='1Y', start_date=None, end_date=None,
+        )
+
+    def test_composite_close_rejects_metric_parameter(self):
+        response = self.client.get(
+            '/api/v1/market-analysis/indices/composite/close',
+            {'metric': 'CLOSE'},
+            **self.headers,
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.json()['error']['code'], 'INVALID_REQUEST')
+
+    def test_composite_fundamentals_rejects_style_parameter(self):
+        response = self.client.get(
+            '/api/v1/market-analysis/indices/composite/fundamentals',
+            {'metric': 'PE', 'style': 'defensive'},
+            **self.headers,
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.json()['error']['code'], 'INVALID_REQUEST')
+
+    def test_index_bars_rejects_unknown_query_parameter(self):
+        response = self.client.get(
+            '/api/v1/market-analysis/indices/hs300/bars',
+            {'start_date': '2026-09-08', 'end_date': '2026-09-09', 'unexpected': 'value'},
+            **self.headers,
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.json()['error']['code'], 'INVALID_REQUEST')
+
     def test_index_valuation_rejects_unknown_metric(self):
         response = self.client.get(
             '/api/v1/market-analysis/indices/hs300/valuation',
             {'metric': 'PS'},
+            **self.headers,
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.json()['error']['code'], 'INVALID_METRIC')
+
+    def test_index_valuation_does_not_accept_composite_close_metric(self):
+        response = self.client.get(
+            '/api/v1/market-analysis/indices/hs300/valuation',
+            {'metric': 'CLOSE'},
             **self.headers,
         )
         self.assertEqual(response.status_code, 400)

@@ -47,6 +47,73 @@ automatically disables latest alignment and enables point-in-time replay. Suppor
 requested report types are `Q1`, `H1`, `Q3`, `FY`, `FUSION`, and `LATEST`; the default
 work set is the four standalone quarter types.
 
+### 2.1.1 Anchor Mode Contract
+
+`anchor_mode` identifies the point-in-time alignment used to select the financial and
+market feature rows for a prediction. It is a feature-selection and reproducibility
+contract, not a model version, serving slot, report type, or request-time inference
+switch. The selected mode must be persisted in the prediction snapshot and returned by
+the read API so that clients can distinguish an announcement-aligned result from a
+latest-data result.
+
+The only supported values are:
+
+| Value | Meaning | Feature selection semantics | Intended use |
+| --- | --- | --- | --- |
+| `ann` | Announcement-aligned | Select the latest eligible financial disclosure and its point-in-time feature panel. Anchor the market feature row to the disclosure announcement date, choosing the closest eligible row and preferring an on/after row on a tie. | Point-in-time replay, historical backfill, parity evaluation, and leakage-safe analysis. |
+| `live_latest` | Latest alignment | Select the latest eligible live financial projection and the latest available market feature row. The result represents the current serving view rather than a historical announcement-time view. | Current production serving and incremental refresh without an explicit historical as-of point. |
+
+When `anchor_mode` is omitted, the command and current-serving path default to
+`live_latest` unless an explicit historical/as-of request selects point-in-time replay.
+An explicit `asof_date` or historical range must not use data published after that date;
+the resolved financial disclosure date, market source date, and feature freshness must
+be recorded in the result. `ann` does not mean “use the newest announcement regardless
+of the requested date”.
+
+`anchor_mode` applies independently to each `Q1`, `H1`, `Q3`, and `FY` prediction. For
+`FUSION`, each quarterly component is selected and inferred under the requested anchor
+mode first; only successful components are then combined. Fusion does not introduce a
+third anchor mode or a fifth model artifact. Under strict-live policy, a component that
+cannot satisfy the requested live alignment makes the fusion ineligible rather than
+silently substituting an announcement-aligned or dataset-fallback result.
+
+The gateway accepts only `ann` and `live_latest`; any other value returns
+`INVALID_REQUEST`. If the requested security, report type, as-of date, model version,
+and anchor mode have no persisted result, the read API returns `RESULT_NOT_FOUND` rather
+than running inference or silently falling back to another anchor mode. A successful
+response must include `anchor_mode`, `asof_date`, `source_market_date`,
+`financial_end_date`, and the applicable financial announcement/source date.
+
+#### Anchor Mode Example
+
+以 `000001.SZ` 为例，假设其 2026 年中报的报告期为 `2026-06-30`，公告日为
+`2026-08-30`，公告后的第一个可用交易日为 `2026-08-31`，而当前最新交易日为
+`2026-09-12`。同一份中报在不同锚点模式下可能产生不同的预测输入：
+
+| Request | Financial data | Market feature date | Interpretation |
+| --- | --- | --- | --- |
+| `...?anchor_mode=ann&asof_date=2026-09-01` | `2026-06-30` 中报，且公告可见日期不晚于 `2026-08-30` | `2026-08-31` 或公告日期附近的最近合格交易日 | 复现中报公告后、当时可获得信息下的点时预测。 |
+| `...?anchor_mode=live_latest` | 当前最新可用财务特征，可能仍为 `2026-06-30` 中报 | `2026-09-12` 或当前最新合格交易日 | 反映当前生产服务视角下的最新预测。 |
+
+例如，若 `2026-08-31` 的收盘价为 `10.20`，而市场在 `2026-09-05` 后发生下跌，
+使 `2026-09-12` 的收盘价变为 `9.40`，`ann` 结果反映公告附近的价格、波动率和市场
+状态，`live_latest` 结果则反映 `2026-09-12` 的最新市场输入。因此两者的目标价格、
+目标收益区间、风险等级或市场调整结果可以不同；这不是模型版本变化，而是预测时点
+和输入信息集不同。
+
+上述参数只筛选已持久化的预测快照，不会在 API 请求时重新执行推理。例如，如果数据库
+中只有以下记录：
+
+```text
+security=000001.SZ
+report_type=H1
+anchor_mode=live_latest
+```
+
+则请求 `...?anchor_mode=ann` 不应静默改用 `live_latest`，而应返回
+`RESULT_NOT_FOUND`。同理，Fusion 请求会先要求各个 `Q1`、`H1`、`Q3`、`FY` 组件在
+指定锚点模式下分别可用，再按 Fusion 规则合并成功组件。
+
 ### 2.2 Required Parity And Intentional Enhancements
 
 | Area | Reference behavior | Maniu target |
@@ -883,7 +950,7 @@ scope 名称须在实现前与 `access_control` 最终注册表确认，建议�
 - 数据与解释：`feature_data_source`、`live_feature_compliant`、`market_regime`、
 	`stock_regime`、质量风险规则、市场整体估值调整和 `refresh_reason`；
 - 可选增强：成功且已启用时返回持久化的 `predictive_tiered_template`，包括
-	`selected_regime`、`regime_confidence`、`regime_source`、`mapping_version`、
+	`selected_regime`、`regime_confidence`、`	regime_source`、`mapping_version`、
 	`tier_spacing` 和 `downgrade_reason`。Gateway 不重新计算三层模板。
 
 历史列表的每条记录必须保留上述身份、来源日期、模型版本、状态和目标摘要；默认不返回
@@ -967,6 +1034,9 @@ get_predictive_status(
 	作为 Gateway 序列化与回归基线。
 
 ### 14.2 Gateway implementation
+
+- [x] 实现四季度组件的独立推理、freshness/confidence 加权归一化、部分成功审计，
+	并持久化 `report_type=FUSION` 的 current/history 结果；仍需完成代表性 fixture parity 验证。
 
 - [x] 新增 `api_gateway` 的 predictive valuation URL、view、serializer、分页和参数校验，
 	仅依赖 `predictive_valuation` 的 typed query service。

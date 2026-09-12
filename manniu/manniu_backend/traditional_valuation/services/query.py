@@ -257,7 +257,7 @@ def get_current(*, ts_code, asof_date=None, report_type=None, financial_end_date
     return payload
 
 
-def get_history(*, ts_code, start_date, end_date, report_type=None, profit_bucket=None, variant=None, style_profile=None, page=1, page_size=50, include_diagnostics=False):
+def get_history(*, ts_code, start_date, end_date, financial_end_date=None, report_type=None, profit_bucket=None, variant=None, style_profile=None, page=1, page_size=50, include_diagnostics=False):
     report_type = _validate_report_type(report_type)
     profit_bucket = _validate_profit_bucket(profit_bucket)
     _validate_asof(end_date)
@@ -272,6 +272,8 @@ def get_history(*, ts_code, start_date, end_date, report_type=None, profit_bucke
         security, report_type=report_type, profit_bucket=profit_bucket,
         variant=variant, style_profile=style_profile,
     ).filter(asof_date__range=(start_date, end_date)).order_by('-asof_date', '-id')
+    if financial_end_date:
+        queryset = queryset.filter(financial_end_date=financial_end_date)
     total = queryset.count()
     if total > MAX_HISTORY_ROWS:
         raise TraditionalValuationRequestError('RANGE_TOO_LARGE', '单次历史查询最多返回 2000 条记录')

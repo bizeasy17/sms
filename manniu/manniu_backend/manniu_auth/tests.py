@@ -69,7 +69,7 @@ class AuthenticationApiTests(TestCase):
         call_command('seed_default_scopes')
         self.assertEqual(AuthScope.objects.filter(code='market_analysis:read').count(), 1)
         role = AuthRole.objects.get(code='market_analysis_reader')
-        self.assertEqual(role.role_scopes.count(), 1)
+        self.assertEqual(role.role_scopes.count(), 7)
 
     def test_gateway_scope_boundary(self):
         factory = RequestFactory()

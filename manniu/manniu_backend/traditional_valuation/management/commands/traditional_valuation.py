@@ -9,6 +9,7 @@ from django.db import connection, transaction
 from django.utils import timezone
 
 from market_data.models import Security
+from market_data.services.business_match import build_business_industry_match
 from traditional_valuation.models import (
     TraditionalValuationEventState,
     TraditionalValuationRun,
@@ -23,7 +24,7 @@ class Command(BaseCommand):
     help = 'Run traditional SW-industry valuation operations.'
 
     def add_arguments(self, parser):
-        parser.add_argument('subcommand', choices=['validate', 'backfill', 'detect-events', 'consume-events', 'refresh', 'status'])
+        parser.add_argument('subcommand', choices=['validate', 'backfill', 'refresh-business-matches', 'detect-events', 'consume-events', 'refresh', 'status'])
         parser.add_argument('--ts-codes', default='')
         parser.add_argument('--asof-date', default='')
         parser.add_argument('--report-type', default='FY', choices=['Q1', 'H1', 'Q3', 'FY'])
@@ -43,6 +44,8 @@ class Command(BaseCommand):
             self._detect(options)
         elif command == 'consume-events':
             self._consume(options)
+        elif command == 'refresh-business-matches':
+            self._refresh_business_matches(options)
         elif command == 'refresh':
             self._detect(options)
             self._consume(options)
@@ -140,6 +143,64 @@ class Command(BaseCommand):
             run.save()
             raise CommandError(str(exc)) from exc
         self.stdout.write(self.style.SUCCESS(f'Backfill completed: completed={completed} failed={failed}'))
+
+    def _refresh_business_matches(self, options):
+        if options['business_match_topn'] < 0:
+            raise CommandError('--business-match-topn must be zero or positive')
+        if options['dry_run']:
+            self.stdout.write(
+                f'Dry run valid: securities={self._securities(options).count()} '
+                f'level=L2 topn={options["business_match_topn"]}'
+            )
+            return
+
+        asof_date = self._date(options['asof_date'])
+        counts = {
+            'processed': 0,
+            'valid': 0,
+            'no_profile': 0,
+            'mapping_unavailable': 0,
+            'rules_version_unavailable': 0,
+            'failed': 0,
+            'matched_candidates': 0,
+        }
+        failures = []
+        for security in self._securities(options).iterator(chunk_size=100):
+            counts['processed'] += 1
+            try:
+                result = build_business_industry_match(
+                    security=security,
+                    asof_date=asof_date,
+                    level='L2',
+                    top_n=options['business_match_topn'],
+                )
+                status = str(result.get('status') or '').lower()
+                if status == 'valid':
+                    counts['valid'] += 1
+                elif status in counts:
+                    counts[status] += 1
+                else:
+                    counts['failed'] += 1
+                counts['matched_candidates'] += len(result.get('matches') or [])
+            except Exception as exc:
+                counts['failed'] += 1
+                if len(failures) < 20:
+                    failures.append({'ts_code': security.ts_code, 'error': str(exc)[:500]})
+
+        summary = {
+            'asof_date': asof_date.isoformat(),
+            'level': 'L2',
+            'requested_top_n': options['business_match_topn'],
+            **counts,
+            'failures': failures,
+        }
+        if counts['failed']:
+            self.stdout.write(self.style.ERROR(json.dumps(summary, ensure_ascii=False, sort_keys=True)))
+            raise CommandError(
+                f'Business match refresh failed: processed={counts["processed"]} '
+                f'failed={counts["failed"]}'
+            )
+        self.stdout.write(self.style.SUCCESS(json.dumps(summary, ensure_ascii=False, sort_keys=True)))
 
     def _consume(self, options):
         if options['limit'] <= 0:

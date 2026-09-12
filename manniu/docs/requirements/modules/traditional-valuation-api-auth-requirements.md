@@ -236,6 +236,7 @@ Gateway 只能调用 `traditional_valuation` 暴露的只读 query service，不
 | --- | --- | --- | --- |
 | `start_date` | date | 是 | 不晚于 `end_date` |
 | `end_date` | date | 是 | 不得晚于当前日期 |
+| `financial_end_date` | date | 否 | 精确匹配财务报告期末，不改变 `start_date/end_date` 的 `asof_date` 范围语义 |
 | `report_type` | string | 否 | `Q1`、`H1`、`Q3`、`FY` |
 | `profit_bucket` | string | 否 | `formal`、`blended` |
 | `variant` | string | 否 | 完整变体标识 |

@@ -4,7 +4,7 @@ setlocal
 set "PROJECT_ROOT=%~dp0.."
 set "PYTHON_EXE=C:\Users\HANJ29\Development\code\ASI_DEV\.venv\Scripts\python.exe"
 
-set "CORE_INDICES=000001.SH,399001.SZ,399006.SZ,000688.SH,000300.SH,000905.SH,000852.SH,000016.SH"
+set "CORE_INDICES=000001.SH,399001.SZ,000300.SH,000016.SH,000905.SH,399005.SZ,399006.SZ"
 
 if not exist "%PYTHON_EXE%" (
     echo ERROR: ASI_DEV virtual environment Python was not found.

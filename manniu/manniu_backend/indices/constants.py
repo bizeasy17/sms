@@ -12,7 +12,7 @@ class IndexDefinition:
 INDEX_DEFINITIONS = (
     IndexDefinition('sh', '000001.SH', '上证综指'),
     IndexDefinition('sz', '399001.SZ', '深证成指'),
-    IndexDefinition('hs300', '399300.SZ', '沪深300'),
+    IndexDefinition('hs300', '000300.SH', '沪深300'),
     IndexDefinition('sse50', '000016.SH', '上证50'),
     IndexDefinition('csi500', '000905.SH', '中证500'),
     IndexDefinition('sme', '399005.SZ', '中小板指'),

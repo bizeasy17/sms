@@ -20,11 +20,12 @@ class IndexService:
     def composite_quantile(self, metric='PE', style='overall', window='ALL', start_date=None, end_date=None, min_samples=20):
         metric = metric.upper()
         style = style.lower()
-        field = self._metric_field(metric)
+        field = None if metric == 'CLOSE' else self._metric_field(metric)
         if style not in STYLE_WEIGHTS:
             raise ValueError(f'unsupported style: {style}')
 
         series_by_key = {}
+        close_series_by_key = {}
         source_ts_codes = {}
         missing_indices = []
         for key, definition in INDEX_BY_KEY.items():
@@ -33,9 +34,21 @@ class IndexService:
             if security is None:
                 missing_indices.append(key)
                 series_by_key[key] = {}
+                close_series_by_key[key] = {}
                 continue
-            rows = self.repository.index_fundamentals(security, start_date=start_date, end_date=end_date)
-            series_by_key[key] = normalize_series(rows, field, start_date=start_date, end_date=end_date)
+            if metric == 'CLOSE':
+                rows = self.repository.index_bars(security, start_date=start_date, end_date=end_date)
+                series_by_key[key] = normalize_series(
+                    rows, 'close', start_date=start_date, end_date=end_date,
+                )
+                close_series_by_key[key] = series_by_key[key]
+            else:
+                rows = self.repository.index_fundamentals(security, start_date=start_date, end_date=end_date)
+                series_by_key[key] = normalize_series(rows, field, start_date=start_date, end_date=end_date)
+                close_rows = self.repository.index_bars(security, start_date=start_date, end_date=end_date)
+                close_series_by_key[key] = normalize_series(
+                    close_rows, 'close', start_date=start_date, end_date=end_date,
+                )
             if not series_by_key[key]:
                 missing_indices.append(key)
 
@@ -45,6 +58,13 @@ class IndexService:
             for trade_date, values in common.items()
         }
         summary = summarize_series(composite, window=window, asof_date=end_date, min_samples=min_samples)
+        close = None
+        close_date = summary['end_date']
+        if close_date is not None and all(close_date in close_series_by_key[key] for key in INDEX_BY_KEY):
+            close = sum(
+                close_series_by_key[key][close_date] * float(STYLE_WEIGHTS[style][key])
+                for key in INDEX_BY_KEY
+            )
         coverage = DataCoverage(
             sample_count=summary['sample_count'],
             start_date=summary['start_date'],
@@ -55,9 +75,18 @@ class IndexService:
         warnings = []
         if missing_indices:
             warnings.append('missing index data: ' + ', '.join(missing_indices))
+        if close is None and close_date is not None:
+            warnings.append('composite close unavailable on latest common date')
         return DomainResult(
             status=summary['status'],
-            data={'metric': metric, 'style': style, 'window': window, 'summary': summary, 'series': composite},
+            data={
+                'metric': metric,
+                'style': style,
+                'window': window,
+                'summary': summary,
+                'series': composite,
+                'close': close,
+            },
             warnings=warnings,
             coverage=coverage,
         )

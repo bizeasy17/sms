@@ -74,6 +74,17 @@ class FakeIndexRepository:
 
 
 class IndexServiceTests(SimpleTestCase):
+	def test_composite_quantile_accepts_close_metric(self):
+		result = IndexService(FakeIndexRepository()).composite_quantile(metric='CLOSE', min_samples=1)
+
+		self.assertEqual(result.data['summary']['current'], 119.0)
+		self.assertEqual(result.data['close'], 119.0)
+
+	def test_composite_quantile_returns_weighted_close_on_latest_common_date(self):
+		result = IndexService(FakeIndexRepository()).composite_quantile(min_samples=1)
+
+		self.assertEqual(result.data['close'], 119.0)
+
 	def test_composite_quantile_reports_missing_index(self):
 		repository = FakeIndexRepository()
 		service = IndexService(repository)

@@ -5,7 +5,13 @@ from indices.constants import INDEX_BY_KEY, METRIC_FIELDS, WINDOWS
 from indices.repositories import MarketDataIndexRepository
 from indices.services import IndexService
 
-from .market_data import MarketDataRequestError, parse_date
+from .market_data import (
+    MAX_HISTORY_ROWS,
+    VALID_BAR_ADJUSTMENTS,
+    MarketDataRequestError,
+    Page,
+    parse_date,
+)
 
 
 VALID_STYLES = {'overall', 'defensive', 'balanced', 'aggressive'}
@@ -146,6 +152,111 @@ def valuation(*, index_key, metric, window, start_date, end_date, band_pct):
     payload.pop('methods', None)
     payload['coverage'] = _serialize(result.coverage)
     return payload, result.status, result.warnings, result.coverage
+
+
+def overall_composite_fundamentals(*, metric, window, start_date, end_date):
+    result = _service().composite_quantile(
+        metric=metric,
+        style='overall',
+        window=window,
+        start_date=start_date,
+        end_date=end_date,
+    )
+    payload = _serialize(result.data)
+    payload['coverage'] = _serialize(result.coverage)
+    return payload, result.status, result.warnings, result.coverage
+
+
+def overall_composite_close(*, window, start_date, end_date):
+    result = _service().composite_quantile(
+        metric='CLOSE',
+        style='overall',
+        window=window,
+        start_date=start_date,
+        end_date=end_date,
+    )
+    payload = _serialize(result.data)
+    payload['coverage'] = _serialize(result.coverage)
+    return payload, result.status, result.warnings, result.coverage
+
+
+def _number(value):
+    return float(value) if value is not None else None
+
+
+def _date(value):
+    return value.isoformat() if value is not None else None
+
+
+def _datetime(value):
+    return value.isoformat() if value is not None else None
+
+
+def _resolve_history(index_key):
+    security, requested_code = MarketDataIndexRepository().resolve_security(index_key)
+    if security is None:
+        raise IndexGatewayRequestError('RESULT_NOT_FOUND', f'指数不存在: {requested_code}')
+    return security
+
+
+def _page(queryset, page, page_size):
+    total = queryset.count()
+    if total > MAX_HISTORY_ROWS:
+        raise IndexGatewayRequestError('RANGE_TOO_LARGE', '单次历史查询最多返回 2000 条记录')
+    return queryset[(page - 1) * page_size:page * page_size], Page([], page, page_size, total)
+
+
+def index_bars(*, index_key, start_date, end_date, adjust, page, page_size):
+    if adjust not in VALID_BAR_ADJUSTMENTS:
+        raise IndexGatewayRequestError('INVALID_REQUEST', 'adjust 仅支持 raw、qfq、hfq')
+    security = _resolve_history(index_key)
+    rows, result_page = _page(
+        MarketDataIndexRepository().index_bar_history(security, start_date, end_date),
+        page, page_size,
+    )
+    suffix = '' if adjust == 'raw' else f'_{adjust}'
+    items = []
+    for row in rows:
+        items.append({
+            'ts_code': INDEX_BY_KEY[index_key].ts_code,
+            'source_ts_code': security.ts_code,
+            'trade_date': _date(row.trade_date),
+            'frequency': 'D',
+            'open': _number(getattr(row, f'open{suffix}')),
+            'high': _number(getattr(row, f'high{suffix}')),
+            'low': _number(getattr(row, f'low{suffix}')),
+            'close': _number(getattr(row, f'close{suffix}')),
+            'pre_close': _number(getattr(row, f'pre_close{suffix}')),
+            'change': _number(getattr(row, f'change{suffix}')),
+            'pct_change': _number(getattr(row, f'pct_change{suffix}')),
+            'volume': row.volume,
+            'amount': _number(row.amount),
+            'adjust': adjust,
+            'source_updated_at': _datetime(row.source_updated_at),
+            'synced_at': _datetime(row.synced_at),
+        })
+    return Page(items, result_page.page, result_page.page_size, result_page.total)
+
+
+def index_fundamentals(*, index_key, start_date, end_date, page, page_size):
+    security = _resolve_history(index_key)
+    rows, result_page = _page(
+        MarketDataIndexRepository().index_fundamental_history(security, start_date, end_date),
+        page, page_size,
+    )
+    fields = ('pe', 'pe_ttm', 'pb', 'turnover_rate', 'turnover_rate_f', 'total_mv', 'float_mv')
+    items = []
+    for row in rows:
+        items.append({
+            'ts_code': INDEX_BY_KEY[index_key].ts_code,
+            'source_ts_code': security.ts_code,
+            'trade_date': _date(row.trade_date),
+            **{field: _number(getattr(row, field)) for field in fields},
+            'source_updated_at': _datetime(row.source_updated_at),
+            'synced_at': _datetime(row.synced_at),
+            'units': {'market_cap': '10k_CNY', 'rates': 'percentage_points'},
+        })
+    return Page(items, result_page.page, result_page.page_size, result_page.total)
 
 
 def unavailable(capability):

@@ -173,12 +173,21 @@ Gateway view 只依赖各应用公开的内部 `query_service`。禁止从 Gatew
 | GET | `/securities/:ts_code` | 证券详情和分类身份 | 无 |
 | GET | `/securities/:ts_code/bars` | EOD 行情历史 | `start_date`, `end_date`, `adjust`, `page`, `page_size` |
 | GET | `/securities/:ts_code/fundamentals` | 日基本面历史 | `start_date`, `end_date`, `page`, `page_size` |
+| GET | `/indices/:index_key/bars` | 指数 EOD 日线行情历史 | `start_date`, `end_date`, `adjust`, `page`, `page_size` |
+| GET | `/indices/:index_key/fundamentals` | 指数日基本面历史 | `start_date`, `end_date`, `page`, `page_size` |
 | GET | `/market/regime` | 市场风格状态 | `asof_date`, `benchmark_ts_code` |
 | GET | `/securities/:ts_code/regime` | 个股风格状态 | `asof_date` |
 
 `/securities` 的 `q` 支持按证券中文名、交易代码、中文名完整拼音或拼音首字母进行不区分大小写的模糊匹配。例如，`万科`、`wanke` 和 `wk` 均可匹配名称为“万科”的证券。
 
 Gateway 只转发 `market_data` 的 bounded query service。不得在 cache miss 时调用 Tushare。regime 响应至少包括 `regime`、`source`、`asof_trade_date`、分类版本、指标和数据行数。
+
+指数日线行情和基本面接口使用 `indices` 业务键而不是直接暴露 `ts_code`。Gateway 校验
+`index_key`、日期范围和分页后调用 `indices` 的只读 typed query service；领域服务负责
+解析需求代码与实际 `source_ts_code` 的显式别名。行情返回交易日、频率、raw/qfq/hfq
+价格字段、成交量/成交额和来源时间；基本面返回交易日、PE/PETTM/PB、换手率、总市值/
+流通市值、单位说明和来源时间。两类接口均限制最多 366 个自然日、2,000 条记录，
+不得在 cache miss 时回源或写入任何表。
 
 ### 5.2 Financials
 

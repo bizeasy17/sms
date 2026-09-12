@@ -10,12 +10,16 @@ set "END_DATE=%~3"
 set "SCOPE=%~4"
 set "TS_CODES=%~5"
 set "LIMIT=%~6"
+set "REPORT_TYPES=%~7"
+set "ANCHOR_MODE=%~8"
 
 if "%MODE%"=="" set "MODE=refresh"
 if "%SCOPE%"=="" set "SCOPE=all"
 if /I "%MODE%"=="history" set "MODE=backfill"
 if "%LIMIT%"=="" if /I "%MODE%"=="backfill" set "LIMIT=0"
 if "%LIMIT%"=="" set "LIMIT=500"
+if "%REPORT_TYPES%"=="" set "REPORT_TYPES=Q1,H1,Q3,FY"
+if "%ANCHOR_MODE%"=="" set "ANCHOR_MODE=latest"
 
 if not exist "%PYTHON_EXE%" (
     echo ERROR: ASI_DEV virtual environment Python was not found.
@@ -53,7 +57,7 @@ set "DATE_ARGS="
 if not "%START_DATE%"=="" set "DATE_ARGS=--start-date %START_DATE%"
 if not "%END_DATE%"=="" set "DATE_ARGS=%DATE_ARGS% --end-date %END_DATE%"
 set "SCOPE_ARGS=--scope %SCOPE%"
-if /I "%SCOPE%"=="ts-code" set "SCOPE_ARGS=%SCOPE_ARGS% --ts-codes %TS_CODES%"
+if /I "%SCOPE%"=="ts-code" set "SCOPE_ARGS=%SCOPE_ARGS% --ts-codes "%TS_CODES%""
 "%PYTHON_EXE%" manage.py predictive_valuation backfill-features %SCOPE_ARGS% %DATE_ARGS% --limit %LIMIT% >> "%LOG_FILE%" 2>&1
 exit /b %ERRORLEVEL%
 
@@ -62,8 +66,8 @@ set "DATE_ARGS="
 if not "%START_DATE%"=="" set "DATE_ARGS=--start-date %START_DATE%"
 if not "%END_DATE%"=="" set "DATE_ARGS=%DATE_ARGS% --end-date %END_DATE%"
 set "SCOPE_ARGS=--scope %SCOPE%"
-if /I "%SCOPE%"=="ts-code" set "SCOPE_ARGS=%SCOPE_ARGS% --ts-codes %TS_CODES%"
-"%PYTHON_EXE%" manage.py predictive_valuation backfill-valuations %SCOPE_ARGS% %DATE_ARGS% --limit %LIMIT% >> "%LOG_FILE%" 2>&1
+if /I "%SCOPE%"=="ts-code" set "SCOPE_ARGS=%SCOPE_ARGS% --ts-codes "%TS_CODES%""
+"%PYTHON_EXE%" manage.py predictive_valuation backfill-valuations %SCOPE_ARGS% %DATE_ARGS% --report-types "%REPORT_TYPES%" --anchor-mode "%ANCHOR_MODE%" --limit %LIMIT% >> "%LOG_FILE%" 2>&1
 exit /b %ERRORLEVEL%
 
 :success
