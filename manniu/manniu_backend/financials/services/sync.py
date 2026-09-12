@@ -214,9 +214,6 @@ def execute_financial_sync(plan: FinancialSyncPlan, adapter: FinancialAdapter | 
                 disc_params['ann_date'] = plan.actual_date.strftime('%Y%m%d')
             elif plan.period:
                 disc_params['end_date'] = plan.period
-            elif plan.start_date:
-                disc_params['start_date'] = plan.start_date.strftime('%Y%m%d')
-                disc_params['end_date'] = plan.end_date.strftime('%Y%m%d')
 
             disc_rows = adp.paginate_endpoint(
                 'disclosure_date',
@@ -224,6 +221,13 @@ def execute_financial_sync(plan: FinancialSyncPlan, adapter: FinancialAdapter | 
                 page_size=plan.page_size,
                 max_pages=plan.max_pages,
             )
+            if plan.mode == 'backfill' and plan.start_date:
+                disc_rows = [
+                    row
+                    for row in disc_rows
+                    if (ann_date := normalize_date(row.get('ann_date')))
+                    and plan.start_date <= ann_date <= plan.end_date
+                ]
             total_source += len(disc_rows)
             if plan.mode == 'daily':
                 detected_events = DisclosureEventDetector.get_actual_date_events(
@@ -289,6 +293,12 @@ def execute_financial_sync(plan: FinancialSyncPlan, adapter: FinancialAdapter | 
                     total_accepted += acc
                     total_upserted += ups
                     total_rejected += rej
+
+        if plan.mode == 'backfill' and 'disclosure_date' in plan.endpoints and total_source == 0:
+            raise FinancialSyncExecutionError(
+                'Financial disclosure backfill returned no source rows; '
+                'the upstream query may be unavailable or incorrectly filtered.'
+            )
 
         # 3. Predictive valuation owns and rebuilds its feature projections before inference.
         projection_count = 0
