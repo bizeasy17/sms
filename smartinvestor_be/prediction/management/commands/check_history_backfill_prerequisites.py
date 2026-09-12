@@ -121,8 +121,11 @@ class Command(BaseCommand):
             config = ValuationConfig(settings.BASE_DIR / "static", market="CN")
             invalid_params = 0
             for code in codes:
-                params = config.get_sw_params_by_tscode(code)
-                if not params.get("params"):
+                try:
+                    params = config.get_sw_params_by_tscode(code)
+                    if not params.get("params"):
+                        invalid_params += 1
+                except ValueError:
                     invalid_params += 1
             if invalid_params > max_missing_codes:
                 failures.append(

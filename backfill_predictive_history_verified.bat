@@ -28,9 +28,11 @@ if "%MAX_MISSING_CODES%"=="" set "MAX_MISSING_CODES=20"
 call "%ROOT%precheck_valuation_history_backfill.bat" "%START_DATE%" "%END_DATE%" "%SCOPE%" "%MAX_MISSING_CODES%"
 if errorlevel 1 exit /b %ERRORLEVEL%
 set "BACKFILL_SKIP_PRECHECK=1"
-set "BACKFILL_ENABLE_FULL_REFRESH=1"
-call "%ROOT%backfill_traditional_history_event_driven.bat" "%START_DATE%" "%END_DATE%" "%SCOPE%"
-if errorlevel 1 exit /b %ERRORLEVEL%
+set "BACKFILL_HISTORY_QUARTER_RETENTION=0"
+for %%S in (%SCOPE:,= %) do (
+  call "%ROOT%backfill_predictive_history_event_driven.bat" "%START_DATE%" "%END_DATE%" %%S "LATEST,FUSION" history 1
+  if errorlevel 1 exit /b !ERRORLEVEL!
+)
 exit /b 0
 
 :append_scope

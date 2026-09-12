@@ -921,7 +921,7 @@ async function fetchHeaderIndexHistories() {
 }
 
 async function fetchHeaderMarketSentiment() {
-    if (!baseURL || headerMarketSentimentRows.value.length) return
+    if (!baseURL) return
     if (headerMarketSentimentRequest) return headerMarketSentimentRequest
     headerMarketSentimentRequest = axios.get(`${baseURL}/market-sentiment/history/`, {
         params: {

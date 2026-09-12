@@ -247,6 +247,24 @@ def _save_history_snapshot(ts_code: str, payload: dict):
     EarningsSignalSnapshotHistory.objects.create(ts_code=ts_code, **payload)
 
 
+def _prune_backfill_history_to_recent_quarters(ts_code: str, retention_quarters: int) -> int:
+    if retention_quarters <= 0:
+        return 0
+
+    history_qs = (
+        EarningsSignalSnapshotHistory.objects.filter(ts_code=ts_code, is_backfill=True)
+        .exclude(financial_end_date="")
+    )
+    retained_end_dates = list(
+        history_qs.order_by("-financial_end_date")
+        .values_list("financial_end_date", flat=True)
+        .distinct()[:retention_quarters]
+    )
+    if len(retained_end_dates) < retention_quarters:
+        return 0
+    return history_qs.exclude(financial_end_date__in=retained_end_dates).delete()[0]
+
+
 def _enrich_target_market_cap_fields(result: dict, ts_code: str):
     if not isinstance(result, dict):
         return
@@ -323,6 +341,12 @@ class Command(BaseCommand):
             help="Disable default latest-alignment mode and keep historical asof/anchor behavior.",
         )
         parser.add_argument("--store-mode", type=str, default="both", help="Persist mode: latest, history, or both")
+        parser.add_argument(
+            "--history-quarter-retention",
+            type=int,
+            default=0,
+            help="Keep this many recent financial quarters per symbol for backfill history; 0 disables pruning",
+        )
         parser.add_argument("--asof-date", type=str, default="", help="Historical as-of trade date, e.g. 2025-05-08")
         parser.add_argument("--asof-start-date", type=str, default="", help="Historical as-of start date for range replay")
         parser.add_argument("--asof-end-date", type=str, default="", help="Historical as-of end date for range replay")
@@ -448,6 +472,7 @@ class Command(BaseCommand):
         target_report_types = _resolve_target_report_types(options.get("report_types"))
         persist_latest = store_mode in {"latest", "both"}
         persist_history = store_mode in {"history", "both"}
+        history_quarter_retention = max(0, int(options.get("history_quarter_retention") or 0))
 
         pipeline_root = Path(__file__).resolve().parents[3]
         pipeline = EarningsForecastPipeline(config_path=pipeline_root / "configs" / "default.yaml")
@@ -455,6 +480,7 @@ class Command(BaseCommand):
         start = time.time()
         ok_count = 0
         fail_count = 0
+        pruned_history_count = 0
         self.stdout.write(
             "refresh signal snapshot start: "
             f"symbols={len(ts_codes)} batch={batch_key} store_mode={store_mode} "
@@ -669,6 +695,12 @@ class Command(BaseCommand):
                         if strict:
                             raise
 
+                if persist_history and asof_date is not None:
+                    pruned_history_count += _prune_backfill_history_to_recent_quarters(
+                        ts_code=code,
+                        retention_quarters=history_quarter_retention,
+                    )
+
                 symbol_elapsed = round(time.time() - symbol_start, 2)
                 self.stdout.write(f"[symbol] {code} asof_date={asof_label} elapsed_sec={symbol_elapsed}")
 
@@ -680,7 +712,10 @@ class Command(BaseCommand):
             self.stdout.write(f"asof replay done: {asof_label}")
 
         elapsed = round(time.time() - start, 2)
-        self.stdout.write(f"refresh signal snapshot done: total={len(ts_codes)} ok={ok_count} fail={fail_count} elapsed_sec={elapsed} batch={batch_key}")
+        self.stdout.write(
+            f"refresh signal snapshot done: total={len(ts_codes)} ok={ok_count} fail={fail_count} "
+            f"history_pruned={pruned_history_count} elapsed_sec={elapsed} batch={batch_key}"
+        )
         if fail_count > 0 and ok_count == 0:
             raise CommandError(
                 "refresh_signal_snapshot finished with all predictions failed "

@@ -51,47 +51,50 @@ call :run_step "ETL daily fundamental download" "%UAT_ROOT%\smartinvestor_etl" "
 if errorlevel 1 exit /b %ERRORLEVEL%
 call :run_step "ETL daily CYQ download" "%UAT_ROOT%\smartinvestor_etl" "%PYTHON_CMD% manage.py download --freq=D --dtype=CYQ --trade_date=%TODAY_TRADE_DATE%"
 if errorlevel 1 exit /b %ERRORLEVEL%
-call :run_step "Earnings sync market local delta" "%UAT_ROOT%\tushare_earnings_service" "%PYTHON_CMD% manage.py sync_market_local --mode delta --freq D --retention-years 3"
+call :run_step "BE daily trading pull" "%UAT_ROOT%\smartinvestor_be" "set DAILY_PULL_ONLY=1 && call %UAT_ROOT%\smartinvestor_be\daily_pull_data.bat"
 if errorlevel 1 exit /b %ERRORLEVEL%
 call :run_step "Earnings sync index dailybasic local" "%UAT_ROOT%\tushare_earnings_service" "%PYTHON_CMD% manage.py sync_index_dailybasic_local --lookback-years 8"
 if errorlevel 1 exit /b %ERRORLEVEL%
-call :run_step "BE daily trading pull" "%UAT_ROOT%\smartinvestor_be" "call %UAT_ROOT%\smartinvestor_be\daily_pull_data.bat"
-if errorlevel 1 exit /b %ERRORLEVEL%
-call :run_step "BE market sentiment daily refresh" "%UAT_ROOT%\smartinvestor_be" "%PYTHON_CMD% manage.py refresh_market_sentiment --latest --market CN --scope MARKET --scope-code ALL_A"
+call :run_step "BE daily index trading sync" "%UAT_ROOT%\smartinvestor_be" "%PYTHON_CMD% manage.py sync_index_trading_history --mode delta --index-codes 000001.SH,399001.SZ,399006.SZ,000300.SH,000905.SH,000852.SH --delta-overlap-days 5 --log-every 20 --sleep-ms 180"
 if errorlevel 1 exit /b %ERRORLEVEL%
 call :run_step "BE stock sentiment daily refresh" "%UAT_ROOT%\smartinvestor_be" "%PYTHON_CMD% manage.py refresh_market_sentiment --latest --market CN --scope STOCK --all-stocks"
 if errorlevel 1 exit /b %ERRORLEVEL%
-call :run_step "BE daily index trading sync" "%UAT_ROOT%\smartinvestor_be" "%PYTHON_CMD% manage.py sync_index_trading_history --mode delta --index-codes 000001.SH,399001.SZ,399006.SZ,000300.SH,000905.SH,000852.SH --delta-overlap-days 5 --log-every 20 --sleep-ms 180"
-if errorlevel 1 exit /b %ERRORLEVEL%
 call :run_step "BE index sentiment daily refresh" "%UAT_ROOT%\smartinvestor_be" "%PYTHON_CMD% manage.py refresh_index_sentiment --latest --market CN --scope-code BROAD_COMPOSITE"
 if errorlevel 1 exit /b %ERRORLEVEL%
-call :run_step "BE sw params refresh daily pre-traditional" "%UAT_ROOT%\smartinvestor_be" "%PYTHON_CMD% manage.py syncswvaluation --params-only --sample-size 3 --history-years 3,5,10 --history-quantile 0.5 --history-min-samples 120 --request-interval 0.45"
+REM Disabled: earnings-service local market delta sync.
+REM call :run_step "Earnings sync market local delta" "%UAT_ROOT%\tushare_earnings_service" "%PYTHON_CMD% manage.py sync_market_local --mode delta --freq D --retention-years 3"
+REM if errorlevel 1 exit /b %ERRORLEVEL%
+call :run_step "BE market sentiment daily refresh" "%UAT_ROOT%\smartinvestor_be" "%PYTHON_CMD% manage.py refresh_market_sentiment --latest --market CN --scope MARKET --scope-code ALL_A"
 if errorlevel 1 exit /b %ERRORLEVEL%
-if "%ENABLE_PARALLEL_REFRESH%"=="1" (
-  call :run_parallel_steps ^
-    "Earnings daily financial maintenance + periodic report refresh" "%UAT_ROOT%\tushare_earnings_service" "call %UAT_ROOT%\tushare_earnings_service\daily_financial_periodic_refresh.bat" ^
-    "BE traditional valuation prefill daily" "%UAT_ROOT%\smartinvestor_be" "%TRADITIONAL_REFRESH_CMD%"
-  if errorlevel 1 exit /b %ERRORLEVEL%
-) else (
-  call :run_step "Earnings daily financial maintenance + periodic report refresh" "%UAT_ROOT%\tushare_earnings_service" "call %UAT_ROOT%\tushare_earnings_service\daily_financial_periodic_refresh.bat"
-  if errorlevel 1 exit /b %ERRORLEVEL%
-  call :run_step "BE traditional valuation prefill daily" "%UAT_ROOT%\smartinvestor_be" "%TRADITIONAL_REFRESH_CMD%"
-  if errorlevel 1 exit /b %ERRORLEVEL%
-)
-if "%SHOULD_TRADITIONAL_FULL_REFRESH%"=="1" (
-  > "%TRADITIONAL_FULL_MARK_FILE%" echo %CUR_MONTH_KEY%
-  echo [INFO] traditional monthly full refresh mark updated month=%CUR_MONTH_KEY% >> "%LOG_FILE%"
-)
-call :run_step "BE sw rotation run daily evaluation" "%UAT_ROOT%\smartinvestor_be" "%PYTHON_CMD% manage.py refresh_sw_rotation_run_evaluation_daily --windows 5,20,60 --limit 200"
-if errorlevel 1 exit /b %ERRORLEVEL%
-call :run_step "BE THS moneyflow daily sync" "%UAT_ROOT%\smartinvestor_be" "%PYTHON_CMD% manage.py sync_ths_moneyflow_daily --lookback-days 7"
-if errorlevel 1 exit /b %ERRORLEVEL%
-call :run_step "BE stock moneyflow daily sync" "%UAT_ROOT%\smartinvestor_be" "%PYTHON_CMD% manage.py sync_stock_moneyflow_ths_daily --lookback-days 7"
-if errorlevel 1 exit /b %ERRORLEVEL%
-call :run_step "BE stock moneyflow feature latest" "%UAT_ROOT%\smartinvestor_be" "%PYTHON_CMD% manage.py build_stock_moneyflow_features --latest"
-if errorlevel 1 exit /b %ERRORLEVEL%
-call :run_step "BE valuation risk prefill daily" "%UAT_ROOT%\smartinvestor_be" "%PYTHON_CMD% manage.py prefillvaluationrisk --market CN"
-if errorlevel 1 exit /b %ERRORLEVEL%
+REM Disabled: SW parameter refresh, financial refresh, traditional valuation refresh, rotation evaluation,
+REM moneyflow sync/features, and valuation-risk prefill.
+REM call :run_step "BE sw params refresh daily pre-traditional" "%UAT_ROOT%\smartinvestor_be" "%PYTHON_CMD% manage.py syncswvaluation --params-only --sample-size 3 --history-years 3,5,10 --history-quantile 0.5 --history-min-samples 120 --request-interval 0.45"
+REM if errorlevel 1 exit /b %ERRORLEVEL%
+REM if "%ENABLE_PARALLEL_REFRESH%"=="1" (
+REM   call :run_parallel_steps ^
+REM     "Earnings daily financial maintenance + periodic report refresh" "%UAT_ROOT%\tushare_earnings_service" "call %UAT_ROOT%\tushare_earnings_service\daily_financial_periodic_refresh.bat" ^
+REM     "BE traditional valuation prefill daily" "%UAT_ROOT%\smartinvestor_be" "%TRADITIONAL_REFRESH_CMD%"
+REM   if errorlevel 1 exit /b %ERRORLEVEL%
+REM ) else (
+REM   call :run_step "Earnings daily financial maintenance + periodic report refresh" "%UAT_ROOT%\tushare_earnings_service" "call %UAT_ROOT%\tushare_earnings_service\daily_financial_periodic_refresh.bat"
+REM   if errorlevel 1 exit /b %ERRORLEVEL%
+REM   call :run_step "BE traditional valuation prefill daily" "%UAT_ROOT%\smartinvestor_be" "%TRADITIONAL_REFRESH_CMD%"
+REM   if errorlevel 1 exit /b %ERRORLEVEL%
+REM )
+REM if "%SHOULD_TRADITIONAL_FULL_REFRESH%"=="1" (
+REM   > "%TRADITIONAL_FULL_MARK_FILE%" echo %CUR_MONTH_KEY%
+REM   echo [INFO] traditional monthly full refresh mark updated month=%CUR_MONTH_KEY% >> "%LOG_FILE%"
+REM )
+REM call :run_step "BE sw rotation run daily evaluation" "%UAT_ROOT%\smartinvestor_be" "%PYTHON_CMD% manage.py refresh_sw_rotation_run_evaluation_daily --windows 5,20,60 --limit 200"
+REM if errorlevel 1 exit /b %ERRORLEVEL%
+REM call :run_step "BE THS moneyflow daily sync" "%UAT_ROOT%\smartinvestor_be" "%PYTHON_CMD% manage.py sync_ths_moneyflow_daily --lookback-days 7"
+REM if errorlevel 1 exit /b %ERRORLEVEL%
+REM call :run_step "BE stock moneyflow daily sync" "%UAT_ROOT%\smartinvestor_be" "%PYTHON_CMD% manage.py sync_stock_moneyflow_ths_daily --lookback-days 7"
+REM if errorlevel 1 exit /b %ERRORLEVEL%
+REM call :run_step "BE stock moneyflow feature latest" "%UAT_ROOT%\smartinvestor_be" "%PYTHON_CMD% manage.py build_stock_moneyflow_features --latest"
+REM if errorlevel 1 exit /b %ERRORLEVEL%
+REM call :run_step "BE valuation risk prefill daily" "%UAT_ROOT%\smartinvestor_be" "%PYTHON_CMD% manage.py prefillvaluationrisk --market CN"
+REM if errorlevel 1 exit /b %ERRORLEVEL%
 @REM call :run_step "BE daily prediction" "%UAT_ROOT%\smartinvestor_be" "call %UAT_ROOT%\smartinvestor_be\daily_funda_prediction.bat"
 
 echo [INFO] daily pipeline completed at %DATE% %TIME% >> "%LOG_FILE%"

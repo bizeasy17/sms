@@ -28,16 +28,17 @@ if errorlevel 1 (
 )
 echo Hello, Predict dataset Completed!
 
-if exist "daily_pick_candidates.bat" (
-	call daily_pick_candidates.bat
-	if errorlevel 1 (
-		echo [ERROR] Daily pick candidates failed.
-		exit /b 1
-	)
-	echo Hello, Daily Pick Candidates Completed!
-) else (
-	echo [WARN] daily_pick_candidates.bat not found, skip candidate picking.
-)
+REM Disabled: daily pull only imports ETL data; do not run candidate picking.
+REM if exist "daily_pick_candidates.bat" (
+REM 	call daily_pick_candidates.bat
+REM 	if errorlevel 1 (
+REM 		echo [ERROR] Daily pick candidates failed.
+REM 		exit /b 1
+REM 	)
+REM 	echo Hello, Daily Pick Candidates Completed!
+REM ) else (
+REM 	echo [WARN] daily_pick_candidates.bat not found, skip candidate picking.
+REM )
 
 
 @REM python manage.py combinedata --freq=D

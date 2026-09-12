@@ -34,9 +34,26 @@ if "%PLAN_MODE%"=="1" (
   set "ENABLE_REGIME_SWITCH=%~6"
   if "%ENABLE_REGIME_SWITCH%"=="" set "ENABLE_REGIME_SWITCH=1"
   set "ARG7=%~7"
+  set "IDX=4"
+
+  rem PowerShell can split 60,00,30,68 into four positional arguments.
+  rem Restore the following report/storage/regime arguments before generic parsing.
+  if "%~3"=="60" if "%~4"=="00" if "%~5"=="30" if "%~6"=="68" if not "%~7"=="" (
+    set "SCOPE=60,00,30,68"
+    set "REPORT_TYPES=%~7"
+    if /I "%~7"=="Q1" if /I "%~8"=="H1" (
+      set "REPORT_TYPES=Q1,H1"
+      call :restore_split_q1_h1_args %*
+    ) else (
+      set "STORE_MODE=%~8"
+      if "%STORE_MODE%"=="" set "STORE_MODE=history"
+      set "ENABLE_REGIME_SWITCH=%~9"
+      if "%ENABLE_REGIME_SWITCH%"=="" set "ENABLE_REGIME_SWITCH=1"
+    )
+    goto scope_collect_done
+  )
 
   rem Rebuild scope when PowerShell splits comma-separated stock list into extra args.
-  set "IDX=4"
   :collect_scope_tokens
   call set "CUR=%%%IDX%%"
   if "%CUR%"=="" goto scope_collect_done
@@ -99,16 +116,18 @@ if exist "%CHECKPOINT_FILE%" (
 
 set "REGIME_FLAG="
 if "%ENABLE_REGIME_SWITCH%"=="1" set "REGIME_FLAG=--enable-regime-switch"
+set "HISTORY_RETENTION_FLAG="
+if defined BACKFILL_HISTORY_QUARTER_RETENTION set "HISTORY_RETENTION_FLAG=--history-quarter-retention %BACKFILL_HISTORY_QUARTER_RETENTION%"
 
 if "%PLAN_MODE%"=="1" goto :run_plan
 
 echo [INFO] predictive event-driven backfill start %DATE% %TIME%>>"%LOG_FILE%"
-echo [INFO] start_date=%START_DATE% end_date=%END_DATE% scope=%SCOPE% report_types=%REPORT_TYPES% store_mode=%STORE_MODE% enable_regime_switch=%ENABLE_REGIME_SWITCH% resume_from=%RESUME_FROM%>>"%LOG_FILE%"
+echo [INFO] start_date=%START_DATE% end_date=%END_DATE% scope=%SCOPE% report_types=%REPORT_TYPES% store_mode=%STORE_MODE% enable_regime_switch=%ENABLE_REGIME_SWITCH% history_quarter_retention=%BACKFILL_HISTORY_QUARTER_RETENTION% resume_from=%RESUME_FROM%>>"%LOG_FILE%"
 echo [INFO] final_parsed_args start_date=%START_DATE% end_date=%END_DATE% scope=%SCOPE% report_types=%REPORT_TYPES% store_mode=%STORE_MODE% enable_regime_switch=%ENABLE_REGIME_SWITCH% >>"%LOG_FILE%"
 
 if /I not "%BACKFILL_SKIP_PRECHECK%"=="1" (
   set "PRECHECK_REPORT=%BASE_DIR%logs\predictive_history_precheck%RUN_TAG%.json"
-  "%PYTHON_CMD%" "tushare_earnings_service\manage.py" check_history_backfill_prerequisites --start-date %START_DATE% --end-date %END_DATE% --scope %SCOPE% --report-file "!PRECHECK_REPORT!" >> "%LOG_FILE%" 2>&1
+  "%PYTHON_CMD%" "tushare_earnings_service\manage.py" check_history_backfill_prerequisites --start-date %START_DATE% --end-date %END_DATE% --scope %SCOPE% --config "%BASE_DIR%tushare_earnings_service\configs\default.yaml" --report-file "!PRECHECK_REPORT!" >> "%LOG_FILE%" 2>&1
   set "ERR=!ERRORLEVEL!"
   if not "!ERR!"=="0" (
     echo [ERROR] predictive precheck failed code=!ERR! report=!PRECHECK_REPORT!>>"%LOG_FILE%"
@@ -131,6 +150,21 @@ for /f "usebackq delims=" %%D in ("%EVENT_DATES_FILE%") do (
 
 echo [INFO] predictive event-driven backfill completed %DATE% %TIME%>>"%LOG_FILE%"
 echo predictive event-driven backfill completed. log=%LOG_FILE%
+exit /b 0
+
+:restore_split_q1_h1_args
+shift
+shift
+shift
+shift
+shift
+shift
+shift
+shift
+set "STORE_MODE=%~1"
+if "%STORE_MODE%"=="" set "STORE_MODE=history"
+set "ENABLE_REGIME_SWITCH=%~2"
+if "%ENABLE_REGIME_SWITCH%"=="" set "ENABLE_REGIME_SWITCH=1"
 exit /b 0
 
 :run_plan
@@ -217,7 +251,7 @@ if exist "%STEP_LOG%" del /q "%STEP_LOG%" >nul 2>&1
 findstr /x /c:"%CUR_DATE%" "%FULL_REFRESH_DATES_FILE%" >nul 2>&1
 if "%ERRORLEVEL%"=="0" (
   echo [MODE] full_refresh_by_regime_switch date=%CUR_DATE%>>"%LOG_FILE%"
-  "%PYTHON_CMD%" "tushare_earnings_service\manage.py" refresh_signal_snapshot --full-refresh --scope %SCOPE% --asof-date %CUR_DATE% --store-mode %STORE_MODE% --report-types %REPORT_TYPES% --serving-slot production --anchor-mode ann --batch-key backfill_pred_event_%CUR_DATE% >> "%STEP_LOG%" 2>&1
+  "%PYTHON_CMD%" "tushare_earnings_service\manage.py" refresh_signal_snapshot --full-refresh --scope %SCOPE% --asof-date %CUR_DATE% --store-mode %STORE_MODE% --report-types %REPORT_TYPES% --serving-slot production --anchor-mode ann --batch-key backfill_pred_event_%CUR_DATE% %HISTORY_RETENTION_FLAG% >> "%STEP_LOG%" 2>&1
 ) else (
   set "DAY_CODES_FILE=%FINANCIAL_CODES_DIR%\%CUR_DATE%.txt"
   if exist "!DAY_CODES_FILE!" (
@@ -227,7 +261,7 @@ if "%ERRORLEVEL%"=="0" (
       exit /b 0
     )
     echo [MODE] partial_refresh_by_financial_events date=%CUR_DATE% file=!DAY_CODES_FILE!>>"%LOG_FILE%"
-    "%PYTHON_CMD%" "tushare_earnings_service\manage.py" refresh_signal_snapshot --tscodes-file "!DAY_CODES_FILE!" --asof-date %CUR_DATE% --store-mode %STORE_MODE% --report-types %REPORT_TYPES% --serving-slot production --anchor-mode ann --batch-key backfill_pred_event_%CUR_DATE% >> "%STEP_LOG%" 2>&1
+    "%PYTHON_CMD%" "tushare_earnings_service\manage.py" refresh_signal_snapshot --tscodes-file "!DAY_CODES_FILE!" --asof-date %CUR_DATE% --store-mode %STORE_MODE% --report-types %REPORT_TYPES% --serving-slot production --anchor-mode ann --batch-key backfill_pred_event_%CUR_DATE% %HISTORY_RETENTION_FLAG% >> "%STEP_LOG%" 2>&1
   ) else (
     echo [SKIP] asof_date=%CUR_DATE% no financial event codes file>>"%LOG_FILE%"
     exit /b 0
