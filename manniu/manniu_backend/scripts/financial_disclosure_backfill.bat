@@ -2,7 +2,7 @@
 setlocal
 
 set "PROJECT_ROOT=%~dp0..\.."
-set "PYTHON_EXE=C:\Users\HANJ29\Development\code\ASI_DEV\.venv\Scripts\python.exe"
+set "PYTHON_EXE=C:\Users\HANJ29\Development\web\UAT\.venv\Scripts\python.exe"
 set "LOG_DIR=%PROJECT_ROOT%\log\financials"
 
 if not exist "%LOG_DIR%" mkdir "%LOG_DIR%"
@@ -10,7 +10,7 @@ for /f %%i in ('powershell -NoProfile -Command "Get-Date -Format yyyyMMdd_HHmmss
 set "LOG_FILE=%LOG_DIR%\financial_disclosure_backfill_%RUN_TIMESTAMP%.log"
 
 if not exist "%PYTHON_EXE%" (
-    call :log ERROR: ASI_DEV virtual environment Python was not found.
+    call :log ERROR: UAT virtual environment Python was not found.
     exit /b 1
 )
 

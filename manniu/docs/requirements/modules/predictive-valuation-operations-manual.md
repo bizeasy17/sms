@@ -167,6 +167,17 @@ python manage.py predictive_valuation <subcommand> [options]
 
 `--start-date` 与 `--history-years` 互斥。日期参数应使用 `YYYYMMDD`，例如 `20260901`。
 
+### 5.1 回填与事件刷新的边界
+
+历史回填和事件刷新是两条独立线路：
+
+- `backfill` / `backfill-features` / `backfill-valuations` 直接构建特征或执行历史推理，不会扫描财报披露、市场风格或个股风格事件，也不会消费事件队列。
+- `detect-events` 只从 `market_data` 和 `financials` 已提交的事件源导入本地待处理事件。
+- `consume-events` 只消费本地待处理事件，并按事件影响范围触发预测刷新。
+- `refresh` 才是两步组合入口，等价于先 `detect-events`、再 `consume-events`，不等价于历史回填。
+
+因此，回填完成后仍需单独启用事件扫描和消费任务，才能获得财报更新或市场/个股风格切换后的增量预测。推荐顺序是：原始市场/财务数据同步，特征构建或重建，事件检测，事件消费。事件服务与推理服务共用已持久化数据和预测写入路径，但事件状态和回填运行记录分别审计。
+
 ## 6. 配置与模型校验
 
 每次模型包切换、配置修改或批量回填前执行：
@@ -393,33 +404,97 @@ Fusion 会写入独立的 `report_type=FUSION` 快照和当前结果。`raw_resu
 当前脚本位置：
 
 ```text
-manniu_backend\schedule\setup\predictive_valuation.bat
+manniu_backend\scripts\predictive_valuation.bat
 ```
 
-设计目标是：
+调用格式是：
 
 ```cmd
 predictive_valuation.bat refresh
-predictive_valuation.bat backfill [START_DATE] [END_DATE] [SCOPE] [TS_CODES] [LIMIT]
+predictive_valuation.bat backfill [START_DATE] [END_DATE] [SCOPE] [TS_CODES] [LIMIT] [REPORT_TYPES] [ANCHOR_MODE] [HISTORY_YEARS]
 ```
 
-脚本会创建时间戳日志，先执行 `validate`，然后按模式执行刷新或历史回填。日志目录目标为：
+位置参数说明如下：
+
+| 位置 | 参数 | 缺省值 | 说明 |
+| --- | --- | --- | --- |
+| 1 | `MODE` | `refresh` | `refresh`、`backfill`；`history` 会转换为 `backfill` |
+| 2 | `START_DATE` | 空 | 回填开始日期 |
+| 3 | `END_DATE` | 空 | 回填结束日期；缺省由管理命令取最新市场交易日 |
+| 4 | `SCOPE` | `all` | `all`、`ts-code`、`60`、`00`、`30`、`68` |
+| 5 | `TS_CODES` | 空 | `ts-code` 范围下使用，多个代码以逗号分隔 |
+| 6 | `LIMIT` | 回填 `0`，刷新 `500` | 回填证券/面板数量或事件数量上限 |
+| 7 | `REPORT_TYPES` | `Q1,H1,Q3,FY` | 逗号分隔的报告类型，也可使用 `FUSION` |
+| 8 | `ANCHOR_MODE` | `latest` | 预测快照锚点模式 |
+| 9 | `HISTORY_YEARS` | `5` | 未指定开始日期时的历史回填年数 |
+
+示例：
+
+```cmd
+rem 回填 60 开头股票的明确日期区间
+scripts\predictive_valuation.bat backfill 2021-01-01 2026-09-12 60 "" 0 "Q1,H1,Q3,FY" latest 0
+
+rem 只回填指定证券的 Fusion 结果
+scripts\predictive_valuation.bat backfill 2021-01-01 2026-09-12 ts-code "000001.SZ,600519.SH" 0 FUSION latest 0
+
+rem 使用默认最近五年，回填指定证券
+scripts\predictive_valuation.bat backfill "" "" ts-code "000001.SZ" 0 "Q1,H1,Q3,FY" latest 5
+
+rem 事件检测和消费刷新
+scripts\predictive_valuation.bat refresh
+```
+
+PowerShell 直接调用批处理时，空的 `TS_CODES` 参数必须保留在参数序列中；报告类型列表也必须作为一个带引号的参数传递。当前脚本已兼容 PowerShell 调用 `.bat` 时省略空参数、以及将 `Q1,H1,Q3,FY` 拆成多个位置参数的情况，并会在执行 Django 命令前恢复标准位置参数。推荐使用以下方式先做小范围验证：
+
+```powershell
+Set-Location 'C:\Users\HANJ29\Development\web\UAT\manniu\manniu_backend'
+& '.\scripts\predictive_valuation.bat' backfill `
+  2025-09-01 2026-09-11 68 "" 1 'Q1,H1,Q3,FY' ann 1
+```
+
+验证通过后再将 `LIMIT` 改为 `0` 执行目标范围。脚本会先执行 `validate`，然后串行执行
+`backfill-features` 和 `backfill-valuations`；成功时返回 `EXIT=0`，并在
+`log\predictive_valuation\predictive_valuation_backfill_*.log` 中分别核对特征和估值回填结果。
+
+如果日志在 `validate` 成功后出现 `ERROR: MODE must be backfill, history, or refresh`，应先确认实际调用的是
+`manniu_backend\scripts\predictive_valuation.bat` 的最新版本，而不是旧的调度目录副本。若出现
+`argument --limit: invalid int value: 'Q1'`，说明参数位置发生偏移，应检查空的 `TS_CODES` 占位和
+`REPORT_TYPES` 的引号；不要把逗号分隔的报告类型拆成独立参数。
+
+脚本会创建时间戳日志，先执行 `validate`，然后按模式执行刷新或历史回填。日志目录为：
 
 ```text
 manniu_backend\log\predictive_valuation
 ```
 
-### 11.1 当前脚本使用前的检查
+### 11.1 批处理使用注意事项
 
-当前脚本中的 `%~dp0` 指向 `schedule\setup`，但 `set "PROJECT_ROOT=%~dp0.."` 只会定位到 `schedule`，而 `manage.py` 位于 `manniu_backend` 根目录。因此直接运行现有脚本前，应先修正为向上两级：
+- 不要把 `TS_CODES` 拆成多个位置参数；整个代码列表必须作为一个带引号的参数传递。
+- PowerShell 调用全市场范围时，即使 `TS_CODES` 为空，也要保留 `""` 占位参数；脚本会兼容空参数被 PowerShell 省略的实际调用布局，但不应依赖未加引号的逗号列表。
+- 当 `START_DATE` 和 `END_DATE` 都指定时，批处理使用这两个日期作为明确回填区间，优先于 `HISTORY_YEARS`。此时第 9 个位置参数只是兼容位置参数表的占位值，可以写 `0`，但该值不会被传递为 `--history-years 0`，也不会参与日期计算。
+- 当 `START_DATE` 为空时，才使用 `HISTORY_YEARS` 从 `END_DATE` 向前计算开始日期；缺省为 5 年。直接执行 Django 管理命令时，`--start-date` 与 `--history-years` 不能同时传递，必须遵守互斥规则。
+- `backfill` 会先执行特征回填，再执行预测估值回填；不要与同一证券范围的其他特征任务并行运行。
+- `refresh` 只执行事件检测和事件消费，不等价于历史回填。
+- `60`、`00`、`30`、`68` 按 `Security.ts_code` 前缀筛选股票；需要精确证券列表时使用 `ts-code`。
+- 大范围操作应先用单证券或小范围执行，核对日志和两次运行记录后再扩大范围。
+- 批处理修复后的验证应先使用 `LIMIT=1`；确认日志显示 `Feature backfill completed` 和 `Valuation backfill completed` 后，再使用目标 `LIMIT` 或 `0`。
 
-```bat
-set "PROJECT_ROOT=%~dp0..\.."
+### 11.2 手工管理命令与 batch 的对应关系
+
+batch 只是管理命令的包装。需要更细粒度控制时，可直接执行：
+
+```powershell
+& $py manage.py predictive_valuation backfill-features `
+  --scope 60 --start-date 2021-01-01 --end-date 2026-09-12 `
+  --limit 100
+
+& $py manage.py predictive_valuation backfill-valuations `
+  --scope 60 --start-date 2021-01-01 --end-date 2026-09-12 `
+  --report-types Q1,H1,Q3,FY --anchor-mode latest --limit 100
 ```
 
-此外，脚本当前把 Python 固定为 `ASI_DEV\.venv`。若部署环境使用其他解释器，应通过代码评审后统一修改，不要在同一批任务中混用解释器。脚本参数中的 `TS_CODES` 也应始终加引号传递，避免逗号、空格或特殊字符造成批处理解析歧义。
-
-在上述问题修正并验证前，推荐直接从 `manniu_backend` 目录执行管理命令，并将完整 stdout/stderr 重定向到运维日志。
+旧版本文档曾指向 `schedule\setup\predictive_valuation.bat`，但当前脚本已位于 `manniu_backend\scripts`。若部署环境仍保留旧调度路径，应先确认调度任务实际调用的脚本版本。当前脚本的 backfill 分支使用显式标签跳转，并在子程序中使用延迟变量展开，避免 `cmd.exe` 括号块和参数重排造成模式或 `--limit` 错误。
+脚本当前把 Python 固定为 `ASI_DEV\.venv`。若部署环境使用其他解释器，应通过代码评审后统一修改，不要在同一批任务中混用解释器。
 
 ## 12. 结果核对
 

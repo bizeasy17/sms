@@ -508,6 +508,83 @@ The traditional event consumer uses the same calculation path as prefill, but
 restricts the scope to the event's affected security/report/variant. It must not
 create a second calculation implementation for event refresh.
 
+#### 6.5.1 Historical Backfill Point-in-Time Process
+
+Historical backfill is disclosure-event driven. It must not expand a date range
+into one valuation work item per security and calendar/trading day. That design
+repeats the same point-in-time resolver many times and is prohibitively costly
+for multi-year ranges. The date range only bounds the upstream disclosure scan;
+the financial publication date (`actual_date`, or the documented effective
+public-date field) is the valuation event anchor.
+
+The target interface accepts a date range, report-type set, security scope, and
+profit-bucket set. It executes two explicit phases:
+
+```text
+Phase 1: financial disclosure import
+  requested date range + report types + security scope
+    -> read committed FinancialDisclosureRecord rows
+       whose effective actual/public date is in the range
+    -> create idempotent local FINANCIAL_DISCLOSED events
+       keyed by source system + source disclosure event identity
+
+Phase 2: valuation event consumption
+  pending FINANCIAL_DISCLOSED events
+    -> resolve the disclosed report and point-in-time inputs
+    -> calculate formal and configured blended buckets
+    -> persist snapshot, latest/current, variant summaries, and risk atomically
+    -> mark the event successful, or retain it for bounded retry
+```
+
+For each disclosure event, the calculation identity includes at least
+`security`, `actual_date`/`asof_date`, `report_type`, `financial_end_date`,
+`profit_bucket`, and `valuation_variant`. `asof_date` is the effective public
+information boundary. Only financial rows with an effective announcement date
+on or before that boundary and market rows with `trade_date <= asof_date` are
+eligible. `financial_end_date` identifies the fiscal period (`03-31`, `06-30`,
+`09-30`, or `12-31`) and never replaces the announcement-date visibility
+check.
+
+The disclosure event resolver selects the financial record by stable upstream
+identity, verifies its effective actual/public date, and resolves related
+indicator, balance-sheet, cash-flow, and eligible express rows for the same
+fiscal period. It then resolves the latest market and daily-fundamental rows
+on or before the event date, followed by the active SW template and valuation
+contexts. A later-announced report must never be used for an earlier event
+merely because its fiscal period is earlier.
+
+The backfill work order is therefore:
+
+```text
+security + actual disclosure date
+  -> disclosed report type / financial end date
+      -> formal / blended
+          -> valuation contexts and methods
+```
+
+The order is deterministic by `security`, effective actual date, report type,
+and source disclosure key. Each local event and valuation snapshot is
+idempotent. Missing or malformed disclosure provenance produces a typed event
+coverage failure; it must not fall back to a different report type or fabricate
+an as-of date. Re-running the same range imports zero duplicate events and
+only retries incomplete or explicitly requested failed events.
+
+Historical backfill intentionally does not create historical
+`MARKET_STYLE_CHANGED` or `SECURITY_STYLE_CHANGED` events. Market-style and
+individual-security-style switching during historical replay is out of scope
+for this phase; the event consumer uses the configured baseline/default style
+profile for disclosure-triggered calculations. This exclusion must be visible
+in run metadata and reconciliation counts rather than represented as missing
+financial coverage.
+
+The historical `backfill` command invokes the same `detect-events` import and
+`consume-events` transaction path used by incremental refresh, with an explicit
+`--historical-disclosures` mode or equivalent command contract. It must not
+call a second direct per-day valuation loop. `refresh` remains the incremental
+composed path for newly committed financial, market-style, and security-style
+events; historical backfill imports only financial disclosure events within
+its requested bounds.
+
 ### 6.6 Template Update Commands
 
 The Maniu operator interface should preserve the source command semantics:
@@ -1309,7 +1386,9 @@ Idempotency, debounce, and retry state for one event.
 | Field | Purpose |
 | --- | --- |
 | `event_type` | `FINANCIAL_DISCLOSED`, `MARKET_STYLE_CHANGED`, `SECURITY_STYLE_CHANGED` |
-| `event_key` | Stable hash of source identity and effective version |
+| `source_system` | `market_data` or `financials`, the upstream event authority |
+| `source_event_key` | Stable upstream event identity and effective version |
+| `event_key` | Local idempotency key derived from `source_system` and `source_event_key` |
 | `scope_key` | Market, security, or security/report-period scope |
 | `status` | `PENDING`, `CLAIMED`, `SUCCEEDED`, `FAILED`, `DEAD_LETTER` |
 | `source_version` | Upstream watermark/style version |
@@ -1317,8 +1396,9 @@ Idempotency, debounce, and retry state for one event.
 | `attempt_count/next_retry_at` | Bounded retry |
 | `last_error_code/last_error_message` | Sanitized failure |
 | `coalesced_event_count` | Debounce observability |
+| `source_checkpoint` | Last imported upstream event version for the relevant source/scope |
 
-Unique key: `(event_type, event_key)`. The event is not marked successful until
+Unique key: `(source_system, source_event_key)`. The event is not marked successful until
 the affected snapshot/current/risk transaction commits.
 
 ### 8.7 `TraditionalValuationRun`
@@ -1369,9 +1449,43 @@ market-data designs.
 
 | Event | Detection source | Scope | Recalculation |
 | --- | --- | --- | --- |
-| `FINANCIAL_DISCLOSED` | New/revised eligible financial or disclosure row | One security and report period | Rebuild formal and configured blended buckets for the affected period |
-| `MARKET_STYLE_CHANGED` | Persisted market-style version differs from the last consumed state | Market or configured universe | Fan out to eligible securities in bounded chunks and run the market-style full refresh |
-| `SECURITY_STYLE_CHANGED` | Persisted individual-style version differs from the last consumed state and passes confirmation | One security | Recalculate only that security's eligible report periods and configured variants |
+| `FINANCIAL_DISCLOSED` | Committed event from `financials` | One security and report period | Rebuild formal and configured blended buckets for the affected period |
+| `MARKET_STYLE_CHANGED` | Committed event from `market_data` | Market or configured universe | Fan out to eligible securities in bounded chunks and run the market-style full refresh |
+| `SECURITY_STYLE_CHANGED` | Committed event from `market_data` | One security | Recalculate only that security's eligible report periods and configured variants |
+
+`market_data` is the sole authority for recognizing and publishing market and
+security style changes. `financials` is the sole authority for recognizing and
+publishing disclosure events. For normal incremental refresh,
+`traditional_valuation` consumes committed source events. For the explicit
+historical backfill mode, it may perform a bounded, read-only scan of committed
+`FinancialDisclosureRecord` rows by effective `actual_date` in order to import
+missing historical disclosure events; it must not independently classify
+styles or create market/security-style events.
+
+The `detect-events` command consumes the bounded, read-only source interfaces:
+
+```python
+market_data.list_regime_events(...)
+financials.list_disclosure_events(...)
+```
+
+For historical backfill, `detect-events` additionally accepts `start_date`,
+`end_date`, report types, and security scope and reads committed disclosures
+whose effective `actual_date` falls within that interval. The imported payload
+retains the source disclosure ID, actual date, report type, financial end date,
+security, and source version. Ingestion time and the current date must never be
+used as the event anchor.
+
+For each committed upstream event, it inserts a local
+`TraditionalValuationEventState` row before advancing its source checkpoint.
+The local identity is `(source_system, source_event_key)` and the row retains
+the upstream event type, source version, scope, source dates, payload,
+received time, and processing status. Import is idempotent: replaying an
+upstream event cannot create a duplicate local event. The valuation consumer
+claims only local rows, performs the bounded refresh, and marks the local event
+successful in the same transaction as the affected valuation persistence.
+Import or refresh failure leaves the local row retryable and does not advance
+the corresponding checkpoint.
 
 ### 9.2 Regime State And Full-Refresh Rules
 
@@ -1478,7 +1592,11 @@ traditional_valuation/
 resolves immutable parameter versions. `valuation_engine` owns method execution
 and method-level provenance. `summary_service` owns optimized summaries.
 `risk_service` wraps the valuation-risk rules without changing raw values.
-`event_service` owns detection, claims, debounce, fan-out, and retries.
+`event_service` owns upstream event import, local idempotency, claims, fan-out,
+and retries. Detection and style-transition debounce belong to `market_data`;
+disclosure detection belongs to `financials`; the historical disclosure import
+is a bounded adapter over committed `financials` rows and does not become a
+second disclosure authority.
 `query_service` exposes bounded internal reads to a future gateway and never
 calculates or writes on a cache miss.
 
@@ -1496,9 +1614,15 @@ python manage.py traditional_valuation \
 ```
 
 `validate` performs no writes. `backfill` requires an explicit bounded range or
-the configured default history window. `detect-events` creates only pending
-idempotent events. `consume-events` processes bounded claimed work.
-`refresh` runs detection then consumption and does not backfill history.
+the configured default history window and runs historical disclosure import
+followed by bounded event consumption. It must not create daily as-of work
+items. `--historical-disclosures` makes this mode explicit and is implied by
+`backfill` for compatibility. `detect-events` imports committed upstream
+events, or committed historical disclosures within supplied bounds, and
+creates pending idempotent local events. `consume-events` processes bounded
+claimed work.
+`refresh` runs normal incremental detection then consumption and does not scan
+or backfill historical disclosure ranges unless explicitly requested.
 `status` reports coverage, stale current rows, pending/failed events, and the
 active parameter/engine versions.
 
@@ -1513,9 +1637,13 @@ The scheduler must execute the following order:
 1. Complete `market_data` EOD ingestion and successful watermarks.
 2. Complete `financials` ingestion/disclosure synchronization.
 3. Rebuild or validate the active SW parameter version when its cadence is due.
-4. Detect financial, market-style, and security-style events.
-5. Consume events with bounded retries and per-scope locks.
-6. Publish only committed current rows for downstream reads.
+4. For historical initialization, scan committed disclosures by effective
+  `actual_date` within the requested range and import only
+  `FINANCIAL_DISCLOSED` events.
+5. For incremental operation, detect committed financial, market-style, and
+  security-style events.
+6. Consume events with bounded retries and per-scope locks.
+7. Publish only committed current rows for downstream reads.
 
 Normal missing-coverage prefill is distinct from event refresh. A full refresh is
 required after a material valuation-engine, SW-template, express-rule, or method
@@ -1525,9 +1653,54 @@ read policy approved by the API contract.
 
 Proposed Windows entry points are:
 
-- `traditional_valuation.bat refresh` for event detection and consumption;
-- `traditional_valuation.bat backfill` for explicit historical initialization;
+- `traditional_valuation.bat refresh` for incremental event detection and
+  consumption;
+- `traditional_valuation.bat backfill START_DATE END_DATE ...` for historical
+  disclosure import and event consumption;
 - a daily due-runner after upstream market and financial jobs complete.
+
+The batch wrapper contract is:
+
+```text
+traditional_valuation.bat backfill [START_DATE] [END_DATE] [SCOPE] [TS_CODES] [LIMIT] [REPORT_TYPES] [HISTORY_YEARS]
+traditional_valuation.bat refresh
+```
+
+When `backfill` receives `START_DATE` and `END_DATE`, those values bound the
+`FinancialDisclosureRecord.actual_date` scan. They do not create daily
+valuation anchors. The historical path imports `FINANCIAL_DISCLOSED` events
+and then consumes them. It excludes `MARKET_STYLE_CHANGED` and
+`SECURITY_STYLE_CHANGED` events; those remain incremental-only until a
+separate historical style replay contract is approved.
+
+The wrapper resolves its project root, runs `validate` before any backfill or
+refresh work, and then forwards the normalized values to the Django management
+command. `TS_CODES` is required only for `SCOPE=ts-code`; for other scopes it
+may be empty. Windows PowerShell can omit an empty quoted positional argument,
+which would shift `LIMIT`, `REPORT_TYPES`, and `HISTORY_YEARS` left. The wrapper
+must therefore recover the documented order when it detects a shifted report
+type value, and must also accept a report-type list accidentally split into
+`Q1 H1 Q3 FY`. Operators should nevertheless pass the empty placeholder and
+quote the complete comma-separated list, for example:
+
+```powershell
+& '.\scripts\traditional_valuation.bat' backfill `
+  '' '' 60 '' 0 'Q1,H1,Q3,FY' 5
+```
+
+This compatibility behavior belongs to the Windows wrapper only; the Django
+command continues to receive the canonical named options (`--scope`,
+`--ts-codes`, `--limit`, `--report-types`, and `--history-years`) and remains
+the owner of semantic validation. The wrapper must not use positional repair to
+reinterpret a `ts-code` invocation with an explicit code list.
+
+For a bounded historical run, the Django command contract must also receive
+`--historical-disclosures` (or an equivalent explicit mode), `--start-date`,
+and `--end-date`. `--history-years` is only a default range selector when no
+explicit dates are supplied. The command output and `TraditionalValuationRun`
+metadata must report disclosure rows scanned, events created, duplicate events,
+events consumed, formal/blended snapshots, skipped style events, and typed
+failures.
 
 Each script resolves the project root from its own location, uses the approved
 Python runtime, writes sanitized timestamped logs, and stops on the first
@@ -1677,6 +1850,7 @@ failed case.
 
 ## 15 TODO List
 
+- [x] 实现从 `market_data`/`financials` 导入三类已提交事件到 `TraditionalValuationEventState`，按 source event 幂等入库，并支持市场事件的有界 fan-out 消费刷新；估值事务失败重试和端到端回放测试仍待补充。
 - [ ] 确认并冻结传统估值 API/Auth 接入合同：数据库字段、请求参数、响应字段、空结果语义和诊断字段白名单。
 - [x] 实现传统估值只读 query service 和规范化结果 payload，覆盖 snapshot、method rows、risk、variant summary、tiered template 及 provenance；typed DTO 仍可作为后续强化项。
 - [x] 实现当前估值快照接口：`GET /api/v1/market-analysis/securities/:ts_code/valuations/traditional`。

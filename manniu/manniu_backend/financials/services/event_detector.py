@@ -106,6 +106,70 @@ class DisclosureEventDetector:
         return events
 
     @classmethod
+    def list_disclosure_events(
+        cls,
+        *,
+        asof_date: date | None = None,
+        start_date: date | None = None,
+        end_date: date | None = None,
+        actual_date_only: bool = False,
+        report_types: list[str] | None = None,
+        ts_codes: list[str] | None = None,
+        limit: int = 500,
+    ) -> list[dict[str, Any]]:
+        """Expose committed disclosure rows as an idempotent downstream event stream."""
+        qs = FinancialDisclosureRecord.objects.select_related('security').order_by('-id')
+        if actual_date_only:
+            if start_date is not None:
+                qs = qs.filter(actual_date__gte=start_date)
+            if end_date is not None:
+                qs = qs.filter(actual_date__lte=end_date)
+        elif asof_date is not None:
+            qs = qs.filter(
+                Q(actual_date__lte=asof_date)
+                | Q(actual_date__isnull=True, ann_date__lte=asof_date)
+            )
+        if report_types:
+            suffixes = {'Q1': (3, 31), 'H1': (6, 30), 'Q3': (9, 30), 'FY': (12, 31)}
+            period_filter = Q()
+            for report_type in report_types:
+                month_day = suffixes.get(str(report_type).upper())
+                if month_day:
+                    period_filter |= Q(end_date__month=month_day[0], end_date__day=month_day[1])
+            qs = qs.filter(period_filter)
+        if ts_codes:
+            qs = qs.filter(ts_code__in=[code.upper() for code in ts_codes])
+        events = []
+        rows = qs if limit <= 0 else qs[:limit]
+        for row in rows:
+            effective_date = row.actual_date or row.ann_date
+            if actual_date_only and row.actual_date is None:
+                continue
+            if not row.end_date or not effective_date:
+                continue
+            source_event_key = f'financial-disclosed:{row.pk}:{effective_date.isoformat()}:{row.row_signature}'
+            events.append({
+                'source_system': 'financials',
+                'source_event_key': source_event_key,
+                'event_type': 'FINANCIAL_DISCLOSED',
+                'security': row.security,
+                'security_id': row.security_id,
+                'scope_key': f'SECURITY:{row.security.ts_code}:{row.end_date.isoformat()}',
+                'source_version': str(row.source_revision_at.isoformat() if row.source_revision_at else row.row_signature),
+                'asof_date': effective_date,
+                'payload': {
+                    'disclosure_id': row.pk,
+                    'financial_end_date': row.end_date.isoformat(),
+                    'report_type': _report_type(row.end_date),
+                    'ann_date': row.ann_date.isoformat() if row.ann_date else None,
+                    'actual_date': row.actual_date.isoformat() if row.actual_date else None,
+                    'effective_date': effective_date.isoformat(),
+                    'row_signature': row.row_signature,
+                },
+            })
+        return events
+
+    @classmethod
     def detect_actual_date_events_from_records(
         cls,
         records: list[dict[str, Any]],
@@ -127,3 +191,11 @@ class DisclosureEventDetector:
             if code and period:
                 events.add((code, period))
         return events
+
+
+def _report_type(end_date):
+    if not end_date:
+        return 'FY'
+    return {'0331': 'Q1', '0630': 'H1', '0930': 'Q3', '1231': 'FY'}.get(
+        end_date.strftime('%m%d'), 'FY'
+    )

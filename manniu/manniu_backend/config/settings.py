@@ -54,6 +54,7 @@ INSTALLED_APPS = [
     'market_data',
     'market_sentiment',
     'indices',
+    'personal_user.apps.PersonalUserConfig',
     'ops_logging.apps.OpsLoggingConfig',
 ]
 

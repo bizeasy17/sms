@@ -2,12 +2,12 @@
 setlocal
 
 set "PROJECT_ROOT=%~dp0.."
-set "PYTHON_EXE=C:\Users\HANJ29\Development\code\ASI_DEV\.venv\Scripts\python.exe"
+set "PYTHON_EXE=C:\Users\HANJ29\Development\web\UAT\.venv\Scripts\python.exe"
 
 set "CORE_INDICES=000001.SH,399001.SZ,000300.SH,000016.SH,000905.SH,399005.SZ,399006.SZ"
 
 if not exist "%PYTHON_EXE%" (
-    echo ERROR: ASI_DEV virtual environment Python was not found.
+    echo ERROR: UAT virtual environment Python was not found.
     exit /b 1
 )
 
@@ -21,6 +21,7 @@ call :sync stock-fundamentals by-date || goto :failure
 call :sync stock-cost by-date || goto :failure
 call :sync_indices index-bars || goto :failure
 call :sync_indices index-fundamentals || goto :failure
+call :detect_regime_events || goto :failure
 call :sync_financials || goto :failure
 
 popd
@@ -50,6 +51,15 @@ echo Synchronizing financial data for disclosures due today...
 "%PYTHON_EXE%" manage.py sync_financials --mode daily --scope actual-date
 if errorlevel 1 (
     echo ERROR: financial synchronization failed.
+    exit /b 1
+)
+exit /b 0
+
+:detect_regime_events
+echo Detecting market and security regime events...
+"%PYTHON_EXE%" manage.py detect_regime_events --scope all
+if errorlevel 1 (
+    echo ERROR: regime event detection failed.
     exit /b 1
 )
 exit /b 0

@@ -199,6 +199,10 @@ class PredictiveValuationEventState(models.Model):
 	security = models.ForeignKey(Security, null=True, blank=True, on_delete=models.CASCADE, related_name='predictive_valuation_events')
 	event_type = models.CharField(max_length=32, db_index=True)
 	event_key = models.CharField(max_length=128, unique=True)
+	source_system = models.CharField(max_length=32, null=True, blank=True, db_index=True)
+	source_event_key = models.CharField(max_length=128, null=True, blank=True)
+	source_version = models.CharField(max_length=128, blank=True)
+	scope_key = models.CharField(max_length=128, blank=True)
 	asof_date = models.DateField(null=True, blank=True, db_index=True)
 	payload = models.JSONField(default=dict, blank=True)
 	status = models.CharField(max_length=16, choices=Status.choices, default=Status.PENDING, db_index=True)
@@ -211,6 +215,9 @@ class PredictiveValuationEventState(models.Model):
 
 	class Meta:
 		db_table = 'predictive_valuation_event_state'
+		constraints = [
+			models.UniqueConstraint(fields=['source_system', 'source_event_key'], name='pv_source_event_uniq'),
+		]
 		indexes = [
 			models.Index(fields=['status', 'event_type', 'created_at'], name='pv_event_status_type_ct'),
 		]

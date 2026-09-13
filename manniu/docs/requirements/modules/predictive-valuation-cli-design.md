@@ -199,7 +199,7 @@ page/resume state returns nonzero. No partial backfill may be reported as succes
 
 ## 9 Windows Batch Schedules
 
-Implemented operator script under `manniu_backend/schedule/`:
+Implemented operator script under `manniu_backend/scripts/`:
 
 | Script | Command | Purpose |
 | --- | --- | --- |
@@ -211,6 +211,40 @@ Each script resolves `manniu_backend` from its own location, sets
 creates a timestamped log under `manniu_backend/log/predictive_valuation/`, and stops on
 the first nonzero command. Batch files must not use semicolons inside `cmd.exe` command
 chains and must not log environment values or credentials.
+
+### 9.1 PowerShell Invocation Compatibility
+
+The Django command interface above is unchanged. The batch wrapper additionally normalizes
+PowerShell's argument-passing behavior when calling a `.bat` file:
+
+- An empty `TS_CODES` argument may be omitted by PowerShell, shifting `LIMIT` and the
+  following values left by one position.
+- A quoted comma-separated report list may arrive as separate arguments in some PowerShell
+  invocation forms, so the wrapper reconstructs `Q1,H1,Q3,FY` before invoking Django.
+- The wrapper uses explicit `goto` branches for `backfill` and `refresh`, and delayed
+  expansion inside the backfill subroutines so normalized values are not replaced by stale
+  parse-time values.
+
+The wrapper must preserve the documented positional contract and translate the normalized
+values into the existing `backfill-features`, `backfill-valuations`, `detect-events`, and
+`consume-events` commands. This is a Windows wrapper concern; it does not change Django
+argument validation or the PostgreSQL write contract.
+
+The supported PowerShell smoke-check is:
+
+```powershell
+Set-Location 'C:\Users\HANJ29\Development\web\UAT\manniu\manniu_backend'
+& '.\scripts\predictive_valuation.bat' backfill `
+  2025-09-01 2026-09-11 68 "" 1 'Q1,H1,Q3,FY' ann 1
+```
+
+Use `LIMIT=1` for the first check. A successful wrapper run returns exit code `0` and logs
+both feature and valuation completion. Only after that check should an operator replace the
+limit with the intended value, including `0` for an unbounded backfill. If validation passes
+but the wrapper reports `MODE must be backfill, history, or refresh`, use the current
+`manniu_backend/scripts` copy rather than an obsolete `schedule` copy. If Django reports
+`--limit: invalid int value: 'Q1'`, inspect the empty `TS_CODES` placeholder and quoting of
+the comma-separated report types.
 
 ## 10 Test Case Definition
 

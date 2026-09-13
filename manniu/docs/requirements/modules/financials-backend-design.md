@@ -54,6 +54,32 @@ remain auditable raw data but are not currently consumed by that predictive feat
 builder. Running `sync_financials` therefore does not imply that predictive
 projections or prediction snapshots have been refreshed.
 
+After the affected raw rows and ingestion watermark commit, `financials` is the
+sole owner of disclosure-event recognition and publication. It publishes a
+committed, idempotent `FINANCIAL_DISCLOSED` event for each affected
+`(security_id, report_period, source_revision)` identity. The event is not a
+valuation event table owned by `financials`; it is an internal upstream event
+read boundary consumed by `traditional_valuation` and `predictive_valuation`.
+Those consumers copy the event into their own event-state tables and own all
+projection rebuild and valuation refresh work. A financial ingestion run must
+not call either valuation engine directly.
+
+The downstream event boundary is:
+
+```python
+financials.list_disclosure_events(
+    *, after_version=None, asof_date=None, security_ids=None, limit=500,
+) -> DisclosureEventBatch
+```
+
+Only committed events are returned. Each event includes `event_key`,
+`source_version`, `security_id`, `financial_end_date`, `ann_date`,
+`effective_date`, affected endpoint/revision metadata, and detection time.
+Events are retained for replay until the configured retention policy expires;
+consumers advance independent checkpoints and acknowledge only after local
+event-table insertion. Repeated disclosure rows and revisions are idempotent,
+while a material amendment receives a new source revision and event key.
+
 The adapter owns explicit endpoint projections, Tushare paging, transient-error handling, and secret-safe errors. Normalization owns `NaN` conversion, scalar conversion, endpoint date selection, and deterministic row signatures. Repositories own PostgreSQL writes. Query services select only data that was public at an explicit `as_of_date`; public API handlers must delegate to those services after `access_control` authorization.
 
 ## 4 PostgreSQL Persistence Design
@@ -343,6 +369,7 @@ visibility.
 
 ## 10 TODO List
 
+- [x] 事件发布：基于已提交的 disclosure/财务原始记录提供幂等的 `FINANCIAL_DISCLOSED` 内部事件读取接口，供传统估值和预测估值导入各自 event 表；提交后重放测试仍待补充。
 - [ ] 需求确认：确认 10 个 Tushare endpoint 的 typed fields、provider units、日期字段、表名、索引和 row signature 规则。
 - [ ] 需求确认：确认 `effective_date = actual_date` 优先、否则使用 `ann_date` 的 as-of 规则，以及无有效公开日期记录的消费边界。
 - [ ] 需求确认：确认 `api_gateway` 路由、统一响应封套、错误码、分页和日期范围限制。

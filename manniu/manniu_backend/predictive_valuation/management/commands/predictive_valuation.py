@@ -33,7 +33,7 @@ class Command(BaseCommand):
         parser.add_argument('subcommand', choices=['validate', 'build-features', 'backfill', 'backfill-features', 'backfill-valuations', 'detect-events', 'consume-events', 'refresh', 'status'])
         parser.add_argument('--ts-codes', default='', help='Comma-separated stock ts_codes')
         parser.add_argument('--asof-date', default='', help='Maximum public date in YYYYMMDD format')
-        parser.add_argument('--scope', choices=['all', 'ts-code'], default='all')
+        parser.add_argument('--scope', choices=['all', 'ts-code', '60', '00', '30', '68'], default='all')
         parser.add_argument('--start-date', default='', help='Financial period start date YYYYMMDD')
         parser.add_argument('--end-date', default='', help='Financial period end date YYYYMMDD')
         parser.add_argument('--history-years', type=int, default=None, help='Backfill years, default 5')
@@ -178,9 +178,11 @@ class Command(BaseCommand):
         if options['dry_run']:
             self.stdout.write(self.style.SUCCESS(f'Dry run valid: as_of_date={as_of_date}'))
             return
-        financial = PredictiveValuationEventService.detect_financial_disclosures(as_of_date=as_of_date)
-        regimes = PredictiveValuationEventService.detect_regime_changes(limit=options['limit'])
-        self.stdout.write(self.style.SUCCESS(f'Predictive valuation events: {json.dumps({"financial": financial, "regimes": regimes}, sort_keys=True)}'))
+        imported = PredictiveValuationEventService.import_upstream_events(
+            as_of_date=as_of_date,
+            limit=options['limit'] or 500,
+        )
+        self.stdout.write(self.style.SUCCESS(f'Predictive valuation events imported: {json.dumps(imported, sort_keys=True)}'))
 
     def _backfill_features(self, options: dict) -> None:
         start_date, end_date = self._backfill_range(options)
@@ -308,24 +310,30 @@ class Command(BaseCommand):
         self.stdout.write(self.style.SUCCESS(f'Event consumption completed: snapshots={completed}'))
 
     def _consume_event(self, event, service: PredictiveInferenceService, horizon: str, limit: int) -> int:
+        refresh_reasons = {
+            PredictiveValuationEventService.DISCLOSURE_EVENT: 'FINANCIAL_DISCLOSURE',
+            PredictiveValuationEventService.SECURITY_REGIME_EVENT: 'STOCK_REGIME_SWITCH',
+            PredictiveValuationEventService.MARKET_REGIME_EVENT: 'MARKET_REGIME_SWITCH',
+        }
+        refresh_reason = refresh_reasons.get(event.event_type, event.event_type)
         if event.event_type == PredictiveValuationEventService.DISCLOSURE_EVENT:
             end_date = date.fromisoformat(event.payload['financial_end_date'])
             PredictiveFinancialFeatureBuilder.rebuild_for_security(event.security)
             panel = PredictiveFinancialFeaturePanel.objects.filter(security=event.security, end_date=end_date).order_by('-source_as_of_date').first()
             if panel is None:
                 return 0
-            service.predict_panel(panel, horizon=horizon, trigger_type=event.event_type, refresh_reason=event.event_type)
+            service.predict_panel(panel, horizon=horizon, trigger_type=event.event_type, refresh_reason=refresh_reason)
             return 1
         if event.event_type == PredictiveValuationEventService.SECURITY_REGIME_EVENT:
             panel = PredictiveFinancialFeaturePanel.objects.filter(security=event.security).order_by('-source_as_of_date').first()
             if panel is None:
                 return 0
-            service.predict_panel(panel, horizon=horizon, trigger_type=event.event_type, refresh_reason=event.event_type)
+            service.predict_panel(panel, horizon=horizon, trigger_type=event.event_type, refresh_reason=refresh_reason)
             return 1
         if event.event_type == PredictiveValuationEventService.MARKET_REGIME_EVENT:
             panels = PredictiveFinancialFeaturePanel.objects.filter(report_type__in=self._report_types({'report_types': ''})).order_by('security_id', '-source_as_of_date').distinct('security_id')[:limit]
             for panel in panels:
-                service.predict_panel(panel, horizon=horizon, trigger_type=event.event_type, refresh_reason=event.event_type)
+                service.predict_panel(panel, horizon=horizon, trigger_type=event.event_type, refresh_reason=refresh_reason)
             return len(panels)
         raise ValueError(f'Unsupported predictive event type: {event.event_type}')
 
@@ -336,6 +344,8 @@ class Command(BaseCommand):
         securities = Security.objects.filter(asset_type=Security.AssetType.STOCK)
         if codes:
             securities = securities.filter(ts_code__in=codes)
+        elif options['scope'] != 'all':
+            securities = securities.filter(ts_code__startswith=options['scope'])
         if options['limit'] > 0:
             securities = securities[:options['limit']]
         return securities

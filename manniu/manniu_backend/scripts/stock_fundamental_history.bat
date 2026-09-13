@@ -2,7 +2,7 @@
 setlocal
 
 set "PROJECT_ROOT=%~dp0.."
-set "PYTHON_EXE=C:\Users\HANJ29\Development\code\ASI_DEV\.venv\Scripts\python.exe"
+set "PYTHON_EXE=C:\Users\HANJ29\Development\web\UAT\.venv\Scripts\python.exe"
 set "ACTION=%~1"
 set "START_DATE=%~2"
 set "END_DATE=%~3"
@@ -11,7 +11,7 @@ if "%ACTION%"=="" set "ACTION=check"
 if /i not "%ACTION%"=="check" if /i not "%ACTION%"=="backfill" goto :usage
 
 if not exist "%PYTHON_EXE%" (
-    echo ERROR: ASI_DEV virtual environment Python was not found.
+    echo ERROR: UAT virtual environment Python was not found.
     exit /b 1
 )
 

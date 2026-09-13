@@ -261,3 +261,32 @@ def detect_regime_events(*, asof_date, scope='all', benchmark_ts_code='000001.SH
         confirm_days=confirm_days,
         limit=limit,
     )
+
+
+def list_regime_events(*, asof_date=None, scope='all', limit=500):
+    """Return committed style events for downstream consumers without claiming them."""
+    qs = RegimeEvent.objects.select_related('security').order_by('-created_at')
+    if asof_date is not None:
+        qs = qs.filter(source_trade_date__lte=asof_date)
+    if scope == 'market':
+        qs = qs.filter(event_type='MARKET_STYLE_CHANGED')
+    elif scope == 'security':
+        qs = qs.filter(event_type='SECURITY_STYLE_CHANGED')
+    elif scope != 'all':
+        raise ValueError('scope must be all, market, or security')
+    events = []
+    for event in qs[:limit]:
+        payload = dict(event.payload or {})
+        events.append({
+            'source_system': 'market_data',
+            'source_event_key': event.event_key,
+            'event_type': event.event_type,
+            'security': event.security,
+            'security_id': event.security_id,
+            'scope_key': 'SECURITY:' + event.security.ts_code if event.security else 'MARKET:ALL_A',
+            'source_version': str(payload.get('classifier_version') or ''),
+            'source_trade_date': event.source_trade_date,
+            'payload': payload,
+            'created_at': event.created_at,
+        })
+    return events

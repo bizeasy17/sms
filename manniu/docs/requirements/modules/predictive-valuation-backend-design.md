@@ -47,6 +47,42 @@ automatically disables latest alignment and enables point-in-time replay. Suppor
 requested report types are `Q1`, `H1`, `Q3`, `FY`, `FUSION`, and `LATEST`; the default
 work set is the four standalone quarter types.
 
+### 2.1.0 Current Model Capability And Label Semantics
+
+The reference earnings-training pipeline produces several target columns, but its
+current primary supervised task is **annual earnings growth**, not a one-year stock
+price-return forecast. The default training configuration uses:
+
+- Regression target: `target_fy_value_yoy`
+- Classification target: `target_fy_up`
+- Annual financial value: `n_income`
+
+For each security and fiscal year, `target_fy_value_yoy` is the year-over-year change
+in the reported full-year (`FY`) `n_income`, and `target_fy_up` indicates whether that
+annual change is positive. Q1, H1, and Q3 feature rows can therefore be supervised by
+the corresponding same-year FY result. FY rows are excluded from training by default
+(`exclude_fy_rows_for_training=true`) so the model learns from pre-FY report-period
+information rather than using the realized FY row as an ordinary training sample.
+
+The pipeline also creates market-return and risk targets over a short forward window:
+
+- `target_valuation_return` and `target_valuation_up` use the close price at the
+	next `label.horizon_days` trading observations; the current default is 20 trading
+	days, approximately one month, not one calendar month.
+- `target_risk_drawdown`, `target_risk_volatility`, and the derived risk level use the
+	same default 20-trading-day risk horizon.
+- `target_earnings_growth` is a generic next-observation financial-signal growth
+	target and is primarily a fallback objective, not the default training objective.
+
+Accordingly, the compatible Maniu inference contract must preserve the distinction:
+the model's earnings component represents predicted annual financial growth, while
+the quantitative valuation output maps that signal, classifier probability, industry
+rank, risk, volatility, and market regime into a bounded **forward valuation/price
+range**. It must not describe `target_fy_value_yoy` as a one-year stock return, or
+silently replace the FY-supervised model target with the 20-trading-day valuation
+label. The selected target columns and their label/config version should remain
+traceable in model metadata and persisted prediction results.
+
 ### 2.1.1 Anchor Mode Contract
 
 `anchor_mode` identifies the point-in-time alignment used to select the financial and
@@ -398,7 +434,7 @@ The predictive tables and their identities are:
 | --- | --- | --- |
 | `PredictiveValuationSnapshot` | `security`, `report_type`, `asof_date` | Idempotent history/replay result and full raw/explain payload. Duplicate legacy rows for the same key are collapsed to the newest row. |
 | `PredictiveValuationCurrent` | `security`, `report_type` | Latest serving projection, replaced by each attempted refresh for that report identity. |
-| `PredictiveValuationEventState` | `security`, `event_type`, `event_key` | Idempotent event consumption, debounce, and retry state. |
+| `PredictiveValuationEventState` | `source_system`, `source_event_key` | Local copy of an upstream event, idempotent consumption, debounce, and retry state. |
 | `PredictiveValuationRun` | `run_key` | Batch/manual run lifecycle and aggregate counts. |
 
 `report_type` is one of `Q1`, `H1`, `Q3`, `FY`, or `FUSION`. Model version and feature
@@ -462,8 +498,9 @@ every inference. `feature_builder` then performs point-in-time market and financ
 joins and emits a named feature row plus provenance. `inference_service` loads the
 report-type-specific classifier/regressor bundle, applies ordered feature reindexing and hierarchical
 imputation (security recent history, industry median, bundle global median), then maps
-the score through capped, risk- and regime-aware target ranges. `event_service` detects,
-coalesces, claims, and completes events transactionally.
+the score through capped, risk- and regime-aware target ranges. `event_service` imports
+upstream events, coalesces, claims, and completes local events transactionally; event
+detection and style-transition debounce remain owned by `market_data`/`financials`.
 
 ### 8.1 Signal And Action Mapping
 
@@ -608,10 +645,29 @@ python manage.py predictive_valuation <subcommand> [options]
 | --- | --- |
 | `validate` | Validates environment, serving pointer, feature contract, database access, and required shared-data coverage. Performs no writes. |
 | `backfill` | Initializes idempotent historical predictions for the previous five calendar years. Replaying the same security/report/as-of key updates that history identity instead of duplicating it. Requires explicit `--start-date`/`--end-date` to override. Uses `--dry-run` by default until operational approval. |
-| `detect-events` | Detects market-regime, security-regime, and newly available disclosure events; creates idempotent pending events only. |
+| `detect-events` | Imports committed market-data style events and financial disclosure events into the local event table; creates idempotent pending events only. |
 | `consume-events` | Claims and predicts eligible pending events with bounded retries and debounce. |
 | `refresh` | Runs `detect-events` followed by `consume-events`; does not backfill. |
 | `status` | Reports latest run, pending/failed events, active model, and feature freshness. |
+
+The historical backfill path and the event-refresh path are independent
+execution lines. `backfill` first builds or rebuilds the module-owned
+financial feature panels and then runs historical inference directly against
+those persisted panels; it does not scan upstream disclosure or regime events,
+claim local events, or consume the event queue. `refresh` is the composed
+incremental entry point: it imports committed financial-disclosure,
+market-style, and security-style events, then consumes the bounded local
+queue. `detect-events` and `consume-events` remain independently runnable for
+schedulers that need explicit ordering. An event can therefore cause a new
+prediction through the refresh line, but discovering an event is not an
+implicit side effect of historical backfill.
+
+The two lines share the inference and persistence services, snapshot identity,
+and source-of-truth boundaries, but they keep separate run/event audit state.
+The intended scheduler order is raw market/financial ingestion, feature
+projection rebuild when required, event detection, and event consumption.
+Historical initialization should complete and be validated before enabling the
+incremental event jobs.
 
 The Maniu command must expose equivalent controls for symbol scope/file, full versus
 incremental refresh, `changed_since` plus overlap hours, offset/limit, batch and refresh
@@ -647,14 +703,37 @@ are lock-protected per run class and scope; `--security`, `--asof-date`, `--limi
 
 ## 10 Event Contract
 
-Event detection is pull-based against shared PostgreSQL data, which makes it compatible
+Event import is pull-based against committed upstream event data, which makes it compatible
 with current batch ingestion and avoids cross-app in-process signals.
 
 | Event type | Detection baseline | Affected scope | Trigger condition |
 | --- | --- | --- | --- |
-| `MARKET_REGIME_CHANGED` | persisted prior benchmark regime | market scope | Current classified benchmark regime differs from last successfully processed regime. |
-| `SECURITY_REGIME_CHANGED` | persisted prior security regime | one security | Debounced classified security regime differs from its last successful state. |
-| `FINANCIAL_DISCLOSED` | disclosure watermark plus projection freshness | one security | A disclosure row becomes available/changes and the matching feature-panel row is available. |
+| `MARKET_STYLE_CHANGED` | committed `market_data` regime event | market scope | Market style changes after valid state comparison in `market_data`. |
+| `SECURITY_STYLE_CHANGED` | committed `market_data` regime event | one security | Confirmed individual style change after the shared debounce contract. |
+| `FINANCIAL_DISCLOSED` | committed `financials` disclosure event | one security/report period | A disclosure row becomes available or changes after the financial ingestion transaction commits. |
+
+`market_data` and `financials` are the upstream event authorities. This module
+does not classify market/security style and does not independently scan
+`FinancialDisclosureRecord` to publish valuation events. `detect-events` reads
+committed events from the two internal source boundaries, inserts them into
+`PredictiveValuationEventState` using `(source_system, source_event_key)` as
+the idempotency identity, and advances its local source checkpoint only after
+the insert commits. The local event row preserves `source_system`,
+`source_event_key`, `source_version`, `scope_key`, source dates, payload,
+received time, and local processing status. A repeated upstream event cannot
+create a duplicate local event or prediction snapshot.
+
+The source reads are bounded and read-only:
+
+```python
+market_data.list_regime_events(...)
+financials.list_disclosure_events(...)
+```
+
+The scheduler order is market/financial ingestion, upstream event detection
+and commit, predictive event import, then predictive event consumption. A
+failed import or consumption leaves the local event pending/retryable and does
+not advance the local checkpoint.
 
 The disclosure event must first rebuild the module-owned financial feature row, then be
 gated by `PredictiveFinancialFeaturePanel.source_as_of_date` so new financial data cannot
@@ -1022,6 +1101,8 @@ get_predictive_status(
 ## 14 API Gateway 接入 TODO List
 
 ### 14.1 Contract confirmation
+
+- [x] 实现从 `market_data`/`financials` 导入三类已提交事件到 `PredictiveValuationEventState`，按 source event 幂等入库，并将消费刷新原因映射为 `MARKET_REGIME_SWITCH`、`STOCK_REGIME_SWITCH`、`FINANCIAL_DISCLOSURE`；端到端数据库重放测试仍待补充。
 
 - [ ] 与产品、前端和 `access_control` 确认四条路由是否按本节冻结，尤其是 `LATEST`、
 	`FUSION` 和失败快照的 HTTP/`data_status` 语义。

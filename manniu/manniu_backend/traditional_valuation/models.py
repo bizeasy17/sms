@@ -173,6 +173,8 @@ class TraditionalValuationEventState(models.Model):
 	)
 	event_type = models.CharField(max_length=32)
 	event_key = models.CharField(max_length=128)
+	source_system = models.CharField(max_length=32, null=True, blank=True)
+	source_event_key = models.CharField(max_length=128, null=True, blank=True)
 	scope_key = models.CharField(max_length=128)
 	source_version = models.CharField(max_length=128, blank=True)
 	asof_date = models.DateField(null=True, blank=True)
@@ -192,6 +194,7 @@ class TraditionalValuationEventState(models.Model):
 		db_table = 'traditional_valuation_event_state'
 		constraints = [
 			models.UniqueConstraint(fields=['event_type', 'event_key'], name='tv_event_key_uniq'),
+			models.UniqueConstraint(fields=['source_system', 'source_event_key'], name='tv_source_event_uniq'),
 		]
 		indexes = [
 			models.Index(fields=['status', 'next_retry_at'], name='tv_event_status_retry'),

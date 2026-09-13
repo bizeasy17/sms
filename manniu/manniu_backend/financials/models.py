@@ -269,6 +269,7 @@ class FinancialDisclosureRecord(RawFinancialAuditModel):
         ]
         indexes = [
             models.Index(fields=['ann_date', 'security']),
+            models.Index(fields=['actual_date', 'security'], name='fin_disc_actual_sec'),
             models.Index(fields=['security', '-end_date']),
         ]
 

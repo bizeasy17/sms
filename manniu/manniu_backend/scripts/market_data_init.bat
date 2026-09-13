@@ -2,7 +2,7 @@
 setlocal
 
 set "PROJECT_ROOT=%~dp0.."
-set "PYTHON_EXE=C:\Users\HANJ29\Development\code\ASI_DEV\.venv\Scripts\python.exe"
+set "PYTHON_EXE=C:\Users\HANJ29\Development\web\UAT\.venv\Scripts\python.exe"
 set "LOG_DIR=%PROJECT_ROOT%\log\market_data"
 
 if not exist "%LOG_DIR%" mkdir "%LOG_DIR%"
@@ -12,7 +12,7 @@ set "LOG_FILE=%LOG_DIR%\market_data_init_%RUN_TIMESTAMP%.log"
 set "CORE_INDICES=000001.SH,399001.SZ,000300.SH,000016.SH,000905.SH,399005.SZ,399006.SZ"
 
 if not exist "%PYTHON_EXE%" (
-    call :log ERROR: ASI_DEV virtual environment Python was not found.
+    call :log ERROR: UAT virtual environment Python was not found.
     exit /b 1
 )
 

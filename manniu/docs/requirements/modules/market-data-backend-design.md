@@ -237,9 +237,29 @@ parameters and `get_security_regime` for security-style variants. It records
 `market_regime`, `security_regime`, source dates, classifier versions, and
 metrics in `TraditionalValuationSnapshot.provenance`. `predictive_valuation`
 uses the same methods to populate `market_regime`/`security_regime` in
-prediction inputs and to create its event refresh scope. Neither consumer may
+prediction inputs. Neither consumer may detect or publish style-change events,
 call Tushare, read another service's private state, or reimplement the
-thresholds.
+thresholds. The write-side `market_data` detector is the sole owner of market
+and security style event recognition and publication. Downstream valuation
+modules consume its committed events through the internal event read boundary
+defined below.
+
+The downstream event boundary is:
+
+```python
+market_data.list_regime_events(
+  *, after_version=None, asof_date=None, scope='all', limit=500,
+) -> RegimeEventBatch
+```
+
+The result is read-only and contains only committed, idempotent
+`MARKET_STYLE_CHANGED` and `SECURITY_STYLE_CHANGED` events. Each event includes
+`event_key`, `source_version`, `scope_key`, security identity when applicable,
+old/new style, source trade date, classifier version, metrics, detected time,
+and the affected-scope policy. A consumer acknowledges an event only after it
+has copied the event into its own event table; acknowledgement does not delete
+or mutate the canonical market-data event. Repeated reads return the same event
+until the consumer's checkpoint advances.
 
 ## 6 Unified Industry-Regime And SW Mapping Service
 
@@ -391,17 +411,22 @@ After successful market-data ingestion, the detector runs in this order:
 7. Create one idempotent `SECURITY_STYLE_CHANGED` event per confirmed stock.
 
 The market event fan-out is consumed by downstream modules in bounded batches.
-The required prediction refresh command for a confirmed market switch remains:
+`market_data` publishes the canonical event once; it does not call either
+valuation engine or write either valuation module's event table. Downstream
+consumers independently import the event into their local event state and then
+fan out the refresh. The required prediction refresh command for a confirmed
+market switch remains:
 
 ```text
 refresh_signal_snapshot --scope 60,00,30,68 --full-refresh --report-types LATEST,FUSION
 ```
 
-Traditional valuation uses the same event reason, `MARKET_REGIME_SWITCH`, for
-market-style valuation refresh and `STOCK_REGIME_SWITCH` for a confirmed
-security-style refresh. Event payloads must include old/new regime, source
-trade date, classifier version, metrics, and detection time. Invalid or empty
-classification results do not advance state and do not trigger a refresh.
+Event payloads must include old/new regime, source trade date, classifier
+version, metrics, and detection time. Invalid or empty classification results
+do not advance state and do not trigger a refresh. `traditional_valuation` and
+`predictive_valuation` map the canonical event types to their own refresh
+reasons and persist the original `source_event_key` and `source_version` for
+replay and audit.
 
 ### 6.6 Company, Geography, And Industry
 
@@ -1102,6 +1127,7 @@ Reconciliation compares persisted coverage with the approved trading calendar an
 ## 13 TODO List
 
 - [ ] 按本文档完成市场数据后端剩余实现、PostgreSQL 验证和单元测试，并在测试通过后更新本条状态。
+- [x] 实现 `MARKET_STYLE_CHANGED`、`SECURITY_STYLE_CHANGED` 的提交后只读事件接口，返回幂等键、source version、风格指标和确认后的作用范围；下游 checkpoint/重放验证仍待补充。
 
 ## 14 API Gateway 接入需求
 
