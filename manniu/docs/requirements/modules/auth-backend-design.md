@@ -310,7 +310,7 @@ POST /api/v1/auth/login
   "data": {
     "access_token": "<opaque-access-token>",
     "token_type": "Bearer",
-    "expires_in": 1800,
+    "expires_in": 7200,
     "refresh_token": "<opaque-refresh-token>",
     "refresh_expires_in": 2592000,
     "session_id": "uuid",

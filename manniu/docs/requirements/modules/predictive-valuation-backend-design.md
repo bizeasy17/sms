@@ -343,6 +343,152 @@ the provider field of the same name. This preserves compatibility with the legac
 Feature values must be normalized according to `schema.yaml`. In particular,
 ratio-scale upstream values must not be mixed with percentage-scale model features.
 
+### 5.2 Industry Features And Industry-Model Routing
+
+Industry features are part of the model input contract, not an optional display
+enrichment. The migration must reproduce the reference pipeline's industry identity,
+same-trade-date peer ranks, and industry-specific model routing before baseline parity
+is declared. The authoritative security-to-industry mapping is owned by `market_data`;
+the predictive module may cache a versioned mapping artifact or read the canonical
+projection, but it must not maintain an independent frontend or per-service mapping.
+
+#### 5.2.1 Canonical Industry Identity
+
+For every online feature row, resolve and persist in feature provenance:
+
+| Field | Meaning | Contract |
+| --- | --- | --- |
+| `industry_name` | Canonical industry label used by the reference model bundle | Resolve from the shared `market_data` projection; normalize null/blank to the explicit `UNKNOWN` value. |
+| `industry_code` | Numeric categorical feature consumed by the model | Use the model-training mapping artifact identified by `feature_contract_version`; never generate `pandas.Categorical.codes` independently for one symbol, one request, or one replay. |
+| `industry_mapping_version` | Mapping provenance | Persist the mapping version/hash used to resolve both the label and numeric code. |
+
+The mapping must be deterministic across training, historical replay, and live serving.
+If a security has no canonical industry, `industry_name=UNKNOWN` and the contract's
+declared unknown code are used; the row is marked `industry_feature_degraded=true`.
+An unknown industry must not be assigned a request-order-dependent integer. If the
+active model artifact has no compatible industry mapping, strict-live inference fails
+with `LIVE_FEATURE_UNAVAILABLE`/`FEATURE_CONTRACT_MISMATCH` according to deployment
+policy rather than silently inventing a code.
+
+The legacy pipeline derives `industry_code` from the complete prepared frame. That
+operation is acceptable only during a controlled, versioned training-data build. It
+is not acceptable during Maniu inference because categorical codes can change when
+the universe, row order, or filtered date range changes.
+
+#### 5.2.2 Same-Date Peer-Rank Features
+
+The following six numeric features are required when present in the active model
+bundle:
+
+```text
+pe_ind_rank
+pb_ind_rank
+ps_ind_rank
+ret_5d_ind_rank
+ret_lb_ind_rank
+turnover_rate_ind_rank
+```
+
+For a security `s` on market feature date `t`, let `P(s,t)` be all eligible securities
+with the same canonical `industry_name` and the same `trade_date=t`, after applying the
+same live/data-quality filters as the base market features. For metric `m`, the feature
+is the percentile rank of `m(s,t)` within `P(s,t)`:
+
+$$
+ind\_rank_m(s,t) = rank_{pct}(m(s,t) \mid industry(s), trade\_date=t)
+$$
+
+The implementation must use the reference ranking semantics (`pandas` percentile
+ranking with the documented tie method), retain values in $[0,1]$, and record the
+peer count and metric availability in provenance. It must not rank against future
+dates, all-market rows, or an imputed metric value. The metric inputs are:
+
+| Feature | Base metric |
+| --- | --- |
+| `pe_ind_rank` | `pe` |
+| `pb_ind_rank` | `pb` |
+| `ps_ind_rank` | `ps` |
+| `ret_5d_ind_rank` | five-trading-observation close return |
+| `ret_lb_ind_rank` | configured lookback close return, default 20 observations |
+| `turnover_rate_ind_rank` | `turnover_rate` |
+
+The rank universe and date must be identical for all six features in one prediction.
+The feature builder must calculate these ranks before hierarchical imputation. A
+missing security metric, missing industry, insufficient peer universe, or stale peer
+source remains null and is recorded in `missing_features`/`industry_feature_degraded`;
+it is then filled only by the configured stock, industry, and global model statistics.
+The service must not turn a missing rank into `1.0`, because that represents an actual
+worst/highest percentile and materially changes the quantitative industry contribution.
+
+For parity runs, the required comparison payload is:
+
+```text
+industry_name, industry_code, industry_mapping_version,
+industry_peer_trade_date, industry_peer_count,
+pe_ind_rank, pb_ind_rank, ps_ind_rank,
+ret_5d_ind_rank, ret_lb_ind_rank, turnover_rate_ind_rank
+```
+
+#### 5.2.3 Report And Anchor Recalculation Order
+
+When a requested report type replaces the initially selected latest financial row, all
+derived report features must be recalculated from the replacement row before model
+inference. In particular, `report_type_code` and `ann_date_lag_days` must correspond to
+the requested report and the selected market feature date. The migration must not keep
+the latest-row values after replacing financial fields with `H1`, `Q1`, `Q3`, or `FY`.
+
+The required order is:
+
+1. Select the eligible financial panel and canonical industry identity under the
+   requested `anchor_mode` and `asof_date`.
+2. Select the market row and construct return, volatility, liquidity, and valuation
+   windows ending at that same market date.
+3. Recompute `report_type_code` and `ann_date_lag_days` from the selected panel and
+   market row.
+4. Compute same-date industry ranks from non-imputed peer values.
+5. Reindex to the bundle's ordered `feature_cols`, then apply hierarchical imputation.
+6. Persist the final feature provenance and only then run the classifier/regressor.
+
+This order prevents the legacy failure in which an H1 financial row was copied onto a
+Q1 market row while retaining the Q1 report code and announcement lag. `ann_date_lag_days`
+may be negative when the selected market row is the last trading day before an
+announcement; that value is valid and must not be clipped without an explicit schema
+rule.
+
+#### 5.2.4 Industry-Specific Model Selection
+
+If the approved model bundle contains `industry_models`, resolve the industry model
+using the canonical `industry_name` after feature construction. A missing industry
+specific classifier or regressor falls back to the bundle's global estimator only when
+that fallback is declared in the artifact metadata and recorded as `model_source=global`.
+The service must never select an industry model from an ad-hoc label, a fuzzy frontend
+name, or a different report type. Persist `model_source`, `industry_name`, and the
+mapping version in `raw_result` and the prediction explanation.
+
+#### 5.2.5 Configuration And Acceptance Criteria
+
+`schema.yaml` and the model artifact metadata must declare:
+
+- the canonical industry mapping source and version/hash;
+- the unknown-industry code and degraded-feature policy;
+- the six rank feature names, source metrics, tie/rank semantics, and minimum peer
+  count policy;
+- the return lookback used by `ret_lb_ind_rank`;
+- whether industry-specific estimators are enabled for each report type.
+
+For the `002236.SZ / 2026-06-30 H1 / 2026-08-14` parity case, acceptance requires:
+
+- both services resolve `industry_name` and `industry_code` from the same mapping
+  contract;
+- both services use the same peer universe and produce the same six rank values, or
+  expose a recorded, approved data-source difference;
+- `report_type_code` represents H1 and `ann_date_lag_days` is recomputed from
+  `2026-08-15` and `2026-08-14` in both services;
+- no rank is silently replaced with `1.0` because the peer feature was unavailable;
+- the final ordered feature vector, missing-feature list, imputation source, model
+  source, and industry provenance are persisted for one-to-one comparison before
+  comparing score or target price.
+
 ## 6 Authoritative Predictive Three-Tier Template
 
 This section is a Maniu enhancement and is not part of the reference service parity

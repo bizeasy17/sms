@@ -245,7 +245,9 @@ class PredictiveInferenceService:
     ) -> PredictiveValuationSnapshot:
         artifact = self.registry.load_production(panel.report_type)
         bundle = self._load_bundle(artifact.report_type, artifact.model_path)
-        feature_row, market_date, missing_features, unresolved_features = self._feature_row(panel, bundle['feature_cols'])
+        feature_row, market_date, missing_features, unresolved_features, industry_trace = self._feature_row(
+            panel, bundle['feature_cols']
+        )
         probability = float(bundle['classifier'].predict_proba(feature_row)[0][1])
         earnings_growth = float(bundle['regressor'].predict(feature_row)[0])
         score = self._score(probability, earnings_growth)
@@ -324,6 +326,7 @@ class PredictiveInferenceService:
             'explain': {
                 'imputed_features': missing_features,
                 'unresolved_features': unresolved_features,
+                'industry_features': industry_trace,
                 'pred_earnings_growth': earnings_growth,
                 'quality_risk_guard': quality_guard,
                 'target_mapping': target['trace'],
@@ -331,6 +334,7 @@ class PredictiveInferenceService:
             'raw_result': {
                 'model_file': artifact.model_path.name,
                 'report_type': artifact.report_type,
+                'industry_features': industry_trace,
                 'target_mapping': target,
             },
         }
@@ -458,7 +462,11 @@ class PredictiveInferenceService:
         )
         return snapshot
 
-    def _feature_row(self, panel: PredictiveFinancialFeaturePanel, feature_columns: list[str]) -> tuple[pd.DataFrame, date, list[str], list[str]]:
+    def _feature_row(
+        self,
+        panel: PredictiveFinancialFeaturePanel,
+        feature_columns: list[str],
+    ) -> tuple[pd.DataFrame, date, list[str], list[str], dict[str, Any]]:
         start = panel.source_as_of_date - timedelta(days=200)
         bar_columns = ['trade_date', 'close', 'pct_change', 'volume']
         fundamental_columns = ['trade_date', 'pe', 'pb', 'ps', 'total_mv', 'circ_mv', 'turnover_rate']
@@ -493,8 +501,12 @@ class PredictiveInferenceService:
         values['ann_date_lag_days'] = (
             pd.Timestamp(anchor['trade_date']) - pd.Timestamp(panel.ann_date)
         ).days if panel.ann_date else None
-        for column in ('industry_code', 'pe_ind_rank', 'pb_ind_rank', 'ps_ind_rank', 'ret_5d_ind_rank', 'ret_lb_ind_rank', 'turnover_rate_ind_rank'):
-            values[column] = None
+        industry_values, industry_trace = self._industry_features(
+            panel.security,
+            anchor_date=anchor['trade_date'],
+            feature_columns=feature_columns,
+        )
+        values.update(industry_values)
         frame = pd.DataFrame([{column: values.get(column) for column in feature_columns}], columns=feature_columns)
         frame = frame.replace([np.inf, -np.inf], np.nan).apply(pd.to_numeric, errors='coerce')
         missing = [column for column in feature_columns if pd.isna(frame[column].iloc[0])]
@@ -502,7 +514,119 @@ class PredictiveInferenceService:
         for column in feature_columns:
             frame[column] = frame[column].fillna(stats.get(column))
         unresolved = [column for column in feature_columns if pd.isna(frame[column].iloc[0])]
-        return frame, anchor['trade_date'], missing, unresolved
+        return frame, anchor['trade_date'], missing, unresolved, industry_trace
+
+    def _industry_features(
+        self,
+        security: Security,
+        *,
+        anchor_date: date,
+        feature_columns: list[str],
+    ) -> tuple[dict[str, float | None], dict[str, Any]]:
+        """Build deterministic same-date industry features before imputation."""
+        rank_columns = {
+            'pe_ind_rank': 'pe',
+            'pb_ind_rank': 'pb',
+            'ps_ind_rank': 'ps',
+            'ret_5d_ind_rank': 'ret_5d',
+            'ret_lb_ind_rank': 'ret_lb',
+            'turnover_rate_ind_rank': 'turnover_rate',
+        }
+        values: dict[str, float | None] = {column: None for column in rank_columns}
+        securities = list(
+            Security.objects.filter(asset_type=Security.AssetType.STOCK)
+            .select_related('industry')
+            .values('id', 'industry__name', 'industry__source_version')
+        )
+        industry_by_security = {
+            int(row['id']): str(row['industry__name'] or 'UNKNOWN').strip() or 'UNKNOWN'
+            for row in securities
+        }
+        mapping_versions = sorted({
+            str(row['industry__source_version']).strip()
+            for row in securities
+            if str(row['industry__source_version'] or '').strip()
+        })
+        mapping_version = ','.join(mapping_versions) or 'security.industry'
+        industry_name = industry_by_security.get(security.id, 'UNKNOWN')
+        industry_names = sorted(set(industry_by_security.values()))
+        industry_cfg = ((self._load_config().get('feature_builder') or {}).get('industry') or {})
+        unknown_code = float(industry_cfg.get('unknown_code', -1))
+        industry_code = unknown_code if industry_name == 'UNKNOWN' else float(industry_names.index(industry_name))
+        values['industry_code'] = industry_code
+
+        start = anchor_date - timedelta(days=200)
+        bar_rows = list(
+            MarketBarDailyHistory.objects.filter(
+                security_id__in=industry_by_security,
+                trade_date__gte=start,
+                trade_date__lte=anchor_date,
+            ).values('security_id', 'trade_date', 'close').order_by('security_id', 'trade_date')
+        )
+        fundamental_rows = list(
+            StockDailyFundamentalHistory.objects.filter(
+                security_id__in=industry_by_security,
+                trade_date__gte=start,
+                trade_date__lte=anchor_date,
+            ).values('security_id', 'trade_date', 'pe', 'pb', 'ps', 'turnover_rate')
+        )
+        if not bar_rows or not fundamental_rows:
+            return values, {
+                'industry_name': industry_name,
+                'industry_code': industry_code,
+                'industry_mapping_version': mapping_version,
+                'industry_peer_trade_date': anchor_date.isoformat(),
+                'industry_peer_count': 0,
+                'metric_peer_counts': {name: 0 for name in rank_columns.values()},
+                'degraded': True,
+                'reason': 'industry_market_rows_unavailable',
+            }
+
+        bars_frame = pd.DataFrame(bar_rows)
+        bars_frame['close'] = pd.to_numeric(bars_frame['close'], errors='coerce')
+        bars_frame['trade_date'] = pd.to_datetime(bars_frame['trade_date'])
+        bars_frame = bars_frame.sort_values(['security_id', 'trade_date'])
+        grouped_close = bars_frame.groupby('security_id', group_keys=False)['close']
+        bars_frame['ret_5d'] = grouped_close.pct_change(5)
+        bars_frame['ret_lb'] = grouped_close.pct_change(20)
+        fundamentals_frame = pd.DataFrame(fundamental_rows)
+        fundamentals_frame['trade_date'] = pd.to_datetime(fundamentals_frame['trade_date'])
+        for column in ('pe', 'pb', 'ps', 'turnover_rate'):
+            fundamentals_frame[column] = pd.to_numeric(fundamentals_frame[column], errors='coerce')
+        peers = bars_frame.merge(
+            fundamentals_frame,
+            on=['security_id', 'trade_date'],
+            how='left',
+        )
+        peers = peers[peers['trade_date'] == pd.Timestamp(anchor_date)].copy()
+        peers['industry_name'] = peers['security_id'].map(industry_by_security).fillna('UNKNOWN')
+        peers = peers[peers['industry_name'] == industry_name]
+        min_peer_count = int(
+            ((self._load_config().get('feature_builder') or {}).get('industry') or {}).get('min_peer_count', 1)
+        )
+        metric_counts: dict[str, int] = {}
+        if len(peers) >= min_peer_count and int(security.id) in set(peers['security_id'].astype(int)):
+            target = peers[peers['security_id'] == security.id].iloc[-1]
+            for output_name, source_name in rank_columns.items():
+                series = peers[source_name].dropna()
+                metric_counts[output_name] = int(len(series))
+                if len(series) >= min_peer_count and pd.notna(target[source_name]):
+                    values[output_name] = float(series.rank(pct=True, method='average').loc[target.name])
+        else:
+            metric_counts = {name: 0 for name in rank_columns}
+
+        degraded = any(values[name] is None for name in rank_columns)
+        return values, {
+            'industry_name': industry_name,
+            'industry_code': industry_code,
+            'industry_mapping_version': mapping_version,
+            'industry_peer_trade_date': anchor_date.isoformat(),
+            'industry_peer_count': int(len(peers)),
+            'metric_peer_counts': metric_counts,
+            'rank_method': 'average_pct',
+            'min_peer_count': min_peer_count,
+            'degraded': degraded,
+        }
 
     def _load_bundle(self, report_type: str, path: Path) -> dict[str, Any]:
         if report_type not in self._bundles:

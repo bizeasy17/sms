@@ -39,7 +39,7 @@ class Command(BaseCommand):
         parser.add_argument('--history-years', type=int, default=None, help='Backfill years, default 5')
         parser.add_argument('--report-types', default='', help='Comma-separated Q1,H1,Q3,FY values')
         parser.add_argument('--horizon', default='1M')
-        parser.add_argument('--anchor-mode', default='latest', help='Snapshot anchor mode, default latest')
+        parser.add_argument('--anchor-mode', default='live_latest', help='Snapshot anchor mode, default live_latest')
         parser.add_argument('--limit', type=int, default=0)
         parser.add_argument('--retry-failed', action='store_true')
         parser.add_argument('--all', action='store_true', help='Build features for all stock securities')
@@ -210,7 +210,7 @@ class Command(BaseCommand):
         self._validate()
         start_date, end_date = self._backfill_range(options)
         report_types = self._report_types(options)
-        anchor_mode = str(options.get('anchor_mode') or 'latest').strip()
+        anchor_mode = str(options.get('anchor_mode') or 'live_latest').strip()
         if not anchor_mode or len(anchor_mode) > 16:
             raise CommandError('--anchor-mode must be 1-16 characters')
         requested_fusion = 'FUSION' in report_types
