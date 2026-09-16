@@ -234,6 +234,22 @@ class MarketDataGatewayTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json()['data'][0]['ts_code'], '000001.SZ')
 
+    def test_research_list_requires_authenticated_user(self):
+        response = self.client.get('/api/v1/market-analysis/securities/research-list')
+        self.assertEqual(response.status_code, 401)
+        self.assertEqual(response.json()['error']['code'], 'AUTHENTICATION_REQUIRED')
+
+    def test_research_list_uses_latest_available_predictive_report(self):
+        response = self.client.get(
+            '/api/v1/market-analysis/securities/research-list',
+            {'pool': 'market', 'market': 'all', 'page_size': 200},
+            **self.headers,
+        )
+        self.assertEqual(response.status_code, 200)
+        item = next(row for row in response.json()['data'] if row['ts_code'] == self.security.ts_code)
+        self.assertEqual(item['predictive_valuation']['action'], 'BUY')
+        self.assertEqual(item['predictive_valuation']['report_type'], 'FUSION')
+
     def test_sentiment_market_and_stock_snapshot_routes(self):
         market = self.client.get(
             '/api/v1/market-analysis/sentiment/market',
@@ -285,7 +301,7 @@ class MarketDataGatewayTests(TestCase):
         self.assertTrue(payload['success'])
         self.assertEqual(payload['data']['groups'][0]['key'], 'market_data')
         endpoints = payload['data']['groups'][0]['endpoints']
-        self.assertEqual(len(endpoints), 6)
+        self.assertEqual(len(endpoints), 7)
         self.assertTrue(all(endpoint['visibility'] == 'public' for endpoint in endpoints))
         self.assertTrue(all(endpoint['access_mode'] == 'authenticated' for endpoint in endpoints))
         self.assertFalse(any('required_scopes' in endpoint for endpoint in endpoints))

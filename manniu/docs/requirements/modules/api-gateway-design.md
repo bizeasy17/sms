@@ -9,6 +9,7 @@
 - `market_sentiment`：市场和个股 EOD 情绪快照
 - `traditional_valuation`：传统估值快照、方法明细、风险和多变体比较
 - `predictive_valuation`：预测估值当前结果、历史结果、季度路由和融合结果
+- `personal_user`：个人资料、自选股、观察股、持仓股和持仓组合
 
 本文档只定义外部 HTTP 边界和 Gateway 的编排责任，不替代各领域的计算、模型、数据表和任务设计。领域详细设计仍以本目录下对应模块文档为准。
 
@@ -16,7 +17,7 @@
 
 ## 2 设计原则
 
-1. **Gateway 只做边界职责**：版本化路由、认证上下文、授权、参数校验、序列化、统一错误、分页、限流、审计和只读聚合。
+1. **Gateway 只做边界职责**：版本化路由、认证上下文、授权、参数校验、序列化、统一错误、分页、限流、审计、跨领域只读聚合，以及个人用户命令/查询路由的边界编排。
 2. **领域服务拥有业务语义**：Gateway 不复制估值公式、情绪因子、市场风格分类、预测推理或财务 as-of 选择逻辑。
 3. **查询路径只读**：公开查询不得写入快照、推进 watermark、修改模型文件或触发 Tushare 请求。
 4. **PostgreSQL 是唯一事实来源**：Gateway 不引入 SQLite；Redis 如启用只做可失效缓存，不作为数据源。
@@ -35,6 +36,7 @@ flowchart LR
     Auth --> SentimentQuery[market_sentiment query services]
     Auth --> TraditionalQuery[traditional_valuation query services]
     Auth --> PredictiveQuery[predictive_valuation query services]
+    Auth --> PersonalUser[personal_user query/command services]
     MarketQuery --> PG[(PostgreSQL)]
     FinancialQuery --> PG
     SentimentQuery --> PG
@@ -46,7 +48,7 @@ flowchart LR
 
 | 组件 | 责任 | 明确不负责 |
 | --- | --- | --- |
-| `api_gateway` | URL、版本、请求校验、权限调用、序列化、分页、错误、限流、审计上下文、跨领域只读聚合 | 业务计算、写数据库、回源 Tushare、模型推理、任务调度 |
+| `api_gateway` | URL、版本、请求校验、权限调用、序列化、分页、错误、限流、审计上下文、跨领域只读聚合、个人用户路由编排 | 业务计算、直接写领域数据库、回源 Tushare、模型推理、任务调度 |
 | `access_control` | Token 校验、用户/服务身份、权限和 scope、审计主体 | 领域数据查询和业务授权规则的重复实现 |
 | `market_data` | 证券、EOD 行情、基本面、市场/个股 regime 的内部查询 | 外部 HTTP 序列化和公共权限 |
 | `financials` | 财务 raw records 与 as-of 查询 | 公共 HTTP、市场行情、估值结果 |
@@ -79,7 +81,7 @@ Gateway view 只依赖各应用公开的内部 `query_service`。禁止从 Gatew
 
 ### 4.1 基础路径和媒体类型
 
-- 基础路径：`/api/v1/market-analysis`
+- 基础路径：市场分析接口为 `/api/v1/market-analysis`；个人用户接口为 `/api/v1/me`
 - 版本通过 URL 表达；响应同时返回 `api_version: "v1"`。
 - JSON：`Content-Type: application/json`。
 - 请求需携带 `Authorization: Bearer <token>`；服务间调用使用独立 service token。
@@ -170,6 +172,7 @@ Gateway view 只依赖各应用公开的内部 `query_service`。禁止从 Gatew
 | 方法 | 路径 | 说明 | 主要查询参数 |
 | --- | --- | --- | --- |
 | GET | `/securities` | 证券主数据列表 | `asset_type`, `market`, `industry`, `list_status`, `q`, `page`, `page_size` |
+| GET | `/securities/research-list` | 当前用户研究股票池及研究动作列表 | `pool`, `market`, `industry`, `q`, `asof_date`, `page`, `page_size` |
 | GET | `/securities/:ts_code` | 证券详情和分类身份 | 无 |
 | GET | `/securities/:ts_code/bars` | EOD 行情历史 | `start_date`, `end_date`, `adjust`, `page`, `page_size` |
 | GET | `/securities/:ts_code/fundamentals` | 日基本面历史 | `start_date`, `end_date`, `page`, `page_size` |
@@ -179,6 +182,47 @@ Gateway view 只依赖各应用公开的内部 `query_service`。禁止从 Gatew
 | GET | `/securities/:ts_code/regime` | 个股风格状态 | `asof_date` |
 
 `/securities` 的 `q` 支持按证券中文名、交易代码、中文名完整拼音或拼音首字母进行不区分大小写的模糊匹配。例如，`万科`、`wanke` 和 `wk` 均可匹配名称为“万科”的证券。
+
+#### 研究股票池列表
+
+`GET /api/v1/market-analysis/securities/research-list` 为研究首页左侧股票池提供唯一数据源。该接口只返回 PostgreSQL 中已存在的证券、行情和研究结果，不允许在 Gateway 或前端回退到静态/mock 股票数据。
+
+- `pool`：`market`、`holding`、`watchlist`、`observe`；默认 `market`。后三者需要登录用户上下文。
+- `market`：`all`、`sh-main`、`sz-main`、`cyb`、`star`；默认 `all`。
+- `industry`、`q`：可选行业和证券搜索过滤。
+- `asof_date`：可选的查询截止日期，不得晚于当前日期。
+- `page`、`page_size`：分页参数，默认 `page=1`、`page_size=20`，最大 `200`。
+
+成功响应的 `data` 为股票项数组，`meta` 返回分页、`data_status` 和 `warnings`：
+
+```json
+{
+  "ts_code": "002236.SZ",
+  "name": "大华股份",
+  "sw_industry": {
+    "level": "L2",
+    "code": "850911",
+    "name": "计算机设备"
+  },
+  "market": {
+    "trade_date": "2026-09-15",
+    "pct_change": 1.84,
+    "unit": "percent"
+  },
+  "traditional_valuation": {
+    "status": "OK",
+    "action": "BUY",
+    "undervalue_score": 0.82
+  },
+  "predictive_valuation": {
+    "status": "OK",
+    "action": "HOLD",
+    "undervalue_score": 0.54
+  }
+}
+```
+
+前端必须直接展示 `name`、`ts_code`、`sw_industry.name`、`market.pct_change`、`traditional_valuation.action` 和 `predictive_valuation.action`；缺失值显示明确的不可用状态，不得使用 0、静态样例或前端推导结果替代。`action` 的合法值为 `BUY`、`HOLD`、`SELL` 或 `null`，Gateway 不因缺少估值结果而伪造动作。
 
 Gateway 只转发 `market_data` 的 bounded query service。不得在 cache miss 时调用 Tushare。regime 响应至少包括 `regime`、`source`、`asof_trade_date`、分类版本、指标和数据行数。
 
@@ -233,7 +277,82 @@ Gateway 只转发 `market_data` 的 bounded query service。不得在 cache miss
 
 `FUSION` 是多个季度预测的组合，不是第五个模型 artifact。部分成功必须保留组件状态并返回 `PARTIAL_SUCCESS`；全部失败返回明确错误或失败快照语义，不能返回空的“正常预测”。
 
-### 5.6 Public API 浏览测试页面
+### 5.6 Personal User
+
+个人用户资源由 Gateway 注册在 `/api/v1/me` 下。该组接口消费已认证的
+Django 用户上下文，负责个人资料、自选股、观察股、持仓组合和持仓快照；
+Gateway 不自行解析 Bearer Token，也不直接拼接跨模块 ORM 查询或写入个人用户表。
+
+#### 5.6.1 Gateway 集成边界
+
+| 集成点 | 定义 |
+| --- | --- |
+| 路由注册 | `api_gateway.personal_urls` |
+| 个人用户路由 | `personal_user.api.urls` 和 `personal_user.api.views` |
+| 认证 facade | `api_gateway.permissions.authenticate_request` |
+| 认证后的身份来源 | `request.auth_access.session.user` |
+| 资源前缀 | `/api/v1/me` |
+| 访问要求 | 所有资源要求有效 `Authorization: Bearer <access_token>`；不要求 `market_analysis:read` |
+| 响应封套 | 与 Gateway 相同的 `success`、`api_version`、`request_id`、`data` 或 `error` |
+
+API Gateway 必须调用 `personal_user` 暴露的 query/command service，不得在 Gateway
+view 中直接执行个人用户关系、组合或持仓的 ORM 写操作。所有写操作必须保留当前
+用户、资源类型、资源 ID、动作和 request ID 的审计上下文；日志不得记录密码、Token
+或原始 `Authorization` header。
+
+#### 5.6.2 Endpoint 目录
+
+| 方法 | 路径 | 说明 |
+| --- | --- | --- |
+| GET/PATCH | `/api/v1/me/profile` | 读取或更新当前用户个人资料 |
+| GET/POST | `/api/v1/me/watchlist` | 列出或添加自选股 |
+| PATCH/DELETE | `/api/v1/me/watchlist/{item_id}` | 更新或删除一条自选股关系 |
+| POST | `/api/v1/me/watchlist/reorder` | 原子重排自选股 |
+| GET/POST | `/api/v1/me/observations` | 列出或添加观察股 |
+| PATCH/DELETE | `/api/v1/me/observations/{item_id}` | 更新或删除一条观察股关系 |
+| POST | `/api/v1/me/observations/reorder` | 原子重排观察股 |
+| GET/POST | `/api/v1/me/portfolios` | 列出或创建持仓组合 |
+| GET/PATCH/DELETE | `/api/v1/me/portfolios/{portfolio_id}` | 读取、编辑或归档持仓组合 |
+| POST | `/api/v1/me/portfolios/reorder` | 原子重排持仓组合 |
+| GET/POST | `/api/v1/me/portfolios/{portfolio_id}/positions` | 列出或新增/替换指定组合中的持仓 |
+| PATCH/DELETE | `/api/v1/me/portfolios/{portfolio_id}/positions/{position_id}` | 更新或删除一条持仓 |
+
+#### 5.6.3 请求和资源字段
+
+个人用户 API 使用规范化证券代码（例如 `000001.SZ`、`000001.SH`）或已确认的
+`security_id`。Gateway/领域服务必须验证证券主数据归属，不得从任意文本代码创建
+孤立关系。列表默认按 `sort_order ASC, id ASC` 排序，分页必须有界，默认 `limit=50`，
+最大 `limit=100`，并拒绝任意 ORM filter 或客户端排序表达式。
+
+| 资源 | 请求字段 | 响应必须保留的字段 |
+| --- | --- | --- |
+| `profile` | `display_name`、`email`、`mobile`、`timezone`、`avatar_url` | 用户标识、资料字段、验证时间、`created_at`、`updated_at`；不得返回凭证或 Token |
+| `watchlist` / `observations` | `security_id` 或 `ts_code`、`sort_order`、`note` | 关系 ID、`list_type`、规范证券信息、`sort_order`、`note`、关系时间 |
+| `portfolio` | `name`、`description`、`is_default`、`sort_order` | 组合 ID、名称、默认标记、顺序、归档时间和时间字段 |
+| `position` | `security_id` 或 `ts_code`、`quantity`、`available_quantity`、`average_cost`、`cost_currency`、`note`、`as_of_date` | 持仓 ID、组合 ID、规范证券信息、数量、成本、币种、备注和快照日期 |
+
+持仓写入必须验证组合和证券属于当前请求上下文，数量、可用数量、平均成本和日期
+均在持久化前校验；`quantity`、`available_quantity`、`average_cost` 不得为负，且
+`available_quantity <= quantity`。同一组合中的同一证券只能有一条持仓。自选股、观察股
+和持仓是相互独立的关系，Gateway 不得自动同步它们。
+
+#### 5.6.4 成功、错误和一致性规则
+
+成功写入返回持久化后的规范资源和 request ID。错误沿用统一 Gateway 封套，至少支持：
+`AUTH_REQUIRED`、`FORBIDDEN`、`VALIDATION_ERROR`、`SECURITY_NOT_FOUND`、
+`PORTFOLIO_NOT_FOUND`、`ITEM_NOT_FOUND`、`DUPLICATE_RELATION` 和
+`CONFLICTING_VERSION`。
+
+重复添加列表项应幂等；列表重排必须在事务中校验所有 ID 均属于当前用户，发现重复、
+缺失或外部 ID 时整体失败且不得部分更新。组合及持仓关系变更使用数据库事务；重复
+客户端写入应支持幂等键，重排和持仓替换应使用 `updated_at` 或等价版本前置条件，
+避免静默覆盖较新的用户修改。所有 `/me` 查询和写入只能访问当前用户的数据，不能
+通过修改路径 ID 访问其他用户资源。
+
+个人用户接口可以包含 POST/PATCH/DELETE，因为这些是用户私有关系和快照管理能力，
+不是交易、下单、撤单、券商连接或自动交易能力。Gateway 仍不得暴露任何交易执行接口。
+
+### 5.7 Public API 浏览测试页面
 
 提供一个登录后访问的最小 Public API 浏览测试页面，用于查看和试调用已经明确对外开放的只读接口。这里的“Public”表示接口面向外部客户端开放，不表示匿名访问。该页面是 API 目录和调试入口，不提供接口配置、权限配置、数据写入或任务执行能力。
 
@@ -359,6 +478,125 @@ GET /api/v1/market-analysis/securities/:ts_code/overview
 
 聚合接口不得把某一领域的缺失转换成整个请求的 500；只有 Gateway 或数据库不可用时才整体失败。各模块数据的日期、版本和新鲜度必须保留，避免客户端把不同 as-of 的结果误拼成同一时点。
 
+### 6.1 股票研究列表融合接口
+
+为研究首页股票列表提供一个跨领域、只读的融合接口。该接口只负责编排
+`market_data`、`traditional_valuation` 和 `predictive_valuation` 的已持久化查询结果，
+不在 Gateway 中计算估值、买卖建议或低估分。
+
+```text
+GET /api/v1/market-analysis/securities/research-list
+  ?pool=holding|watchlist|observe|market
+  &market=all|sh-main|sz-main|cyb|star
+  &industry=<sw_code>
+  &q=<name_or_ts_code_or_pinyin>
+  &asof_date=YYYY-MM-DD
+  &page=1
+  &page_size=20
+```
+
+请求规则：
+
+- `pool` 和 `market` 是两个独立、可组合的白名单筛选项。`pool` 支持 `holding`（持仓）、`watchlist`（自选）、`observe`（观察）和 `market`（全市场）；`market` 支持 `all`（全市场）、`sh-main`（沪主板）、`sz-main`（深主板）、`cyb`（创业板）和 `star`（科创板）。
+- `pool` 缺省为 `market`，`market` 缺省为 `all`；因此默认返回全市场股票。传入 `pool=holding&market=sh-main` 时，返回“持仓且沪主板”的交集结果。
+- `industry` 必须是规范 SW 行业代码；不接受 Gateway 自行解析的展示名称。
+- `q` 沿用证券列表的名称、代码、完整拼音或拼音首字母匹配规则。
+- `asof_date` 缺省时使用最新完成交易日；显式日期不得使用该日期之后的行情或估值结果。
+- `page` 从 `1` 开始；`page_size` 缺省为 `20`，允许范围为 `1-200`，超出范围返回 `400`；列表必须有界，不支持无界导出。
+- `pool` 的持仓、自选和观察归属由授权后的股票池 query service 提供，Gateway 不直接查询用户关联表。
+
+响应必须包含分页元数据，且所有统计值都针对当前筛选条件：
+
+```json
+{
+  "data": [],
+  "meta": {
+    "page": 1,
+    "page_size": 20,
+    "total": 138,
+    "total_pages": 7,
+    "has_next": true,
+    "has_previous": false,
+    "data_status": "OK"
+  }
+}
+```
+
+`total` 是应用全部筛选条件后的结果总数，不是当前页数量；无结果时返回空 `data`、`total=0` 和 `total_pages=0`。
+默认排序必须稳定，跨页不能因估值状态变化造成同一请求内重复或漏项；排序字段和方向需在接口实现中固定并写入
+contract test，不能由前端传入任意 SQL 排序表达式。
+
+单条 `data` 记录的冻结字段如下：
+
+```json
+{
+  "ts_code": "002236.SZ",
+  "name": "大华股份",
+  "sw_industry": {
+    "level": "L3",
+    "code": "850111.SI",
+    "name": "计算机设备"
+  },
+  "market": {
+    "trade_date": "2026-09-09",
+    "pct_change": 1.84,
+    "unit": "percent"
+  },
+  "traditional_valuation": {
+    "status": "OK",
+    "action": "BUY",
+    "undervalue_score": 72,
+    "asof_date": "2026-09-09",
+    "source_trade_date": "2026-09-09",
+    "valuation_variant": "sw_l3_baseline",
+    "reason_code": null
+  },
+  "predictive_valuation": {
+    "status": "OK",
+    "action": "BUY",
+    "undervalue_score": 68,
+    "asof_date": "2026-09-09",
+    "source_market_date": "2026-09-09",
+    "report_type": "LATEST",
+    "model_version": "2026.09.1",
+    "reason_code": null
+  }
+}
+```
+
+字段和状态约束：
+
+- `action` 只能返回领域已定义的枚举，例如 `BUY`、`HOLD`、`SELL`；标签文案由前端本地化，不能根据价格涨跌推导。
+- `undervalue_score` 为领域持久化的低估分，范围和空值语义必须由对应领域合同冻结；研究列表的预测估值 `undervalue_score` 直接映射预测 current row 的 `signal_score`，保持原值和单位，不在 Gateway 重新缩放或计算；缺失时返回 `null`。
+- 传统估值的 `action`、`undervalue_score`、`valuation_variant` 来自传统估值当前 variant summary；预测估值对应字段来自预测当前结果或领域规定的融合结果。Gateway 不重新计算或混合两个分数。
+- `status` 至少支持 `OK`、`NOT_AVAILABLE`、`STALE`、`PARTIAL_SUCCESS`、`FAILED`；非 `OK` 时 `action` 和 `undervalue_score` 通常为 `null`，并返回稳定的 `reason_code`。
+- 行情、传统估值和预测估值分别返回来源日期。不同来源日期允许存在，但必须原样暴露，不能伪装为同一时点。
+- 列表整体成功但部分股票或领域不可用时，响应 `meta.data_status=PARTIAL_SUCCESS`，不得因单只股票缺少预测结果而丢弃整只股票。
+
+该接口要求 `market_analysis:read`；`pool` 为用户私有股票池时还必须通过股票池授权检查。响应不包含
+`raw_result`、模型诊断、SQL、内部路径或任何写操作能力。接口只能读取 PostgreSQL 已提交的证券、行情、
+传统估值 current summary 和预测估值 current rows，不得触发 Tushare、模型推理、快照写入或事件推进。
+
+该接口必须在用户登录并携带有效 `Authorization: Bearer <access_token>` 后才能访问。未携带凭证时，
+Gateway 在调用任何证券池、行情或估值 query service 前返回 `401 AUTHENTICATION_REQUIRED`；凭证无效时
+返回 `401 TOKEN_INVALID`；已登录但缺少 `market_analysis:read` scope 时返回 `403 SCOPE_REQUIRED`。
+前端不得通过隐藏入口或默认参数实现匿名访问控制，权限校验必须由 Gateway 每次请求执行。
+
+Gateway 内部应调用有界 typed services，建议签名为：
+
+```python
+get_research_universe(*, principal, pool, market, industry, q, page, page_size)
+get_market_quote_batch(*, securities, asof_date)
+get_traditional_list_summary(*, securities, asof_date)
+get_predictive_list_summary(*, securities, asof_date, report_type="LATEST")
+```
+
+最终分页、过滤、排序和 join 语义必须在接口确认闸门中冻结。默认排序应由股票池/市场数据服务明确规定，
+Gateway 不按低估分、买卖建议或前端展示顺序重新排序。
+
+该接口的错误语义沿用本章统一封套：证券池或参数错误返回 `400`，未授权返回 `401/403`，领域依赖不可用返回
+`503`；单个估值域缺失属于记录级状态，不应升级为整个列表的 `500`。
+
 ## 7 认证、授权和数据分级
 
 ### 7.1 Scope
@@ -475,7 +713,10 @@ predictive_valuation.get_status(*, report_type, model_version)
 5. **聚合和运维**：最后实现 overview、依赖状态、缓存、指标和 timeout/degraded 区块策略。
 6. **发布闸门**：完成 PostgreSQL 集成测试、as-of/no-lookahead 测试、权限测试、secret redaction、性能和故障注入后，才开放外部客户端。
 
-首期明确不实施：任何 POST/PUT/PATCH/DELETE 公共领域接口、Tushare 代理、模型训练/发布接口、批量导出、订单执行和自动交易。
+对于 `market-analysis` 公共领域接口，首期明确不实施任何 POST/PUT/PATCH/DELETE
+写接口；同时不实施 Tushare 代理、模型训练/发布接口、批量导出、订单执行和自动交易。
+`personal_user` 的 POST/PATCH/DELETE 仅限当前用户的资料、列表、组合和持仓关系，
+按 5.6 的私有资源契约执行，不属于公共市场分析写接口或交易能力。
 
 ## 13 待确认事项
 
@@ -500,4 +741,8 @@ predictive_valuation.get_status(*, report_type, model_version)
 - [x] 为传统估值补齐点时参数、report/variant 不静默替换、统一错误、脱敏和只读性 contract tests。
 - [x] 实现登录授权的 `/public/api` 浏览测试页面及 `GET /api/v1/public-api/catalog` 目录接口。
 - [x] 将页面请求绑定到当前 Bearer Token，并验证 `401`、`403/SCOPE_REQUIRED`、`429`、`503` 等状态展示和敏感信息脱敏。
+- [ ] 冻结并实现股票研究列表融合接口 `GET /api/v1/market-analysis/securities/research-list`，确认股票池、市场、SW 行业、关键词、as-of 和分页参数。
+- [ ] 注册研究列表接口的 Public API catalog 元数据，确认 `market_analysis:read`、用户股票池授权和单项估值状态展示规则。
+- [ ] 为研究列表融合接口补充跨领域 contract tests：行情日期一致性、传统/预测字段来源、部分成功、空分数、权限、只读性和错误封套。
+- [ ] 完成研究首页对股票名称、规范代码、SW 行业、涨跌幅、传统估值标签和预测估值标签的真实接口验收。
 - [ ] 完成 PostgreSQL、as-of、权限、故障隔离和敏感信息脱敏验收。

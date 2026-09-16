@@ -1084,6 +1084,31 @@ get_predictive_status(
 )
 ```
 
+### 13.7 Research-list fusion input
+
+为 `api_gateway` 股票研究列表融合接口提供一个轻量批量只读 query service。该服务只读取已持久化的
+`PredictiveValuationCurrent`（或已确认的 current read model），不在列表请求中执行 inference、融合或
+快照写入：
+
+```python
+get_predictive_list_summary(
+	*, securities, asof_date=None, report_type="LATEST",
+	anchor_mode=None, model_version=None,
+)
+```
+
+每只证券至少返回：`ts_code`、`status`、`action`、`undervalue_score`、`asof_date`、
+`source_market_date`、`report_type`、`model_version` 和稳定的 `reason_code`。其中：
+
+- `action` 沿用预测领域已冻结的动作枚举，建议为 `BUY`、`HOLD`、`SELL`；Gateway 和前端不得从 score、目标价或涨跌幅自行推导。
+- 研究列表中的 `undervalue_score` 直接映射预测 current row 已持久化的 `signal_score`，保持原值和单位；Gateway 不重新缩放或计算。`signal_score` 缺失时返回 `null` 和明确的 `NOT_AVAILABLE` 状态及 `PREDICTIVE_SIGNAL_SCORE_MISSING`。
+- `LATEST` 必须返回实际命中的报告类型；`FUSION` 只能在领域已持久化融合结果可用时返回，部分成功保留 `PARTIAL_SUCCESS` 和组件状态。
+- `asof_date`、`source_market_date`、`model_version` 和 `anchor_mode` 必须来自命中的 current row；没有严格匹配结果时返回 `RESULT_NOT_FOUND`/`NOT_AVAILABLE`，不得静默换季度、模型版本或锚点。
+
+该批量服务采用 Gateway 传入的有界证券集合、明确的批量上限和分页上下文，保持每只证券独立状态。它只读取 PostgreSQL 已提交结果，
+不得调用 Tushare、模型文件、inference、事件消费或写入预测 current/history。`raw_result`、失败堆栈、特征
+明细和 operator 诊断不属于研究列表摘要字段；其权限仍按单证券预测接口的 scope 矩阵控制。
+
 这些服务必须只读取已持久化结果，返回 typed DTO 和数据状态，不接受 request 对象，不执行
 模型推理或写操作。Gateway 实现验收至少包括：
 
@@ -1106,6 +1131,7 @@ get_predictive_status(
 
 - [ ] 与产品、前端和 `access_control` 确认四条路由是否按本节冻结，尤其是 `LATEST`、
 	`FUSION` 和失败快照的 HTTP/`data_status` 语义。
+- [ ] 与产品、前端和 `api_gateway` 确认研究列表融合接口的预测字段：`action`、`undervalue_score`、报告类型、模型版本、来源日期、状态和 `reason_code`；确认 `undervalue_score` 直接复用 `signal_score` 的原值和单位。
 - [ ] 逐项确认 Gateway 请求字段与预测表字段：`report_type`、`asof_date`、
 	`source_market_date`、`financial_end_date`、`model_version`、`anchor_mode`、
 	`feature_data_source`、raw/adjusted ranges、`last_error` 和 tier template。

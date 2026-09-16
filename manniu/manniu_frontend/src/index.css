@@ -1,15 +1,1 @@
-:root {
-  --sans: "Aptos", "Segoe UI", sans-serif;
-  --heading: "Aptos Display", Georgia, serif;
-  --mono: "Cascadia Code", Consolas, monospace;
-  font-family: var(--sans);
-  color: #26302c;
-  background: #f4f1e9;
-  font-synthesis: none;
-  text-rendering: optimizeLegibility;
-  -webkit-font-smoothing: antialiased;
-}
-
-* { box-sizing: border-box; }
-body { margin: 0; min-width: 320px; }
-button, input, select { font: inherit; }
+:root{--color-bg:#f7f9fc;--color-surface:#fff;--color-surface-muted:#f8fafc;--color-text:#182536;--color-text-muted:#728198;--color-line:#dde5ef;--color-primary:#315bce;--color-positive:#d94f58;--color-negative:#159b78;--color-warning:#b16a14;--sans:"Segoe UI","Microsoft YaHei",sans-serif;--heading:Georgia,"Noto Serif SC",serif;--mono:"Cascadia Code",Consolas,monospace;font-family:var(--sans);color:var(--color-text);background:var(--color-bg);font-synthesis:none;text-rendering:optimizeLegibility;-webkit-font-smoothing:antialiased}*{box-sizing:border-box}html{background:var(--color-bg)}body{margin:0;min-width:320px}button,input,select{font:inherit}button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid var(--color-primary);outline-offset:2px}

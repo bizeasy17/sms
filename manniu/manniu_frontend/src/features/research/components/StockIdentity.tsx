@@ -1,0 +1,3 @@
+import type { Stock } from '../types'
+
+export function StockIdentity({ stock }: { stock: Stock }) { return <><div className="breadcrumb"><span>覆盖池</span><b>/</b><span>{stock.industry}</span><b>/</b><strong>个股研究</strong></div><section className="stock-identity"><div><div className="identity-title"><h1>{stock.name}</h1><span className="code">{stock.code}</span><span className="exchange">{stock.market}</span></div><p>{stock.industry} · 数据截至 2026-08-17</p></div><div className="quote"><strong>¥24.68</strong><span className="up">+0.45&nbsp;&nbsp; +1.84%</span></div></section></> }

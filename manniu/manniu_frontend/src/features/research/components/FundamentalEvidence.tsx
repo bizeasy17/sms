@@ -1,0 +1,4 @@
+import { metricData } from '../data'
+import { ModuleStateNotice, type ModuleState } from './ModuleStateNotice'
+
+export function FundamentalEvidence({ state = 'ready' }: { state?: ModuleState }) { return <section className="section"><div className="section-heading"><div><p className="kicker">03 / FUNDAMENTALS</p><h2>基本面证据</h2></div><span className="section-note">最新报告期 · 2026Q2</span></div>{state === 'ready' ? <div className="metric-grid">{metricData.map((metric) => <div className="metric-cell" key={metric.label}><span>{metric.label}</span><strong>{metric.value}</strong><em className={metric.tone}>{metric.note}</em></div>)}</div> : <ModuleStateNotice state={state} label="基本面证据" />}</section> }

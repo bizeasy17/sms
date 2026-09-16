@@ -1729,6 +1729,28 @@ The query layer must support bounded security/date/report/variant filters and
 pagination. It must never invoke Tushare, insert a snapshot, or silently fall
 back across report periods or variants.
 
+### 12.1 Research-list fusion input
+
+为 `api_gateway` 的股票研究列表融合接口提供一个有界的批量只读查询。该查询不是新的估值计算模式，
+只读取已发布的 `TraditionalValuationVariantSummaryLatest` 或等价 current read model，并按规范证券代码
+返回列表所需的最小字段：
+
+```python
+get_traditional_list_summary(
+  *, securities, asof_date=None, valuation_variant="active",
+)
+```
+
+每只证券至少返回：`ts_code`、`status`、`action`、`undervalue_score`、`asof_date`、
+`source_trade_date`、`valuation_variant` 和稳定的 `reason_code`。`action` 使用领域枚举
+`BUY`/`HOLD`/`SELL`，`undervalue_score` 使用传统估值 summary service 产生的低估分；query service 不得
+根据 composite gap 在读取时重新计算，也不得把缺失分数改写为 `0`。
+
+`valuation_variant="active"` 必须使用已持久化的 `active_variant` 选择结果。不得根据数据库行顺序、
+方法数量或前端排序重新选择 variant；如果没有有效 active summary，返回 `NOT_AVAILABLE` 或领域确认的
+失败状态及 `reason_code`。该批量查询必须只读 PostgreSQL，支持 Gateway 传入的有界证券集合和分页批量大小，并保持每只证券的来源日期
+和 freshness；不得在列表请求中执行估值、回源 Tushare 或写入 current/snapshot。
+
 ## 13 Test And Reconciliation Contract
 
 ### 13.1 Core Tests
@@ -1852,6 +1874,7 @@ failed case.
 
 - [x] 实现从 `market_data`/`financials` 导入三类已提交事件到 `TraditionalValuationEventState`，按 source event 幂等入库，并支持市场事件的有界 fan-out 消费刷新；估值事务失败重试和端到端回放测试仍待补充。
 - [ ] 确认并冻结传统估值 API/Auth 接入合同：数据库字段、请求参数、响应字段、空结果语义和诊断字段白名单。
+- [ ] 确认股票研究列表融合接口中的传统估值字段：`action`、`undervalue_score`、active variant、来源日期、状态和 `reason_code`，并冻结批量 query service 合同。
 - [x] 实现传统估值只读 query service 和规范化结果 payload，覆盖 snapshot、method rows、risk、variant summary、tiered template 及 provenance；typed DTO 仍可作为后续强化项。
 - [x] 实现当前估值快照接口：`GET /api/v1/market-analysis/securities/:ts_code/valuations/traditional`。
 - [x] 实现传统估值历史接口：`GET /api/v1/market-analysis/securities/:ts_code/valuations/traditional/history`，包含日期范围和分页限制。

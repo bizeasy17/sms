@@ -58,6 +58,7 @@ from .services.predictive_valuation import (
     get_history as get_predictive_history,
     get_status as get_predictive_status,
 )
+from .services.research_list import get_research_list
 
 
 def _meta(page=None, *, data_status='COMPLETE', asof_date=None, source_trade_date=None, warnings=None):
@@ -99,6 +100,7 @@ def _handle_request_error(request, error):
         'INVALID_STYLE': 400,
         'UPSTREAM_DEPENDENCY_UNAVAILABLE': 503,
         'VERSION_CONFLICT': 409,
+        'FORBIDDEN': 403,
     }
     return api_error(
         request,
@@ -215,6 +217,36 @@ def securities(request):
     except MarketDataRequestError as error:
         return _handle_request_error(request, error)
     return api_response(request, data=result.items, meta=_meta(result))
+
+
+@require_scopes('market_analysis:read')
+def securities_research_list(request):
+    if (response := _require_get(request)) is not None:
+        return response
+    try:
+        page = _query_int(request.GET, 'page', 1)
+        page_size = _query_int(request.GET, 'page_size', 20, maximum=200)
+        asof_date = parse_date(request.GET.get('asof_date'), 'asof_date')
+        user = getattr(getattr(request, 'auth_access', None), 'session', None)
+        user = getattr(user, 'user', None)
+        result = get_research_list(
+            user=user,
+            pool=request.GET.get('pool', 'market'),
+            market=request.GET.get('market', 'all'),
+            industry=request.GET.get('industry'),
+            q=request.GET.get('q', ''),
+            asof_date=asof_date,
+            page=page,
+            page_size=page_size,
+        )
+    except MarketDataRequestError as error:
+        return _handle_request_error(request, error)
+    meta = _meta(result, data_status='OK' if result.total else 'NO_DATA', asof_date=asof_date)
+    meta.update({
+        'total_pages': (result.total + result.page_size - 1) // result.page_size if result.total else 0,
+        'has_previous': result.page > 1 and result.total > 0,
+    })
+    return api_response(request, data=result.items, meta=meta)
 
 
 @require_scopes('market_analysis:read')

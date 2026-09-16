@@ -219,6 +219,8 @@ class Command(BaseCommand):
         codes = self._codes(options)
         if codes:
             panels = panels.filter(security__ts_code__in=codes)
+        elif options['scope'] != 'all':
+            panels = panels.filter(security__ts_code__startswith=options['scope'])
         if options['limit'] > 0:
             panels = panels[:options['limit']]
         if options['dry_run']:

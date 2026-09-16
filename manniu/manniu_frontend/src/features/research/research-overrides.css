@@ -1,0 +1,203 @@
+.stock-rail {
+  display: flex;
+  flex-direction: column;
+  height: calc(100vh - 56px);
+  position: sticky;
+  top: 56px;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.rail-filters {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 15px;
+}
+
+.segmented {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.rail-filters select {
+  flex: 0 0 82px;
+  min-width: 0;
+}
+
+.rail-list {
+  min-height: 0;
+  overflow-y: auto;
+  padding-right: 2px;
+}
+
+.stock-empty {
+  padding: 24px 9px;
+  color: var(--color-text-muted);
+  font-size: 11px;
+  text-align: center;
+}
+
+.stock-tags i span:first-child {
+  color: var(--color-text-muted);
+}
+
+.stock-tags .tag-action.buy,
+.stock-tags .tag-score.buy {
+  color: var(--color-positive);
+}
+
+.stock-tags .tag-action.sell,
+.stock-tags .tag-score.sell {
+  color: var(--color-negative);
+}
+
+.stock-tags .tag-action.hold,
+.stock-tags .tag-score.hold {
+  color: var(--color-primary);
+}
+
+.range-bar {
+  background: linear-gradient(90deg, #176b4d 0%, #b8d9bd 33%, #f0c7c5 68%, #c94d55 100%);
+}
+
+.range-pointer i {
+  top: 25px;
+  left: -20px;
+}
+
+.valuation-summary-section .model-valuation-block {
+  margin-top: 32px;
+}
+
+.valuation-summary-section .fundamental-valuation-block > .section-heading {
+  margin-bottom: 8px;
+}
+
+.valuation-methods {
+  display: grid;
+  gap: 18px;
+}
+
+.model-placeholder {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 5px;
+  padding-top: 12px;
+  border-top: 1px solid var(--color-line);
+  font-size: 11px;
+}
+
+.model-placeholder strong {
+  font: 700 12px var(--mono);
+}
+
+.model-placeholder em {
+  grid-column: 1 / -1;
+  color: var(--color-text-muted);
+  font: 10px var(--mono);
+  font-style: normal;
+}
+
+.module-state {
+  display: grid;
+  justify-items: start;
+  gap: 6px;
+  min-height: 92px;
+  align-content: center;
+  padding: 16px;
+  border: 1px dashed var(--color-line);
+  background: var(--color-surface-muted);
+}
+
+.module-state strong {
+  font-size: 12px;
+}
+
+.module-state span {
+  color: var(--color-text-muted);
+  font-size: 11px;
+}
+
+.module-state button {
+  padding: 5px 10px;
+  border: 1px solid var(--color-primary);
+  border-radius: 4px;
+  background: transparent;
+  color: var(--color-primary);
+  cursor: pointer;
+  font-size: 11px;
+}
+
+.module-state-loading {
+  background: linear-gradient(90deg, var(--color-surface-muted), #fff, var(--color-surface-muted));
+  background-size: 200% 100%;
+  animation: module-state-loading 1.4s linear infinite;
+}
+
+.module-state-error strong {
+  color: var(--color-negative);
+}
+
+@keyframes module-state-loading {
+  from { background-position: 100% 0; }
+  to { background-position: -100% 0; }
+}
+
+.percentile-line {
+  fill: none;
+  stroke-width: 1;
+  stroke-dasharray: 4 4;
+}
+
+.percentile-p10 {
+  stroke: #176b4d;
+}
+
+.percentile-median {
+  stroke: #8a929d;
+}
+
+.percentile-p90 {
+  stroke: #c94d55;
+}
+
+.legend-p10,
+.legend-median,
+.legend-p90 {
+  border-top: 2px dashed currentColor;
+}
+
+.legend-p10 {
+  color: #176b4d;
+}
+
+.legend-median {
+  color: #8a929d;
+}
+
+.legend-p90 {
+  color: #c94d55;
+}
+
+@media (max-width: 700px) {
+  .chart-legend {
+    flex-wrap: wrap;
+    row-gap: 7px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .module-state-loading {
+    animation: none;
+  }
+}
+
+@media (max-width: 700px) {
+  .stock-rail {
+    position: fixed;
+    top: 0;
+    bottom: 0;
+    height: 100vh;
+  }
+}
