@@ -44,7 +44,7 @@ set "END_DATE=%END_DATE:-=%"
 if "%LIMIT%"=="" if /I "%MODE%"=="backfill" set "LIMIT=0"
 if "%LIMIT%"=="" set "LIMIT=500"
 if "%REPORT_TYPES%"=="" set "REPORT_TYPES=Q1,H1,Q3,FY"
-if "%ANCHOR_MODE%"=="" set "ANCHOR_MODE=latest"
+if "%ANCHOR_MODE%"=="" set "ANCHOR_MODE=live_latest"
 if "%HISTORY_YEARS%"=="" set "HISTORY_YEARS=5"
 
 rem Accept the previous positional order: report_types, limit, anchor_mode, history_years.
@@ -79,6 +79,7 @@ set "LOG_FILE=%LOG_DIR%\predictive_valuation_%MODE%_%RUN_TIMESTAMP%.log"
 pushd "%PROJECT_ROOT%" || exit /b 1
 set "DJANGO_SETTINGS_MODULE=config.settings"
 call :log Predictive valuation %MODE% started.
+call :log "Resolved batch parameters: mode=%MODE%; scope=%SCOPE%; ts_codes=%TS_CODES%; start_date=%START_DATE%; end_date=%END_DATE%; report_types=%REPORT_TYPES%; anchor_mode=%ANCHOR_MODE%; limit=%LIMIT%; history_years=%HISTORY_YEARS%"
 
 "%PYTHON_EXE%" manage.py predictive_valuation validate >> "%LOG_FILE%" 2>&1
 if errorlevel 1 goto :failure

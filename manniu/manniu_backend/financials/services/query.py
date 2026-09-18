@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import date
+from calendar import isleap
 from decimal import Decimal
 
 from django.db.models import Q
@@ -140,3 +141,138 @@ def query_disclosures(*, ts_code, asof_date, date_range=None, page=1, page_size=
         })
         items.append(payload)
     return FinancialPage(items, page, page_size, total)
+
+
+OVERVIEW_AMOUNT_METRICS = {
+    'revenue': ('revenue', 'income'),
+    'operating_cash_flow': ('n_cashflow_act', 'cashflow'),
+    'net_profit': ('n_income_attr_p', 'income'),
+    'ebit': ('operate_profit', 'income'),
+}
+OVERVIEW_RATE_METRICS = {
+    'gross_margin': 'grossprofit_margin',
+    'roe': 'roe',
+    'net_margin': 'netprofit_margin',
+    'debt_to_assets': 'debt_to_assets',
+}
+
+
+def _overview_rows(model, security, asof_date):
+    return list(_queryset(model, security, asof_date).order_by('-end_date', '-ann_date', '-id'))
+
+
+def _row_for_period(rows, end_date):
+    return next((row for row in rows if row.end_date == end_date), None)
+
+
+def _latest_row(rows, end_date=None):
+    if end_date is None:
+        return rows[0] if rows else None
+    return next((row for row in rows if row.end_date and row.end_date <= end_date), None)
+
+
+def _same_period_last_year(end_date):
+    try:
+        return end_date.replace(year=end_date.year - 1)
+    except ValueError:
+        return end_date.replace(year=end_date.year - 1, day=28 if isleap(end_date.year - 1) else 28)
+
+
+def _report_type(row):
+    if row is None:
+        return None
+    return getattr(row, 'report_type', None) or ('FY' if row.end_date and row.end_date.month == 12 else None)
+
+
+def _amount_value(row, field):
+    if row is None:
+        return None
+    value = getattr(row, field, None)
+    if value is None and field == 'n_income_attr_p':
+        value = getattr(row, 'n_income', None)
+    return value
+
+
+def _ratio_yoy(current, previous):
+    if current is None or previous is None or previous == 0:
+        return None
+    return float((current - previous) / abs(previous))
+
+
+def _rate_yoy(current, previous):
+    if current is None or previous is None:
+        return None
+    return float(current - previous)
+
+
+def _rolling12(rows, field, current_row):
+    if current_row is None or current_row.end_date is None:
+        return None
+    current_value = _amount_value(current_row, field)
+    if current_value is None:
+        return None
+    if current_row.end_date.month == 12:
+        return float(current_value)
+    prior_fy_date = date(current_row.end_date.year - 1, 12, 31)
+    prior_same_period = _same_period_last_year(current_row.end_date)
+    prior_fy = _amount_value(_row_for_period(rows, prior_fy_date), field)
+    prior_period = _amount_value(_row_for_period(rows, prior_same_period), field)
+    if prior_fy is None or prior_period is None:
+        return None
+    return float(current_value + prior_fy - prior_period)
+
+
+def _overview_metric(*, key, row, rows, field, source_dataset, amount):
+    value = _amount_value(row, field) if amount else getattr(row, field, None) if row else None
+    previous_row = _row_for_period(rows, _same_period_last_year(row.end_date)) if row and row.end_date else None
+    previous = _amount_value(previous_row, field) if amount else getattr(previous_row, field, None) if previous_row else None
+    return {
+        'key': key,
+        'value': float(value) if value is not None else None,
+        'yoy': _ratio_yoy(value, previous) if amount else _rate_yoy(value, previous),
+        'yoy_unit': 'ratio' if amount else 'percentage_points',
+        'rolling12': _rolling12(rows, field, row) if amount else float(value) if value is not None else None,
+        'rolling12_unit': 'CNY' if amount else 'percentage_points',
+        'period': row.end_date.isoformat() if row and row.end_date else None,
+        'source_dataset': source_dataset,
+        'available': value is not None,
+    }
+
+
+def query_financial_overview(*, ts_code, asof_date, report_type='LATEST'):
+    security = Security.objects.get(ts_code=ts_code)
+    income_rows = _overview_rows(FinancialIncomeRecord, security, asof_date)
+    cashflow_rows = _overview_rows(FinancialCashFlowRecord, security, asof_date)
+    indicator_rows = _overview_rows(FinancialIndicatorRecord, security, asof_date)
+    candidate_rows = income_rows + cashflow_rows + indicator_rows
+    selected = _latest_row(sorted(candidate_rows, key=lambda row: (row.end_date or date.min, row.ann_date or date.min, row.id), reverse=True))
+    period = selected.end_date if selected else None
+    metrics = {}
+    for key, (field, dataset) in OVERVIEW_AMOUNT_METRICS.items():
+        rows = income_rows if dataset == 'income' else cashflow_rows
+        row = _latest_row(rows, period)
+        metrics[key] = _overview_metric(key=key, row=row, rows=rows, field=field, source_dataset=dataset, amount=True)
+    for key, field in OVERVIEW_RATE_METRICS.items():
+        row = _latest_row(indicator_rows, period)
+        metrics[key] = _overview_metric(key=key, row=row, rows=indicator_rows, field=field, source_dataset='indicator', amount=False)
+    available = sum(metric['available'] for metric in metrics.values())
+    return {
+        'ts_code': security.ts_code,
+        'asof_date': asof_date.isoformat(),
+        'period': period.isoformat() if period else None,
+        'report_type': report_type,
+        'metrics': metrics,
+        'units': {
+            'amount': 'CNY',
+            'rate': 'percentage_points',
+            'growth': 'ratio',
+            'rolling12': 'CNY_or_percentage_points',
+        },
+        'source_dates': {
+            'income': income_rows[0].end_date.isoformat() if income_rows else None,
+            'cashflow': cashflow_rows[0].end_date.isoformat() if cashflow_rows else None,
+            'indicator': indicator_rows[0].end_date.isoformat() if indicator_rows else None,
+        },
+        'data_status': 'COMPLETE' if available else 'NOT_AVAILABLE',
+        'warnings': [] if available == len(metrics) else ['部分财务指标暂无可用记录'],
+    }

@@ -45,6 +45,7 @@ class TraditionalValuationSnapshot(models.Model):
 	parameter_version = models.CharField(max_length=64)
 	parameter_source_hash = models.CharField(max_length=128, blank=True)
 	valuation_engine_version = models.CharField(max_length=32, default='1.0')
+	refresh_run_key = models.CharField(max_length=64, default='legacy')
 	trigger_type = models.CharField(max_length=32, default='MANUAL')
 	current_price = models.DecimalField(max_digits=20, decimal_places=6, null=True, blank=True)
 	composite_valuation_price_raw = models.DecimalField(max_digits=20, decimal_places=6, null=True, blank=True)
@@ -63,9 +64,9 @@ class TraditionalValuationSnapshot(models.Model):
 				fields=[
 					'security', 'asof_date', 'source_trade_date', 'report_type',
 					'financial_end_date', 'profit_bucket', 'valuation_variant',
-					'parameter_version', 'valuation_engine_version',
+					'parameter_version', 'valuation_engine_version', 'refresh_run_key',
 				],
-				name='tv_snapshot_identity_uniq',
+				name='tv_snapshot_identity_run_uniq',
 			),
 		]
 		indexes = [

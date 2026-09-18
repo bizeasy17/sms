@@ -7,7 +7,7 @@ from .errors import api_error, api_response
 from .catalog import public_api_catalog
 from .permissions import require_scopes
 from .permissions import authenticate_request
-from financials.services.query import DATASET_MODELS, query_disclosures, query_records
+from financials.services.query import DATASET_MODELS, query_disclosures, query_financial_overview, query_records
 from .services.market_data import Page
 from traditional_valuation.services.query import (
     TraditionalValuationRequestError,
@@ -192,7 +192,7 @@ def _traditional_params(request):
     include_methods = _query_bool(params, 'include_methods')
     include_variants = _query_bool(params, 'include_variants')
     include_risk = _query_bool(params, 'include_risk', default=True)
-    diagnostics = include_methods or include_variants
+    diagnostics = _query_bool(params, 'include_diagnostics')
     return include_methods, include_variants, include_risk, diagnostics
 
 
@@ -681,6 +681,26 @@ def security_financials(request, ts_code):
     return api_response(request, data=result.items, meta=_meta(result, data_status=status, asof_date=asof_date))
 
 
+@require_scopes('market_analysis:read')
+def security_financial_overview(request, ts_code):
+    if (response := _require_get(request)) is not None:
+        return response
+    try:
+        asof_date = parse_date(request.GET.get('asof_date'), 'asof_date') or date.today()
+        if asof_date > date.today():
+            raise MarketDataRequestError('INVALID_DATE', 'asof_date 不能晚于当前日期')
+        report_type = request.GET.get('report_type', 'LATEST').strip().upper()
+        if report_type != 'LATEST':
+            raise MarketDataRequestError('INVALID_REQUEST', 'report_type 仅支持 LATEST')
+        canonical = normalize_ts_code(ts_code)
+        data = query_financial_overview(ts_code=canonical, asof_date=asof_date, report_type=report_type)
+    except MarketDataRequestError as error:
+        return _handle_request_error(request, error)
+    status = data.pop('data_status')
+    warnings = data.pop('warnings')
+    return api_response(request, data=data, meta=_meta(data_status=status, asof_date=asof_date, warnings=warnings))
+
+
 def security_disclosures(request, ts_code):
     if (response := _require_get(request)) is not None:
         return response
@@ -778,7 +798,7 @@ def security_traditional_valuation_compare(request, ts_code):
         return response
     try:
         include_methods = _query_bool(request.GET, 'include_methods')
-        diagnostics = include_methods or _query_bool(request.GET, 'include_diagnostics')
+        diagnostics = _query_bool(request.GET, 'include_diagnostics')
         if (response := _traditional_auth(request, diagnostics=diagnostics)) is not None:
             return response
         asof_date = parse_date(request.GET.get('asof_date'), 'asof_date') or date.today()

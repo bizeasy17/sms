@@ -134,7 +134,7 @@ class PredictiveValuationSnapshot(models.Model):
 		db_table = 'predictive_valuation_snapshot'
 		constraints = [
 			models.UniqueConstraint(
-				fields=['security', 'report_type', 'asof_date'],
+				fields=['security', 'report_type', 'asof_date', 'run_key'],
 				name='pv_snapshot_uniq',
 			),
 		]

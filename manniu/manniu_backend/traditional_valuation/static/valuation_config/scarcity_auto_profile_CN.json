@@ -34,5 +34,11 @@
     "score": 1.0,
     "confidence": 1.0
   },
-  "fallback_profile": "balanced"
+  "fallback_profile": "balanced",
+  "enabled": true,
+  "beta": 1.0,
+  "cap_pct": 80.0,
+  "score": 0.35,
+  "confidence": 0.55,
+  "confidence_floor": 0.35
 }

@@ -189,6 +189,7 @@ All routes use the existing Gateway base path and response contract:
 ```text
 GET /api/v1/market-analysis/securities/:ts_code/financials
 GET /api/v1/market-analysis/securities/:ts_code/disclosures
+GET /api/v1/market-analysis/securities/:ts_code/financials/overview
 ```
 
 `ts_code` is normalized to an exchange-suffixed code before the domain call.
@@ -272,6 +273,42 @@ raw persistence layer and must not be exposed through these routes. Diagnostic
 details are Scope-sensitive: ordinary users receive stable reason codes only;
 SQL, stack traces, connection strings, file paths, tokens, and provider
 credentials are never returned.
+
+### 7.4.1 Financial overview fusion contract
+
+`GET /api/v1/market-analysis/securities/:ts_code/financials/overview` is the
+read-only fusion endpoint for the research home fundamental evidence module. It
+combines the latest public income, cash-flow, and indicator records for one
+security. It does not call Tushare, write PostgreSQL, rebuild projections, or
+calculate valuation signals.
+
+Request parameters:
+
+| Parameter | Required | Contract |
+| --- | --- | --- |
+| `asof_date` | no | `YYYY-MM-DD`, defaults to today, cannot be future-dated |
+| `report_type` | no | `LATEST` (default); selects the latest public report period available at `asof_date` |
+
+The response uses the standard Gateway envelope. `data.period` is the selected
+report period, `data.report_type` is the source report type, and
+`data.metrics` contains the stable keys `revenue`, `gross_margin`, `roe`,
+`operating_cash_flow`, `net_profit`, `ebit`, `net_margin`, and
+`debt_to_assets`.
+
+Each metric is an object with `value`, `yoy`, `yoy_unit`, `rolling12`,
+`rolling12_unit`, `period`, `source_dataset`, and `available`. Amount values
+use CNY. Rate values use percentage points. Amount `yoy` values are ratios
+(`0.18` means 18%); rate `yoy` values are percentage-point differences.
+`rolling12` is the sum of the latest four quarterly cumulative amount records
+for amount metrics, and the latest available value for rate metrics. A missing
+source value remains `null`; no zero is synthesized.
+
+Source mapping is fixed: `income.revenue`, `indicator.grossprofit_margin`,
+`indicator.roe`, `cashflow.n_cashflow_act`, `income.n_income_attr_p` with
+`n_income` fallback, `income.operate_profit` for the current EBIT proxy,
+`indicator.netprofit_margin`, and `indicator.debt_to_assets` respectively.
+`meta.data_status` is `COMPLETE` when at least one metric is available and
+`NOT_AVAILABLE` otherwise; partial gaps are represented at metric level.
 
 ### 7.5 Authentication, audit, and cache requirements
 
@@ -384,10 +421,12 @@ visibility.
 - [ ] 查询服务：实现 effective-date/as-of 过滤、报告期选择、多事件选择策略和 `NOT_AVAILABLE`、`STALE`、`PARTIAL_SUCCESS` 等状态。
 - [x] Auth 接入：通过 `access_control` 校验 Bearer token、用户/会话状态、token 撤销状态和所需 Scope，不在 financials 内维护第二套权限。
 - [x] Gateway 接入：实现 financials/disclosures 只读路由、参数白名单、证券代码规范化、分页/日期范围校验和统一错误映射。
+- [ ] Gateway 接入：增加 financial overview 融合只读路由，保持标准认证、as-of 和字段裁剪契约。
 - [ ] Gateway 接入：接入 `X-Request-ID`、结构化审计、限流、超时和响应字段裁剪，确保普通用户无法读取 raw/operator 数据。
 - [x] API 目录：将已审核的 financials 只读 endpoint 加入 Public API catalog；不公开导入运行、raw payload 和运维接口。
 - [ ] 测试：补充模型契约、自然键、索引、迁移和字段精度测试。
 - [ ] 测试：补充 adapter mock、分页/重试、空值规范化、幂等 upsert、修订审计和 watermark 失败回滚测试。
+- [ ] 测试：补充 financial overview 的来源字段、同比、rolling12、缺失值和 as-of 边界测试。
 - [ ] 测试：补充 disclosure event 定向同步测试，证明 daily actual-date 和 quarterly reconciliation 都不会触发全市场扫描。
 - [ ] 测试：补充 as-of/no-lookahead、无效日期、未来披露、重复披露和多 dividend/main-business 行测试。
 - [ ] 测试：补充 Gateway/Auth 集成测试，覆盖未登录、过期/撤销 token、disabled 用户、缺少 Scope 和 operator Scope。

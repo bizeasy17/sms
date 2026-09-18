@@ -31,6 +31,7 @@ call :sync stock-fundamentals by-date || goto :failure
 call :sync stock-cost by-date || goto :failure
 call :sync_indices index-bars || goto :failure
 call :sync_indices index-fundamentals || goto :failure
+call :sync sw-industry-daily by-code || goto :failure
 call :detect_regime_events || goto :failure
 call :sync_financials || goto :failure
 

@@ -316,6 +316,59 @@ class IndexDailyFundamentalLatest(DailySnapshotAuditModel):
         ]
 
 
+class SWIndustryDailyHistory(DailySnapshotAuditModel):
+    security = models.ForeignKey(Security, on_delete=models.CASCADE, related_name='sw_industry_daily_history')
+    name = models.CharField(max_length=128, blank=True)
+    open = models.DecimalField(max_digits=20, decimal_places=6, null=True, blank=True)
+    high = models.DecimalField(max_digits=20, decimal_places=6, null=True, blank=True)
+    low = models.DecimalField(max_digits=20, decimal_places=6, null=True, blank=True)
+    close = models.DecimalField(max_digits=20, decimal_places=6, null=True, blank=True)
+    pre_close = models.DecimalField(max_digits=20, decimal_places=6, null=True, blank=True)
+    change = models.DecimalField(max_digits=20, decimal_places=6, null=True, blank=True)
+    pct_change = models.DecimalField(max_digits=12, decimal_places=6, null=True, blank=True)
+    vol = models.DecimalField(max_digits=24, decimal_places=4, null=True, blank=True)
+    amount = models.DecimalField(max_digits=24, decimal_places=4, null=True, blank=True)
+    pe = models.DecimalField(max_digits=20, decimal_places=6, null=True, blank=True)
+    pb = models.DecimalField(max_digits=20, decimal_places=6, null=True, blank=True)
+    float_share = models.DecimalField(max_digits=28, decimal_places=4, null=True, blank=True)
+    free_share = models.DecimalField(max_digits=28, decimal_places=4, null=True, blank=True)
+    total_share = models.DecimalField(max_digits=28, decimal_places=4, null=True, blank=True)
+    total_mv = models.DecimalField(max_digits=28, decimal_places=4, null=True, blank=True)
+    float_mv = models.DecimalField(max_digits=28, decimal_places=4, null=True, blank=True)
+    raw_payload = models.JSONField(default=dict)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(fields=['security', 'trade_date'], name='market_data_sw_daily_uniq'),
+        ]
+        indexes = [
+            models.Index(fields=['security', '-trade_date']),
+            models.Index(fields=['trade_date', 'security']),
+        ]
+
+
+class SWIndustryDailyLatest(DailySnapshotAuditModel):
+    security = models.OneToOneField(Security, on_delete=models.CASCADE, related_name='sw_industry_daily_latest')
+    name = models.CharField(max_length=128, blank=True)
+    open = models.DecimalField(max_digits=20, decimal_places=6, null=True, blank=True)
+    high = models.DecimalField(max_digits=20, decimal_places=6, null=True, blank=True)
+    low = models.DecimalField(max_digits=20, decimal_places=6, null=True, blank=True)
+    close = models.DecimalField(max_digits=20, decimal_places=6, null=True, blank=True)
+    pre_close = models.DecimalField(max_digits=20, decimal_places=6, null=True, blank=True)
+    change = models.DecimalField(max_digits=20, decimal_places=6, null=True, blank=True)
+    pct_change = models.DecimalField(max_digits=12, decimal_places=6, null=True, blank=True)
+    vol = models.DecimalField(max_digits=24, decimal_places=4, null=True, blank=True)
+    amount = models.DecimalField(max_digits=24, decimal_places=4, null=True, blank=True)
+    pe = models.DecimalField(max_digits=20, decimal_places=6, null=True, blank=True)
+    pb = models.DecimalField(max_digits=20, decimal_places=6, null=True, blank=True)
+    float_share = models.DecimalField(max_digits=28, decimal_places=4, null=True, blank=True)
+    free_share = models.DecimalField(max_digits=28, decimal_places=4, null=True, blank=True)
+    total_share = models.DecimalField(max_digits=28, decimal_places=4, null=True, blank=True)
+    total_mv = models.DecimalField(max_digits=28, decimal_places=4, null=True, blank=True)
+    float_mv = models.DecimalField(max_digits=28, decimal_places=4, null=True, blank=True)
+    raw_payload = models.JSONField(default=dict)
+
+
 class IngestionRun(models.Model):
     class Mode(models.TextChoices):
         BACKFILL = 'BACKFILL', 'Backfill'

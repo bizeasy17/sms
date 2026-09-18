@@ -128,15 +128,27 @@ class ValuationTemplateLoader:
         )
 
     def _result(self, data, level, code, name, entry, mapping_entry, industry_regime):
+        from traditional_valuation.models import TraditionalValuationParameterVersion
+
+        parameter = (
+            TraditionalValuationParameterVersion.objects
+            .filter(market=self.market, sw_level=level, sw_code=code or '', is_active=True)
+            .order_by('-effective_from', '-created_at')
+            .first()
+        )
+        if parameter is None:
+            raise ValuationTemplateError(
+                f'No active database valuation parameters for {self.market}:{level}:{code}'
+            )
         return {
             'level': level,
             'code': code or '',
             'name': name or '',
-            'params': self._clean(entry.get('params') or data['global_params']),
+            'params': self._clean(parameter.parameters),
             'metrics': entry.get('metrics') or {},
-            'parameter_version': data['template_version'],
-            'source_hash': data['source_hash'],
-            'source_trade_date': data['trade_date'],
+            'parameter_version': parameter.parameter_version,
+            'source_hash': parameter.source_hash,
+            'source_trade_date': parameter.source_trade_date,
             'scarcity': data.get('scarcity') or {},
             'fallback': level == 'GLOBAL',
             'mapping_version': mapping_entry['mapping_version'],

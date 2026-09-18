@@ -20,6 +20,7 @@ class Command(BaseCommand):
         parser.add_argument('--strategy', default='by-code', choices=['by-code', 'by-date'])
         parser.add_argument('--scope', default='all', choices=['all', 'ts-code', 'index-universe'])
         parser.add_argument('--ts-codes', default='')
+        parser.add_argument('--ts-code', dest='ts_code', action='append', default=[])
         parser.add_argument('--start-date', default='')
         parser.add_argument('--end-date', default='')
         parser.add_argument('--history-years', type=int, default=None)
@@ -31,6 +32,8 @@ class Command(BaseCommand):
         parser.add_argument('--dry-run', action='store_true')
 
     def handle(self, *args, **options):
+        if options.get('ts_code'):
+            options['ts_codes'] = ','.join([options.get('ts_codes', ''), *options['ts_code']]).strip(',')
         try:
             with log_run(
                 run_type=LogRun.RunType.COMMAND,

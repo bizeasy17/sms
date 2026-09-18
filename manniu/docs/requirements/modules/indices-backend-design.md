@@ -9,12 +9,13 @@
   - `REQUIREMENT_MARKET_INDEX_SIMPLE_VALUATION_20260630.md`
   - `REQUIREMENT_HEADER_MARKET_QUANTILE_7_INDEX_3_STYLE_20260613.md`
   - `REQUIREMENT_INDEX_TRADING_HISTORY_BACKFILL_TUSHARE_20260630.md`
+- 本文新增的 SW 行业日线同步需求：使用 Tushare `sw_daily` 将 SW 行业指数行情和日估值基本面落库，并接入 `manniu_backend/scripts/daily.bat`。
 
 ## 2 设计定位
 
 `indices` 是指数与市场分析领域计算模块，负责从 `market_data` 及明确声明的分析事实源读取已经落库的数据，并生成指数分位、7 指数组合风格指标、简化传统估值、市场健康度、估值温度计、股债性价比和历史体检结果。
 
-模块不负责外部数据采集、不负责上游表写入、不负责 HTTP API、不负责前端界面，也不负责交易执行。
+模块不负责外部数据采集、不负责上游表写入、不负责 HTTP API、不负责前端界面，也不负责交易执行。SW 行业日线同步属于 `market_data` 数据接入职责；本模块只读取同步完成后的本地事实表。
 
 核心原则：
 
@@ -90,6 +91,83 @@
 - 所有日期以 `trade_date` 为准，不使用服务器时间冒充数据日期。
 - 上游同步失败、未完成或数据日期落后时，必须在结果中标记质量状态。
 
+### 4.1 SW 行业日线同步数据契约
+
+为支持 SW 行业历史估值、行业估值分位和行业分析，`market_data` 必须新增独立数据集
+`sw-industry-daily`，通过 Tushare Pro `sw_daily` 拉取 SW 行业指数的日频数据。该数据集
+不是现有 7 个宽基指数 `index-bars` 或 `index-fundamentals` 的别名，也不得复用
+`index_daily` / `index_dailybasic` 作为数据源。
+
+#### 上游接口
+
+- 接口：`pro.sw_daily`。
+- 首期按 `sw_daily` 当前返回契约完整请求并保存以下字段：`ts_code`、`trade_date`、`name`、`close`、`open`、`high`、`low`、`pre_close`、`change`、`pct_change`、`vol`、`amount`、`pe`、`pb`、`float_share`、`free_share`、`total_share`、`total_mv`、`float_mv`。实现不得只选择 `close/pe/pb`，也不得因接口返回了未使用字段而丢弃。
+- 运行时必须以 `sw_daily` 实际返回的 DataFrame 列集合为最终字段集合：上述字段作为当前已知契约，所有返回业务字段都必须写入 PostgreSQL。可查询的稳定字段使用结构化列；全部返回字段同时保存在同一事实记录的 JSONB `raw_payload` 中，确保暂未结构化的字段和上游扩展字段仍可回读。
+- 若返回字段集合新增、减少或与已批准契约不一致，任务必须记录字段集合差异并触发告警/失败策略；不得通过静默丢列继续报告成功。新增字段在完成结构化迁移前，至少必须保留在 `raw_payload` 中。
+- 请求参数必须支持 `ts_code`、`start_date`、`end_date`；如客户端版本不接受 `fields`，允许按 `smartinvestor_be/api/views.py` 的参考实现回退为不传 `fields` 的调用。
+- `trade_date` 统一解析为本地 `DateField`；`ts_code` 保留 Tushare 原始代码并规范化为大写。
+- 不允许使用服务器当前日期伪造行情日期；无数据的交易日不写入占位行。
+
+#### 行业代码来源和范围
+
+- 首期同步范围为版本化 SW L3 行业映射配置中的全部有效 `index_code`，不允许从用户请求参数任意扩展。
+- 同步前对 `index_code` 去重，并保留 `industry_code`、行业层级、行业名称与源代码的可审计映射。
+- SW 行业指数必须作为独立的 `Security(asset_type=INDEX)` 身份被识别；不得把 SW 行业代码混入 7 指数固定业务池。
+- 若同一 Tushare `ts_code` 已存在但身份、名称或行业映射冲突，任务必须失败并记录冲突，不得静默覆盖。
+
+#### 本地落库
+
+- `ts_code` 作为 `Security.ts_code` 保存，`name` 作为 SW 行业指数身份名称保存；代码、名称变更必须记录冲突或按版本化映射处理，不得静默覆盖错误身份。
+- 行情字段 `close`、`open`、`high`、`low`、`pre_close`、`change`、`pct_change`、`vol`、`amount` 写入结构化日线事实列，并同步维护最新记录；`close`、`pct_change` 至少必须映射到现有 `MarketBarDailyHistory`/`MarketBarLatest` 对应字段。
+- 估值和规模字段 `pe`、`pb`、`float_share`、`free_share`、`total_share`、`total_mv`、`float_mv` 写入结构化基本面事实列，并同步维护最新记录；字段缺失时保留 `NULL`，不得用其他字段推算。
+- `raw_payload` 必须保留该行 `sw_daily` 返回的完整键值集合，包括身份字段、日期字段、结构化字段和暂未结构化字段；JSONB 内容应能在不依赖上游重拉的情况下完整回读。
+- `trade_date` 写入各历史表的 `trade_date`；它是所有行情、估值和市值字段的共同事实日期。
+- 当前模型缺少上述字段或 `raw_payload` 时，必须补充最小 PostgreSQL/Django 迁移；不能以“当前查询未使用”为理由不建模或不保存。
+- `sw_daily` 当前契约不提供 `pe_ttm`；`pe_ttm` 保持为空，不得将 `pe` 复制或推断为 `pe_ttm`。若未来上游实际返回 `pe_ttm`，则必须按完整字段规则保存并补充结构化映射。
+- 每个 `security + trade_date` 必须幂等 upsert；重复执行同一日期不能产生重复历史记录。
+- 任一字段缺失或非有限值按字段缺失处理，并保留其他有效字段及完整 `raw_payload`；`close`、估值指标小于等于 0 不得进入对应计算样本，成交量/成交额和市值小于等于 0 不得作为有效规模数据使用。
+- 若现有表结构无法表达 SW 行业身份或来源映射，应先补充最小必要字段/映射设计并经确认后再迁移；不得以 JSON 文件或前端缓存替代 PostgreSQL 事实表。
+
+#### 同步水位和运行记录
+
+- 数据集名称固定为 `sw-industry-daily`，频率固定为 `D`。
+- 按行业 `ts_code` 维护 `IngestionWatermark`，记录最后一次成功的源交易日；支持首次历史回填、按代码回填和按日期增量。
+- 每次运行写入 `IngestionRun`，至少记录请求范围、目标代码数量、返回行数、成功/失败代码数、最早/最新源日期和失败原因。
+- 单个行业接口失败时必须保留失败明细；批处理是否整体失败由任务策略明确控制，不能在日志中报告成功但实际全部失败。
+- 数据库写入失败必须回滚当前代码/批次，并返回非零退出码；不得推进对应 watermark。
+
+#### 同步 CLI 运行契约
+
+- 统一入口为 Django 管理命令：`python manage.py sync_market_data --dataset sw-industry-daily --mode <daily|backfill>`；CLI 只负责参数解析和任务编排，不得在命令层重复实现 Tushare 请求或写库逻辑。
+- `backfill` 模式必须支持 `--start-date YYYY-MM-DD` 和 `--end-date YYYY-MM-DD`，两个日期必须同时提供且 `start-date <= end-date`；未提供日期、日期格式非法或范围为空时必须返回非零退出码，不得使用服务器当前日期猜测范围。
+- `backfill` 模式默认覆盖版本化 SW L3 映射中的全部有效 `index_code`，并支持 `--ts-code`（单个或可重复传入）限制目标代码；指定代码必须属于有效 SW L3 映射，否则失败并列出非法代码。
+- `backfill` 模式不得依赖或推进已有 daily watermark 来缩短用户明确指定的日期范围；指定范围内的历史记录必须完整请求并幂等写入，允许重复执行以修复或补齐历史数据。
+- `daily` 模式不要求用户传日期，默认按每个 `ts_code` 的 watermark 请求“最后成功源日期之后 + 有限重叠交易日”至最近可用交易日；首次运行无 watermark 时必须显式失败并提示先执行 `backfill`，不得自动执行无界历史回填。
+- `daily` 模式可支持显式 `--trade-date YYYY-MM-DD` 作为受控重跑参数，但不得突破配置的代码范围、日期范围和限流策略；普通 `daily.bat` 调用不传该参数。
+- 两种模式都必须支持统一的限流、重试、批量大小和目标代码参数，并将实际生效的模式、日期范围、代码数、请求次数、返回行数、写入行数、失败代码数、最早/最新源日期和运行 ID 输出到日志。
+- 进程退出码契约：全部目标代码成功且无数据库错误时返回 `0`；存在接口失败、字段契约失败、身份映射冲突、数据库回滚或全部目标无结果等任务异常时返回非零；正常交易日无数据必须使用可识别的 `NO_DATA` 状态，不能与异常混淆。
+- 只有对应代码在事务提交成功后才能推进 watermark；部分代码失败时只能推进成功代码，整体命令仍按失败策略返回非零并保留失败明细。
+- CLI 不得写 JSON 文件替代 PostgreSQL 事实表，不得绕过 `IngestionRun`/`IngestionWatermark`，不得接受或打印 Tushare token。
+
+#### 频率限制和性能
+
+- 同步任务必须复用项目现有 Tushare client、限流、重试和日志机制，不得在每个行业请求中重新初始化客户端。
+- 默认按代码分批请求，支持配置请求间隔、批量大小和最大失败重试次数；不得无界并发触发 `sw_daily` 频率限制。
+- 日常任务默认只请求 watermark 之后并带有限重叠的交易日；重叠数据通过幂等 upsert 校正上游修订。
+
+### 4.2 daily job 接入要求
+
+`manniu_backend/scripts/daily.bat` 必须在现有指数行情和指数基本面同步任务之后，增加
+`sw-industry-daily` 的 daily 调用。该调用必须使用与其他 `sync_market_data` 数据集一致的
+虚拟环境、项目根目录、日志文件和失败跳转约定。
+
+- daily 模式默认同步全部配置中的 SW L3 行业代码，策略可按代码或按交易日实现，但必须与水位语义一致。
+- 日志必须明确输出数据集名称、目标代码数、请求日期范围、成功行数、失败代码数和最新源交易日。
+- SW 行业同步失败时，daily job 必须返回非零退出码并进入统一失败分支；不能继续报告“Daily market-data synchronization completed”。
+- SW 行业同步成功但当天上游无交易数据时，应记录 `NO_DATA` 或等价可解释状态；只有任务执行异常才判定为失败。
+- `daily.bat` 不得直接调用 `sw_daily`，不得在批处理层拼接 Tushare token；所有上游访问和落库由 Django 管理命令/`market_data` 服务完成。
+- 首次上线前必须提供并验证上述 `backfill` CLI，先回填 SW 行业历史，再启用 daily 增量；daily 不承担无界历史回填。
+
 ## 5 指数池和代码规则
 
 7 指数业务键固定如下：
@@ -105,6 +183,10 @@
 | `cyb` | `399006.SZ` | 创业板指 |
 
 业务键与源代码分离。若上游实际使用 `000300.SH` 等代码，必须通过显式别名配置映射，并在结果中记录实际命中的 `source_ts_code`。未经配置确认时，`399300.SZ` 与 `000300.SH` 不得静默互换。
+
+SW 行业代码属于另一套目录，不纳入上述 7 个固定业务键。SW 行业目录必须至少记录
+`industry_code`、`industry_level`、`industry_name`、`ts_code`、`source_ts_code` 和
+`mapping_version`；行业历史接口按该目录解析代码，不能把行业名称直接当作 Tushare 代码。
 
 ## 6 建议模块结构
 
@@ -409,6 +491,7 @@ gap = (current_close - implied_price) / implied_price
 | 指数主数据同步 | `market_data` | 只读消费 |
 | 指数行情同步/回填 | `market_data` 或管理命令 | 只读消费 |
 | 指数估值基本面同步 | `market_data` | 只读消费 |
+| SW 行业 `sw_daily` 同步/回填 | `market_data` 管理命令 + `daily.bat` 编排 | 只读消费已落库事实 |
 | 分位和风格组合 | `indices` | 负责 |
 | PE/PETTM/PB 简化估值 | `indices` | 负责 |
 | 指数目录和能力发现 | `indices` | 负责 |
@@ -652,6 +735,12 @@ DRF `Response`。Gateway 不得捕获所有异常并伪装成 `NO_DATA`；数据
 - 分位窗口、空序列、样本不足和重复日期结果确定。
 - 隐含估值公式、零/负分母、带宽边界和单方法汇总正确。
 - 代码别名只能通过显式映射命中，并保留实际源代码。
+- `sw_daily` 的完整已知返回字段 `ts_code`、`trade_date`、`name`、`close`、`open`、`high`、`low`、`pre_close`、`change`、`pct_change`、`vol`、`amount`、`pe`、`pb`、`float_share`、`free_share`、`total_share`、`total_mv`、`float_mv` 均正确解析、落库并可回读；不传或不支持 `fields` 时的兼容回退行为有单元测试覆盖。
+- 测试必须断言返回行的完整字段集合与 `raw_payload` 一致；人为增加一个未知字段时，该字段不得丢失，并且字段集合差异必须产生明确告警或失败结果。
+- SW 行业代码去重、代码映射冲突和无效行业配置均有明确失败测试；SW 行业不进入 7 指数固定池。
+- 同一 SW 行业同一交易日重复同步保持单行，历史行情、最新行情、历史估值和最新估值的字段值一致。
+- CLI 测试覆盖 `backfill` 的必填日期、日期顺序、单代码范围和重复执行，以及 `daily` 的 watermark 增量、有限重叠和无 watermark 失败行为。
+- CLI 测试覆盖成功返回 `0`、接口/字段/数据库失败返回非零、部分代码失败不推进失败代码 watermark，以及 `NO_DATA` 与异常状态的区分。
 
 ### 18.2 集成验收
 
@@ -668,6 +757,11 @@ DRF `Response`。Gateway 不得捕获所有异常并伪装成 `NO_DATA`；数据
   只影响选定指标，并返回组合统计、共同日期覆盖率和实际来源代码。
 11. `get_overall_composite_close` 固定使用已确认的 overall 权重返回综合 CLOSE，且不接受
   `metric` 或 `style` 参数。
+12. 首次 SW 行业历史回填可重复执行且不产生重复记录；回填后每个有效行业至少存在可审计的最新 `trade_date`。
+13. `backfill` CLI 能按显式日期范围完成全部有效行业或指定 `--ts-code` 的历史回填，非法参数返回非零且不产生伪造数据。
+14. `daily` CLI 能依据各行业 watermark 完成有限重叠增量；首次无 watermark 时不会无界回填，并返回可诊断失败。
+15. `daily.bat` 实际执行 `sw-industry-daily` 后，日志包含运行统计；接口失败、数据库写入失败或全部行业失败时退出码非零。
+16. SW 行业 `sw_daily` 的全部返回字段均能从 PostgreSQL 回读：已知字段写入结构化列，完整键值集合写入 `raw_payload`；字段集合变化不会静默丢失；`pe_ttm` 不因缺失被 `pe` 伪造填充。
 
 ## 19 扩展约束
 
@@ -680,4 +774,7 @@ DRF `Response`。Gateway 不得捕获所有异常并伪装成 `NO_DATA`；数据
 
 - [x] 完成 `indices` 到 `api_gateway` 的 v1 核心只读接入：指数目录、单指数估值、路由注册、参数校验、统一响应、错误映射和 Gateway 测试。
 - [x] 接入指数日线行情和日基本面只读接口，登记 Public API catalog 并完成边界测试。
+- [ ] 新增 `sw-industry-daily` 数据集：基于 SW L3 映射调用 Tushare `sw_daily`，将全部返回业务字段写入结构化列或 `raw_payload` JSONB，落库行情/估值历史与 latest，支持历史回填和 watermark。
+- [ ] 实现 `sw-industry-daily` CLI 的 `backfill`/`daily` 模式，完成参数校验、watermark、失败退出、日志统计、限流和 PostgreSQL 幂等验收。
+- [ ] 将 `sw-industry-daily --mode daily` 接入 `manniu_backend/scripts/daily.bat`，完成 daily 编排和失败退出验收。
 - [ ] 在 `indices` 完成市场健康度、股债性价比、健康度历史和关键事件的领域 provider/计算服务后，接通对应 Gateway 路由并完成集成验收；当前接口对这些能力返回明确的 `UPSTREAM_DEPENDENCY_UNAVAILABLE`，不返回占位数据。

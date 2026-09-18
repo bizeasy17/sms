@@ -31,11 +31,24 @@ set "LIMIT=%SHIFTED_LIMIT%"
 if "%LIMIT%"=="" set "LIMIT=0"
 
 rem Also accept an unquoted Q1 H1 Q3 FY list after the omitted TS_CODES argument.
-if /I "%~9"=="FY" if /I "%~8"=="Q3" (
-    set "LIMIT=%~5"
-    set "REPORT_TYPES=%~6,%~7,%~8,%~9"
-    set "HISTORY_YEARS=%~10"
-)
+if /I "%~9"=="FY" if /I "%~8"=="Q3" goto :recover_unquoted_report_args
+goto :after_recover_unquoted_report_args
+
+:recover_unquoted_report_args
+set "LIMIT=%~5"
+set "REPORT_TYPES=%~6,%~7,%~8,%~9"
+shift
+shift
+shift
+shift
+shift
+shift
+shift
+shift
+shift
+set "HISTORY_YEARS=%~1"
+
+:after_recover_unquoted_report_args
 
 :after_recover_shifted_args
 
@@ -58,6 +71,7 @@ set "LOG_FILE=%LOG_DIR%\traditional_valuation_%MODE%_%RUN_TIMESTAMP%.log"
 pushd "%PROJECT_ROOT%" || exit /b 1
 set "DJANGO_SETTINGS_MODULE=config.settings"
 call :log Traditional valuation %MODE% started.
+call :log "Resolved batch parameters: mode=%MODE%; scope=%SCOPE%; ts_codes=%TS_CODES%; start_date=%START_DATE%; end_date=%END_DATE%; report_types=%REPORT_TYPES%; limit=%LIMIT%; history_years=%HISTORY_YEARS%"
 
 "%PYTHON_EXE%" manage.py traditional_valuation validate >> "%LOG_FILE%" 2>&1
 if errorlevel 1 goto :failure

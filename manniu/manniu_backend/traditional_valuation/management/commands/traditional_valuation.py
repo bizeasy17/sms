@@ -140,6 +140,7 @@ class Command(BaseCommand):
         report_types = self._report_types(options)
         run = TraditionalValuationRun.objects.create(run_key=uuid4().hex[:32], command='backfill', status=TraditionalValuationRun.Status.RUNNING, started_at=timezone.now())
         try:
+            options['_refresh_run_key'] = run.run_key
             ts_codes = list(securities.values_list('ts_code', flat=True))
             imported = TraditionalValuationEventService.import_historical_disclosure_events(
                 start_date,
@@ -148,6 +149,25 @@ class Command(BaseCommand):
                 ts_codes=ts_codes,
                 limit=options['limit'],
             )
+            reset_count = 0
+            if options['historical_disclosures'] and imported['source_event_keys']:
+                reset_count = TraditionalValuationEventState.objects.filter(
+                    source_event_key__in=imported['source_event_keys'],
+                ).exclude(
+                    status=TraditionalValuationEventState.Status.PENDING,
+                ).update(
+                    status=TraditionalValuationEventState.Status.PENDING,
+                    next_retry_at=None,
+                    claimed_at=None,
+                    completed_at=None,
+                    last_error_code='',
+                    last_error_message='',
+                )
+            self.stdout.write(self.style.SUCCESS(
+                'Historical disclosure events: '
+                f"scanned={imported['scanned']} created={imported['created']} "
+                f"existing={imported['existing']} reset_existing={reset_count}"
+            ))
             consumed = {'completed': 0, 'failed': 0}
             while True:
                 batch = self._consume(options, source_event_keys=imported['source_event_keys'])
@@ -158,6 +178,7 @@ class Command(BaseCommand):
             imported_summary = {
                 key: value for key, value in imported.items() if key != 'source_event_keys'
             }
+            imported_summary['reset_existing'] = reset_count
             run.status = TraditionalValuationRun.Status.SUCCEEDED if not consumed['failed'] else TraditionalValuationRun.Status.FAILED
             run.completed_count = consumed['completed']
             run.failed_count = consumed['failed']
@@ -272,7 +293,7 @@ class Command(BaseCommand):
                     for security in securities:
                         report_type = event.payload.get('report_type') or options['report_type']
                         result = engine.calculate(security, event.asof_date or self._date(options['asof_date']), report_type, profit_bucket='formal', trigger_type=event.event_type)
-                        engine.persist(result, report_type, profit_bucket='formal')
+                        engine.persist(result, report_type, profit_bucket='formal', refresh_run_key=options.get('_refresh_run_key'))
                     event.status = TraditionalValuationEventState.Status.SUCCEEDED
                     event.completed_at = timezone.now()
                     event.save(update_fields=['status', 'completed_at', 'updated_at'])
@@ -293,7 +314,7 @@ class Command(BaseCommand):
                             trigger_type=event.event_type,
                             business_match_topn=options['business_match_topn'],
                         )
-                        engine.persist(result, report_type, profit_bucket=bucket)
+                        engine.persist(result, report_type, profit_bucket=bucket, refresh_run_key=options.get('_refresh_run_key'))
                     event.status = TraditionalValuationEventState.Status.SUCCEEDED
                     event.completed_at = timezone.now()
                     event.save(update_fields=['status', 'completed_at', 'updated_at'])

@@ -5,6 +5,7 @@ from datetime import date, timedelta
 from decimal import Decimal
 from pathlib import Path
 from typing import Any
+from uuid import uuid4
 
 import joblib
 import numpy as np
@@ -32,6 +33,8 @@ class PredictiveInferenceService:
         self._bundles: dict[str, dict[str, Any]] = {}
         self._impute_stats: dict[str, dict[str, float | None]] = {}
         self._config: dict[str, Any] | None = None
+        self._industry_mapping: dict[str, Any] | None = None
+        self._industry_rank_cache: dict[tuple[date, str], dict[str, Any]] = {}
 
     def predict_panel(
         self,
@@ -43,8 +46,9 @@ class PredictiveInferenceService:
         refresh_reason: str = '',
         run_key: str = '',
         is_backfill: bool = False,
-        anchor_mode: str = 'latest',
+        anchor_mode: str = 'live_latest',
     ) -> PredictiveValuationSnapshot:
+        run_key = run_key or uuid4().hex[:32]
         try:
             return self._predict_panel(
                 panel,
@@ -80,11 +84,12 @@ class PredictiveInferenceService:
         refresh_reason: str = '',
         run_key: str = '',
         is_backfill: bool = False,
-        anchor_mode: str = 'latest',
+        anchor_mode: str = 'live_latest',
     ) -> PredictiveValuationSnapshot:
         """Predict quarter components independently and persist their weighted fusion."""
         if not panels:
             raise ValueError('Fusion requires at least one quarter panel')
+        run_key = run_key or uuid4().hex[:32]
         security = panels[0].security
         if any(panel.security_id != security.id for panel in panels):
             raise ValueError('Fusion panels must belong to one security')
@@ -193,7 +198,8 @@ class PredictiveInferenceService:
             'raw_result': {'report_type': 'FUSION', 'model_version': 'fusion', 'fusion': fusion_trace},
         }
         snapshot, _ = PredictiveValuationSnapshot.objects.update_or_create(
-            security=security, report_type='FUSION', asof_date=fusion_asof, defaults=snapshot_defaults,
+            security=security, report_type='FUSION', asof_date=fusion_asof, run_key=run_key,
+            defaults=snapshot_defaults,
         )
         PredictiveValuationCurrent.objects.update_or_create(
             security=security, report_type='FUSION',
@@ -241,7 +247,7 @@ class PredictiveInferenceService:
         refresh_reason: str = '',
         run_key: str = '',
         is_backfill: bool = False,
-        anchor_mode: str = 'latest',
+        anchor_mode: str = 'live_latest',
     ) -> PredictiveValuationSnapshot:
         artifact = self.registry.load_production(panel.report_type)
         bundle = self._load_bundle(artifact.report_type, artifact.model_path)
@@ -342,6 +348,7 @@ class PredictiveInferenceService:
             security=panel.security,
             report_type=panel.report_type,
             asof_date=panel.source_as_of_date,
+            run_key=run_key,
             defaults=defaults,
         )
         current = PredictiveValuationCurrent.objects.filter(
@@ -390,6 +397,7 @@ class PredictiveInferenceService:
             security=panel.security,
             report_type=panel.report_type,
             asof_date=panel.source_as_of_date,
+            run_key=run_key,
             defaults={
                 'horizon': horizon,
                 'feature_contract_version': str(self._load_config().get('feature_contract_version') or '').strip(),
@@ -523,7 +531,7 @@ class PredictiveInferenceService:
         anchor_date: date,
         feature_columns: list[str],
     ) -> tuple[dict[str, float | None], dict[str, Any]]:
-        """Build deterministic same-date industry features before imputation."""
+        """Build same-date industry features, reusing rankings within one run."""
         rank_columns = {
             'pe_ind_rank': 'pe',
             'pb_ind_rank': 'pb',
@@ -533,53 +541,105 @@ class PredictiveInferenceService:
             'turnover_rate_ind_rank': 'turnover_rate',
         }
         values: dict[str, float | None] = {column: None for column in rank_columns}
-        securities = list(
-            Security.objects.filter(asset_type=Security.AssetType.STOCK)
-            .select_related('industry')
-            .values('id', 'industry__name', 'industry__source_version')
-        )
-        industry_by_security = {
-            int(row['id']): str(row['industry__name'] or 'UNKNOWN').strip() or 'UNKNOWN'
-            for row in securities
-        }
-        mapping_versions = sorted({
-            str(row['industry__source_version']).strip()
-            for row in securities
-            if str(row['industry__source_version'] or '').strip()
-        })
-        mapping_version = ','.join(mapping_versions) or 'security.industry'
+        mapping = self._load_industry_mapping()
+        industry_by_security = mapping['industry_by_security']
+        mapping_version = mapping['mapping_version']
         industry_name = industry_by_security.get(security.id, 'UNKNOWN')
-        industry_names = sorted(set(industry_by_security.values()))
         industry_cfg = ((self._load_config().get('feature_builder') or {}).get('industry') or {})
         unknown_code = float(industry_cfg.get('unknown_code', -1))
-        industry_code = unknown_code if industry_name == 'UNKNOWN' else float(industry_names.index(industry_name))
+        industry_code = mapping['industry_codes'].get(industry_name, unknown_code)
         values['industry_code'] = industry_code
 
+        cache_key = (anchor_date, industry_name)
+        context = self._industry_rank_cache.get(cache_key)
+        if context is None:
+            min_peer_count = int(industry_cfg.get('min_peer_count', 1))
+            context = self._build_industry_rank_context(
+                anchor_date=anchor_date,
+                industry_name=industry_name,
+                industry_by_security=industry_by_security,
+                rank_columns=rank_columns,
+                min_peer_count=min_peer_count,
+            )
+            self._industry_rank_cache[cache_key] = context
+
+        values.update(context['ranks_by_security'].get(int(security.id), {}))
+        metric_counts = context['metric_peer_counts']
+        peer_count = context['industry_peer_count']
+
+        degraded = any(values[name] is None for name in rank_columns)
+        return values, {
+            'industry_name': industry_name,
+            'industry_code': industry_code,
+            'industry_mapping_version': mapping_version,
+            'industry_peer_trade_date': anchor_date.isoformat(),
+            'industry_peer_count': peer_count,
+            'metric_peer_counts': metric_counts,
+            'rank_method': 'average_pct',
+            'min_peer_count': context['min_peer_count'],
+            'degraded': degraded,
+        }
+
+    def _load_industry_mapping(self) -> dict[str, Any]:
+        if self._industry_mapping is None:
+            rows = list(
+                Security.objects.filter(asset_type=Security.AssetType.STOCK)
+                .values('id', 'industry__name', 'industry__source_version')
+            )
+            industry_by_security = {
+                int(row['id']): str(row['industry__name'] or 'UNKNOWN').strip() or 'UNKNOWN'
+                for row in rows
+            }
+            industry_names = sorted(set(industry_by_security.values()))
+            industry_cfg = ((self._load_config().get('feature_builder') or {}).get('industry') or {})
+            unknown_code = float(industry_cfg.get('unknown_code', -1))
+            industry_codes = {
+                name: (unknown_code if name == 'UNKNOWN' else float(index))
+                for index, name in enumerate(industry_names)
+            }
+            mapping_versions = sorted({
+                str(row['industry__source_version']).strip()
+                for row in rows
+                if str(row['industry__source_version'] or '').strip()
+            })
+            self._industry_mapping = {
+                'industry_by_security': industry_by_security,
+                'industry_codes': industry_codes,
+                'mapping_version': ','.join(mapping_versions) or 'security.industry',
+            }
+        return self._industry_mapping
+
+    @staticmethod
+    def _build_industry_rank_context(
+        *,
+        anchor_date: date,
+        industry_name: str,
+        industry_by_security: dict[int, str],
+        rank_columns: dict[str, str],
+        min_peer_count: int,
+    ) -> dict[str, Any]:
+        peer_ids = [security_id for security_id, name in industry_by_security.items() if name == industry_name]
         start = anchor_date - timedelta(days=200)
         bar_rows = list(
             MarketBarDailyHistory.objects.filter(
-                security_id__in=industry_by_security,
+                security_id__in=peer_ids,
                 trade_date__gte=start,
                 trade_date__lte=anchor_date,
             ).values('security_id', 'trade_date', 'close').order_by('security_id', 'trade_date')
         )
         fundamental_rows = list(
             StockDailyFundamentalHistory.objects.filter(
-                security_id__in=industry_by_security,
-                trade_date__gte=start,
-                trade_date__lte=anchor_date,
+                security_id__in=peer_ids,
+                trade_date=anchor_date,
             ).values('security_id', 'trade_date', 'pe', 'pb', 'ps', 'turnover_rate')
         )
+        empty_counts = {name: 0 for name in rank_columns}
         if not bar_rows or not fundamental_rows:
-            return values, {
-                'industry_name': industry_name,
-                'industry_code': industry_code,
-                'industry_mapping_version': mapping_version,
-                'industry_peer_trade_date': anchor_date.isoformat(),
+            return {
+                'ranks_by_security': {},
                 'industry_peer_count': 0,
-                'metric_peer_counts': {name: 0 for name in rank_columns.values()},
-                'degraded': True,
-                'reason': 'industry_market_rows_unavailable',
+                'metric_peer_counts': empty_counts,
+                'min_peer_count': min_peer_count,
             }
 
         bars_frame = pd.DataFrame(bar_rows)
@@ -593,39 +653,24 @@ class PredictiveInferenceService:
         fundamentals_frame['trade_date'] = pd.to_datetime(fundamentals_frame['trade_date'])
         for column in ('pe', 'pb', 'ps', 'turnover_rate'):
             fundamentals_frame[column] = pd.to_numeric(fundamentals_frame[column], errors='coerce')
-        peers = bars_frame.merge(
-            fundamentals_frame,
-            on=['security_id', 'trade_date'],
-            how='left',
-        )
+        peers = bars_frame.merge(fundamentals_frame, on=['security_id', 'trade_date'], how='left')
         peers = peers[peers['trade_date'] == pd.Timestamp(anchor_date)].copy()
-        peers['industry_name'] = peers['security_id'].map(industry_by_security).fillna('UNKNOWN')
-        peers = peers[peers['industry_name'] == industry_name]
-        min_peer_count = int(
-            ((self._load_config().get('feature_builder') or {}).get('industry') or {}).get('min_peer_count', 1)
-        )
         metric_counts: dict[str, int] = {}
-        if len(peers) >= min_peer_count and int(security.id) in set(peers['security_id'].astype(int)):
-            target = peers[peers['security_id'] == security.id].iloc[-1]
-            for output_name, source_name in rank_columns.items():
-                series = peers[source_name].dropna()
-                metric_counts[output_name] = int(len(series))
-                if len(series) >= min_peer_count and pd.notna(target[source_name]):
-                    values[output_name] = float(series.rank(pct=True, method='average').loc[target.name])
-        else:
-            metric_counts = {name: 0 for name in rank_columns}
-
-        degraded = any(values[name] is None for name in rank_columns)
-        return values, {
-            'industry_name': industry_name,
-            'industry_code': industry_code,
-            'industry_mapping_version': mapping_version,
-            'industry_peer_trade_date': anchor_date.isoformat(),
+        ranks_by_security: dict[int, dict[str, float]] = {}
+        for output_name, source_name in rank_columns.items():
+            series = peers[source_name]
+            valid = series.dropna()
+            metric_counts[output_name] = int(len(valid))
+            if len(valid) < min_peer_count:
+                continue
+            ranks = series.rank(pct=True, method='average')
+            for index, rank in ranks.dropna().items():
+                ranks_by_security.setdefault(int(peers.loc[index, 'security_id']), {})[output_name] = float(rank)
+        return {
+            'ranks_by_security': ranks_by_security,
             'industry_peer_count': int(len(peers)),
             'metric_peer_counts': metric_counts,
-            'rank_method': 'average_pct',
             'min_peer_count': min_peer_count,
-            'degraded': degraded,
         }
 
     def _load_bundle(self, report_type: str, path: Path) -> dict[str, Any]:

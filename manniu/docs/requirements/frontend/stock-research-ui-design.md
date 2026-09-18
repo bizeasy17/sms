@@ -217,6 +217,50 @@ AppShell
 - 数据延迟或非交易时段应显示状态，不把旧数据伪装为实时数据。
 - 头部基本信息卡片不展示“已覆盖”状态，保留行业、数据周期、最新价格和涨跌信息。
 
+#### 5.3.1 行情接口接入契约
+
+用户单击左侧股票列表中的股票后，研究页头部行情从以下接口加载，不使用前端静态价格或涨跌值：
+
+```text
+GET /api/v1/market-analysis/securities/:ts_code/bars
+  ?start_date={YYYY-MM-DD}
+  &end_date={YYYY-MM-DD}
+  &adjust=qfq
+  &frequency=D
+  &page=1
+  &page_size=200
+```
+
+- `:ts_code` 使用股票列表返回的标准交易代码，例如 `002236.SZ`。
+- `start_date` 和 `end_date` 默认覆盖最近一年；`end_date` 使用当前日期，不把示例日期写死在前端。
+- 头部只使用响应 `data` 中 `trade_date` 最新的一条记录：`close` 展示最新价格，`change` 展示涨跌额，`pct_change` 展示涨跌幅，`trade_date` 展示数据截至日期。
+- `data` 数组为空时，股票名称、代码和行业仍保留，价格区域显示“暂无行情”和“数据暂无”，不能使用 `0` 或静态默认值。
+- 请求失败时保留股票身份信息，价格区域显示“行情加载失败”，并提供局部重试动作；失败不应清空股票列表或其他研究模块。
+- 切换股票时取消或忽略上一次 bars 请求，禁止旧股票行情覆盖当前股票头部。
+- 接口响应沿用统一响应包装：`data` 为日线记录数组，`meta.data_status` 表示 `COMPLETE` 或 `NO_DATA`；每条记录至少包含 `ts_code`、`trade_date`、`close`、`change`、`pct_change`、`adjust` 和 `frequency`。
+
+示例响应：
+
+```json
+{
+  "data": [
+    {
+      "ts_code": "002236.SZ",
+      "trade_date": "2026-09-17",
+      "close": 24.68,
+      "change": 0.45,
+      "pct_change": 1.84,
+      "adjust": "qfq",
+      "frequency": "D"
+    }
+  ],
+  "meta": {
+    "data_status": "COMPLETE",
+    "asof_date": "2026-09-17"
+  }
+}
+```
+
 ### 5.4 ResearchTabs
 
 默认页签：
@@ -261,7 +305,7 @@ AppShell
 - 综合内在价值区间：保守值、中枢值、乐观值。
 - 估值区分为两个独立模块：上方为 `01.1 / FUNDAMENTAL VALUATION` 基本面估值，下方为 `01.2 / MODEL VALUATION` 模型估值。
 - 两个模块均展示完整估值摘要结构，包括模块头部文案、`Current View` 研究结论、估值高低 bar、当前价格位置和右侧估值模型列表。
-- `01.1 / FUNDAMENTAL VALUATION` 使用“基本面估值摘要”文案，展示 PE、FCFF、盈利预测等基本面估值方法。
+- `01.1 / FUNDAMENTAL VALUATION` 使用“基本面估值摘要”文案，直接展示传统估值接口返回的多个方法；不得硬编码“盈利预测”或用静态方法替代后台结果。
 - `01.2 / MODEL VALUATION` 使用“模型估值摘要”文案，展示预测模型和融合模型等模型估值结果，不再使用“模型估值 / 待定”占位文案。
 - 当前价格在估值区间中的位置。
 - 估值方法列表，例如 PE、FCFF、盈利预测。
@@ -286,6 +330,31 @@ AppShell
 - 某一估值方法失败时显示“暂不可用”，不影响其他方法展示。
 - 没有足够模型时展示样本数不足提示。
 - 估值日期过期时展示数据更新时间和刷新动作。
+
+**传统估值接口接入契约**：
+
+研究页选中股票后调用：
+
+```text
+GET /api/v1/market-analysis/securities/:ts_code/valuations/traditional
+  ?asof_date={YYYY-MM-DD}&include_methods=true&include_risk=true
+```
+
+前端使用响应的 `current_price`、`summary.composite_valuation_price_optimized`、
+`summary.conservative_valuation_price_optimized`、
+`summary.traditional_tiered_template.aggressive.target_price`、`risk.confidence`、
+`risk.risk_level` 和 `methods` 渲染传统估值卡片。`methods` 中每条记录的
+`valuation_method`、估值价格和不可用原因原样保留；不得补零、推导盈利预测或把
+接口缺失改成默认估值。接口失败、权限不足或没有已发布结果时，卡片显示对应的
+局部异常状态，不影响行情和基本面区块。
+
+信心分数下方固定显示“风险级别 高/中/低”，没有风险结果时显示“暂无”。
+保守、中枢、乐观区间的当前价格指针使用区间比例，并将比例限制在 `0%..100%`；
+当当前价格低于保守价或高于乐观价时，价格标签仍显示真实值，但指针停留在色带
+端点，不得飞出 bar 范围。传统估值方法列表不显示前端静态“盈利预测”项，后台返回
+的多个方法均按返回顺序展示。`include_methods=true` 和 `include_risk=true` 只需
+`market_analysis:read`；只有显式请求 `include_diagnostics=true` 时才需要
+`valuation:diagnostics_read`。
 
 ### 5.7 MarketEvidence
 
@@ -324,6 +393,24 @@ AppShell
 - 负债率绝对值及同比。
 
 规则：
+
+#### 5.8.1 财务基本面接口接入契约
+
+研究首页选择股票后，基本面区调用：
+
+```text
+GET /api/v1/market-analysis/securities/:ts_code/financials/overview
+  ?asof_date={YYYY-MM-DD}&report_type=LATEST
+```
+
+前端直接展示接口返回的 `metrics`，不再使用静态样例或自行计算同比、
+rolling12。每个指标读取 `value` 为当前报告期绝对值/比例、`yoy` 为同比、
+`rolling12` 为滚动 12 个月值，并同时展示 `period` 和单位元数据。金额类指标
+展示收入、经营现金流、净利润、EBIT；比例类指标展示毛利率、ROE、净利率、负债率。
+后端当前以 `income.operate_profit` 作为 EBIT 来源，前端按接口 key 展示，不改名或推导。
+
+接口状态为 `NOT_AVAILABLE` 或指标 `available=false` 时展示“暂无数据”，不得显示 0；
+请求失败时只影响基本面模块，保留股票身份、行情和其他研究模块，并提供重试动作。
 
 - 每个指标包含名称、值、单位和同比或环比说明。
 - 指标卡不展示无法解释的综合分数。
@@ -575,6 +662,7 @@ type ResearchContext = {
 - [x] 通过 TypeScript 和 Vite 生产构建。
 - [ ] 完成桌面、iPad、320px 手机宽度的浏览器人工验收。
 - [ ] 接入真实接口后补充加载、局部错误、重试和权限状态验收。
+- [ ] 股票列表单击后，研究页头部通过 `/api/v1/market-analysis/securities/:ts_code/bars` 展示真实最新价格、涨跌额、涨跌幅和数据日期。
 
 ## 15. 与参考页面的取舍
 

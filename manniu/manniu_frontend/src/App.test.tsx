@@ -12,7 +12,11 @@ beforeEach(() => {
     { ts_code: '688981.SH', name: '中芯国际', sw_industry: { name: '半导体' }, market: { pct_change: -1.05 }, traditional_valuation: {}, predictive_valuation: {} },
   ]
   vi.stubGlobal('fetch', vi.fn((input: RequestInfo | URL) => {
-    const market = new URL(String(input), window.location.origin).searchParams.get('market')
+    const url = new URL(String(input), window.location.origin)
+    if (url.pathname.includes('/valuations/traditional')) return Promise.resolve(new Response(JSON.stringify({ data: { current_price: 24.68, summary: { conservative_valuation_price_optimized: 20.4, composite_valuation_price_optimized: 26.8, traditional_tiered_template: { aggressive: { target_price: 34.6 } }, buy_candidate: true, undervalue_score: 97 }, risk: { confidence: 72, risk_level: 'MEDIUM' }, methods: [{ valuation_method: 'pe', valuation_price: 25.1, deviation_pct: 1.7 }, { valuation_method: 'fcff_dcf', valuation_price: 28.4, deviation_pct: 15.1 }, { valuation_method: 'ddm', available: false, skip_reason: 'dividend_unavailable' }] } }), { status: 200, headers: { 'Content-Type': 'application/json' } }))
+    if (url.pathname.includes('/financials/overview')) return Promise.resolve(new Response(JSON.stringify({ data: { metrics: { net_profit: { key: 'net_profit', available: true }, ebit: { key: 'ebit', available: true }, net_margin: { key: 'net_margin', available: true }, debt_to_assets: { key: 'debt_to_assets', available: true } } } }), { status: 200, headers: { 'Content-Type': 'application/json' } }))
+    if (url.pathname.includes('/bars')) return Promise.resolve(new Response(JSON.stringify({ data: [{ trade_date: '2026-09-17', close: 24.68, change: 0.45, pct_change: 1.84 }] }), { status: 200, headers: { 'Content-Type': 'application/json' } }))
+    const market = url.searchParams.get('market')
     const data = market === 'cyb' ? items.filter((item) => item.ts_code.startsWith('300')) : items
     return Promise.resolve(new Response(JSON.stringify({ data }), { status: 200, headers: { 'Content-Type': 'application/json' } }))
   }))
@@ -22,9 +26,13 @@ afterEach(() => { cleanup() })
 test('renders the research workspace with the selected stock', async () => {
   render(<App />)
   expect(await screen.findByRole('heading', { name: '大华股份' })).toBeTruthy()
+  expect((await screen.findAllByText('风险级别')).length).toBe(2)
+  expect(screen.getByText('97')).toBeTruthy()
+  expect(screen.getByRole('heading', { name: '买入候选' })).toBeTruthy()
   expect(screen.queryByText(/已覆盖/)).toBeNull()
-  expect(screen.getAllByRole('heading', { name: '中性持有' })).toHaveLength(2)
-  expect(screen.getByRole('heading', { name: '基本面估值摘要' })).toBeTruthy()
+  expect(screen.getByRole('heading', { name: '买入候选' })).toBeTruthy()
+  expect(screen.getByRole('heading', { name: '暂无研究结论' })).toBeTruthy()
+  expect(screen.getByRole('heading', { name: '价值估值摘要' })).toBeTruthy()
   expect(screen.getByRole('heading', { name: '模型估值摘要' })).toBeTruthy()
   expect(screen.getByText('01.1 / FUNDAMENTAL VALUATION')).toBeTruthy()
   expect(screen.getByText('01.2 / MODEL VALUATION')).toBeTruthy()

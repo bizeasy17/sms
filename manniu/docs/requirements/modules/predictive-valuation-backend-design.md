@@ -578,15 +578,20 @@ The predictive tables and their identities are:
 
 | Model | Key | Purpose |
 | --- | --- | --- |
-| `PredictiveValuationSnapshot` | `security`, `report_type`, `asof_date` | Idempotent history/replay result and full raw/explain payload. Duplicate legacy rows for the same key are collapsed to the newest row. |
+| `PredictiveValuationSnapshot` | `security`, `report_type`, `asof_date`, `run_key` | Immutable result for one prediction run and point-in-time identity. Repeating the same run key is idempotent; a new run always appends a new history row. |
 | `PredictiveValuationCurrent` | `security`, `report_type` | Latest serving projection, replaced by each attempted refresh for that report identity. |
 | `PredictiveValuationEventState` | `source_system`, `source_event_key` | Local copy of an upstream event, idempotent consumption, debounce, and retry state. |
 | `PredictiveValuationRun` | `run_key` | Batch/manual run lifecycle and aggregate counts. |
 
-`report_type` is one of `Q1`, `H1`, `Q3`, `FY`, or `FUSION`. Model version and feature
-contract are trace fields, not part of the current-row identity; otherwise a model
-promotion would leave multiple competing current rows. Current and history writes are
-independently selectable through `latest`, `history`, or `both` store modes.
+`report_type` is one of `Q1`, `H1`, `Q3`, `FY`, or `FUSION`. `run_key` identifies one
+batch/manual/event execution and is part of the immutable history identity. A retry
+that intentionally resumes the same run may reuse its `run_key`; a newly triggered
+run must generate a new one even when security, report type, and as-of date are the
+same. Model version and feature contract are trace fields, not part of the current-row
+identity; otherwise a model promotion would leave multiple competing current rows.
+Current and history writes are independently selectable through `latest`, `history`,
+or `both` store modes. `PredictiveValuationCurrent` remains uniquely keyed by
+`security, report_type` and points to the latest projection produced by the run.
 
 Each current/history row stores the reference summary columns:
 
@@ -603,7 +608,8 @@ Each current/history row stores the reference summary columns:
 History additionally stores `snapshot_source`, `anchor_mode`, financial report/end/
 announcement/fiscal-year metadata, `run_key`, `is_backfill`, and `backfill_run_id`.
 Backfill retention, when enabled, keeps the configured number of most recent distinct
-financial quarter end dates per security.
+financial quarter end dates per security; within a retained identity, each run remains
+an append-only history row and must not be overwritten by a later run.
 
 A failed prediction writes a typed neutral snapshot for the attempted report identity:
 null score and targets, `HOLD`, `MEDIUM`, empty raw result, and populated `last_error`.
@@ -1044,8 +1050,8 @@ model artifact, or execute a trading action.
 2. Confirm the raw-financial field mapping for every predictive feature, including
   percentage/ratio unit rules.
 3. Confirm the four predictive persistence models and the internal read-query contract
-  for `api_gateway`, including the `(security, report_type)` current key and
-  `(security, report_type, asof_date)` history key.
+	for `api_gateway`, including the `(security, report_type)` current key and
+	`(security, report_type, asof_date, run_key)` append-only history identity.
 4. Implement and compare quarter routing, anchor selection, hierarchical imputation,
   quality-risk guard, raw/adjusted quantitative targets, and fusion component auditing.
 5. Confirm scheduling ownership and exact cadence after the existing market/financial
@@ -1313,3 +1319,206 @@ get_predictive_list_summary(
 	429、延迟和 cache hit/miss，确认日志不包含 Token、连接串、堆栈或模型绝对路径。
 - [ ] 完成灰度读流量和回滚方案，确认模型 promotion、快照失败、schema 变更和 Gateway
 	API 版本升级不会留下旧 current 或旧缓存结果。
+
+## 15 Migration Alignment Record: Legacy Earning Service And Maniu
+
+本节记录本次预测估值迁移的实际对齐过程，作为后续 parity 排查和回归验收的说明。
+它描述已经验证过的迁移路径和经验，不替代前文冻结的字段、接口和失败语义。
+
+### 15.1 Alignment objective and comparison unit
+
+迁移的比较对象是老 `tushare_earnings_service` 的预测链路与 Maniu 的
+`PredictiveInferenceService`，不是把两个项目的数据库表做逐表复制。老服务负责提供
+可观察行为基线，Maniu 负责在共享 PostgreSQL 数据边界内重建同一套输入、推理、目标映射
+和快照追踪。
+
+单次比较以以下身份作为最小单元：
+
+```text
+security + report_type + financial_end_date + source_market_date + anchor_mode
+```
+
+代表性验收样本为 `002236.SZ` 的 `H1` 预测：财务期为 `2026-06-30`，公告日为
+`2026-08-15`，公告附近选定的市场特征日为 `2026-08-14`。比较时必须先固定交易截面和报告期，
+再比较特征与模型输出；不能一边使用老服务的历史交易日，一边使用 Maniu 的最新市场行。
+
+### 15.2 Layered alignment procedure
+
+迁移采用由上游到下游的分层核对顺序。每一层先保存可比较的本地 JSON/trace，再进入下一层：
+
+1. **Model and routing**: 确认 Q1/H1/Q3/FY 分别加载对应 bundle，确认模型版本、
+	`feature_contract_version`、监督目标和 serving slot 一致。`FUSION` 只组合四个季度结果，
+	不引入第五个模型。
+2. **Point-in-time selection**: 固定 `anchor_mode`、`asof_date`、财务报告期、公告日和
+	`source_market_date`。H1 替换初始 latest panel 后，重新计算 `report_type_code` 和
+	`ann_date_lag_days`，不能保留 latest 行的派生值。
+3. **Raw financial fields**: 逐字段对比收入、利润、现金流、资产负债、指标和比率的
+	原始来源及单位。缺失值保持 null，不能用相邻字段推导出一个看似完整的值；ratio 和
+	percentage 的单位必须先按 `schema.yaml` 统一。
+4. **Market and industry features**: 对齐 close、PE/PB/PS、turnover、5 日和 lookback
+	收益、波动率及市场状态。行业特征必须使用相同的 canonical mapping、交易日和 peer
+	universe，再比较六个 percentile rank；缺失 rank 保持 null，交给后续 imputation。
+5. **Ordered vector and imputation**: 以 bundle 的 `feature_cols` 为权威顺序，用
+	`reindex(columns=feature_cols)` 补齐缺列，然后按 security recent median、industry
+	median、global median 的顺序填补。保存缺失字段、填补来源和最终向量。
+6. **Inference and mapping**: 逐项比较 classifier probability、earnings growth、
+	score、quality-risk guard、risk/action、raw target ranges、market adjustment 和
+	adjusted target ranges。只有输入、模型和配置都一致后，才把价格或收益差异归因于算法。
+7. **Persistence and read identity**: 检查 snapshot 的报告期、anchor、来源日期、模型
+	版本、`raw_result`、失败状态和 `run_key`。同一 `run_key` 重试必须幂等；新的运行必须
+	追加 history 行，同时只替换对应的 current 行。
+
+### 15.3 Main deviations found and resolved
+
+本次对齐中出现过的差异及处理结论如下：
+
+- **行业特征初始缺失**：行业 rank 曾因未完成映射或未命中数据而全部进入 imputation，
+  导致 Maniu 与老服务的 score/target 差异。修复后使用 `market_data` 的 canonical
+  security-to-industry mapping，并把 `industry_name`、`industry_code`、mapping version、
+  peer date、peer count 和六项 metric count 写入 trace。
+- **报告元特征滞留 latest 值**：切换到 H1 panel 后，如果不重算 report code 和公告日
+  lag，会形成“财务字段是 H1、报告元特征仍是 Q1/latest”的混合向量。当前流程明确先选
+  panel 和市场行，再重算派生报告特征。
+- **历史快照被覆盖**：原先按 `security + report_type + asof_date` upsert，会让不同
+  运行互相覆盖，无法比较迁移前后结果。现在 history 使用
+  `security + report_type + asof_date + run_key`，current 仍使用
+  `security + report_type`；`run_key` 是运行身份，不是模型版本。
+- **监督目标语义混淆**：模型的 earnings 分量对应年度财务增长监督目标，不能描述成一年期
+  股票收益；约 20 个交易日的 valuation/risk label 也不能反向替代 FY earnings target。
+  输出说明必须同时保留目标列和 label/config 版本。
+- **运行时间回退**：行业 rank 初版在每个 panel 重新读取全市场约 200 日行情、估值和
+  基本面，再重复 pandas rank。当前服务实例缓存 industry mapping，并按
+  `(anchor_date, industry_name)` 缓存排名上下文；计算仍使用同一交易日、同一 rank 方法和
+  同一 peer 口径，只把查询范围收窄到目标行业。该缓存仅存在于一次 service/run scope，
+  不作为跨进程永久缓存，避免行情或行业映射更新后产生陈旧结果。
+
+### 15.4 Acceptance evidence and operating rules
+
+迁移验收必须至少保留以下证据：
+
+| Evidence | Required check |
+| --- | --- |
+| Input identity | security、report type、financial end、anchor、market source date 一致 |
+| Feature parity | ordered feature vector、missing list、imputation source 一致或有批准差异 |
+| Industry parity | mapping version、peer date/count、六项 rank 和 metric availability 可追溯 |
+| Output parity | probability、score、risk/action、raw/adjusted ranges 在约定容差内 |
+| Persistence parity | current 指向最后一次成功/失败尝试，history 按 run 追加且可重放 |
+| Performance evidence | 至少比较同一 service 实例下重复日期/行业 panel 的耗时或 query count |
+
+排查顺序固定为：顶层预测结果和快照身份、请求/anchor 选择、财务 panel、市场行、行业
+peer、特征向量与 imputation、模型输出、目标映射、最后才是持久化和读取层。任何一层
+尚未对齐时，不应通过调权重、改 target cap 或前端格式化来掩盖输入差异。性能优化也必须
+以 parity trace 复核为前提，缓存不能改变排名口径、缺失语义或历史身份。
+
+### 15.5 Traditional valuation alignment: SmartInvestor and Maniu
+
+本次同时完成了传统估值入口从老项目到 Maniu 的计算对齐。老项目 CLI 为
+`smartinvestor_be/prediction/management/commands/estmktv.py`，核心计算位于
+`valuation.services.valuation_engine`；Maniu 入口为
+`manniu_backend/traditional_valuation/management/commands/traditional_valuation.py`，
+核心计算位于 `traditional_valuation.services.valuation_engine`。两者都通过服务层计算，
+管理命令只负责参数、事件消费和快照持久化，不应在 CLI 中重新实现估值公式。
+
+#### 15.5.1 Parameter source and runtime contract
+
+Maniu 的传统估值运行时参数以 PostgreSQL 表
+`traditional_valuation_parameter_version` 为唯一有效来源。模板解析必须得到激活的
+`parameter_version`，并把 `source_hash`、SW level/code 和来源交易日写入结果 provenance；
+不得在计算服务中重新读取或依赖旧 JSON 参数文件。`parameters` 中的直接方法参数包括：
+
+```text
+dcf_kwargs.discount_rate
+dcf_kwargs.terminal_growth_rate
+dcf_kwargs.growth_rates[5]
+ddm_kwargs.discount_rate
+ddm_kwargs.dividend_growth_rate
+```
+
+参数版本缺失、未激活或没有完整 DCF 五年增长率时，应使校验或估值运行明确失败，不能
+静默回退到另一套行业参数。参数变更必须生成新的版本或新的 source hash，并重新执行
+固定样本的 side-by-side 对账。
+
+#### 15.5.2 FCFF input alignment
+
+两边统一使用经营活动现金流扣除资本开支后的 FCFF，而不是把经营现金流直接命名为
+FCFF。报告期为 Q1/H1/Q3 时，流量指标采用同一 TTM 公式：
+
+$$
+FCFF_{TTM}=FCFF_{current}+FCFF_{prior\ FY}-FCFF_{prior\ same\ period}
+$$
+
+单个报告期的 FCFF 定义为：
+
+```text
+FCFF = n_cashflow_act - abs(c_pay_acq_const_fiolta)
+```
+
+资本开支优先取规范化字段；若字段未落库但原始财务记录的 `raw_payload` 中存在该值，
+resolver 必须使用 raw payload，避免因模型字段未覆盖而把资本开支错误当作 0。现金和净债务
+也必须使用同一报告期资产负债表：
+
+```text
+debt = st_borr + lt_borr + bond_payable + non_cur_liab_due_1y
+net_debt = debt - money_cap
+```
+
+所有金额在进入每股计算前保持数据库金额单位；股数和金额单位换算只能在统一的
+`_per_share` 边界完成。输入 trace 至少保留 TTM FCFF、当前/上年全年/上年同期分量、
+资本开支来源、cash、debt 和 net_debt。
+
+#### 15.5.3 FCFF DCF calculation alignment
+
+Maniu 的 `fcff_dcf` 已从单期资本化改为与老项目一致的五年显式预测模型。给定五年增长率
+`g_1...g_5`、折现率 `r`、终值增长率 `g_T`：
+
+```text
+FCFF_0 = TTM FCFF
+FCFF_t = FCFF_(t-1) * (1 + g_t), t = 1..5
+PV_t = FCFF_t / (1 + r)^t
+TerminalFCFF = FCFF_5 * (1 + g_T)
+TerminalValue = TerminalFCFF / (r - g_T)
+EnterpriseValue = sum(PV_1..PV_5) + TerminalValue / (1 + r)^5
+EquityValue = EnterpriseValue - net_debt
+Price = EquityValue / total_share
+```
+
+`methods.fcff_dcf.input` 必须可审计地返回增长率、五年预测 FCFF、每期现值、终值、终值
+现值、企业价值、现金、债务、净债务和股权价值。`r <= g_T` 必须返回明确错误，不能
+产生无意义的负值或无限值。
+
+#### 15.5.4 Verified parity sample and accepted open difference
+
+已用 `688265.SH`、`asof_date=2026-04-30`、`report_type=Q1`、
+`financial_end_date=2026-03-31` 完成迁移侧运行验证。该证券解析到 SW L3
+`851563.SI`，数据库参数版本为 `SW-CN-1.0`，DCF 参数为：
+
+```text
+discount_rate = 12.67%
+terminal_growth_rate = 1.74%
+growth_rates = [6.96%, 6.26%, 5.57%, 4.87%, 4.17%]
+```
+
+迁移项目验证值为：
+
+```text
+TTM FCFF      = 23.142m
+cash          = 318.727m
+debt          = 16.398m
+net_debt      = -302.329m
+enterprise    = 252.391m
+equity value  = 554.720m
+FCFF DCF      = 7.115120
+```
+
+老项目同一截面曾得到 `FCFF=19.271m`。该差异已定位且当前接受为开放数据口径差异，
+不是 DCF 公式差异：老项目的 `2025Q1` 现金流记录没有资本开支值并按 0 处理；Maniu
+从该记录的 `raw_payload` 读取到 `c_pay_acq_const_fiolta=3.871m`。因此两边 TTM FCFF
+差异正好为 `3.871m`。后续若要实现数值完全一致，必须先决定并固化历史资本开支缺失值的
+来源策略，再重新生成双方的 side-by-side artifact；不能通过调 DCF 折现率或增长率掩盖该
+输入差异。
+
+本次传统估值对齐的验证包括：三项迁移服务 Python 编译、`TraditionalValuationEngine`
+单证券 Q1 运行、管理命令 `traditional_valuation validate --dry-run`。Django 部署检查仅
+保留原有安全配置 warnings，不构成传统估值计算失败。传统估值后续变更必须沿用与预测估值
+相同的上游到下游核对顺序：参数版本、财务报告筛选、现金流分量、资产负债表净债务、DCF
+中间值、每股单位，最后才比较汇总价格和快照结果。

@@ -239,10 +239,17 @@ Gateway 只转发 `market_data` 的 bounded query service。不得在 cache miss
 | --- | --- | --- | --- |
 | GET | `/securities/:ts_code/financials` | 财务报表/指标统一只读视图 | `dataset`, `end_date`, `asof_date`, `start_date`, `page`, `page_size` |
 | GET | `/securities/:ts_code/disclosures` | 披露日历和有效披露边界 | `start_date`, `end_date`, `asof_date`, `page`, `page_size` |
+| GET | `/securities/:ts_code/financials/overview` | 研究首页财务基本面融合摘要 | `asof_date`, `report_type` |
 
 `dataset` 允许白名单值：`income`、`balance_sheet`、`cashflow`、`indicator`、`forecast`、`express`、`dividend`、`audit`、`main_business`。raw payload、导入运行明细和错误明细不属于普通用户 API；需要 `financials:operator_read` scope。
 
 返回的历史财务记录必须带 `ann_date`、`actual_date`（如有）、`effective_date`、`end_date`、`source_revision` 或等价 provenance 字段。`asof_date` 下不得返回之后才公开的数据。
+
+`/securities/:ts_code/financials/overview` 由 `financials` 领域服务融合最新公开
+income、cashflow、indicator 记录，Gateway 只负责认证、证券代码规范化、未来日期校验、
+统一响应和错误映射。每个指标必须保留绝对值、同比、rolling12、报告期、来源数据集和
+可用状态；金额单位为 CNY，比例单位为 percentage points，同比金额为 ratio，同比比例
+为 percentage-point difference。接口不得在 Gateway 或前端补零、推导估值结论或回源 Tushare。
 
 ### 5.3 Market Sentiment
 

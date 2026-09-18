@@ -58,12 +58,43 @@
 }
 
 .range-bar {
-  background: linear-gradient(90deg, #176b4d 0%, #b8d9bd 33%, #f0c7c5 68%, #c94d55 100%);
+  background: linear-gradient(
+    90deg,
+    #176b4d 0%,
+    #b8d9bd 33%,
+    #f0c7c5 68%,
+    #c94d55 100%
+  );
 }
 
 .range-pointer i {
   top: 25px;
   left: -20px;
+}
+
+.valuation-summary-section .range-bar {
+  overflow: visible;
+}
+
+.valuation-summary-section .range-pointer {
+  transform: translateX(-50%);
+}
+
+.valuation-summary-section .range-pointer i {
+  left: 50%;
+  transform: translateX(-50%);
+  white-space: nowrap;
+}
+
+.valuation-summary-section .range-pointer-start i {
+  left: 0;
+  transform: none;
+}
+
+.valuation-summary-section .range-pointer-end i {
+  left: auto;
+  right: 0;
+  transform: none;
 }
 
 .valuation-summary-section .model-valuation-block {
@@ -74,9 +105,42 @@
   margin-bottom: 8px;
 }
 
+.valuation-summary-section .thesis-strip {
+  margin-top: 14px;
+}
+
+.valuation-summary-section .fundamental-valuation-block > .valuation-layout {
+  margin-top: 18px;
+  padding-bottom: 12px;
+}
+
 .valuation-methods {
   display: grid;
   gap: 18px;
+}
+
+.valuation-methods .method-list {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  column-gap: 24px;
+}
+
+.confidence .risk-level {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 5px;
+  margin-top: 4px;
+}
+
+.confidence .risk-level strong {
+  color: inherit;
+  font-size: inherit;
+}
+
+@media (max-width: 700px) {
+  .valuation-methods .method-list {
+    grid-template-columns: 1fr;
+  }
 }
 
 .model-placeholder {
@@ -130,7 +194,12 @@
 }
 
 .module-state-loading {
-  background: linear-gradient(90deg, var(--color-surface-muted), #fff, var(--color-surface-muted));
+  background: linear-gradient(
+    90deg,
+    var(--color-surface-muted),
+    #fff,
+    var(--color-surface-muted)
+  );
   background-size: 200% 100%;
   animation: module-state-loading 1.4s linear infinite;
 }
@@ -140,8 +209,12 @@
 }
 
 @keyframes module-state-loading {
-  from { background-position: 100% 0; }
-  to { background-position: -100% 0; }
+  from {
+    background-position: 100% 0;
+  }
+  to {
+    background-position: -100% 0;
+  }
 }
 
 .percentile-line {

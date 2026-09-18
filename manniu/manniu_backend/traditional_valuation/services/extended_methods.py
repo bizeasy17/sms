@@ -109,16 +109,19 @@ def calculate_scarcity_overlay(base_price, growth, roe, config):
     circuit = config.get('circuit_breaker') or {}
     if not config.get('enabled', True) and config.get('enabled') is not None:
         return None, 'scarcity_disabled'
-    beta = 0.35
-    cap_pct = 30.0
+    beta = number(config.get('beta')) or 1.0
+    cap_pct = number(config.get('cap_pct')) or 80.0
     confidence_floor = float((config.get('missing_policy') or {}).get('confidence_floor', 0.35))
-    growth_score = min(1.0, max(0.0, (growth or 0.0) / 50.0))
-    roe_score = min(1.0, max(0.0, (roe or 0.0) / 30.0))
-    available = int(growth is not None) + int(roe is not None)
-    if available == 0:
-        return None, 'scarcity_score_inputs_missing'
-    score = (growth_score + roe_score) / (2 if available == 2 else 1)
-    confidence = 1.0 if available == 2 else 0.5
+    score = min(1.0, max(0.0, number(config.get('score')) or 0.0))
+    confidence = min(1.0, max(0.0, number(config.get('confidence')) or 0.0))
+    if score <= 0 or confidence <= 0:
+        growth_score = min(1.0, max(0.0, (growth or 0.0) / 50.0))
+        roe_score = min(1.0, max(0.0, (roe or 0.0) / 30.0))
+        available = int(growth is not None) + int(roe is not None)
+        if available == 0:
+            return None, 'scarcity_score_inputs_missing'
+        score = (growth_score + roe_score) / (2 if available == 2 else 1)
+        confidence = 1.0 if available == 2 else 0.5
     if confidence < confidence_floor:
         return None, 'scarcity_confidence_below_floor'
     premium_pct = min(cap_pct, max(0.0, beta * score * confidence * 100.0))

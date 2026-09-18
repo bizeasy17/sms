@@ -4,3 +4,7 @@ export type Tab = 'summary' | 'technical' | 'fundamental' | 'financials'
 export type TagAction = 'BUY' | 'SELL' | 'HOLD' | null
 export type StockTag = { text: string; label: string; action: TagAction; actionText?: string; scoreText?: string }
 export type Stock = { code: string; name: string; market: string; industry: string; tags: StockTag[]; change: string; positive: boolean | null }
+export type StockQuote = { tradeDate: string; close: number | null; change: number | null; pctChange: number | null }
+export type FinancialMetric = { key: string; value: number | null; yoy: number | null; yoyUnit: 'ratio' | 'percentage_points'; rolling12: number | null; rolling12Unit: string; period: string | null; sourceDataset: string; available: boolean }
+export type TraditionalValuationMethod = { valuationMethod: string; valuationPrice: number | null; note: string; available: boolean }
+export type TraditionalValuation = { currentPrice: number | null; conservativePrice: number | null; centerPrice: number | null; optimisticPrice: number | null; confidence: number | null; undervalueScore: number | null; buyCandidate: boolean | null; riskLevel: string | null; asofDate: string | null; sourceTradeDate: string | null; methods: TraditionalValuationMethod[] }

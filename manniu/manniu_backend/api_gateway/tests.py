@@ -403,10 +403,18 @@ class MarketDataGatewayTests(TestCase):
         self.assertEqual(compare.status_code, 200)
         self.assertEqual(compare.json()['data']['active_variant'], 'sw_l3_baseline')
 
-    def test_traditional_valuation_diagnostics_require_scope(self):
+    def test_traditional_valuation_methods_are_available_without_diagnostics_scope(self):
         response = self.client.get(
             '/api/v1/market-analysis/securities/000001.SZ/valuations/traditional',
             {'include_methods': 'true'}, **self.headers,
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertIn('methods', response.json()['data'])
+
+    def test_traditional_valuation_diagnostics_still_require_scope(self):
+        response = self.client.get(
+            '/api/v1/market-analysis/securities/000001.SZ/valuations/traditional',
+            {'include_methods': 'true', 'include_diagnostics': 'true'}, **self.headers,
         )
         self.assertEqual(response.status_code, 403)
         self.assertEqual(response.json()['error']['code'], 'SCOPE_REQUIRED')

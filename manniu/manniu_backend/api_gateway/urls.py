@@ -10,6 +10,7 @@ urlpatterns = [
 	path('securities/<str:ts_code>/bars', views.security_bars, name='market-analysis-security-bars'),
 	path('securities/<str:ts_code>/fundamentals', views.security_fundamentals, name='market-analysis-security-fundamentals'),
 	path('securities/<str:ts_code>/financials', views.security_financials, name='market-analysis-security-financials'),
+	path('securities/<str:ts_code>/financials/overview', views.security_financial_overview, name='market-analysis-security-financial-overview'),
 	path('securities/<str:ts_code>/disclosures', views.security_disclosures, name='market-analysis-security-disclosures'),
 	path('securities/<str:ts_code>/valuations/traditional', views.security_traditional_valuation, name='market-analysis-traditional-valuation'),
 	path('securities/<str:ts_code>/valuations/traditional/history', views.security_traditional_valuation_history, name='market-analysis-traditional-valuation-history'),
