@@ -12,6 +12,10 @@ type ResearchListItem = {
 }
 
 type ResearchListResponse = { data?: ResearchListItem[]; error?: { message?: string } }
+export type SecuritySearchResult = Stock & { listDate: string | null }
+type SecuritiesResponse = { data?: Array<{ ts_code: string; name: string; industry?: string | null; list_date?: string | null }>; error?: { message?: string } }
+export type AuthUser = { display_name?: string; username?: string }
+type AuthUserResponse = { data?: AuthUser; error?: { message?: string } }
 type Bar = { trade_date?: string; open?: number | null; high?: number | null; low?: number | null; close?: number | null; volume?: number | null; change?: number | null; pct_change?: number | null }
 type BarsResponse = { data?: Bar[]; error?: { message?: string } }
 type TechnicalTrendResponse = { data?: { security?: { ts_code?: string; name?: string }; series?: Array<Bar & { ma25?: number | null; ma200?: number | null }>; momentum?: { latest?: { rsi14?: number | null; macd_histogram?: number | null; atr14?: number | null } }; summary?: { trend?: string | null; trend_score?: number | null; trend_level?: string | null; volatility_status?: string | null; data_status?: string }; relative_strength?: { name?: string | null; relative_strength?: number | null; direction?: string | null; status?: string }; market_sentiment?: { status?: string; score?: number | null; level?: string | null; source_trade_date?: string | null }; signals?: Array<{ trade_date?: string; type?: string; direction?: string; evidence?: string; status?: string }>; warnings?: string[]; rule_version?: string; adjust?: string; frequency?: string; period?: number }; error?: { message?: string } }
@@ -361,4 +365,42 @@ export async function fetchTechnicalChips(tsCode: string, startDate: string, end
     const body = await response.json() as ChipsResponse
     if (!response.ok || !Array.isArray(body.data)) throw new Error(body.error?.message ?? '筹码分布加载失败，请稍后重试。')
     return body.data.filter((row): row is { trade_date: string; price: number; percent: number } => typeof row.trade_date === 'string' && typeof row.price === 'number' && Number.isFinite(row.price) && typeof row.percent === 'number' && Number.isFinite(row.percent)).map((row) => ({ tradeDate: row.trade_date, price: row.price, percent: row.percent }))
+}
+
+export async function searchSecurities(queryText: string, signal?: AbortSignal): Promise<SecuritySearchResult[]> {
+    const query = new URLSearchParams({ q: queryText, asset_type: 'STOCK', page: '1', page_size: '8' })
+    const accessToken = window.localStorage.getItem('access_token') ?? window.localStorage.getItem('auth_access_token')
+    const headers: HeadersInit = { Accept: 'application/json' }
+    if (accessToken) headers.Authorization = `Bearer ${accessToken}`
+    const response = await fetch(`${API_BASE}/market-analysis/securities?${query}`, { headers, signal })
+    const body = await response.json() as SecuritiesResponse
+    if (!response.ok || !Array.isArray(body.data)) throw new Error(body.error?.message ?? '证券搜索失败，请稍后重试。')
+    return body.data.map((item) => ({
+        code: item.ts_code,
+        name: item.name,
+        market: item.ts_code.split('.')[1] ?? '',
+        industry: item.industry || '暂无行业',
+        listDate: item.list_date ?? null,
+        tags: [],
+        change: '暂无涨跌',
+        positive: null,
+    }))
+}
+
+function authHeaders(): HeadersInit {
+    const accessToken = window.localStorage.getItem('access_token') ?? window.localStorage.getItem('auth_access_token')
+    return accessToken ? { Accept: 'application/json', Authorization: `Bearer ${accessToken}` } : { Accept: 'application/json' }
+}
+
+export async function fetchCurrentUser(signal?: AbortSignal): Promise<AuthUser | null> {
+    if (!window.localStorage.getItem('access_token') && !window.localStorage.getItem('auth_access_token')) return null
+    const response = await fetch(`${API_BASE}/auth/me`, { headers: authHeaders(), signal })
+    const body = await response.json() as AuthUserResponse
+    if (!response.ok || !body.data) throw new Error(body.error?.message ?? '当前账户加载失败。')
+    return body.data
+}
+
+export async function logoutCurrentUser(): Promise<void> {
+    const response = await fetch(`${API_BASE}/auth/logout`, { method: 'POST', headers: authHeaders() })
+    if (!response.ok && response.status !== 401) throw new Error('注销失败，请稍后重试。')
 }

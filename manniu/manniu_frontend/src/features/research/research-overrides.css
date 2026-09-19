@@ -1,3 +1,80 @@
+.global-search-wrap {
+  position: relative;
+  width: 290px;
+  margin-left: auto;
+}
+
+.global-search-wrap .global-search {
+  width: 100%;
+  margin-left: 0;
+}
+
+.security-search-results {
+  position: absolute;
+  top: calc(100% + 7px);
+  left: 0;
+  right: 0;
+  z-index: 30;
+  overflow: hidden;
+  border: 1px solid var(--color-line);
+  border-radius: 6px;
+  background: var(--color-surface);
+  box-shadow: 0 10px 24px rgb(24 37 54 / 14%);
+}
+
+.security-search-result {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 12px;
+  border: 0;
+  border-bottom: 1px solid var(--color-line);
+  background: transparent;
+  color: var(--color-text);
+  cursor: pointer;
+  text-align: left;
+}
+
+.security-search-result:last-child { border-bottom: 0; }
+.security-search-result:hover,
+.security-search-result.active { background: #eef3ff; }
+.search-history-heading { padding: 9px 12px 5px; color: var(--color-text-muted); font-size: 10px; font-weight: 700; }
+.search-result-main,
+.search-result-meta { display: flex; align-items: center; gap: 9px; min-width: 0; }
+.search-result-main strong { white-space: nowrap; font-size: 12px; font-weight: 700; }
+.search-result-main code,
+.search-result-meta { color: var(--color-text-muted); font-size: 11px; }
+.search-result-meta { justify-content: flex-end; overflow: hidden; }
+.search-result-meta span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.search-state { padding: 14px 12px; color: var(--color-text-muted); font-size: 12px; text-align: center; }
+.search-error { color: var(--color-warning); }
+.account-menu-wrap { position: relative; }
+.account-dropdown {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  z-index: 30;
+  min-width: 132px;
+  padding: 6px;
+  border: 1px solid var(--color-line);
+  border-radius: 6px;
+  background: var(--color-surface);
+  box-shadow: 0 10px 24px rgb(24 37 54 / 14%);
+}
+.account-dropdown-name { padding: 7px 8px 8px; border-bottom: 1px solid var(--color-line); color: var(--color-text-muted); font-size: 11px; }
+.account-dropdown button { width: 100%; padding: 8px; border: 0; background: transparent; color: var(--color-text); cursor: pointer; font-size: 12px; text-align: left; }
+.account-dropdown button:hover { background: #eef3ff; color: var(--color-primary); }
+.account-dropdown button:disabled { cursor: wait; opacity: .6; }
+
+@media (max-width: 700px) {
+  .global-search-wrap { width: auto; flex: 1; }
+  .global-search-wrap .global-search { display: none; }
+  .global-search-wrap:focus-within .global-search { display: flex; }
+  .search-button { display: block; }
+  .security-search-results { position: fixed; top: 59px; left: 16px; right: 16px; }
+}
 .stock-rail {
   display: flex;
   flex-direction: column;
