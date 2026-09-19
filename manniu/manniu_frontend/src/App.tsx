@@ -1,5 +1,6 @@
 import './App.css'
 import './features/research/research-overrides.css'
+import { StockPickerPage } from './features/stock-picker/StockPickerPage'
 import { ApiLab, ApiLoginPage } from './ApiLab'
 import { useEffect, useState } from 'react'
 import type { ReactNode } from 'react'
@@ -197,5 +198,6 @@ function ResearchHomePage() {
 export default function RootApp() {
   if (window.location.pathname === '/public/api') return <ApiLab />
   if (window.location.pathname === '/login') return <ApiLoginPage />
+  if (window.location.pathname === '/stock-picker' || window.location.hash === '#universe') return <StockPickerPage />
   return <ResearchHomePage />
 }

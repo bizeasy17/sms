@@ -7,7 +7,17 @@ function formatListDate(value: string | null) { return value ? value.replace(/-/
 const RECENT_SEARCHES_KEY = 'manniu.recent-security-searches'
 const MAX_RECENT_SEARCHES = 10
 
-export function TopBar({ onMenu, onSelect }: { onMenu: () => void; onSelect: (stock: SecuritySearchResult) => void }) {
+export function TopBar({ onMenu, onSelect, activeSection = 'research' }: { onMenu: () => void; onSelect: (stock: SecuritySearchResult) => void; activeSection?: 'research' | 'picker' }) {
+	useEffect(() => {
+		const navLinks = document.querySelectorAll<HTMLAnchorElement>('.main-nav a')
+		const researchLink = navLinks[0]
+		const pickerLink = navLinks[1]
+		if (researchLink) researchLink.classList.toggle('active', activeSection === 'research')
+		if (pickerLink) {
+			pickerLink.href = '/stock-picker'
+			pickerLink.classList.toggle('active', activeSection === 'picker')
+		}
+	}, [activeSection])
 	const [query, setQuery] = useState('')
 	const [results, setResults] = useState<SecuritySearchResult[]>([])
 	const [activeIndex, setActiveIndex] = useState(-1)
