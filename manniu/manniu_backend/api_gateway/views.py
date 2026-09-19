@@ -19,6 +19,7 @@ from .services.market_data import (
     MarketDataRequestError,
     get_bars,
     get_fundamentals,
+    get_market_evidence,
     get_security,
     list_securities,
     parse_date,
@@ -27,6 +28,8 @@ from .services.market_data import (
     normalize_ts_code,
     security_payload,
 )
+from market_data.services.cyq_chips import get_cyq_chips
+from market_data.services.technical_trend import TechnicalTrendRequestError, get_technical_trend
 from .services.indices import (
     IndexGatewayRequestError,
     catalog as index_catalog,
@@ -99,6 +102,8 @@ def _handle_request_error(request, error):
         'INVALID_WINDOW': 400,
         'INVALID_STYLE': 400,
         'UPSTREAM_DEPENDENCY_UNAVAILABLE': 503,
+        'UPSTREAM_TIMEOUT': 503,
+        'UPSTREAM_RATE_LIMITED': 503,
         'VERSION_CONFLICT': 409,
         'FORBIDDEN': 403,
     }
@@ -107,7 +112,9 @@ def _handle_request_error(request, error):
         error.code,
         str(error),
         status=status_map.get(error.code, 400),
-        retryable=error.code == 'UPSTREAM_DEPENDENCY_UNAVAILABLE',
+        retryable=error.code in {
+            'UPSTREAM_TIMEOUT', 'UPSTREAM_RATE_LIMITED', 'UPSTREAM_DEPENDENCY_UNAVAILABLE',
+        },
         details=error.details,
     )
 
@@ -280,6 +287,74 @@ def security_bars(request, ts_code):
         return _handle_request_error(request, error)
     status = 'NO_DATA' if result.total == 0 else 'COMPLETE'
     return api_response(request, data=result.items, meta=_meta(result, data_status=status, asof_date=end_date))
+
+
+@require_scopes('market_analysis:read', 'market_analysis:history')
+def security_chips(request, ts_code):
+    if (response := _require_get(request)) is not None:
+        return response
+    try:
+        start_date, end_date = parse_history_range(request.GET)
+        if end_date > date.today():
+            raise MarketDataRequestError('INVALID_DATE', 'end_date 不能晚于当前日期')
+        result = get_cyq_chips(ts_code=ts_code, start_date=start_date, end_date=end_date)
+    except MarketDataRequestError as error:
+        return _handle_request_error(request, error)
+    return api_response(
+        request,
+        data=result.data,
+        meta={
+            'data_type': 'CYQ_CHIPS',
+            'start_date': start_date.isoformat(),
+            'end_date': end_date.isoformat(),
+            'returned_days': len({row['trade_date'] for row in result.data}),
+            'data_status': result.data_status,
+            'source': result.source,
+            'warnings': result.warnings,
+        },
+    )
+
+
+@require_scopes('market_analysis:read', 'market_analysis:history')
+def security_market_evidence(request, ts_code):
+    if (response := _require_get(request)) is not None:
+        return response
+    try:
+        result = get_market_evidence(ts_code=ts_code, days=request.GET.get('days', 60))
+    except MarketDataRequestError as error:
+        return _handle_request_error(request, error)
+    status = 'DEGRADED' if result['warnings'] else 'COMPLETE'
+    return api_response(
+        request,
+        data=result,
+        meta=_meta(data_status=status, warnings=result['warnings']),
+    )
+
+
+@require_scopes('market_analysis:read', 'market_analysis:history')
+def security_technical_trend(request, ts_code):
+    if (response := _require_get(request)) is not None:
+        return response
+    try:
+        start_date, end_date = parse_history_range(request.GET)
+        result = get_technical_trend(
+            ts_code=normalize_ts_code(ts_code),
+            start_date=start_date,
+            end_date=end_date,
+            adjust=request.GET.get('adjust', 'qfq').lower(),
+            frequency=request.GET.get('frequency', 'D').upper(),
+            period=request.GET.get('period', 120),
+        )
+    except TechnicalTrendRequestError as error:
+        return _handle_request_error(request, error)
+    status = result['summary']['data_status']
+    meta = _meta(data_status=status, asof_date=end_date, warnings=result['warnings'])
+    meta.update({
+        'requested_period': result['period'],
+        'returned_days': len(result['series']),
+        'source': 'market_data:technical_rule_v1',
+    })
+    return api_response(request, data=result, meta=meta)
 
 
 @require_scopes('market_analysis:read', 'market_analysis:history')
@@ -698,7 +773,10 @@ def security_financial_overview(request, ts_code):
         return _handle_request_error(request, error)
     status = data.pop('data_status')
     warnings = data.pop('warnings')
-    return api_response(request, data=data, meta=_meta(data_status=status, asof_date=asof_date, warnings=warnings))
+    evaluation = data.get('evaluation') or {}
+    meta = _meta(data_status=status, asof_date=asof_date, warnings=warnings)
+    meta['evaluation_version'] = evaluation.get('evaluation_version')
+    return api_response(request, data=data, meta=meta)
 
 
 def security_disclosures(request, ts_code):

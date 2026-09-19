@@ -22,6 +22,7 @@ from .models import (
 )
 from .services.sync import SyncValidationError, _optional_trade_date, build_sync_plan, execute_sync
 from .services.regime import classify_market_regime, classify_security_regime, next_regime_state
+from .services.technical_trend import TechnicalTrendRequestError, _sentiment_payload, _value, get_technical_trend
 
 
 class MarketDataSchemaTests(SimpleTestCase):
@@ -106,6 +107,37 @@ class MarketRegimeClassifierTests(SimpleTestCase):
         self.assertEqual(result.regime, 'GROWTH')
         self.assertEqual(next_regime_state('GROWTH', '', 0, 'DEFENSIVE', 2), ('GROWTH', 'DEFENSIVE', 1, False))
         self.assertEqual(next_regime_state('GROWTH', 'DEFENSIVE', 1, 'DEFENSIVE', 2), ('DEFENSIVE', '', 0, True))
+
+
+class TechnicalTrendServiceTests(SimpleTestCase):
+    def test_technical_trend_rejects_future_end_date(self):
+        with self.assertRaisesRegex(TechnicalTrendRequestError, '不能晚于当前日期') as context:
+            get_technical_trend(
+                ts_code='000001.SZ',
+                start_date=date(2026, 9, 18),
+                end_date=date(2026, 9, 20),
+            )
+
+        self.assertEqual(context.exception.code, 'INVALID_DATE')
+
+    @patch('market_data.services.technical_trend.get_stock_snapshot')
+    def test_sentiment_payload_preserves_snapshot_and_flags_date_mismatch(self, snapshot_mock):
+        snapshot_mock.return_value = {
+            'status': 'VALID',
+            'score': 72.5,
+            'level': 'HIGH',
+            'source_trade_date': '2026-09-17',
+            'engine_version': 'sentiment_v1',
+            'coverage': 1.0,
+        }
+        warnings = []
+
+        payload = _sentiment_payload('000001.SZ', date(2026, 9, 18), date(2026, 9, 18), warnings)
+
+        self.assertEqual(payload['score'], 72.5)
+        self.assertEqual(payload['status'], 'VALID')
+        self.assertIn('SENTIMENT_ASOF_MISMATCH', warnings)
+        self.assertEqual(_value(Decimal('1.234567')), 1.234567)
 
 
 class MarketDataSyncPlanTests(SimpleTestCase):

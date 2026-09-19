@@ -15,7 +15,7 @@
 
 1. 从覆盖池、持仓、自选或观察列表中选择股票。
 2. 查看当前股票的研究结论、估值状态和基本面证据。
-3. 进入技术趋势、基本面、财报档案等更详细的研究模块。
+3. 进入技术趋势、基本面与财务档案等更详细的研究模块。
 
 ## 2. 设计原则
 
@@ -29,7 +29,7 @@
 - `StockRail`：股票池、筛选条件和股票选择。
 - `ResearchDossier`：当前股票的研究主体内容。
 - `StockIdentity`：股票名称、代码、行业、最新价格和涨跌幅。
-- `ResearchTabs`：研究摘要、技术趋势、基本面、财报档案等页签。
+- `ResearchTabs`：研究摘要、技术趋势、基本面与财务档案等页签。
 - `ThesisStrip`：当前判断、研究摘要和仓位建议。
 - `ValuationSummary`：综合内在价值、估值区间和估值方法。
 - `MarketEvidence`：价格趋势、波动率、相对强度等市场证据。
@@ -239,6 +239,15 @@ GET /api/v1/market-analysis/securities/:ts_code/bars
 - 切换股票时取消或忽略上一次 bars 请求，禁止旧股票行情覆盖当前股票头部。
 - 接口响应沿用统一响应包装：`data` 为日线记录数组，`meta.data_status` 表示 `COMPLETE` 或 `NO_DATA`；每条记录至少包含 `ts_code`、`trade_date`、`close`、`change`、`pct_change`、`adjust` 和 `frequency`。
 
+#### 5.3.2 自选、持仓与观察状态
+
+头部基本信息卡片在股票名称旁展示三个标签式状态按钮：`自选`、`持仓`、`观察`。三个状态相互独立，允许同时开启；激活态使用研究蓝色和浅蓝背景，未激活态使用中性边框与文字。按钮使用原生可聚焦元素，并通过 `aria-pressed` 表达当前状态。
+
+- 自选状态通过 `GET /api/v1/me/watchlist` 加载；点击未激活的“自选”调用 `POST /api/v1/me/watchlist`，请求体传入当前股票 `ts_code`；点击已激活的“自选”调用 `DELETE /api/v1/me/watchlist/{item_id}`。
+- 持仓状态通过 `GET /api/v1/me/portfolios` 获取当前用户第一个未归档组合，再调用 `GET /api/v1/me/portfolios/{portfolio_id}/positions` 判断当前股票是否已有持仓。没有组合时创建“默认组合”，并以数量、可用数量、平均成本为 `0` 的初始化快照加入；再次点击调用 `DELETE /api/v1/me/portfolios/{portfolio_id}/positions/{position_id}` 移除。
+- 观察状态通过 `GET /api/v1/me/observations` 加载；点击未激活的“观察”调用 `POST /api/v1/me/observations`，点击已激活的“观察”调用 `DELETE /api/v1/me/observations/{item_id}`。
+- 操作成功或失败使用 popup message 反馈；状态请求失败只影响三个标签，不清空股票身份、行情或研究内容，并避免旧股票请求覆盖当前股票。
+
 示例响应：
 
 ```json
@@ -267,8 +276,7 @@ GET /api/v1/market-analysis/securities/:ts_code/bars
 
 1. 研究摘要
 2. 技术趋势
-3. 基本面
-4. 财报档案
+3. 基本面与财务档案
 
 页签规则：
 
@@ -277,6 +285,202 @@ GET /api/v1/market-analysis/securities/:ts_code/bars
 - 桌面端使用横向排列；手机端单行滚动。
 - 页签切换应保持股票上下文和筛选上下文。
 - 具体子页可按相同 `AppShell` 和 `StockIdentity` 复用，不另起视觉体系。
+
+#### 5.4.1 基本面与财务档案页面（第三个 tab）
+
+**页面定位**：
+
+基本面与财务档案页面用于回答“公司的经营质量、盈利能力和财务变化是否支持当前研究判断”。它将原“基本面”和“财报档案”合并为一个研究页面：首屏先呈现最新报告期的核心结论和指标，向下提供财务趋势、报告期对比和财报事件，避免用户在两个 tab 之间来回切换。该页面只负责展示后台返回的基本面与财务结果，不在前端重新计算同比、评分、风险结论或投资动作。
+
+**进入与上下文**：
+
+- 点击“基本面与财务档案”后 URL 使用 `tab=fundamentals`，保留 `ts_code`、`pool` 和 `market` 参数；刷新、前进和后退均可恢复当前股票、股票池和页签。
+- 页面顶部复用 `StockIdentity`，继续展示股票名称、代码、行业、最新行情和数据日期；不得复制另一套身份头部。
+- 页面默认展示最新可用报告期；报告期选择、报告类型和数据查看范围属于页面内控件，不放入 `StockRail` 筛选栏。
+- 报告期或报告类型切换只刷新基本面与财务档案数据，不清空股票列表、行情或其他页签已加载内容。
+
+**首屏结构**：
+
+1. `FundamentalSummary`：报告期、数据状态、经营结论、盈利质量和主要风险提示，结论与风险只展示后端字段。
+2. `FinancialMetricGrid`：营收、毛利率、ROE、经营现金流、净利润、EBIT、净利率和负债率等核心指标，展示当前值、单位、报告期及后端提供的同比/环比。
+3. `FinancialTrendWorkspace`：按指标分组展示收入与利润、盈利能力、现金流与偿债能力趋势；桌面端允许并排，窄屏端纵向排列。
+4. `ReportArchive`：按报告期倒序展示财报档案、报告类型、发布日期、数据完整性和可查看的关键变化；没有档案时显示结构化空状态。
+5. `FundamentalSignals`：展示后端确认的经营改善、盈利恶化、现金流异常或财务风险信号，包含日期、类型、证据和状态。
+
+**布局规则**：
+
+- 桌面端使用“核心结论 + 指标网格 + 趋势工作区 + 财报档案/信号”的纵向分区；趋势工作区可采用左侧趋势图、右侧关键变化列表的双栏布局，避免在一个卡片中嵌套多个财报表格。
+- iPad 端将趋势工作区和报告档案调整为单列或双列，指标网格使用两列；长标题、报告类型和单位不得相互遮挡。
+- 手机端所有分区单列，指标默认两列，内容较长时自动降为一列；报告档案使用可展开行，首屏优先保留报告期、核心指标和数据状态。页面不得产生非预期横向滚动。
+- 报告期选择器、指标分组和档案展开项均使用原生可聚焦控件；图表同时提供最新值列表或表格替代信息，不依赖 hover 才能读取数据。
+- 加载、部分成功、无数据、请求失败和权限不足均在对应分区内表达。单个指标、趋势组或档案项失败不清空其他已成功内容，并提供局部重试。
+
+**基本面与财务档案接口接入契约**：
+
+研究页选中股票后，第三个 tab 使用统一接口加载，不再调用原基本面摘要接口或单独的财报档案接口：
+
+```text
+GET /api/v1/market-analysis/securities/:ts_code/financials/overview
+  ?asof_date={YYYY-MM-DD}
+  &report_type=LATEST
+```
+
+- `:ts_code` 使用当前股票的标准交易代码，例如 `002236.SZ`；`asof_date` 默认使用当前日期，不把示例日期写死在前端。
+- 响应沿用统一 `data` / `meta` 封套。前端只读取后台返回的 `metrics`、`evaluation`、`source_dates`、`warnings` 和 `meta`，不得从行情、估值或其他接口拼接财务结论。
+- `metrics` 中每项至少按后台字段展示 `key`、`label`、`value`、`unit`、`period`、`yoy`、`qoq`、`rolling12` 和 `available`；缺失或 `available=false` 时显示“暂无数据”，不得用 `0` 伪造有效结果。
+- 金额类指标明确元数据单位，比例类指标按接口单位展示；净利润和 EBIT 使用绝对值，净利率和负债率使用百分比，并在同一指标项中展示后台返回的同比或百分点变化。
+- `meta.data_status` 支持 `COMPLETE`、`PARTIAL`、`NO_DATA`；`meta.asof_date`、当前报告期、更新时间和数据来源与内容同时展示。接口失败、权限不足或没有已发布结果时只影响当前 tab，保留 `StockRail`、`StockIdentity` 和其他页签。
+- 切换股票、报告期或报告类型时取消上一次请求，或使用请求上下文校验后再写入状态，禁止旧股票或旧报告期数据覆盖当前页面。
+
+**`evaluation` 字段到前台区块的映射**：
+
+`evaluation` 是后台 `fundamental-lite-v1` 规则评判结果。前端只负责字段映射和状态展示，不重新计算评分、维度状态、趋势、风险或投资动作。
+
+| 后台字段 | 前台区块 | 展示内容与规则 |
+| --- | --- | --- |
+| `evaluation.evaluation_version` | `FundamentalSummary` 数据状态 / 来源 | 展示当前评判规则版本；缺失时显示“评判版本暂无”，不得前端补默认版本。 |
+| `evaluation.overall` | `FundamentalSummary` 核心结论 | `score` 映射综合评分，`status` 映射经营结论，`available_weight` 映射可用评判权重，`missing_dimensions` 映射数据缺失提示；字段为空时显示“暂无研究结论”。 |
+| `evaluation.dimensions` | `FinancialTrendWorkspace` 维度摘要及 `FundamentalSummary` 盈利质量 / 风险提示 | 每个维度 key 作为维度名称；`score`、`status`、`available`、`evidence`、`missing_metrics` 原样映射到对应维度。`available=false` 或评分为空时显示“数据不足 / 暂无评分”，不得显示 `0`。 |
+| `evaluation.trend` | `FinancialTrendWorkspace` 趋势图和报告期对比 | 按后台返回顺序展示 `period`、该期 `overall` 和 `dimensions`；趋势方向、评分和状态必须使用后台值，前端不得依据相邻报告期自行推导。 |
+| `evaluation.reports` | `ReportArchive` 财报档案 | 映射 `period`、`report_type`、`end_date`、`ann_date`、`effective_date`、`data_status`、`source_revision`；按后台顺序或后台明确的倒序展示，日期缺失的记录进入局部不可用状态。 |
+| `evaluation.signals` | `FundamentalSignals` 基本面信号 | 映射 `signal_code`、`label`、`severity`、`status`、`asof_date`、`evidence`、`metrics`、`provenance`；状态、严重级别和有效性原样展示，前端不得依据日期或文案自行判定“已失效”。 |
+| `evaluation.warnings` | `FundamentalSummary` 风险提示及对应局部告警 | 原样展示后台告警；告警只影响财务评判相关区块，不清空可用指标、股票身份或其他页签。没有告警时不生成默认风险结论。 |
+
+`evaluation` 整体为 `null`、字段缺失或 `overall.status=NOT_AVAILABLE` 时，第三个 tab 仍展示可用的 `metrics` 和报告期信息，并在评判区显示结构化空状态。`evaluation` 的任何字段均不得从行情、估值、指标数值或报告日期在前端补算。
+
+#### 5.4.2 技术趋势页面（第二个 tab）
+
+**页面定位**：
+
+技术趋势页面用于回答“当前价格趋势是否健康、趋势强度如何、风险是否正在扩大”。它服务于已在 `StockRail` 选中的股票，不承担选股池筛选或基本面解释。左侧股票池、组合筛选、市场筛选和当前股票上下文全部复用研究首页行为；切换股票时只刷新技术数据，不清空股票列表。
+
+**进入与上下文**：
+
+- 点击“技术趋势”后 URL 使用 `tab=technical`，保留 `ts_code`、`pool` 和 `market` 参数；刷新、前进和后退均可恢复当前股票与页签。
+- 页面顶部复用 `StockIdentity`，继续展示股票名称、代码、行业、最新行情和数据日期；不得在技术页复制另一套身份头部。
+- 技术页默认使用日线和最近 120 个交易日；用户可切换 `60 / 120 / 250` 个交易日。周期切换只影响技术数据，不改变股票池和其他页签状态。
+- 周期、复权方式和频率属于数据查看控件，不放入 `StockRail` 的组合筛选栏；控件必须使用原生可聚焦元素，并在窄屏保持可读且不横向溢出。
+
+**首屏结构**：
+
+1. `TechnicalSummary`：趋势状态、趋势强度、最新收盘价、短中长期均线关系和数据截至日期。
+2. `TrendAndChipWorkspace`：左右两栏同步图表。左侧为 K 线、成交量和情绪指数，右侧为按价格轴与 K 线对齐的筹码分布。
+3. `MomentumPanel`：RSI、MACD、ATR/波动率等动量与风险指标，按指标分组展示当前值、状态和数据日期。
+4. `RelativeStrengthPanel`：与所属行业指数的相对走势、相对强度和强弱变化，明确对照对象名称。
+5. `TechnicalSignals`：按时间倒序展示已由后端确认的技术信号，例如均线突破、MACD 金叉/死叉、超买/超卖和波动率异常；每条信号包含日期、类型、方向、简短说明和有效状态。
+
+**TechnicalSummary 规则**：
+
+- 当前趋势只显示后端返回的 `UP`、`DOWN`、`FLAT` 或“暂无”，前端不得根据涨跌幅、价格位置或均线值自行推导投资结论。
+- 趋势强度使用后端分数和等级原样展示；缺失时显示“暂无”，不得显示默认分数。
+- “向上/向下/走平”同时使用文字、方向符号或边框状态表达，不能只依赖红绿颜色。上涨、正向信号使用 A 股红色，下跌、负向信号使用绿色，中性使用灰色。
+
+**PriceTrendChart 规则**：
+
+- 左侧趋势区使用真实日线 `open/high/low/close` 绘制 K 线，叠加 MA6、MA10、MA25、MA43、MA60、MA120、MA200；均线可通过图例显隐，图例必须同时使用名称和线型/颜色区分。
+- K 线下方在同一图表容器内展示成交量，再下方展示 `0..100` 范围的市场情绪指数；三块区域共享交易日期轴和十字光标，日期联动不能错位。
+- 情绪指数 tooltip 至少展示情绪分数、情绪等级、动量分数、活跃度分数和恐慌分数；后端未发布情绪数据时显示“市场情绪：未发布”。
+- 图表默认显示 K 线，不同时显示收盘折线和 K 线两套主图；支持数据缩放，缩放范围作用于 K 线、成交量、情绪指数三个区域。
+- K 线 tooltip 至少包含交易日、开盘、收盘、最低、最高、涨跌幅、成交量和当前可见均线值；移动端提供点击数据点查看详情，不依赖 hover。
+- 图表容器使用稳定高度，加载前后不改变布局；接口返回的序列由前端按交易日排序和格式化，不在前端重新计算趋势结论或情绪等级。
+
+**TrendAndChipWorkspace 规则**：
+
+- 桌面端采用左 `约 2/3`、右 `约 1/3` 的并排布局；左侧趋势图和右侧筹码图高度一致，顶部对齐，右侧筹码价格轴与左侧 K 线价格轴在视觉上对齐。
+- 右侧筹码图使用横向柱状图：纵轴为价格档位，横轴为筹码占比；价格档位按价格升序展示，柱体长度表示该价格的筹码比例。
+- 当前选中交易日和当前收盘价必须在筹码区明确展示，当前价以下与以上的筹码使用不同状态色，但不能只依赖颜色表达；图表标题显示“筹码分布 + 交易日”。
+- 筹码区顶部展示获胜率、筹码集中率和当前价格。获胜率、集中率必须使用后台原始筹码分布计算口径，缺少分布或当前价时显示“暂无”，不得显示 `0` 伪造有效结果。
+- 趋势图的日期指针移动到某个交易日时，筹码图切换到同一交易日；首次加载默认展示最近交易日。切换股票时必须清空旧筹码，禁止旧股票筹码短暂显示在新股票上。
+- 筹码接口返回的同一价格档位需要合并；可以为图表上下边界增加不可见的零值 padding 以改善展示，但 padding 不得计入获胜率、集中率或其他统计值。
+- 筹码请求失败、该交易日无数据或接口返回空数组时，右侧保留固定尺寸并显示局部空状态；不影响左侧 K 线、成交量和情绪指数。
+- 右侧筹码图的 tooltip 至少展示价格和筹码占比；键盘或文本替代信息应提供当前交易日、当前价格、获胜率、集中率和数据状态。
+
+**MomentumPanel 规则**：
+
+- 首期展示 `RSI14`、`MACD`（DIF、DEA、柱体）、`ATR14` 及其历史分位；每项展示最新值、状态、单位、计算周期和数据日期。
+- RSI 与 MACD 使用独立的小图或行式指标区，不与价格主图共用价格纵轴；指标缺失时单项显示“暂无数据”，不影响其他指标。
+- 超买、超卖、金叉、死叉等状态必须来自后端信号或明确的后端阈值结果；前端不得硬编码阈值后自行生成结论。
+- ATR 表示波动幅度，不直接标记为上涨或下跌；历史分位缺失时仅显示 ATR 当前值和“历史分位暂无”。
+
+**筹码数据规则**：
+
+- 筹码数据唯一来源为 API Gateway 的技术趋势筹码接口；该接口由后台 `market_data` 受控转发 Tushare `CYQ_CHIPS`，前端不得直连 Tushare 或旧的通用上游代理，也不得使用静态筹码样例、行情成交量或其他接口推导筹码分布。
+- 接口按股票和交易日读取：
+
+```text
+GET /api/v1/market-analysis/securities/:ts_code/chips
+  ?start_date={YYYY-MM-DD}
+  &end_date={YYYY-MM-DD}
+```
+
+- 请求使用统一 Gateway 成功/错误封套，要求登录和 `market_analysis:read`、`market_analysis:history` scope；前端只读取 `data` 与 `meta.data_status`，不得依赖上游原始响应结构。
+- 批量预取允许使用技术趋势当前交易日范围的 `start_date/end_date`；批量结果必须按 `trade_date` 分组并按股票代码、交易日缓存。用户悬停或点击某一日期时，优先读取缓存；缓存缺失再按该日请求。
+- `data` 中每条记录至少包含 `trade_date`、`price`、`percent`。前端只做数值校验、同价位合并、排序和图表 padding，不改变后台返回的筹码比例含义。
+- Gateway 对外交易日参数使用 `YYYY-MM-DD`，由后台转换为 Tushare 所需的 `YYYYMMDD`；页面展示同样使用 `YYYY-MM-DD`。股票代码必须使用当前股票的标准 `ts_code`，例如 `002236.SZ`。
+- 请求必须具备股票/日期上下文校验或请求 token；快速移动日期指针时，较早请求完成不得覆盖当前选中日期的筹码图。
+- 筹码数据与行情数据分开处理：`CYQ_CHIPS` 失败只影响筹码区，不清空 K 线、成交量、情绪指数或股票身份。
+
+**RelativeStrengthPanel 规则**：
+
+- 展示股票与所属行业指数的归一化走势或相对强度序列，明确显示行业名称、指数代码和观察周期。
+- 展示后端返回的相对行业强度、变化方向和数据完整性；行业映射缺失时显示“行业对照暂无”，不使用全市场指数冒充所属行业。
+- 股票或行业任一序列缺失时，保留可用序列并说明对照数据不足，不绘制误导性的完整对比线。
+
+**TechnicalSignals 规则**：
+
+- 信号按交易日期倒序排列，最多首屏展示 6 条，其余通过“查看全部”进入同一页面的展开区域，不跳转到新的视觉体系。
+- 每条信号展示日期、信号类型、方向、触发指标和简短证据；无信号时显示“近期暂无明确技术信号”。
+- 信号状态分为“已确认”“待确认”“已失效”，状态文字与边框同时表达；前端不得根据事件日期自行判断失效。
+- 信号内容仅用于描述技术走势和指标状态，不延伸为其他研究模块的结论。
+
+**技术页数据接入契约**：
+
+技术页建议使用独立接口，避免把摘要接口的简化字段当作完整技术分析结果：
+
+```text
+GET /api/v1/market-analysis/securities/:ts_code/technical-trend
+  ?start_date={YYYY-MM-DD}
+  &end_date={YYYY-MM-DD}
+  &adjust=qfq
+  &frequency=D
+  &period=120
+```
+
+响应统一使用 `data` 和 `meta` 包装，`data` 至少包含：
+
+- `security`：`ts_code`、`name`。
+- `series`：按交易日升序排列的 `trade_date`、`open`、`high`、`low`、`close`、`volume`，以及后端计算的 `ma5`、`ma20`、`ma60`、可选 `ma120`、`ma250`。
+- `momentum`：RSI14、MACD 的 DIF/DEA/histogram、ATR14 及历史分位序列或最新值。
+- `market_sentiment`：按交易日排列的情绪分数、情绪等级、动量分数、活跃度分数和恐慌分数；缺失时明确返回未发布或不可用状态。
+- `relative_strength`：行业名称、行业指数代码、股票与行业序列、相对强度值和方向。
+- `summary`：当前趋势、趋势强度、均线关系、波动状态和数据完整性。
+- `signals`：日期、类型、方向、证据、状态。
+- `warnings`：字段或数据质量告警。
+- `meta`：`data_status`、`asof_date`、`requested_period`、`returned_days`、`source`。
+
+筹码分布不要求嵌入技术趋势响应，使用 API Gateway 独立的筹码接口按交易日读取，避免技术趋势接口被大量价格档位放大：
+
+```text
+GET /api/v1/market-analysis/securities/:ts_code/chips
+  ?start_date={YYYY-MM-DD}&end_date={YYYY-MM-DD}
+```
+
+接口要求：
+
+- `data_status` 支持 `COMPLETE`、`PARTIAL`、`NO_DATA`；`PARTIAL` 必须说明缺失区间或指标。
+- 返回数据按 `trade_date` 去重并升序排列，后端负责统一复权口径、交易日历和指标计算口径。
+- 切换股票或周期时取消上一次请求，或用请求上下文校验后再写入状态，禁止旧股票技术数据覆盖当前股票。
+- 接口失败只影响技术趋势页面；股票身份、`StockRail`、其他页签和已加载的摘要数据保持可用，并提供局部重试。
+- 权限不足、无数据和计算失败必须区分显示，不能统一替换为空白或零值。
+
+**响应式与无障碍**：
+
+- 桌面端使用“左侧 K 线/成交量/情绪指数 + 右侧筹码分布”的并排布局，筹码图与 K 线价格区对齐；技术信号和其他指标位于图表工作台下方。
+- iPad 在可用宽度足够时保持趋势图与筹码图并排；宽度不足时改为上下排列，但筹码图仍保留与价格档位一致的纵轴语义，并保证指标文字不重叠。
+- 手机端将 K 线、成交量、情绪指数、筹码图依次单列排列；趋势图和筹码图各自保持固定高度，页面本身不得产生横向滚动。
+- 所有图表提供可读的 `role="img"` 或等价文本摘要；同时提供表格/列表形式的最新指标和信号，避免只依赖图形。
+- 加载、无数据、部分数据、请求失败和重试状态均使用结构化占位，不让图表区域塌陷。
+- 支持 `prefers-reduced-motion`；趋势线绘制和抽屉/展开动画在减少动态效果设置下关闭。
 
 ### 5.5 ThesisStrip
 
@@ -356,6 +560,25 @@ GET /api/v1/market-analysis/securities/:ts_code/valuations/traditional
 `market_analysis:read`；只有显式请求 `include_diagnostics=true` 时才需要
 `valuation:diagnostics_read`。
 
+**模型估值接口接入契约**：
+
+研究页选中股票后，`01.2 / MODEL VALUATION` 独立调用：
+
+```text
+GET /api/v1/market-analysis/securities/:ts_code/valuations/predictive
+  ?asof_date={YYYY-MM-DD}
+```
+
+前端直接使用响应字段渲染模型估值卡片，不复用传统估值对象或前端 mock：
+
+- `action` 绑定 `Current View`，并在前端转换为中文：`BUY` 显示“买入”、`HOLD` 显示“持有”、`SELL` 显示“卖出”；匹配时忽略前后空格和大小写。缺失或未知 action 显示“暂无研究结论”，不得推导默认判断。
+- `signal_score` 绑定估值分数，`risk_level` 绑定风险级别；字段缺失时显示“暂无”，不得推导默认分数或风险。
+- `target_price` 绑定模型估值 bar 的当前目标价位置；价格标签显示真实值，指针位置限制在 `0%..100%`，不得因越界飞出色带。
+- 卡片右侧只展示 `predictive_tiered_template` 下的 `conservative`、`balance`、`aggressive` 三档模型，每种风格一行，展示该档估值范围和风险；缺少单档数据时该行显示“暂不可用”，不补零或复用其他档位。
+- 三档模型使用独立的紧凑行式布局：左侧为风格名称，中间为估值范围，右侧为风险级别；使用细分隔线、等宽数值和短状态标签，桌面端与估值 bar 并列，窄屏端自动改为纵向排列，避免嵌套卡片。
+- `asof_date` 使用当前日期，模型数据日期和模型数量按接口返回展示。接口失败、权限不足或没有已发布结果时，只显示模型估值模块的局部错误/空状态，不影响传统估值、行情和基本面模块。
+- 模型接口请求需与当前 `ts_code` 绑定；切换股票时取消或忽略旧请求，禁止旧模型结果覆盖当前股票。
+
 ### 5.7 MarketEvidence
 
 **职责**：展示市场正在交易的主要证据。
@@ -396,10 +619,10 @@ GET /api/v1/market-analysis/securities/:ts_code/valuations/traditional
 
 #### 5.8.1 财务基本面接口接入契约
 
-研究首页选择股票后，基本面区调用：
+研究首页选择股票后，基本面证据区和基本面与财务档案 tab 共用统一接口；摘要区读取 `summary` 与 `metrics`，融合 tab 继续读取趋势、档案和信号字段：
 
 ```text
-GET /api/v1/market-analysis/securities/:ts_code/financials/overview
+GET /api/v1/market-analysis/securities/:ts_code/fundamentals
   ?asof_date={YYYY-MM-DD}&report_type=LATEST
 ```
 
@@ -410,7 +633,7 @@ rolling12。每个指标读取 `value` 为当前报告期绝对值/比例、`yoy
 后端当前以 `income.operate_profit` 作为 EBIT 来源，前端按接口 key 展示，不改名或推导。
 
 接口状态为 `NOT_AVAILABLE` 或指标 `available=false` 时展示“暂无数据”，不得显示 0；
-请求失败时只影响基本面模块，保留股票身份、行情和其他研究模块，并提供重试动作。
+请求失败时只影响基本面证据区或基本面与财务档案 tab，保留股票身份、行情和其他研究模块，并提供局部重试动作。
 
 - 每个指标包含名称、值、单位和同比或环比说明。
 - 指标卡不展示无法解释的综合分数。
@@ -488,6 +711,8 @@ src/
 │   ├── components/StockIdentity.tsx
 │   ├── components/ResearchTabs.tsx
 │   ├── components/ThesisStrip.tsx
+│   ├── components/TechnicalTrend.tsx
+│   ├── components/TrendAndChipWorkspace.tsx
 │   ├── components/ValuationSummary.tsx
 │   ├── components/MarketEvidence.tsx
 │   ├── components/FundamentalEvidence.tsx
@@ -524,7 +749,7 @@ src/
 ```ts
 type ResearchContext = {
   tsCode: string
-  tab: 'summary' | 'technical' | 'fundamental' | 'financials'
+  tab: 'summary' | 'technical' | 'fundamentals'
   stockPool: 'holding' | 'watchlist' | 'observe' | 'market'
   market?: 'sh' | 'sz' | 'cyb' | 'star'
 }
@@ -592,11 +817,13 @@ type ResearchContext = {
 1. 建立全局设计令牌、页面容器和 `AppShell`。
 2. 实现 `StockRail`、股票上下文和 URL 状态。
 3. 实现 `StockIdentity`、`ResearchTabs` 和研究摘要骨架。
-4. 接入估值摘要、市场证据、基本面证据接口。
-5. 实现研究事件和局部加载、空状态、错误状态。
-6. 实现手机抽屉、iPad 两列布局和响应式细节。
-7. 使用真实接口数据替换静态样例，补充权限和登录态处理。
-8. 完成桌面、iPad、手机三档人工验收和自动化测试。
+4. 实现技术趋势页骨架、周期控件、图表占位和指标状态。
+5. 实现基本面与财务档案融合页骨架：核心结论、指标网格、趋势工作区、财报档案和信号列表。
+6. 接入技术趋势接口、基本面与财务档案 `/fundamentals` 接口，再接入估值摘要和市场证据接口。
+7. 实现研究事件和各页签的局部加载、空数据、错误状态。
+8. 实现手机抽屉、iPad 两列布局和响应式细节。
+9. 使用真实接口数据替换静态样例，补充权限和登录态处理。
+10. 完成研究首页、技术趋势页和基本面与财务档案页在桌面、iPad、320px 手机宽度的浏览器人工验收和自动化测试。
 
 ## 13. 验收清单
 
@@ -608,6 +835,16 @@ type ResearchContext = {
 - [ ] 全部前台研究页面统一使用 A 股涨跌颜色：上涨红色、下跌绿色、平盘中性灰，并通过文字或符号辅助表达。
 - [ ] 当前股票通过 URL 可恢复，刷新不丢失上下文。
 - [ ] 研究摘要包含股票身份、当前判断、估值摘要、市场证据和基本面证据。
+- [ ] 基本面与财务档案合并为单一 `fundamentals` tab，刷新和浏览器前进/后退可恢复股票、组合、市场和页签上下文。
+- [ ] 基本面与财务档案 tab 使用 `/api/v1/market-analysis/securities/:ts_code/fundamentals`，展示核心结论、指标网格、财务趋势、报告档案和后端确认信号。
+- [ ] 基本面与财务档案 tab 在桌面、iPad 和 320px 手机宽度下保持布局稳定，无非预期横向溢出，并提供图表的文本/列表替代信息。
+- [ ] 技术趋势 tab 支持 60/120/250 交易日切换，展示趋势摘要、价格/均线/成交量图、动量指标、行业相对强度和技术信号。
+- [ ] 技术趋势 tab 按参考 `StockChart.vue` 展示左侧 K 线/成交量/情绪指数，右侧展示与 K 线价格轴对齐的筹码分布。
+- [ ] 趋势图日期指针移动时，右侧筹码切换到同一交易日；首次进入默认加载最近交易日筹码。
+- [ ] 筹码分布从后台 `CYQ_CHIPS` 接口读取，展示价格、筹码占比、获胜率、筹码集中率和当前价格。
+- [ ] 技术趋势数据由独立接口返回，前端不自行推导趋势、指标阈值或信号状态。
+- [ ] 技术趋势页具备完整、部分数据、无数据、请求失败和局部重试状态，旧股票请求不能覆盖当前股票。
+- [ ] 技术趋势页在桌面、iPad 和 320px 手机宽度下无非预期横向溢出，图表同时提供文本或列表形式的可访问数据。
 - [ ] 研究事件在桌面端可见，中小屏幕有合理替代入口。
 - [ ] 每个数据模块具备加载、空数据、局部失败和重试状态。
 - [ ] 桌面、iPad、手机均无非预期横向溢出。
@@ -663,6 +900,18 @@ type ResearchContext = {
 - [ ] 完成桌面、iPad、320px 手机宽度的浏览器人工验收。
 - [ ] 接入真实接口后补充加载、局部错误、重试和权限状态验收。
 - [ ] 股票列表单击后，研究页头部通过 `/api/v1/market-analysis/securities/:ts_code/bars` 展示真实最新价格、涨跌额、涨跌幅和数据日期。
+
+### 14.6 技术趋势页
+
+- [ ] 第二个 tab 使用 `tab=technical`，刷新和浏览器前进/后退可恢复股票、组合、市场和周期上下文。
+- [ ] 技术页复用 `StockRail` 和 `StockIdentity`，不复制股票池筛选或身份头部逻辑。
+- [ ] 技术页接入 `/api/v1/market-analysis/securities/:ts_code/technical-trend`，并验证日线、复权口径、返回交易日数量和 `data_status`。
+- [ ] 价格图、均线、成交量、情绪指数、筹码分布、RSI、MACD、ATR、行业相对强度和信号列表均支持真实数据、部分缺失和局部失败展示。
+- [ ] `CYQ_CHIPS` 按股票和交易日缓存，支持当前日期批量预取与单日回退请求；同价位筹码合并后绘制，不把 padding 计入统计值。
+- [ ] 筹码请求失败或无数据时只显示筹码区局部空状态，K 线和情绪指数保持可用。
+- [ ] 切换股票和周期时验证 AbortController 或请求上下文校验，确保旧请求不能覆盖当前页面。
+- [ ] 趋势图 hover/click 与筹码日期联动经过验证，快速切换日期时旧请求不能覆盖当前筹码。
+- [ ] 验证图表的键盘/文本替代信息、A 股红涨绿跌映射、`prefers-reduced-motion` 和手机端无横向溢出。
 
 ## 15. 与参考页面的取舍
 

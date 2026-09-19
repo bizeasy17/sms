@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import date, timedelta
 from decimal import Decimal
 from types import SimpleNamespace
 from unittest.mock import patch
@@ -12,6 +12,7 @@ from api_gateway.services.market_data import (
     normalize_ts_code,
     parse_history_range,
 )
+from market_data.services.cyq_chips import CyqChipsResult
 from market_data.models import MarketBarDailyHistory, Security, StockDailyFundamentalHistory
 from financials.models import (
     FinancialDisclosureRecord,
@@ -301,11 +302,49 @@ class MarketDataGatewayTests(TestCase):
         self.assertTrue(payload['success'])
         self.assertEqual(payload['data']['groups'][0]['key'], 'market_data')
         endpoints = payload['data']['groups'][0]['endpoints']
-        self.assertEqual(len(endpoints), 7)
         self.assertTrue(all(endpoint['visibility'] == 'public' for endpoint in endpoints))
         self.assertTrue(all(endpoint['access_mode'] == 'authenticated' for endpoint in endpoints))
         self.assertFalse(any('required_scopes' in endpoint for endpoint in endpoints))
         self.assertIn('ts_code', next(endpoint for endpoint in endpoints if endpoint['id'].endswith('.detail'))['parameters'][0]['name'])
+        chips = next(endpoint for endpoint in endpoints if endpoint['id'] == 'market_data.securities.chips')
+        self.assertEqual(chips['path'], '/api/v1/market-analysis/securities/:ts_code/chips')
+        self.assertEqual(chips['limits']['max_date_range_days'], 366)
+
+    @patch('api_gateway.views.get_cyq_chips')
+    def test_cyq_chips_returns_gateway_contract(self, get_cyq_chips_mock):
+        get_cyq_chips_mock.return_value = CyqChipsResult(
+            data=[{
+                'ts_code': '000001.SZ',
+                'trade_date': '2026-09-17',
+                'price': 10.2,
+                'percent': 3.4,
+            }],
+            data_status='COMPLETE',
+            warnings=[],
+        )
+        response = self.client.get(
+            '/api/v1/market-analysis/securities/000001.SZ/chips',
+            {'start_date': '2026-09-01', 'end_date': '2026-09-17'},
+            **self.headers,
+        )
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload['data'][0]['trade_date'], '2026-09-17')
+        self.assertEqual(payload['meta']['data_type'], 'CYQ_CHIPS')
+        self.assertEqual(payload['meta']['returned_days'], 1)
+        get_cyq_chips_mock.assert_called_once()
+
+    @patch('api_gateway.views.get_cyq_chips')
+    def test_cyq_chips_rejects_future_date_before_downstream(self, get_cyq_chips_mock):
+        future_date = date.today() + timedelta(days=1)
+        response = self.client.get(
+            '/api/v1/market-analysis/securities/000001.SZ/chips',
+            {'start_date': date.today().isoformat(), 'end_date': future_date.isoformat()},
+            **self.headers,
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.json()['error']['code'], 'INVALID_DATE')
+        get_cyq_chips_mock.assert_not_called()
 
     def test_financials_asof_route_and_history_scope(self):
         current = self.client.get(

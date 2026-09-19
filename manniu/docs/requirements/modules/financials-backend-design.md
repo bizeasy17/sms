@@ -310,6 +310,207 @@ Source mapping is fixed: `income.revenue`, `indicator.grossprofit_margin`,
 `meta.data_status` is `COMPLETE` when at least one metric is available and
 `NOT_AVAILABLE` otherwise; partial gaps are represented at metric level.
 
+### 7.4.2 Lightweight fundamental evaluation framework
+
+The fundamental and financial-filing tab needs a small, explainable evaluation
+layer rather than a valuation model. Its purpose is to turn the existing public
+financial records into a consistent description of growth, profitability, cash
+flow quality, and balance-sheet risk. It must not produce a buy/sell decision,
+an intrinsic value, or an automatic trading action.
+
+#### Scope and data boundary
+
+The first version may use only records already owned by `financials`:
+
+| Evaluation use | Existing source fields | Output used by the frontend |
+| --- | --- | --- |
+| Growth | `income.revenue`, `income.n_income_attr_p` with `n_income` fallback, `indicator.or_yoy`, `indicator.netprofit_yoy` | Revenue/profit trend and growth signal |
+| Profitability | `indicator.roe`, `indicator.roe_dt`, `indicator.roa`, `indicator.grossprofit_margin`, `indicator.netprofit_margin` | Core metrics and profitability trend |
+| Cash-flow quality | `cashflow.n_cashflow_act`, `indicator.ocf_to_or`, income net profit | Operating cash-flow metric and cash-flow quality signal |
+| Solvency | `indicator.debt_to_assets`, `indicator.current_ratio`, `indicator.quick_ratio`, `indicator.cash_ratio`, balance-sheet liabilities/assets when needed | Debt/risk signal |
+| Operating efficiency | `indicator.assets_turn` | Optional supporting metric; not part of the first overall score |
+| Evidence and freshness | `ann_date`, `actual_date`, `end_date`, `report_type`, `source_revision_at`, `disclosure_date` | Report archive, as-of boundary, data status |
+
+`forecast`, `express`, `dividend`, `audit`, and `main_business` remain available
+as filing evidence and future signal inputs, but do not enter the first overall
+score. In particular, forecast values must not be mixed with reported values.
+The evaluator reads PostgreSQL through `financials` query services and never
+calls Tushare from a public request.
+
+#### Evaluation dimensions and weights
+
+The overall score is an integer in `[0, 100]`, calculated only from available
+dimension scores. The default weights are growth `30`, profitability `30`, cash
+flow quality `25`, and solvency `15`. If a dimension has no valid input, its
+weight is removed and the remaining dimensions are re-normalized; the response
+must expose `available_weight` and `missing_dimensions` so a partial score is
+never presented as complete evidence.
+
+| Dimension | Weight | Default primary evidence | Interpretation |
+| --- | ---: | --- | --- |
+| Growth | 30 | Revenue YoY and net-profit YoY | Whether scale and earnings are expanding |
+| Profitability | 30 | ROE/ROE-DT, net margin, gross margin | Return and margin quality |
+| Cash-flow quality | 25 | OCF YoY, OCF-to-revenue, OCF versus net profit | Whether reported profit converts to cash |
+| Solvency | 15 | Debt-to-assets, current ratio, quick ratio | Balance-sheet pressure and short-term coverage |
+
+Each dimension returns `score`, `status`, `available`, `evidence`, and
+`missing_metrics`. `status` is one of `STRONG`, `HEALTHY`, `NEUTRAL`, `WEAK`,
+or `NOT_AVAILABLE`; status labels are descriptive and are not investment advice.
+
+#### Deterministic scoring rules
+
+The following are initial configurable defaults, not hard-coded business logic.
+They are applied to the normalized provider units documented by the overview
+contract: rates are percentage points and amount growth is a ratio.
+
+**Growth component scores**
+
+- Revenue YoY and net-profit YoY each map to `0/25/50/75/100` at `<-10%`,
+    `-10%..0%`, `0%..10%`, `10%..20%`, and `>=20%` respectively.
+- If both are available, the growth score is their average. If only one is
+    available, that component is used and `missing_metrics` records the gap.
+- A negative net-profit YoY below `-20%` caps the dimension at `WEAK`, even if
+    revenue is growing.
+
+**Profitability component scores**
+
+- ROE (prefer `roe_dt`, fallback `roe`) maps to `0/25/50/75/100` at `<0%`,
+    `0%..8%`, `8%..12%`, `12%..18%`, and `>=18%`.
+- Net margin maps to the same five bands using `<0%`, `0%..5%`, `5%..10%`,
+    `10%..20%`, and `>=20%`; gross margin is supporting evidence and does not
+    receive a second full-weight score.
+- When both ROE and net margin exist, the dimension score is the average of the
+    two components. Missing values do not become zero.
+
+**Cash-flow quality component scores**
+
+- Positive operating cash flow is required for a score above `50`.
+- OCF-to-revenue maps to `0/25/50/75/100` at `<0%`, `0%..5%`, `5%..10%`,
+    `10%..20%`, and `>=20%`.
+- Compare OCF YoY with net-profit YoY when both are available: cash growth at
+    least as high as profit growth adds `10` points (capped at `100`), while
+    cash growth below `-10%` subtracts `10` points (floored at `0`).
+- If OCF-to-revenue is unavailable, use current OCF sign plus the OCF/net-profit
+    direction as a partial score and expose the missing metric.
+
+**Solvency component scores**
+
+- Debt-to-assets maps inversely to `100/75/50/25/0` at `<=30%`, `30%..50%`,
+    `50%..70%`, `70%..85%`, and `>85%`.
+- Current ratio maps to `0/25/50/75/100` at `<0.75`, `0.75..1.0`,
+    `1.0..1.5`, `1.5..2.0`, and `>=2.0`.
+- If quick ratio exists, average it with the current-ratio score; otherwise
+    use current ratio alone and mark the result partial.
+- Missing debt-to-assets and coverage ratios produce `NOT_AVAILABLE`; raw
+    balance-sheet values must not be silently converted to a ratio without an
+    explicit unit rule.
+
+The overall status is derived from the normalized overall score: `STRONG` for
+`>=80`, `HEALTHY` for `>=65`, `NEUTRAL` for `>=50`, and `WEAK` below `50`.
+When available weight is below `60%`, overall status is `NOT_AVAILABLE` even if
+the normalized score can be calculated. Thresholds and weights must be versioned
+in the response as `evaluation_version` (initial value `fundamental-lite-v1`).
+
+#### Trend, report archive, and signal outputs
+
+The backend should return the complete three-year trend window ending at the
+requested `asof_date` (or today when `asof_date` is omitted). The window is the
+inclusive calendar range from `asof_date - 3 years` through `asof_date`, and
+must use the same effective-public-date rule as the overview: a source record
+is eligible only when its effective public date is not later than `asof_date`.
+Within that window, return every available distinct report period rather than
+truncating to the latest five periods. The periods must be ordered from oldest
+to newest so the frontend can bind the trend chart's x-axis directly to the
+returned sequence. The response should retain the selected period's current
+evaluation in `overall`/`dimensions`; the `trend` rows represent the historical
+period evaluations in the three-year window.
+
+The evaluator must not fabricate a score for a missing report period or fill a
+missing dimension with zero. Each trend row must include the report period,
+available dimension scores, dimension status/availability, and source-period
+metadata sufficient to explain the result. If no eligible record exists in the
+three-year window, return an empty `trend` array with an explicit warning rather
+than falling back to an older period outside the window. The report archive may
+continue to apply its own bounded display limit; that limit must not reduce the
+three-year `trend` history.
+
+The report archive is assembled from disclosure and statement records and must
+include `period`, `report_type`, `end_date`, `ann_date`, `effective_date`,
+`data_status`, `source_revision`, and a short change summary only when derived
+from available numeric evidence. The first version must not generate free-form
+LLM summaries.
+
+Signals are deterministic rule matches. Each signal contains `signal_code`,
+`label`, `severity`, `status`, `asof_date`, `evidence`, `metrics`, and
+`provenance`. The minimum v1 rules are:
+
+- `EARNINGS_IMPROVING`: revenue YoY and net-profit YoY are both positive;
+- `CASH_FLOW_LEADS_PROFIT`: OCF YoY exceeds net-profit YoY by at least 5pp;
+- `PROFIT_CASH_MISMATCH`: net profit is positive while OCF is negative;
+- `LEVERAGE_HIGH`: debt-to-assets is above 70%;
+- `LIQUIDITY_PRESSURE`: current ratio is below 1.0 or quick ratio is below 0.8;
+- `DATA_PARTIAL`: required evidence is missing or the latest source periods do
+    not align.
+
+Signals are evidence statements, not recommendations. `status` must be
+`CONFIRMED`, `TRACKING`, or `NOT_AVAILABLE`, and every confirmed/tracking signal
+must identify the source dataset and report period used.
+
+#### Response shape for the fundamentals tab
+
+The existing overview metric contract remains backward compatible. The tab-level
+fundamentals response may add the following object under `data.evaluation` (or
+return the same shape from a dedicated `/fundamentals` read route):
+
+```json
+{
+    "evaluation_version": "fundamental-lite-v1",
+    "overall": {"score": 76, "status": "HEALTHY", "available_weight": 100},
+    "dimensions": {
+        "growth": {"score": 82, "status": "STRONG", "available": true},
+        "profitability": {"score": 74, "status": "HEALTHY", "available": true},
+        "cash_flow_quality": {"score": 81, "status": "STRONG", "available": true},
+        "solvency": {"score": 61, "status": "NEUTRAL", "available": true}
+    },
+    "trend": [
+        {
+            "period": "2023-12-31",
+            "overall": {"score": 68, "status": "HEALTHY", "available_weight": 100},
+            "dimensions": {},
+            "source_period": "2023-12-31"
+        }
+    ],
+    "reports": [],
+    "signals": [],
+    "warnings": []
+}
+```
+
+The response must preserve the existing `metrics` object used by
+`FundamentalEvidence`. A missing metric remains `null` with `available=false`;
+the evaluator must never turn missing data into zero. All evaluation fields must
+carry enough period/source metadata for the report archive and signal detail
+views to link back to the approved raw records.
+
+#### Acceptance criteria for the lightweight framework
+
+- Identical normalized inputs and `evaluation_version` produce identical scores,
+    statuses, trend rows, and signals.
+- As-of queries never use a record whose effective public date is after the
+    requested date, including amended disclosures.
+- The overview trend covers the inclusive three-year calendar window ending at
+    the requested `asof_date`, includes all eligible distinct report periods in
+    that window, and returns them in ascending chronological order.
+- Amounts, rates, ratios, percentage-point changes, and growth ratios retain
+    their documented units end to end; `0.18` growth is displayed as `18%`, while
+    a `2.1` rate change is displayed as `2.1pp`.
+- Partial data returns a usable evidence module plus explicit warnings and
+    available weight; it does not claim `COMPLETE` evaluation.
+- Financial evaluation performs read-only PostgreSQL queries, makes no Tushare
+    call, does not rebuild valuation features, and cannot trigger trading actions.
+- Unit tests cover each threshold boundary, missing inputs, mixed report periods,
+    negative cash flow, high leverage, as-of filtering, and signal precedence.
+
 ### 7.5 Authentication, audit, and cache requirements
 
 - The Gateway reads `Authorization: Bearer <access_token>` and delegates token
@@ -342,13 +543,18 @@ financials.query_records(
 financials.query_disclosures(
         *, ts_code, asof_date, date_range=None, page=1, page_size=50,
 )
+financials.query_financial_overview(
+    *, ts_code, asof_date, report_type='LATEST',
+)
 ```
 
-Both methods must use bounded, indexed PostgreSQL queries, return typed results,
+All methods must use bounded, indexed PostgreSQL queries, return typed results,
 and expose provenance without returning a Django `QuerySet`. They must not
 accept an authorization token or make authorization decisions; the Gateway
 passes the authenticated principal only when needed for audit or field-level
-visibility.
+visibility. `query_financial_overview` additionally returns the backward-
+compatible `metrics` object and versioned `evaluation` object defined in
+section 7.4.2; scoring remains owned by `financials`.
 
 ### 7.7 Integration acceptance criteria
 
@@ -422,11 +628,14 @@ visibility.
 - [x] Auth 接入：通过 `access_control` 校验 Bearer token、用户/会话状态、token 撤销状态和所需 Scope，不在 financials 内维护第二套权限。
 - [x] Gateway 接入：实现 financials/disclosures 只读路由、参数白名单、证券代码规范化、分页/日期范围校验和统一错误映射。
 - [ ] Gateway 接入：增加 financial overview 融合只读路由，保持标准认证、as-of 和字段裁剪契约。
+- [ ] 评判框架：实现 `fundamental-lite-v1` 的增长、盈利能力、现金流质量、偿债能力四维规则评分、缺失降级、趋势、档案和信号输出。
+- [ ] 评判框架：确认阈值、权重、状态文案和 `data.evaluation`/`/fundamentals` 响应形状后再编码，禁止将评分解释为估值或交易建议。
 - [ ] Gateway 接入：接入 `X-Request-ID`、结构化审计、限流、超时和响应字段裁剪，确保普通用户无法读取 raw/operator 数据。
 - [x] API 目录：将已审核的 financials 只读 endpoint 加入 Public API catalog；不公开导入运行、raw payload 和运维接口。
 - [ ] 测试：补充模型契约、自然键、索引、迁移和字段精度测试。
 - [ ] 测试：补充 adapter mock、分页/重试、空值规范化、幂等 upsert、修订审计和 watermark 失败回滚测试。
 - [ ] 测试：补充 financial overview 的来源字段、同比、rolling12、缺失值和 as-of 边界测试。
+- [ ] 测试：补充轻量评判框架的阈值边界、权重归一化、部分数据、趋势、信号和 evaluation version 测试。
 - [ ] 测试：补充 disclosure event 定向同步测试，证明 daily actual-date 和 quarterly reconciliation 都不会触发全市场扫描。
 - [ ] 测试：补充 as-of/no-lookahead、无效日期、未来披露、重复披露和多 dividend/main-business 行测试。
 - [ ] 测试：补充 Gateway/Auth 集成测试，覆盖未登录、过期/撤销 token、disabled 用户、缺少 Scope 和 operator Scope。

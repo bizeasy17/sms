@@ -340,12 +340,21 @@ def _sync_sw_industry_daily(pro, plan: SyncPlan) -> int:
         entries = {code: entries[code] for code in plan.ts_codes}
 
     watermarks = {code: _watermark(plan.dataset, code) for code in entries}
-    if plan.mode == 'daily':
-        missing = sorted(code for code, watermark in watermarks.items() if watermark.last_complete_source_date is None)
-        if missing:
-            raise SyncExecutionError(
-                f'SW daily watermark is missing for {len(missing)} code(s); run backfill first: {", ".join(missing[:10])}'
-            )
+    missing_watermarks = sorted(
+        code for code, watermark in watermarks.items()
+        if watermark.last_complete_source_date is None
+    )
+    if plan.mode == 'daily' and missing_watermarks:
+        logger.warning(
+            'SW daily watermark is missing; bootstrapping from the daily window',
+            extra={
+                'context': {
+                    'missing_count': len(missing_watermarks),
+                    'missing_codes': missing_watermarks[:10],
+                    'start_date': plan.start_date.isoformat(),
+                }
+            },
+        )
 
     total = 0
     failures = []
@@ -355,7 +364,10 @@ def _sync_sw_industry_daily(pro, plan: SyncPlan) -> int:
             start_date = plan.start_date
         else:
             anchor = watermark.last_complete_source_date
-            start_date = anchor.fromordinal(max(anchor.toordinal() - (plan.overlap_days or 0), date.min.toordinal()))
+            if anchor is None:
+                start_date = plan.start_date
+            else:
+                start_date = anchor.fromordinal(max(anchor.toordinal() - (plan.overlap_days or 0), date.min.toordinal()))
         start_text = start_date.strftime('%Y%m%d')
         end_text = plan.end_date.strftime('%Y%m%d')
         try:
@@ -473,6 +485,105 @@ def _sync_sw_industry_daily(pro, plan: SyncPlan) -> int:
 
     if failures:
         raise SyncExecutionError('SW industry synchronization had failures: ' + '; '.join(failures[:10]))
+    return total
+
+
+def _sync_sw_industry_daily_by_date(pro, plan: SyncPlan) -> int:
+    entries = _active_sw_industry_entries()
+    if plan.scope == 'ts-code':
+        requested = set(plan.ts_codes)
+        invalid = sorted(requested.difference(entries))
+        if invalid:
+            raise SyncValidationError(f'Unknown SW industry index codes: {", ".join(invalid)}')
+        entries = {code: entries[code] for code in plan.ts_codes}
+
+    securities = {}
+    for code, entry in entries.items():
+        security, created = Security.objects.get_or_create(
+            ts_code=code,
+            defaults={
+                'asset_type': Security.AssetType.INDEX,
+                'name': entry['industry_name'],
+                'market': 'SW',
+                'exchange': 'SW',
+            },
+        )
+        if security.asset_type != Security.AssetType.INDEX:
+            raise SyncExecutionError(f'SW code {code} already belongs to non-index security')
+        if not created and security.name and security.name != entry['industry_name']:
+            raise SyncExecutionError(f'SW code {code} identity name conflicts with active security')
+        securities[code] = security
+
+    total = 0
+    first_date = plan.end_date if plan.mode == 'daily' else plan.start_date
+    curr_ordinal = first_date.toordinal()
+    end_ordinal = plan.end_date.toordinal()
+    fields = ','.join(SW_DAILY_FIELDS)
+    while curr_ordinal <= end_ordinal:
+        curr_date = date.fromordinal(curr_ordinal)
+        curr_ordinal += 1
+        date_text = curr_date.strftime('%Y%m%d')
+        try:
+            frame = pro.sw_daily(trade_date=date_text, fields=fields)
+        except TypeError:
+            frame = pro.sw_daily(trade_date=date_text)
+        if frame is None or getattr(frame, 'empty', True):
+            continue
+
+        returned = {str(column) for column in frame.columns}
+        missing_fields = SW_DAILY_REQUIRED_FIELDS.difference(returned)
+        if missing_fields:
+            raise SyncExecutionError(f'sw_daily missing columns: {", ".join(sorted(missing_fields))}')
+
+        for row in frame.fillna('').to_dict(orient='records'):
+            code = str(row.get('ts_code') or '').strip().upper()
+            security = securities.get(code)
+            if security is None:
+                continue
+            row_date = _trade_date(row['trade_date'])
+            raw_payload = {str(key): _json_safe(value) for key, value in row.items()}
+            payload = {
+                'name': str(row.get('name') or entries[code]['industry_name']).strip(),
+                'raw_payload': raw_payload,
+            }
+            payload.update({field: _decimal(row.get(field)) for field in SW_DAILY_NUMERIC_FIELDS})
+            bar_payload = {
+                field: payload.get(field)
+                for field in ('open', 'high', 'low', 'pre_close', 'close', 'change', 'pct_change', 'amount')
+            }
+            raw_volume = payload.get('vol')
+            bar_payload['volume'] = int(raw_volume) if raw_volume is not None else None
+            fundamental_payload = {field: payload.get(field) for field in ('pe', 'pb', 'total_mv', 'float_mv')}
+            with transaction.atomic():
+                SWIndustryDailyHistory.objects.update_or_create(
+                    security=security, trade_date=row_date, defaults=payload
+                )
+                MarketBarDailyHistory.objects.update_or_create(
+                    security=security, trade_date=row_date, defaults=bar_payload
+                )
+                current_bar = MarketBarLatest.objects.filter(
+                    security=security, frequency=MarketBarLatest.Frequency.DAILY
+                ).first()
+                if current_bar is None or row_date >= current_bar.trade_date:
+                    MarketBarLatest.objects.update_or_create(
+                        security=security,
+                        frequency=MarketBarLatest.Frequency.DAILY,
+                        defaults={'trade_date': row_date, **{key: bar_payload.get(key) for key in ('close', 'pct_change', 'volume', 'amount')}},
+                    )
+                IndexDailyFundamentalHistory.objects.update_or_create(
+                    security=security, trade_date=row_date, defaults=fundamental_payload
+                )
+                _update_latest(IndexDailyFundamentalLatest, security, fundamental_payload, row_date)
+                current = SWIndustryDailyLatest.objects.filter(security=security).first()
+                if current is None or row_date >= current.trade_date:
+                    SWIndustryDailyLatest.objects.update_or_create(
+                        security=security, defaults={'trade_date': row_date, **payload}
+                    )
+                watermark = _watermark(plan.dataset, code)
+                watermark.last_complete_source_date = row_date
+                watermark.status = IngestionRun.Status.SUCCEEDED
+                watermark.save(update_fields=['last_complete_source_date', 'status', 'updated_at'])
+            total += 1
     return total
 
 
@@ -690,7 +801,10 @@ def execute_sync(plan: SyncPlan) -> int:
         elif plan.dataset == 'business-industry-matches':
             count = _sync_business_industry_matches(plan)
         elif plan.dataset == 'sw-industry-daily':
-            count = _sync_sw_industry_daily(pro, plan)
+            if plan.strategy == 'by-date':
+                count = _sync_sw_industry_daily_by_date(pro, plan)
+            else:
+                count = _sync_sw_industry_daily(pro, plan)
         elif plan.strategy == 'by-date':
             count = _sync_daily_dataset_by_date(pro, plan)
         else:

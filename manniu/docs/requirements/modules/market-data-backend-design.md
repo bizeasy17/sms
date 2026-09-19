@@ -20,7 +20,7 @@ The module supports analysis and decision support only. It must never place or a
 | Trading bars | Indices | `index_daily` | Daily, derived weekly/monthly |
 | Daily fundamentals | Indices | `index_dailybasic` | Daily |
 
-The design deliberately excludes intraday data, request-time calls to Tushare, automated trading, and public transport-layer concerns. Downstream valuation modules consume the internal read services defined here.
+The design deliberately excludes intraday data, automated trading, and public transport-layer concerns. The normal market-data read path remains PostgreSQL-backed and does not call Tushare on cache miss. A narrowly scoped exception is the read-only `CYQ_CHIPS` upstream proxy defined in the API Gateway integration section: it is an explicitly bounded chart-support path, does not persist data, and is not a general-purpose Tushare passthrough.
 
 ## 3 Architecture
 
@@ -42,6 +42,7 @@ flowchart LR
 - **Ingestion orchestrator**: chooses `backfill` or `daily` coverage, divides work into bounded chunks, coordinates transactions, writes run state, and advances a watermark only after a complete successful chunk.
 - **Repositories**: use PostgreSQL bulk upserts and read query methods. They are the only component allowed to write market-data tables.
 - **Read query services**: provide bounded, index-backed EOD reads to internal valuation and analysis consumers. They never invoke Tushare as a cache miss fallback.
+- **Upstream chart proxy**: exposes only the approved, bounded `CYQ_CHIPS` request through a dedicated service boundary; it validates dates and codes, applies timeout/rate-limit handling, and never returns credentials or arbitrary provider datasets.
 - **CLI boundary**: synchronization and calculation commands are operator-only maintenance tools. Internal consumers call bounded query services and never write market-data state through a read path.
 
 ### 3.2 Environment Configuration
@@ -260,6 +261,56 @@ and the affected-scope policy. A consumer acknowledges an event only after it
 has copied the event into its own event table; acknowledgement does not delete
 or mutate the canonical market-data event. Repeated reads return the same event
 until the consumer's checkpoint advances.
+
+### 5.5 Technical Trend Read Service
+
+`market_data` owns the read-time technical trend calculation because it owns the
+canonical EOD bars, adjustment columns, security master, and SW industry daily
+history. The service is read-only and must not persist indicators, trigger data
+sync, call Tushare, or advance an ingestion watermark.
+
+The public internal boundary is:
+
+```python
+get_technical_trend(
+  *, ts_code, start_date, end_date,
+  adjust='qfq', frequency='D', period=120,
+) -> TechnicalTrendResult
+```
+
+The service loads enough rows before `start_date` as indicator warm-up data,
+then returns only the requested date window. `period` is limited to `60`, `120`
+or `250`; the external date range is limited to 366 calendar days. `adjust`
+selects the matching raw/qfq/hfq columns and missing adjustment data is an
+explicit `INSUFFICIENT_DATA` result, never a silent raw fallback.
+
+The v1 calculation contract is versioned as `technical_rule_v1`:
+
+- SMA: MA6, MA10, MA25, MA43, MA60, MA120 and MA200;
+- momentum: RSI14, MACD(12,26,9), ATR14 and KDJ(9,3,3);
+- trend score: a 0-100 score from the available price/MA, MA relationship,
+  MACD histogram and RSI direction components; fewer than three valid components
+  yields `null` rather than a fabricated neutral score;
+- trend: `UP` for score >= 60, `DOWN` for score <= 40, otherwise `FLAT`;
+- volatility: ATR14 relative to current close, with `HIGH` at 4% or above and
+  `NORMAL` otherwise when ATR is available;
+- signals: current-window MA6/MA25 and MACD histogram crossings plus RSI14
+  overbought/oversold conditions. Each signal carries date, type, direction,
+  evidence and a versioned status.
+
+The result DTO must contain `security`, ascending `series`, `momentum.latest`,
+`momentum.history`, `summary`, `relative_strength`, `market_sentiment`,
+`signals`, `warnings`, `rule_version`, `adjust` and `frequency`. Industry
+relative strength reads the resolved SW industry index series. Sentiment is
+read from `market_sentiment` when its snapshot query service is available;
+until then it must be returned as `NOT_AVAILABLE` with null score/level and a
+warning, never as zero or neutral.
+
+The calculation is deterministic for the same source rows, adjustment mode,
+period and rule version. Ordinary insufficient history is returned as a typed
+business status; database/dependency failures are raised as typed request
+errors for Gateway mapping. No Django `QuerySet` or HTTP response crosses the
+service boundary.
 
 ## 6 Unified Industry-Regime And SW Mapping Service
 
@@ -1142,7 +1193,7 @@ Reconciliation compares persisted coverage with the approved trading calendar an
 - 公共基础路径为 `/api/v1/market-analysis`，Market Data 不创建第二套版本前缀。
 - Gateway 只负责认证上下文、scope 授权、参数校验、代码规范化、分页、统一响应和错误映射。
 - `market_data` 负责数据库查询、as-of 选择、数据状态和 provenance；Gateway 不直接拼接 ORM 查询。
-- 查询只能读取 PostgreSQL 中已经持久化的数据，不得在 cache miss 时调用 Tushare、运行同步 CLI、写入快照或推进 watermark。
+- 普通查询只能读取 PostgreSQL 中已经持久化的数据，不得在 cache miss 时调用 Tushare、运行同步 CLI、写入快照或推进 watermark；仅 `CYQ_CHIPS` 专用上游转发允许按本节契约调用 Tushare。
 - 首期只开放 GET；不开放同步、回填、重算、缓存刷新、交易或任何 POST/PUT/PATCH/DELETE 接口。
 - 所有日期均使用 `YYYY-MM-DD`；`ts_code` 对外使用规范代码，例如 `000001.SZ`、`000001.SH`。
 
@@ -1243,6 +1294,179 @@ Fundamental history 只能读取 `StockDailyFundamentalHistory` 的有界结果�
 `INSUFFICIENT_DATA`，数据过期/不完整返回 `STALE` 或 `stale_or_incomplete`；
 Gateway 不得把 degraded 结果改成正常的 `BULL`、`BALANCE` 或中性值。
 
+#### 14.3.5 市场证据
+
+| 方法 | 路径 | 请求参数 | 返回内容 |
+| --- | --- | --- | --- |
+| GET | `/securities/:ts_code/market-evidence` | `days`，默认 `60`，范围 `1-200` | 股票日线 OHLC、所属 SW 行业 close 及市场证据摘要 |
+
+该接口只读取已持久化的 `MarketBarDailyHistory` 和
+`SWIndustryDailyHistory`，不调用 Tushare、不写入快照，也不依赖前台计算。股票
+通过当前有效 SW membership 解析到行业指数证券；行业历史按交易日与股票历史对齐，
+缺失的行业 close 返回 `null`，并在 `meta.warnings` 中声明。
+
+`history` 按交易日升序返回，单条记录为：
+
+```json
+{
+  "trade_date": "2026-09-10",
+  "open": 18.2,
+  "high": 18.8,
+  "low": 18.0,
+  "close": 18.6,
+  "industry_close": 1245.3
+}
+```
+
+`summary` 的计算口径固定如下：
+
+- `atr_14`：未复权 OHLC 的 14 日简单平均真实波幅；真实波幅为
+  `max(high-low, abs(high-previous_close), abs(low-previous_close))`。
+- `atr_14_percentile_60d`：最近返回窗口内 ATR 序列中，小于等于当前 ATR 的比例，
+  使用 `0-100` 百分数；不足 14 个有效真实波幅时返回 `null`。
+- `ma25`、`ma200`：未复权 close 的简单移动平均；数据不足对应窗口时为 `null`。
+- `ma25_trend`、`ma200_trend`：当前均线与 5 个交易日前均线比较，返回 `UP`、
+  `DOWN` 或 `FLAT`；差异不超过当前均线的 `0.1%` 视为 `FLAT`。
+- `current_price`：最新返回记录的未复权 close；`price_to_ma25` 为
+  `current_price / ma25`。
+- `relative_strength_vs_industry`：股票窗口收益率减 SW 行业窗口收益率，使用小数
+  比例表示，例如 `0.086` 表示领先 `8.6%`；任一端点缺失时为 `null`。
+
+响应结构为：
+
+```json
+{
+  "security": {"ts_code": "002236.SZ", "name": "大华股份"},
+  "industry": {"index_code": "801081.SI", "industry_code": "850111", "name": "计算机设备"},
+  "history": [],
+  "summary": {
+    "atr_14": 0.82,
+    "atr_14_percentile_60d": 42.0,
+    "ma25": 17.4,
+    "ma25_trend": "UP",
+    "ma200": null,
+    "ma200_trend": null,
+    "current_price": 18.6,
+    "price_to_ma25": 1.069,
+    "relative_strength_vs_industry": 0.086
+  },
+  "requested_days": 60,
+  "returned_days": 60,
+  "warnings": []
+}
+```
+
+公共路径为 `/api/v1/market-analysis/securities/:ts_code/market-evidence`，需要
+`market_analysis:read` 和 `market_analysis:history`。数据完全缺失返回
+`INSUFFICIENT_DATA`；股票历史存在但 SW 映射或行业历史缺失时，接口仍返回股票
+证据，并将 `meta.data_status` 设为 `DEGRADED`。
+
+#### 14.3.6 技术趋势分析
+
+公共路径为：
+
+```text
+GET /api/v1/market-analysis/securities/:ts_code/technical-trend
+  ?start_date=YYYY-MM-DD&end_date=YYYY-MM-DD
+  &adjust=qfq&frequency=D&period=120
+```
+
+该接口调用 `get_technical_trend`，仅读取已落库的股票 EOD bars 和 SW 行业日线。
+它不调用 Tushare、不写入指标快照、不触发情绪重算，也不推进 ingestion watermark。
+Gateway 负责 `market_analysis:read`、`market_analysis:history`、日期、代码、复权、
+频率和 period 校验；领域服务负责 warm-up、指标计算、业务状态和 provenance。
+
+`period` 只允许 `60/120/250`，日期范围最多 366 个自然日。为计算 MA200、MACD 和
+ATR，领域服务可以读取 `start_date` 之前的历史作为 warm-up，但返回的 `series` 只能
+包含请求窗口，且必须按交易日升序。
+
+响应至少包含：
+
+```text
+security
+series: OHLCV + MA6/10/25/43/60/120/200
+momentum: RSI14 + MACD(12,26,9) + ATR14 + KDJ(9,3,3)
+summary: trend + trend_score + trend_level + volatility_status + ma_relation
+relative_strength: SW industry identity + aligned series + excess return + direction
+market_sentiment: status/source_trade_date/score/level
+signals: trade_date/type/direction/evidence/status
+warnings/rule_version/adjust/frequency
+```
+
+v1 规则版本为 `technical_rule_v1`。趋势评分只在至少三个有效评分组件存在时发布，
+缺失时返回 `null`；技术趋势、波动状态和信号均由后端口径生成，前端只绑定展示。
+情绪快照由 `market_sentiment` 提供；该领域尚未发布快照时返回
+`market_sentiment.status=NOT_AVAILABLE`，不得以 0 或“中性”补齐。行业数据缺失只将
+响应标记为 `PARTIAL`，不影响股票行情和动量指标。
+
+#### 14.3.7 CYQ_CHIPS 上游筹码分布转发
+
+该接口专门服务技术趋势页的筹码分布图。它不是普通 market-data 持久化查询，
+也不是可传入任意 `data_type` 的 Tushare 代理；只允许访问 Tushare
+`CYQ_CHIPS` 数据集，并通过 `market_data` 的上游 adapter 执行请求。
+
+公共路径为：
+
+```text
+GET /api/v1/market-analysis/securities/:ts_code/chips
+  ?start_date=YYYY-MM-DD
+  &end_date=YYYY-MM-DD
+```
+
+请求和处理规则：
+
+- `ts_code` 必须解析为规范股票代码；指数、无效代码和无法唯一解析的无后缀代码返回 `INVALID_SYMBOL` 或 `SECURITY_NOT_FOUND`。
+- `start_date`、`end_date` 均必填，使用 `YYYY-MM-DD`；范围必须满足 `start_date <= end_date`，首期最多覆盖 366 个自然日。
+- Gateway 将日期转换为上游需要的 `YYYYMMDD`，服务端 adapter 调用 `fetch_tushare_data(ts_code, "CYQ_CHIPS", start_date, end_date)` 或等价的显式 Tushare adapter；不得把客户端传入的 dataset/type 透传给上游。
+- 上游响应只保留 `ts_code`、`trade_date`、`price`、`percent`；数值字段必须经过有限数值校验，空值和非法行被丢弃并计入 warning。
+- 返回按 `trade_date ASC, price ASC` 排序并按交易日分组；不执行旧视图中“无数据时自动改查前一工作日”的静默回退，查询日期必须保持精确语义。
+- 该路径不写 PostgreSQL、不推进 ingestion watermark、不创建快照；允许使用带版本和参数的短 TTL 缓存或请求合并，缓存失效不得改变接口语义。
+- Tushare token 只存在服务端配置，不能进入响应、日志、错误详情或 `meta`；上游异常映射为 `UPSTREAM_DEPENDENCY_UNAVAILABLE`、`UPSTREAM_TIMEOUT` 或明确的 `NO_DATA`。
+- 上游请求必须设置超时、并发上限和服务端限流；批量日期请求应优先一次获取范围数据，前端单日请求仅作为缓存缺失时的受控回退。
+
+成功响应示例：
+
+```json
+{
+  "success": true,
+  "api_version": "v1",
+  "request_id": "uuid",
+  "data": [
+    {
+      "ts_code": "002236.SZ",
+      "trade_date": "2026-09-17",
+      "price": 24.68,
+      "percent": 3.42
+    }
+  ],
+  "meta": {
+    "data_type": "CYQ_CHIPS",
+    "start_date": "2026-09-01",
+    "end_date": "2026-09-17",
+    "returned_days": 13,
+    "data_status": "COMPLETE",
+    "source": "tushare_cyq_chips",
+    "warnings": []
+  }
+}
+```
+
+`data_status` 至少支持 `COMPLETE`、`PARTIAL`、`NO_DATA` 和
+`UPSTREAM_DEPENDENCY_UNAVAILABLE`。`NO_DATA` 表示指定日期范围没有筹码记录，
+不能用零值填充，也不能伪装成前一交易日数据。该接口需要
+`market_analysis:read` 和 `market_analysis:history`，不开放匿名访问。
+
+实现约束：
+
+- adapter 固定调用 `CYQ_CHIPS`，不接受客户端传入 dataset/type；建议实现为
+  `market_data.services.cyq_chips.CyqChipsAdapter`，并由
+  `get_cyq_chips(*, ts_code, start_date, end_date)` 调用。
+- adapter 只从 `settings.TUSHARE_TOKEN` 初始化服务端 Tushare client；token 不得作为参数、日志字段或异常详情向上层传递。
+- 上游异常必须归类为 `UPSTREAM_TIMEOUT`、`UPSTREAM_RATE_LIMITED` 或
+  `UPSTREAM_DEPENDENCY_UNAVAILABLE`，并通过 typed result/领域异常向 Gateway 传递；不得把 Tushare 原始异常文本直接返回客户端。
+- adapter 输出必须经过固定字段投影、有限数值校验、日期规范化和排序；禁止写 PostgreSQL、调用同步命令、推进 watermark 或执行前一工作日回退。
+- 单元测试必须 mock Tushare client，覆盖成功、空结果、非法行过滤、超时、限流、依赖不可用和 token 缺失；合约测试必须覆盖 366 天限制、scope、旧通用代理路径不可用和任意 dataset 不可用。
+
 ### 14.4 内部 Query Service 契约
 
 Gateway 只能依赖 `market_data` 导出的类型化、无副作用服务，不得依赖 Django
@@ -1255,6 +1479,10 @@ get_bars(*, ts_code: str, start_date, end_date, adjust: str,
          frequency: str = 'D', page, page_size) -> BarPage
 get_fundamentals(*, ts_code: str, start_date, end_date,
                  page, page_size) -> FundamentalPage
+get_cyq_chips(*, ts_code: str, start_date, end_date) -> CyqChipsResult
+get_market_evidence(*, ts_code: str, days: int = 60) -> MarketEvidenceResult
+get_technical_trend(*, ts_code: str, start_date, end_date, adjust: str = 'qfq',
+                    frequency: str = 'D', period: int = 120) -> TechnicalTrendResult
 get_market_regime(*, asof_date, benchmark_ts_code: str) -> MarketRegimeResult
 get_security_regime(*, ts_code: str, asof_date) -> SecurityRegimeResult
 ```
@@ -1266,8 +1494,8 @@ typed result，而不是依赖异常控制流程；安全身份、日期范围�
 
 ### 14.5 权限、缓存与可观测性
 
-- 所有五类接口均需要 `market_analysis:read`；带日期范围的 bars/fundamentals
-  历史查询还需要 `market_analysis:history`。
+- 所有 Market Data 接口均需要 `market_analysis:read`；带日期范围的 bars/fundamentals/
+  technical-trend/`CYQ_CHIPS` 历史查询还需要 `market_analysis:history`。
 - 首期不开放匿名访问、operator 原始同步信息、Tushare payload、数据库字段诊断
   和 ingestion run 明细；这些信息不得通过普通 Market Data 响应泄露。
 - 可缓存只读结果，但 key 必须包含 API 版本、规范化参数、as-of、频率、adjust
@@ -1288,7 +1516,7 @@ typed result，而不是依赖异常控制流程；安全身份、日期范围�
 3. 先接入证券、bars、fundamentals，再接入 market/security regime；禁止跨应用 ORM。
 4. 验证 `X-Request-ID` 透传、无后缀代码规范化、分页/日期上限、单位保持和 secret redaction。
 5. 验证 Tushare 不可用、watermark 未完成、历史不足、调整列缺失、非法代码和下游超时
-   时的错误/业务状态映射；所有查询不得写库或推进 watermark。
+  时的错误/业务状态映射；普通查询不得写库或推进 watermark，`CYQ_CHIPS` 转发不得写入事实表。
 6. 完成 PostgreSQL 集成、权限、缓存 key、性能和故障隔离验收后，才允许外部客户端接入。
 
 本节完成标准：公共 v1 schema、内部 service 契约、权限范围和验收用例获得确认；
@@ -1298,12 +1526,14 @@ typed result，而不是依赖异常控制流程；安全身份、日期范围�
 
 - [ ] 确认 PostgreSQL 字段、公共响应字段、数据单位、默认频率、`adjust` 白名单、认证方式和 scope。
 - [ ] 冻结 Market Data v1 OpenAPI/schema，并记录 `request_id`、日期、代码和数据状态字段。
-- [ ] 实现 `market_data` 类型化内部 query service：证券、详情、bars、fundamentals、market regime、security regime。
+- [x] 实现 `market_data` 类型化内部 query service：证券、详情、bars、fundamentals、market evidence、market regime、security regime。
 - [ ] 为 query service 增加 bounded query、as-of/no-lookahead、无 Tushare fallback 和只读副作用测试。
 - [ ] 创建并注册 `api_gateway` v1 路由、request context、统一成功/错误响应和认证授权边界。
 - [ ] 接入证券主数据接口：`/securities`、`/securities/:ts_code`。
 - [ ] 接入 EOD 行情接口：`/securities/:ts_code/bars`，完成 raw/qfq/hfq 和频率校验。
 - [ ] 接入日基本面接口：`/securities/:ts_code/fundamentals`，验证原始单位不被隐式换算。
+- [x] 接入市场证据接口：`/securities/:ts_code/market-evidence`，默认 60 日并返回股票 OHLC、SW 行业 close、ATR、均线趋势和相对行业强度。
+- [x] 接入技术趋势接口：`/securities/:ts_code/technical-trend`，返回后端计算的技术指标、趋势摘要、行业相对强度和技术信号。
 - [ ] 接入市场和个股 regime 接口：`/market/regime`、`/securities/:ts_code/regime`。
 - [ ] 实现分页、日期范围、代码规范化、`X-Request-ID` 透传和错误码映射。
 - [ ] 实现权限、限流、缓存 key、下游超时/单次重试和敏感信息脱敏。

@@ -178,6 +178,13 @@ def _same_period_last_year(end_date):
         return end_date.replace(year=end_date.year - 1, day=28 if isleap(end_date.year - 1) else 28)
 
 
+def _three_years_before(asof_date):
+    try:
+        return asof_date.replace(year=asof_date.year - 3)
+    except ValueError:
+        return asof_date.replace(year=asof_date.year - 3, day=28)
+
+
 def _report_type(row):
     if row is None:
         return None
@@ -239,11 +246,325 @@ def _overview_metric(*, key, row, rows, field, source_dataset, amount):
     }
 
 
+EVALUATION_VERSION = 'fundamental-lite-v1'
+
+
+def _float_value(value):
+    return float(value) if value is not None else None
+
+
+def _score_band(value, boundaries, scores):
+    if value is None:
+        return None
+    for boundary, score in zip(boundaries, scores):
+        if value < boundary:
+            return score
+    return scores[-1]
+
+
+def _status(score):
+    if score is None:
+        return 'NOT_AVAILABLE'
+    if score >= 80:
+        return 'STRONG'
+    if score >= 65:
+        return 'HEALTHY'
+    if score >= 50:
+        return 'NEUTRAL'
+    return 'WEAK'
+
+
+def _dimension(score, *, available, missing_metrics=(), evidence=()):
+    return {
+        'score': round(score) if score is not None else None,
+        'status': _status(score) if available else 'NOT_AVAILABLE',
+        'available': available,
+        'evidence': list(evidence),
+        'missing_metrics': list(missing_metrics),
+    }
+
+
+def _period_values(rows, field, period):
+    row = _latest_row(rows, period)
+    return row, getattr(row, field, None) if row else None
+
+
+def _period_growth(rows, field, period):
+    row, value = _period_values(rows, field, period)
+    if row is None or row.end_date is None:
+        return None
+    _, previous = _period_values(rows, field, _same_period_last_year(row.end_date))
+    return _ratio_yoy(value, previous)
+
+
+def _period_score(*, period, income_rows, cashflow_rows, indicator_rows, balance_rows):
+    revenue_growth = _period_growth(income_rows, 'revenue', period)
+    net_profit_growth = _period_growth(income_rows, 'n_income_attr_p', period)
+    if net_profit_growth is None:
+        net_profit_growth = _period_growth(income_rows, 'n_income', period)
+
+    growth_parts = [
+        _score_band(value, (-0.10, 0, 0.10, 0.20), (0, 25, 50, 75, 100))
+        for value in (revenue_growth, net_profit_growth)
+    ]
+    growth_parts = [value for value in growth_parts if value is not None]
+    growth_missing = [
+        name for name, value in (
+            ('revenue_yoy', revenue_growth), ('net_profit_yoy', net_profit_growth),
+        ) if value is None
+    ]
+    growth_score = sum(growth_parts) / len(growth_parts) if growth_parts else None
+    if net_profit_growth is not None and net_profit_growth < -0.20 and growth_score is not None:
+        growth_score = min(growth_score, 49)
+
+    indicator = _latest_row(indicator_rows, period)
+    roe = getattr(indicator, 'roe_dt', None) if indicator else None
+    if roe is None and indicator:
+        roe = indicator.roe
+    net_margin = getattr(indicator, 'netprofit_margin', None) if indicator else None
+    profitability_parts = [
+        _score_band(_float_value(value), (0, 8, 12, 18), (0, 25, 50, 75, 100))
+        for value in (roe, net_margin)
+    ]
+    profitability_parts = [value for value in profitability_parts if value is not None]
+    profitability_missing = [
+        name for name, value in (('roe', roe), ('net_margin', net_margin)) if value is None
+    ]
+    profitability_score = (
+        sum(profitability_parts) / len(profitability_parts) if profitability_parts else None
+    )
+
+    _, operating_cash_flow = _period_values(cashflow_rows, 'n_cashflow_act', period)
+    _, revenue = _period_values(income_rows, 'revenue', period)
+    ocf_to_revenue = (
+        float(operating_cash_flow / revenue * 100)
+        if operating_cash_flow is not None and revenue not in (None, 0) else None
+    )
+    ocf_growth = _period_growth(cashflow_rows, 'n_cashflow_act', period)
+    cash_score = _score_band(ocf_to_revenue, (0, 5, 10, 20), (0, 25, 50, 75, 100))
+    cash_missing = []
+    if operating_cash_flow is None:
+        cash_missing.append('operating_cash_flow')
+    if ocf_to_revenue is None:
+        cash_missing.append('ocf_to_revenue')
+    if cash_score is not None and operating_cash_flow is not None and operating_cash_flow <= 0:
+        cash_score = min(cash_score, 50)
+    if cash_score is not None and ocf_growth is not None and net_profit_growth is not None:
+        if ocf_growth >= net_profit_growth:
+            cash_score = min(cash_score + 10, 100)
+        elif ocf_growth < -0.10:
+            cash_score = max(cash_score - 10, 0)
+
+    indicator = indicator or _latest_row(indicator_rows, period)
+    debt_to_assets = getattr(indicator, 'debt_to_assets', None) if indicator else None
+    current_ratio = getattr(indicator, 'current_ratio', None) if indicator else None
+    quick_ratio = getattr(indicator, 'quick_ratio', None) if indicator else None
+    debt_score = _score_band(
+        _float_value(debt_to_assets), (30, 50, 70, 85), (100, 75, 50, 25, 0),
+    )
+    current_score = _score_band(
+        _float_value(current_ratio), (0.75, 1.0, 1.5, 2.0), (0, 25, 50, 75, 100),
+    )
+    coverage_parts = [value for value in (debt_score, current_score) if value is not None]
+    if quick_ratio is not None:
+        coverage_parts.append(_score_band(
+            _float_value(quick_ratio), (0.75, 1.0, 1.5, 2.0), (0, 25, 50, 75, 100),
+        ))
+    solvency_score = sum(coverage_parts) / len(coverage_parts) if coverage_parts else None
+    solvency_missing = [
+        name for name, value in (
+            ('debt_to_assets', debt_to_assets), ('current_ratio', current_ratio),
+            ('quick_ratio', quick_ratio),
+        ) if value is None
+    ]
+
+    dimensions = {
+        'growth': _dimension(
+            growth_score, available=growth_score is not None,
+            missing_metrics=growth_missing,
+            evidence=['income.revenue', 'income.n_income_attr_p or income.n_income'],
+        ),
+        'profitability': _dimension(
+            profitability_score, available=profitability_score is not None,
+            missing_metrics=profitability_missing,
+            evidence=['indicator.roe_dt or indicator.roe', 'indicator.netprofit_margin'],
+        ),
+        'cash_flow_quality': _dimension(
+            cash_score, available=cash_score is not None,
+            missing_metrics=cash_missing,
+            evidence=['cashflow.n_cashflow_act', 'derived operating cash flow / revenue'],
+        ),
+        'solvency': _dimension(
+            solvency_score, available=solvency_score is not None,
+            missing_metrics=solvency_missing,
+            evidence=['indicator.debt_to_assets', 'indicator.current_ratio', 'indicator.quick_ratio'],
+        ),
+    }
+    weights = {'growth': 30, 'profitability': 30, 'cash_flow_quality': 25, 'solvency': 15}
+    available_weight = sum(weights[name] for name, value in dimensions.items() if value['available'])
+    weighted_score = sum(
+        dimensions[name]['score'] * weights[name]
+        for name in dimensions
+        if dimensions[name]['available']
+    )
+    # Dimension scores and weights are both expressed on a 0-100 scale.
+    overall_score = weighted_score / available_weight if available_weight else None
+    return {
+        'period': period.isoformat() if period else None,
+        'overall': {
+            'score': round(overall_score) if overall_score is not None else None,
+            'status': _status(overall_score) if available_weight >= 60 else 'NOT_AVAILABLE',
+            'available_weight': available_weight,
+            'missing_dimensions': [name for name, value in dimensions.items() if not value['available']],
+        },
+        'dimensions': dimensions,
+        '_values': {
+            'revenue_growth': revenue_growth,
+            'net_profit_growth': net_profit_growth,
+            'ocf_growth': ocf_growth,
+            'operating_cash_flow': _float_value(operating_cash_flow),
+            'net_profit': _float_value(_amount_value(_latest_row(income_rows, period), 'n_income_attr_p')),
+            'debt_to_assets': _float_value(debt_to_assets),
+            'current_ratio': _float_value(current_ratio),
+            'quick_ratio': _float_value(quick_ratio),
+        },
+    }
+
+
+def _evaluation_reports(rows, limit=5):
+    reports = []
+    seen = set()
+    for row in rows:
+        if not row.end_date or row.end_date in seen:
+            continue
+        seen.add(row.end_date)
+        reports.append({
+            'period': row.period or row.end_date.isoformat(),
+            'report_type': _report_type(row),
+            'end_date': row.end_date.isoformat(),
+            'ann_date': _date(row.ann_date),
+            'effective_date': _date(_effective_date(row)),
+            'data_status': 'AVAILABLE',
+            'source_revision': row.source_revision_at.isoformat() if row.source_revision_at else None,
+        })
+        if len(reports) >= limit:
+            break
+    return reports
+
+
+def _signal(*, result, asof_date, signal_code, label, severity, status, evidence, metrics):
+    return {
+        'signal_code': signal_code,
+        'label': label,
+        'severity': severity,
+        'status': status,
+        'asof_date': asof_date.isoformat() if asof_date else None,
+        'evidence': evidence,
+        'metrics': metrics,
+        'provenance': {
+            'report_period': result.get('period'),
+            'source_datasets': sorted({metric.split('.')[0] for metric in metrics if '.' in metric}),
+        },
+    }
+
+
+def _evaluation_signals(result, asof_date):
+    values = result['_values']
+    signals = []
+    if values['revenue_growth'] is not None and values['net_profit_growth'] is not None:
+        if values['revenue_growth'] > 0 and values['net_profit_growth'] > 0:
+            signals.append(_signal(
+                result=result, asof_date=asof_date, signal_code='EARNINGS_IMPROVING', label='盈利改善',
+                severity='POSITIVE', status='CONFIRMED', evidence='营收和净利润同比均为正',
+                metrics=['income.revenue_yoy', 'income.net_profit_yoy'],
+            ))
+    if values['ocf_growth'] is not None and values['net_profit_growth'] is not None:
+        if values['ocf_growth'] - values['net_profit_growth'] >= 0.05:
+            signals.append(_signal(
+                result=result, asof_date=asof_date, signal_code='CASH_FLOW_LEADS_PROFIT', label='现金流质量',
+                severity='POSITIVE', status='CONFIRMED', evidence='经营现金流增速至少领先净利润增速 5 个百分点',
+                metrics=['cashflow.operating_cash_flow_yoy', 'income.net_profit_yoy'],
+            ))
+    if values['net_profit'] is not None and values['net_profit'] > 0 and (
+        values['operating_cash_flow'] is not None and values['operating_cash_flow'] < 0
+    ):
+        signals.append(_signal(
+            result=result, asof_date=asof_date, signal_code='PROFIT_CASH_MISMATCH', label='利润现金流背离',
+            severity='RISK', status='TRACKING', evidence='净利润为正但经营现金流为负',
+            metrics=['income.net_profit', 'cashflow.operating_cash_flow'],
+        ))
+    if values['debt_to_assets'] is not None and values['debt_to_assets'] > 70:
+        signals.append(_signal(
+            result=result, asof_date=asof_date, signal_code='LEVERAGE_HIGH', label='财务风险',
+            severity='RISK', status='TRACKING', evidence='负债率高于 70%',
+            metrics=['indicator.debt_to_assets'],
+        ))
+    if ((values['current_ratio'] is not None and values['current_ratio'] < 1.0) or
+            (values['quick_ratio'] is not None and values['quick_ratio'] < 0.8)):
+        signals.append(_signal(
+            result=result, asof_date=asof_date, signal_code='LIQUIDITY_PRESSURE', label='流动性压力',
+            severity='RISK', status='TRACKING', evidence='流动比率或速动比率低于安全阈值',
+            metrics=['indicator.current_ratio', 'indicator.quick_ratio'],
+        ))
+    return signals
+
+
+def _build_fundamental_evaluation(*, income_rows, cashflow_rows, indicator_rows, balance_rows, asof_date):
+    trend_start = _three_years_before(asof_date)
+    periods = sorted({
+        row.end_date for rows in (income_rows, cashflow_rows, indicator_rows, balance_rows)
+        for row in rows
+        if row.end_date and trend_start <= row.end_date <= asof_date
+    })
+    trend = []
+    period_results = []
+    for period in periods:
+        period_result = _period_score(
+            period=period, income_rows=income_rows, cashflow_rows=cashflow_rows,
+            indicator_rows=indicator_rows, balance_rows=balance_rows,
+        )
+        period_results.append(period_result)
+        trend.append({
+            'period': period_result['period'],
+            'overall': period_result['overall'],
+            'dimensions': period_result['dimensions'],
+            'source_period': period_result['period'],
+        })
+    current = period_results[-1] if period_results else _period_score(
+        period=None, income_rows=[], cashflow_rows=[], indicator_rows=[], balance_rows=[],
+    )
+    reports = _evaluation_reports(income_rows)
+    warnings = []
+    if not reports:
+        warnings.append('暂无可用财报档案')
+    if not trend:
+        warnings.append('过去三年暂无可用财务趋势')
+    if current['overall']['available_weight'] < 100:
+        warnings.append('部分评判维度缺少可用财务指标')
+    signals = _evaluation_signals(current, asof_date)
+    if current['overall']['available_weight'] < 60:
+        signals.append(_signal(
+            result=current, asof_date=asof_date, signal_code='DATA_PARTIAL', label='数据状态',
+            severity='INFO', status='NOT_AVAILABLE', evidence='可用评判维度不足 60%', metrics=[],
+        ))
+    current.pop('_values', None)
+    return {
+        'evaluation_version': EVALUATION_VERSION,
+        'overall': current['overall'],
+        'dimensions': current['dimensions'],
+        'trend': trend,
+        'reports': reports,
+        'signals': signals,
+        'warnings': warnings,
+    }
+
+
 def query_financial_overview(*, ts_code, asof_date, report_type='LATEST'):
     security = Security.objects.get(ts_code=ts_code)
     income_rows = _overview_rows(FinancialIncomeRecord, security, asof_date)
     cashflow_rows = _overview_rows(FinancialCashFlowRecord, security, asof_date)
     indicator_rows = _overview_rows(FinancialIndicatorRecord, security, asof_date)
+    balance_rows = _overview_rows(FinancialBalanceSheetRecord, security, asof_date)
     candidate_rows = income_rows + cashflow_rows + indicator_rows
     selected = _latest_row(sorted(candidate_rows, key=lambda row: (row.end_date or date.min, row.ann_date or date.min, row.id), reverse=True))
     period = selected.end_date if selected else None
@@ -273,6 +594,13 @@ def query_financial_overview(*, ts_code, asof_date, report_type='LATEST'):
             'cashflow': cashflow_rows[0].end_date.isoformat() if cashflow_rows else None,
             'indicator': indicator_rows[0].end_date.isoformat() if indicator_rows else None,
         },
+        'evaluation': _build_fundamental_evaluation(
+            income_rows=income_rows,
+            cashflow_rows=cashflow_rows,
+            indicator_rows=indicator_rows,
+            balance_rows=balance_rows,
+            asof_date=asof_date,
+        ),
         'data_status': 'COMPLETE' if available else 'NOT_AVAILABLE',
         'warnings': [] if available == len(metrics) else ['部分财务指标暂无可用记录'],
     }

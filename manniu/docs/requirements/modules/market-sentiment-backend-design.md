@@ -140,6 +140,32 @@ Daily ordering is:
 
 A missing source watermark, insufficient core-field coverage, or failed dependent adjustment rebuild returns nonzero and records `FAILED` or `INSUFFICIENT_DATA`; it must not publish a normal score from partial data.
 
+## 7.1 Technical Trend Integration Boundary
+
+技术趋势接口的 owner 是 `market_data`，不是 `market_sentiment`。`market_data` 负责
+基于已落库 EOD bars 计算 RSI14、MACD、ATR14、KDJ、均线关系、趋势评分和技术信号；
+`market_sentiment` 只负责市场/个股情绪快照及其版本化计算。
+
+当 `market_sentiment` 完成快照查询服务后，技术趋势服务可以通过以下内部只读边界
+读取与当前交易日对齐的个股情绪：
+
+```python
+get_stock_snapshot(*, ts_code, asof_date, engine_version=None)
+```
+
+返回的 `status`、`score`、`level`、`source_trade_date`、`engine_version` 和
+覆盖率字段必须原样嵌入 technical-trend 的 `market_sentiment` 区块。情绪快照缺失、
+处于 `WARMING_UP`、`INSUFFICIENT_DATA` 或 `STALE` 时，technical-trend 返回明确的
+情绪状态和空值，不转换为 0 分或“中性”。
+
+该集成必须满足：
+
+- 不在 technical-trend 请求中触发情绪计算、回填、写入或 Tushare 调用；
+- 使用相同 `asof_date` 和实际 `source_trade_date`，禁止把不同日期伪装成同一结果；
+- 情绪依赖失败只将 technical-trend 标记为 `PARTIAL`，不影响行情、动量指标和筹码区；
+- 技术趋势评分、趋势状态和技术信号不由情绪模块定义，避免两个领域产生第二套技术分类口径；
+- `market_sentiment` 仍可独立通过自身 `/sentiment/stocks/:ts_code` 接口提供完整快照。
+
 ## 8 API Gateway Integration Contract
 
 本节冻结 `market_sentiment` 接入 `api_gateway` 的首期外部只读契约。它定义 HTTP 边界和

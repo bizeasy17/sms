@@ -9,14 +9,18 @@ import pypinyin
 from market_data.models import (
     MarketBarDailyHistory,
     Security,
+    SWIndustryDailyHistory,
     StockDailyFundamentalHistory,
 )
+from market_data.services.industry import IndustryMappingError, resolve_sw_industry_mapping
 
 
 DEFAULT_PAGE_SIZE = 50
 MAX_PAGE_SIZE = 200
 MAX_HISTORY_DAYS = 366
 MAX_HISTORY_ROWS = 2000
+DEFAULT_EVIDENCE_DAYS = 60
+MAX_EVIDENCE_DAYS = 200
 VALID_ASSET_TYPES = {value for value, _ in Security.AssetType.choices}
 VALID_BAR_ADJUSTMENTS = {'raw', 'qfq', 'hfq'}
 VALID_FREQUENCIES = {'D'}
@@ -234,6 +238,147 @@ def get_bars(*, ts_code, start_date, end_date, adjust, frequency, page, page_siz
     if adjust != 'raw' and rows and all(getattr(row, f'close_{adjust}') is None for row in rows):
         raise MarketDataRequestError('INSUFFICIENT_DATA', f'{adjust} 调整数据不可用')
     return Page([_bar_payload(row, adjust) for row in rows], page, page_size, total)
+
+
+def _trend(current, previous, *, tolerance=0.001):
+    if current is None or previous is None:
+        return None
+    delta = float(current) - float(previous)
+    if abs(delta) <= abs(float(current)) * tolerance:
+        return 'FLAT'
+    return 'UP' if delta > 0 else 'DOWN'
+
+
+def _atr_values(rows, period=14):
+    true_ranges = []
+    previous_close = None
+    for row in rows:
+        if row.high is None or row.low is None:
+            previous_close = row.close
+            continue
+        candidates = [float(row.high) - float(row.low)]
+        if previous_close is not None:
+            candidates.extend((
+                abs(float(row.high) - float(previous_close)),
+                abs(float(row.low) - float(previous_close)),
+            ))
+        true_ranges.append((row.trade_date, max(candidates)))
+        previous_close = row.close
+    atr_values = []
+    for index in range(period - 1, len(true_ranges)):
+        window = true_ranges[index - period + 1:index + 1]
+        atr_values.append((window[-1][0], sum(item[1] for item in window) / period))
+    return atr_values
+
+
+def _industry_security_for_identity(identity):
+    industry_code = str(identity.get('index_code') or identity.get('industry_code') or '').strip().upper()
+    if not industry_code:
+        return None
+    exact = Security.objects.filter(ts_code=industry_code, asset_type=Security.AssetType.INDEX).first()
+    if exact is not None:
+        return exact
+    root = industry_code.split('.')[0]
+    return Security.objects.filter(
+        ts_code__startswith=f'{root}.', asset_type=Security.AssetType.INDEX, market='SW',
+    ).first()
+
+
+def get_market_evidence(*, ts_code, days=DEFAULT_EVIDENCE_DAYS):
+    try:
+        days = int(days)
+    except (TypeError, ValueError) as exc:
+        raise MarketDataRequestError('INVALID_REQUEST', 'days 必须为整数') from exc
+    if days < 1 or days > MAX_EVIDENCE_DAYS:
+        raise MarketDataRequestError('INVALID_REQUEST', f'days 范围为 1-{MAX_EVIDENCE_DAYS}')
+
+    security = get_security(ts_code=ts_code)
+    if security.asset_type != Security.AssetType.STOCK:
+        raise MarketDataRequestError('UNSUPPORTED_REQUEST', '市场证据仅支持股票')
+
+    calculation_rows = list(MarketBarDailyHistory.objects.filter(
+        security=security, close__isnull=False,
+    ).order_by('-trade_date')[:max(days, 205)])
+    if not calculation_rows:
+        raise MarketDataRequestError('INSUFFICIENT_DATA', '股票日线数据不足')
+    calculation_rows.reverse()
+    rows = calculation_rows[-days:]
+    warnings = []
+
+    industry_security = None
+    industry_identity = {}
+    try:
+        industry_identity = resolve_sw_industry_mapping(security=security)
+        industry_security = _industry_security_for_identity(industry_identity)
+    except IndustryMappingError:
+        warnings.append('SW_INDUSTRY_MAPPING_UNAVAILABLE')
+    if industry_security is None:
+        warnings.append('SW_INDUSTRY_DATA_UNAVAILABLE')
+
+    industry_name = (
+        str(industry_identity.get('industry_name') or industry_identity.get('name') or '').strip()
+        or (industry_security.name.strip() if industry_security and industry_security.name else None)
+    )
+
+    industry_closes = {}
+    if industry_security is not None:
+        industry_closes = dict(SWIndustryDailyHistory.objects.filter(
+            security=industry_security,
+            trade_date__in=[row.trade_date for row in rows],
+            close__isnull=False,
+        ).values_list('trade_date', 'close'))
+
+    atr_values = [item for item in _atr_values(calculation_rows) if item[0] >= rows[0].trade_date]
+    current_atr = atr_values[-1][1] if atr_values else None
+    atr_percentile = None
+    if current_atr is not None:
+        atr_percentile = sum(value <= current_atr for _, value in atr_values) / len(atr_values) * 100
+    closes = [float(row.close) for row in calculation_rows if row.close is not None]
+    ma25 = sum(closes[-25:]) / 25 if len(closes) >= 25 else None
+    ma25_previous = sum(closes[-30:-5]) / 25 if len(closes) >= 30 else None
+    ma200 = sum(closes[-200:]) / 200 if len(closes) >= 200 else None
+    ma200_previous = sum(closes[-205:-5]) / 200 if len(closes) >= 205 else None
+    current_price = closes[-1]
+    first_price = float(rows[0].close) if rows[0].close is not None else None
+    last_industry_close = industry_closes.get(rows[-1].trade_date)
+    first_industry_close = industry_closes.get(rows[0].trade_date)
+    relative_strength = None
+    if first_price and first_industry_close and last_industry_close is not None:
+        relative_strength = (current_price / first_price - 1) - (float(last_industry_close) / float(first_industry_close) - 1)
+
+    return {
+        'security': {'ts_code': security.ts_code, 'name': security.name},
+        'industry': {
+            'index_code': industry_identity.get('index_code'),
+            'industry_code': industry_identity.get('industry_code'),
+            'name': industry_name,
+        },
+        'history': [
+            {
+                'trade_date': _date(row.trade_date),
+                'open': _number(row.open),
+                'high': _number(row.high),
+                'low': _number(row.low),
+                'close': _number(row.close),
+                'industry_close': _number(industry_closes.get(row.trade_date)),
+            }
+            for row in rows
+        ],
+        'summary': {
+            'atr_14': current_atr,
+            'atr_14_percentile_60d': atr_percentile,
+            'ma25': ma25,
+            'ma25_trend': _trend(ma25, ma25_previous),
+            'ma200': ma200,
+            'ma200_trend': _trend(ma200, ma200_previous),
+            'current_price': current_price,
+            'price_to_ma25': current_price / ma25 if ma25 else None,
+            'relative_strength_vs_industry': relative_strength,
+        },
+        'requested_days': days,
+        'returned_days': len(rows),
+        'warnings': warnings,
+    }
 
 
 def _fundamental_payload(row):

@@ -1,3 +1,3 @@
 import type { Tab } from '../types'
 
-export function ResearchTabs({ tab, setTab }: { tab: Tab; setTab: (tab: Tab) => void }) { const tabs: [Tab, string][] = [['summary', '研究摘要'], ['technical', '技术趋势'], ['fundamental', '基本面'], ['financials', '财报档案']]; return <nav className="research-tabs" aria-label="研究模块">{tabs.map(([key, label]) => <button className={tab === key ? 'active' : ''} key={key} onClick={() => setTab(key)}>{label}</button>)}</nav> }
+export function ResearchTabs({ tab, setTab }: { tab: Tab; setTab: (tab: Tab) => void }) { const tabs: [Tab, string][] = [['summary', '研究摘要'], ['technical', '技术趋势'], ['fundamentals', '基本面与财务档案']]; return <nav className="research-tabs" aria-label="研究模块">{tabs.map(([key, label]) => <button className={tab === key ? 'active' : ''} key={key} onClick={() => setTab(key)}>{label}</button>)}</nav> }

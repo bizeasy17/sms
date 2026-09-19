@@ -19,7 +19,7 @@
 
 1. **Gateway 只做边界职责**：版本化路由、认证上下文、授权、参数校验、序列化、统一错误、分页、限流、审计、跨领域只读聚合，以及个人用户命令/查询路由的边界编排。
 2. **领域服务拥有业务语义**：Gateway 不复制估值公式、情绪因子、市场风格分类、预测推理或财务 as-of 选择逻辑。
-3. **查询路径只读**：公开查询不得写入快照、推进 watermark、修改模型文件或触发 Tushare 请求。
+3. **查询路径只读**：公开查询不得写入快照、推进 watermark 或修改模型文件。除专门冻结的 `CYQ_CHIPS` 上游转发接口外，公开查询不得触发 Tushare 请求；该例外必须经过独立权限、范围、超时和限流控制。
 4. **PostgreSQL 是唯一事实来源**：Gateway 不引入 SQLite；Redis 如启用只做可失效缓存，不作为数据源。
 5. **点时一致性优先**：所有历史/回测相关查询必须明确 `asof_date` 或使用领域服务规定的当前快照语义，并返回来源日期。
 6. **不提供交易能力**：不暴露下单、撤单、券商凭证、自动交易指令或“买卖执行”接口。
@@ -175,7 +175,9 @@ Gateway view 只依赖各应用公开的内部 `query_service`。禁止从 Gatew
 | GET | `/securities/research-list` | 当前用户研究股票池及研究动作列表 | `pool`, `market`, `industry`, `q`, `asof_date`, `page`, `page_size` |
 | GET | `/securities/:ts_code` | 证券详情和分类身份 | 无 |
 | GET | `/securities/:ts_code/bars` | EOD 行情历史 | `start_date`, `end_date`, `adjust`, `page`, `page_size` |
+| GET | `/securities/:ts_code/technical-trend` | 技术指标、趋势摘要和技术信号 | `start_date`, `end_date`, `adjust`, `frequency`, `period` |
 | GET | `/securities/:ts_code/fundamentals` | 日基本面历史 | `start_date`, `end_date`, `page`, `page_size` |
+| GET | `/securities/:ts_code/chips` | 技术趋势页筹码分布上游转发 | `start_date`, `end_date` |
 | GET | `/indices/:index_key/bars` | 指数 EOD 日线行情历史 | `start_date`, `end_date`, `adjust`, `page`, `page_size` |
 | GET | `/indices/:index_key/fundamentals` | 指数日基本面历史 | `start_date`, `end_date`, `page`, `page_size` |
 | GET | `/market/regime` | 市场风格状态 | `asof_date`, `benchmark_ts_code` |
@@ -250,6 +252,44 @@ income、cashflow、indicator 记录，Gateway 只负责认证、证券代码规
 统一响应和错误映射。每个指标必须保留绝对值、同比、rolling12、报告期、来源数据集和
 可用状态；金额单位为 CNY，比例单位为 percentage points，同比金额为 ratio，同比比例
 为 percentage-point difference。接口不得在 Gateway 或前端补零、推导估值结论或回源 Tushare。
+
+该接口的 `data` 保留既有 `metrics` 基本面证据对象，并增加只读的
+`evaluation` 对象，用于基本面与财务档案 tab：
+
+```json
+{
+  "evaluation_version": "fundamental-lite-v1",
+  "overall": {
+    "score": 76,
+    "status": "HEALTHY",
+    "available_weight": 100,
+    "missing_dimensions": []
+  },
+  "dimensions": {
+    "growth": {"score": 82, "status": "STRONG", "available": true},
+    "profitability": {"score": 74, "status": "HEALTHY", "available": true},
+    "cash_flow_quality": {"score": 81, "status": "STRONG", "available": true},
+    "solvency": {"score": 61, "status": "NEUTRAL", "available": true}
+  },
+  "trend": [],
+  "reports": [],
+  "signals": [],
+  "warnings": []
+}
+```
+
+`evaluation` 由 `financials.query_financial_overview()` 内部调用
+`fundamental-lite-v1` 规则服务生成，Gateway 不复制阈值、权重或评分公式。评分只描述
+增长、盈利能力、现金流质量和偿债能力，不代表估值、买卖建议或交易动作。评分使用
+`0-100`，默认权重为 `30/30/25/15`；缺少维度时按可用权重归一化，并返回
+`available_weight`、`missing_dimensions` 和警告。可用权重低于 60% 时，`overall.status`
+必须为 `NOT_AVAILABLE`。
+
+`trend` 最多返回五个最新报告期，`reports` 返回报告期、报告类型、公告/有效日期、
+修订来源和数据状态，`signals` 只允许返回带来源期和指标证据的确定性规则信号。
+缺失值必须保持 `null`，不得补零；所有评价结果必须遵循请求的 `asof_date`，不得使用
+未来披露记录。该接口仍只读 PostgreSQL，不调用 Tushare、不推进 watermark、不重建估值
+快照，也不允许产生任何交易行为。
 
 ### 5.3 Market Sentiment
 
@@ -445,9 +485,155 @@ GET /api/v1/public-api/catalog
 1. 页面只向当前页面显示的 `path` 发起请求；前端不得允许用户输入任意 URL，避免把页面变成开放代理。
 2. 页面请求必须携带当前登录用户的 `Authorization: Bearer <token>` 和 `X-Request-ID`，沿用 Gateway 的统一成功/错误封套；同时按用户、IP、endpoint 和全局配额限流。
 3. Gateway 对 public endpoint 仍执行认证、scope、路径、方法、参数、日期范围、分页、超时和响应大小校验；“对外开放”不等于绕过业务数据边界。
-4. public endpoint 不得触发 Tushare 回源、模型推理、写库、缓存污染或任何副作用；缓存 key 必须区分认证用户可见性和 scope。
+4. public endpoint 不得触发模型推理、写库、缓存污染或任何副作用；除专门冻结的 `CYQ_CHIPS` 上游转发 endpoint 外，不得触发 Tushare 回源。缓存 key 必须区分认证用户可见性和 scope。
 5. 公开响应只能包含已批准的业务字段和 provenance 字段。Token、内部 scope、SQL、异常堆栈、连接串、文件路径和 operator 诊断永不进入目录或响应。
 6. 若某接口后来不再对外开放，目录应下线或标记为不可调用，并由 Gateway 同步拒绝请求，不能仅隐藏前端列表。
+
+#### 5.6.6 CYQ_CHIPS 筹码分布上游转发
+
+该接口是技术趋势页的唯一筹码分布入口。Gateway 不暴露旧的
+`/tushare/:ts_code/CYQ_CHIPS/` 路径，不接受任意 `data_type`，也不允许前端直接
+访问上游服务或携带 Tushare 凭证。
+
+```text
+GET /api/v1/market-analysis/securities/:ts_code/chips
+  ?start_date=YYYY-MM-DD
+  &end_date=YYYY-MM-DD
+```
+
+Gateway 处理规则：
+
+- 要求登录和 `market_analysis:read`、`market_analysis:history` scope；认证、scope、证券代码和日期范围校验必须在调用下游前完成。
+- `ts_code` 使用规范股票代码；`start_date`、`end_date` 为必填 `YYYY-MM-DD`，范围最多 366 个自然日，禁止未来日期和 `start_date > end_date`。
+- Gateway 调用 `market_data.get_cyq_chips(...)` 类型化服务；不得导入旧 `api.views.get_tushare_data`、Tushare SDK、同步命令或直接拼接 ORM。
+- Gateway 透传业务状态和 provenance，但只输出白名单字段：`ts_code`、`trade_date`、`price`、`percent`。
+- 统一成功封套中的 `meta` 至少保留 `data_type=CYQ_CHIPS`、日期范围、`returned_days`、`data_status`、`source` 和 `warnings`；不返回上游原始响应、token、SQL、堆栈或内部路径。
+- 上游无数据时返回 `200` 加 `data_status=NO_DATA` 或统一约定的 `404 NO_DATA`，两者必须在 contract test 中冻结；不得回退到前一工作日或填充 0。
+- Tushare 超时、限流或不可用映射为 `503` 的 `UPSTREAM_TIMEOUT`、`UPSTREAM_RATE_LIMITED` 或 `UPSTREAM_DEPENDENCY_UNAVAILABLE`，并返回 `retryable`；请求取消必须取消下游调用。
+- 该接口可以使用带规范化代码、日期范围和数据版本的短 TTL 缓存及请求合并；缓存只读，不写 market-data 事实表，不推进 watermark。
+
+实现落点：Gateway view 只调用 `market_data.get_cyq_chips` 或等价的公开 query
+service，不直接导入 Tushare。路由级 contract test 必须冻结以下行为：未认证/缺少
+scope 在下游调用前返回 `401/403`；非法代码、日期和超过 366 天返回 `400`；上游
+timeout、限流和不可用分别保留稳定错误码及 `retryable` 语义；不注册旧的通用
+`/tushare/:ts_code/CYQ_CHIPS/` 路径，也不接受任意 `data_type`。
+
+成功响应的 `data` 为按交易日、价格排序的记录数组：
+
+```json
+{
+  "success": true,
+  "api_version": "v1",
+  "request_id": "uuid",
+  "data": [
+    {
+      "ts_code": "002236.SZ",
+      "trade_date": "2026-09-17",
+      "price": 24.68,
+      "percent": 3.42
+    }
+  ],
+  "meta": {
+    "data_type": "CYQ_CHIPS",
+    "start_date": "2026-09-01",
+    "end_date": "2026-09-17",
+    "returned_days": 13,
+    "data_status": "COMPLETE",
+    "source": "tushare_cyq_chips",
+    "warnings": []
+  }
+}
+```
+
+该接口只为图表读取筹码分布，不提供筹码计算、交易建议、写入、回填或任意
+Tushare dataset 代理能力。
+
+前台技术趋势页消费约定：
+
+- 前端只调用本 Gateway 路径，不得直连 Tushare、旧的通用上游代理或拼接 `data_type`。
+- 请求范围使用当前技术趋势图表的 `start_date`、`end_date`；周期切换或股票切换时取消旧请求，禁止旧响应覆盖当前股票。
+- `data` 按 `trade_date` 分组；默认展示返回的最近交易日。前端只允许做数值校验、同一交易日同价位合并、价格排序和图表比例缩放，不得用行情成交量或静态样例推导筹码分布。
+- 筹码区必须独立处理 `COMPLETE`、`PARTIAL`、`NO_DATA`、请求失败和重试状态；筹码接口失败不得清空 K 线、成交量、情绪指数或股票身份。
+- 图表展示当前交易日、当前价格、价格档位和 `percent` 原始比例；不得把缺失的获胜率、集中率或其他统计填充为 `0`。同价位合并后的 padding 不计入任何统计值。
+- 前端请求必须携带登录态 Bearer Token，并保留 Gateway 的 `data_status`、日期范围、`source` 和 `warnings` 供状态和可追溯性展示使用。
+
+#### 5.6.7 市场证据接口
+
+市场证据接口为研究前台提供股票与所属 SW 行业的已持久化日线数据及摘要：
+
+```text
+GET /api/v1/market-analysis/securities/:ts_code/market-evidence
+  ?days=60
+```
+
+`ts_code` 为必填股票代码，`days` 可选，默认 `60`，允许范围为 `1-200`。接口只读取
+`MarketBarDailyHistory` 和 `SWIndustryDailyHistory`，需要
+`market_analysis:read`、`market_analysis:history` scope，不触发 Tushare 或写入数据库。
+
+成功响应的 `data.industry` 必须包含所属 SW 行业名称字段 `name`，该名称由当前有效
+SW membership 对应的行业指数证券解析得到；优先使用 SW 映射 artifact 的行业名称，
+缺失时使用行业指数证券主数据名称。前端图例必须直接绑定该字段，不得从股票的通用
+`industry` 字段或静态文案推导：
+
+```json
+{
+  "security": {"ts_code": "002236.SZ", "name": "大华股份"},
+  "industry": {
+    "index_code": "801081.SI",
+    "industry_code": "850111",
+    "name": "计算机设备"
+  },
+  "history": [
+    {
+      "trade_date": "2026-09-10",
+      "open": 18.2,
+      "high": 18.8,
+      "low": 18.0,
+      "close": 18.6,
+      "industry_close": 1245.3
+    }
+  ],
+  "summary": {},
+  "requested_days": 60,
+  "returned_days": 60,
+  "warnings": []
+}
+```
+
+行业名称不可解析时 `industry.name` 返回 `null`，同时在统一响应的
+`meta.warnings` 中返回 `SW_INDUSTRY_MAPPING_UNAVAILABLE` 或
+`SW_INDUSTRY_DATA_UNAVAILABLE`；不得伪造行业名称。
+
+#### 5.6.8 技术趋势接口
+
+技术趋势接口由 `market_data` 提供只读 query service，Gateway 只负责边界编排：
+
+```text
+GET /api/v1/market-analysis/securities/:ts_code/technical-trend
+  ?start_date=YYYY-MM-DD&end_date=YYYY-MM-DD
+  &adjust=qfq&frequency=D&period=120
+```
+
+接口要求登录以及 `market_analysis:read`、`market_analysis:history` scope；日期范围
+最多 366 个自然日，`period` 仅支持 `60`、`120`、`250`，`adjust` 仅支持 `raw`、
+`qfq`、`hfq`，`frequency` 首期仅支持 `D`。查询只读取 PostgreSQL 已落库行情和行业
+日线，不触发 Tushare、指标快照写入或 watermark 推进。
+
+`data` 至少包含：
+
+- `security`：规范 `ts_code` 和名称；
+- `series`：交易日升序的 OHLCV、MA6/10/25/43/60/120/200；
+- `momentum`：RSI14、MACD DIF/DEA/histogram、ATR14、KDJ 的最新值和历史序列；
+- `summary`：`trend`、`trend_score`、`trend_level`、`volatility_status`、均线关系和数据状态；
+- `relative_strength`：SW 行业名称、指数代码、行业序列、相对强度和方向；
+- `market_sentiment`：情绪状态和来源日期。情绪快照不可用时返回 `NOT_AVAILABLE` 和空值，禁止伪造分数；
+- `signals`：日期、类型、方向、证据和 `CONFIRMED`/`PENDING`/`EXPIRED` 状态；
+- `warnings`、`rule_version`、`adjust`、`frequency`。
+
+技术指标、趋势评分和信号由领域服务计算，前端不得根据 raw bars 重新推导结论。响应
+`meta` 必须保留 `asof_date`、`requested_period`、`returned_days`、`source`、
+`data_status` 和 `warnings`。历史不足返回 `INSUFFICIENT_DATA`；行业或情绪部分不可用
+时返回 `PARTIAL`，但不得清空已成功的行情和动量指标。
 
 #### 5.6.5 首期页面范围和验收标准
 
@@ -645,11 +831,14 @@ Gateway 不按低估分、买卖建议或前端展示顺序重新排序。
 market_data.get_security(*, ts_code: str)
 market_data.get_bars(*, ts_code: str, start_date, end_date, adjust: str)
 market_data.get_fundamentals(*, ts_code: str, start_date, end_date)
+market_data.get_technical_trend(*, ts_code: str, start_date, end_date, adjust: str, frequency: str, period: int)
+market_data.get_cyq_chips(*, ts_code: str, start_date, end_date)
 market_data.get_market_regime(*, asof_date, benchmark_ts_code)
 market_data.get_security_regime(*, security, asof_date)
 
 financials.query_records(*, ts_code, dataset, asof_date, end_date, date_range, page)
 financials.query_disclosures(*, ts_code, asof_date, date_range, page)
+financials.query_financial_overview(*, ts_code, asof_date, report_type="LATEST")
 
 market_sentiment.get_market_snapshot(*, trade_date, engine_version)
 market_sentiment.get_stock_snapshots(*, ts_code, date_range, engine_version, page)
@@ -665,7 +854,7 @@ predictive_valuation.get_fusion(*, ts_code, asof_date, anchor_mode, model_versio
 predictive_valuation.get_status(*, report_type, model_version)
 ```
 
-这些名称是边界示意，不授权在确认前直接实现。服务必须返回明确的 `found/status/source/provenance` 信息，不能把空 QuerySet 和数据未就绪混为一谈。
+这些名称是边界示意，不授权在确认前直接实现。服务必须返回明确的 `found/status/source/provenance` 信息，不能把空 QuerySet 和数据未就绪混为一谈。`query_financial_overview` 返回既有 `metrics` 以及版本化的 `evaluation`，评分规则由 `financials` 所有，Gateway 只负责认证、参数校验和统一响应封套。
 
 ## 10 可观测性和运维
 
@@ -742,6 +931,7 @@ predictive_valuation.get_status(*, report_type, model_version)
 - [ ] 建立 `api_gateway` 和 `access_control` 应用及 Django URL 挂载。
 - [ ] 为五个领域实现类型化内部 read service 和 contract tests。
 - [ ] 实现 v1 只读 endpoints、统一错误、分页、限流和 request context。
+- [ ] 接入 financial overview 的 `data.evaluation`：保留 `metrics` 兼容性，冻结 `fundamental-lite-v1` 的 overall、dimensions、trend、reports、signals 和部分数据状态。
 - [x] 接入传统估值三个只读 endpoints：当前快照、历史和多变体比较；调用 `traditional_valuation` typed query service，不直接拼接 ORM 查询。
 - [x] 为传统估值实现 `market_analysis:read`、`market_analysis:history` 和 `valuation:diagnostics_read` 的 scope/字段级授权校验。
 - [x] 在 Public API catalog 登记传统估值路由、参数枚举、分页/日期限制、认证模式和响应示例。
