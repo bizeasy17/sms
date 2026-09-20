@@ -75,6 +75,10 @@
   .search-button { display: block; }
   .security-search-results { position: fixed; top: 59px; left: 16px; right: 16px; }
 }
+.research-layout {
+  grid-template-columns: 280px minmax(500px, 1fr) 292px;
+}
+
 .stock-rail {
   display: flex;
   flex-direction: column;

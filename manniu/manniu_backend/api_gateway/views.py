@@ -30,6 +30,12 @@ from .services.market_data import (
 )
 from market_data.services.cyq_chips import get_cyq_chips
 from market_data.services.technical_trend import TechnicalTrendRequestError, get_technical_trend
+from market_data.services.sw_industry import (
+    SWIndustryRequestError,
+    get_sw_industry,
+    get_sw_industry_bars,
+    list_sw_industries,
+)
 from .services.indices import (
     IndexGatewayRequestError,
     catalog as index_catalog,
@@ -62,6 +68,7 @@ from .services.predictive_valuation import (
     get_status as get_predictive_status,
 )
 from .services.research_list import get_research_list
+from stock_selection.services import PRESETS, StockSelectionRequestError, screen as screen_stocks
 
 
 def _meta(page=None, *, data_status='COMPLETE', asof_date=None, source_trade_date=None, warnings=None):
@@ -97,6 +104,10 @@ def _handle_request_error(request, error):
         'RESULT_NOT_FOUND': 404,
         'UNSUPPORTED_REPORT_TYPE': 422,
         'UNSUPPORTED_VARIANT': 422,
+        'UNSUPPORTED_PRESET': 422,
+        'SCREEN_RANGE_TOO_LARGE': 400,
+        'SCREEN_DATA_NOT_READY': 503,
+        'VALUATION_DEPENDENCY_UNAVAILABLE': 503,
         'INVALID_INDEX_KEY': 400,
         'INVALID_METRIC': 400,
         'INVALID_WINDOW': 400,
@@ -106,6 +117,7 @@ def _handle_request_error(request, error):
         'UPSTREAM_RATE_LIMITED': 503,
         'VERSION_CONFLICT': 409,
         'FORBIDDEN': 403,
+        'CONFIGURATION_UNAVAILABLE': 503,
     }
     return api_error(
         request,
@@ -227,6 +239,51 @@ def securities(request):
 
 
 @require_scopes('market_analysis:read')
+def sw_industries(request):
+    if (response := _require_get(request)) is not None:
+        return response
+    try:
+        result = list_sw_industries(
+            level=request.GET.get('level'),
+            query=request.GET.get('q'),
+            page=request.GET.get('page', 1),
+            page_size=request.GET.get('page_size', 50),
+        )
+    except SWIndustryRequestError as error:
+        return _handle_request_error(request, error)
+    return api_response(request, data=result.items, meta=_meta(result, data_status='NO_DATA' if not result.total else 'COMPLETE'))
+
+
+@require_scopes('market_analysis:read')
+def sw_industry_detail(request, industry_code):
+    if (response := _require_get(request)) is not None:
+        return response
+    try:
+        result = get_sw_industry(industry_code=industry_code)
+    except SWIndustryRequestError as error:
+        return _handle_request_error(request, error)
+    return api_response(request, data=result, meta=_meta())
+
+
+@require_scopes('market_analysis:read', 'market_analysis:history')
+def sw_industry_bars(request, industry_code):
+    if (response := _require_get(request)) is not None:
+        return response
+    try:
+        start_date, end_date = parse_history_range(request.GET)
+        result = get_sw_industry_bars(
+            industry_code=industry_code,
+            start_date=start_date,
+            end_date=end_date,
+            page=request.GET.get('page', 1),
+            page_size=request.GET.get('page_size', 50),
+        )
+    except SWIndustryRequestError as error:
+        return _handle_request_error(request, error)
+    return api_response(request, data=result.items, meta=_meta(result, data_status='NO_DATA' if not result.total else 'COMPLETE', asof_date=end_date))
+
+
+@require_scopes('market_analysis:read')
 def securities_research_list(request):
     if (response := _require_get(request)) is not None:
         return response
@@ -254,6 +311,71 @@ def securities_research_list(request):
         'has_previous': result.page > 1 and result.total > 0,
     })
     return api_response(request, data=result.items, meta=meta)
+
+
+def _query_number(params, name, default):
+    value = params.get(name)
+    if value in (None, ''):
+        return default
+    try:
+        return float(value)
+    except (TypeError, ValueError) as error:
+        raise MarketDataRequestError('INVALID_REQUEST', f'{name} 必须为数字') from error
+
+
+@require_scopes('market_analysis:read')
+def stock_selection_results(request):
+    if (response := _require_get(request)) is not None:
+        return response
+    try:
+        params = request.GET
+        preset = str(params.get('preset', 'quality-growth')).strip().lower()
+        if preset not in PRESETS:
+            raise StockSelectionRequestError('UNSUPPORTED_PRESET', 'preset 不受支持')
+        filters = dict(PRESETS[preset])
+        for key in ('revenue_yoy_min', 'profit_yoy_min', 'ebit_yoy_min', 'roe_min', 'liquidity_ratio_min'):
+            if key in params:
+                filters[key] = _query_number(params, key, filters[key])
+        for key in ('gross_margin_improved', 'operating_cash_flow_positive', 'net_cash'):
+            if key in params:
+                filters[key] = _query_bool(params, key, filters[key])
+        page = _query_int(params, 'page', 1)
+        page_size = _query_int(params, 'page_size', 20, maximum=200)
+        asof_date = parse_date(params.get('asof_date'), 'asof_date') or date.today()
+        result, total, market_stock_count = screen_stocks(
+            filters=filters,
+            report_type=str(params.get('report_type', '26H1')).upper(),
+            asof_date=asof_date,
+            market=str(params.get('market', 'all')).lower(),
+            industry=params.get('industry'),
+            page=page,
+            page_size=page_size,
+            sort_key=str(params.get('sort', 'score')),
+            sort_direction=str(params.get('direction', 'desc')).lower(),
+        )
+    except (MarketDataRequestError, StockSelectionRequestError) as error:
+        return _handle_request_error(request, error)
+    meta = _meta(result, data_status='OK' if total else 'NO_DATA', asof_date=asof_date)
+    meta.update({
+        'total_pages': (total + result.page_size - 1) // result.page_size if total else 0,
+        'has_previous': result.page > 1 and total > 0,
+    })
+    return api_response(request, data={
+        'preset_key': preset,
+        'preset_version': 'v1',
+        'filters': filters,
+        'summary': {
+            'market_stock_count': market_stock_count,
+            'screened_count': total,
+            'matched_count': total,
+            'returned_count': len(result.items),
+        },
+        'items': result.items,
+        'valuation_status': {
+            'traditional': 'PARTIAL_SUCCESS' if any(item['traditional_status'] != 'OK' for item in result.items) else 'COMPLETE',
+            'predictive': 'PARTIAL_SUCCESS' if any(item['predictive_status'] != 'OK' for item in result.items) else 'COMPLETE',
+        },
+    }, meta=meta)
 
 
 @require_scopes('market_analysis:read')

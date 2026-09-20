@@ -5,7 +5,11 @@ from . import views
 
 urlpatterns = [
 	path('securities', views.securities, name='market-analysis-securities'),
+	path('sw-industries', views.sw_industries, name='market-analysis-sw-industries'),
+	path('sw-industries/<str:industry_code>', views.sw_industry_detail, name='market-analysis-sw-industry-detail'),
+	path('sw-industries/<str:industry_code>/bars', views.sw_industry_bars, name='market-analysis-sw-industry-bars'),
 	path('securities/research-list', views.securities_research_list, name='market-analysis-research-list'),
+	path('stock-selection/results', views.stock_selection_results, name='market-analysis-stock-selection-results'),
 	path('securities/<str:ts_code>', views.security_detail, name='market-analysis-security-detail'),
 	path('securities/<str:ts_code>/bars', views.security_bars, name='market-analysis-security-bars'),
 	path('securities/<str:ts_code>/chips', views.security_chips, name='market-analysis-security-chips'),

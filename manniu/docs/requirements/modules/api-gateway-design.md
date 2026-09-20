@@ -9,6 +9,7 @@
 - `market_sentiment`：市场和个股 EOD 情绪快照
 - `traditional_valuation`：传统估值快照、方法明细、风险和多变体比较
 - `predictive_valuation`：预测估值当前结果、历史结果、季度路由和融合结果
+- `stock_selection`：基于财务条件的候选筛选及传统/模型估值分融合
 - `personal_user`：个人资料、自选股、观察股、持仓股和持仓组合
 
 本文档只定义外部 HTTP 边界和 Gateway 的编排责任，不替代各领域的计算、模型、数据表和任务设计。领域详细设计仍以本目录下对应模块文档为准。
@@ -36,6 +37,7 @@ flowchart LR
     Auth --> SentimentQuery[market_sentiment query services]
     Auth --> TraditionalQuery[traditional_valuation query services]
     Auth --> PredictiveQuery[predictive_valuation query services]
+    Auth --> StockSelectionQuery[stock_selection query service]
     Auth --> PersonalUser[personal_user query/command services]
     MarketQuery --> PG[(PostgreSQL)]
     FinancialQuery --> PG
@@ -55,6 +57,7 @@ flowchart LR
 | `market_sentiment` | 情绪计算结果和快照查询 | Tushare、行情同步、交易执行 |
 | `traditional_valuation` | 传统估值和风险快照查询 | 证券主数据、行情、财务 raw 表所有权 |
 | `predictive_valuation` | 预测快照、融合、历史和状态查询 | 公共路由、模型训练、请求时写入预测 |
+| `stock_selection` | 选股条件编排、财务筛选、估值分融合和结果分页 | 财务/估值公式、直接 ORM、回源、请求时推理或写快照 |
 
 ### 3.2 推荐 Django 结构
 
@@ -156,7 +159,7 @@ Gateway view 只依赖各应用公开的内部 `query_service`。禁止从 Gatew
 | 403 | `FORBIDDEN` / `SCOPE_REQUIRED` | 无领域或操作权限 |
 | 404 | `SECURITY_NOT_FOUND` / `RESULT_NOT_FOUND` | 证券或指定结果不存在 |
 | 409 | `ASOF_CONFLICT` / `VERSION_CONFLICT` | 请求的报告期/版本不可用且不能静默回退 |
-| 422 | `UNSUPPORTED_REPORT_TYPE` / `UNSUPPORTED_VARIANT` | 语义合法但领域不支持 |
+| 422 | `UNSUPPORTED_REPORT_TYPE` / `UNSUPPORTED_VARIANT` / `UNSUPPORTED_PRESET` | 语义合法但领域或选股方案不支持 |
 | 429 | `RATE_LIMITED` | 超出客户端或服务级限流 |
 | 500 | `INTERNAL_ERROR` | 未分类服务错误，详情不得泄露堆栈或连接串 |
 | 503 | `DATA_NOT_READY` / `UPSTREAM_DEPENDENCY_UNAVAILABLE` | 依赖数据或领域服务暂不可用 |
@@ -646,6 +649,40 @@ GET /api/v1/market-analysis/securities/:ts_code/technical-trend
 - public endpoint 不会因为页面调用而写入 PostgreSQL、触发外部数据请求、执行模型推理或改变领域快照。
 - 目录和请求失败时页面仍保持可操作，且所有用户可见错误均经过 secret-safe sanitization；页面不会在浏览器日志、URL 或响应展示区泄露 Token。
 
+### 5.8 Stock Selection
+
+选股接口由 `stock_selection` 领域服务负责条件筛选和结果编排，Gateway 不复制财务评分、传统估值或预测估值公式。接口只读取 PostgreSQL 中已提交的证券、财务和估值 current 结果，不在请求中回源、推理或写入快照。
+
+```text
+GET /api/v1/market-analysis/stock-selection/results
+  ?preset=quality-growth
+  &pool=market
+  &market=all
+  &industry=<sw_code>
+  &report_type=26H1
+  &asof_date=YYYY-MM-DD
+  &revenue_yoy_min=10
+  &profit_yoy_min=10
+  &ebit_yoy_min=10
+  &roe_min=10
+  &gross_margin_improved=true
+  &operating_cash_flow_positive=true
+  &liquidity_ratio_min=1.5
+  &net_cash=true
+  &sort=score
+  &direction=desc
+  &page=1
+  &page_size=20
+```
+
+请求要求有效登录态和 `market_analysis:read` scope。Gateway 必须校验预存方案、报告期、日期、阈值、排序字段和分页边界，并保留规范化后的请求 ID。`report_type` 使用 `YYQ1`、`YYH1`、`YYQ3`、`YYFY` 格式，例如 `26H1`；Gateway 必须将其作为候选财务池边界传入领域服务。所有启用条件由领域服务按 AND 关系判定；百分比阈值和流动比率的单位必须按 `stock-selection-backend-design.md` 冻结的契约处理。
+
+成功响应沿用统一封套，`data` 至少包含 `preset_key`、`preset_version`、`filters`、`summary`、`items` 和 `valuation_status`。每个 `items` 行至少返回证券身份、SW 行业、`financial_score`、`value_valuation_score`、`model_valuation_score`、营收/净利润/EBIT 增长、ROE、毛利率变化、经营现金流、流动比率、`data_status` 和 warnings。传统估值分直接来自传统估值服务，模型估值分直接来自预测估值服务；缺失保持 `null`，不得填充 0 或静默换期。
+
+默认排序为 `financial_score desc, ts_code asc`；允许排序字段必须是服务白名单，缺失值排在最后。响应 `meta` 必须返回分页信息、`asof_date`、财务报告期/来源日期、估值来源日期、数据状态、版本和 warnings。财务数据命中但单个估值域不可用时，接口仍可返回记录并使用 `PARTIAL_SUCCESS` 与稳定原因码表达局部缺失。
+
+Gateway 内部只调用 `stock_selection.screen()`，禁止直接拼接跨应用 ORM 查询。首期不提供保存/修改/删除筛选器的写接口；前台预存筛选器为服务端白名单配置。
+
 ## 6 跨领域聚合接口
 
 为减少客户端多次请求，可提供一个只读聚合接口：
@@ -839,6 +876,7 @@ market_data.get_security_regime(*, security, asof_date)
 financials.query_records(*, ts_code, dataset, asof_date, end_date, date_range, page)
 financials.query_disclosures(*, ts_code, asof_date, date_range, page)
 financials.query_financial_overview(*, ts_code, asof_date, report_type="LATEST")
+financials.query_screening_fundamentals(*, securities, asof_date, report_type)
 
 market_sentiment.get_market_snapshot(*, trade_date, engine_version)
 market_sentiment.get_stock_snapshots(*, ts_code, date_range, engine_version, page)
@@ -852,6 +890,11 @@ predictive_valuation.get_current(*, ts_code, asof_date, report_type, anchor_mode
 predictive_valuation.get_history(*, ts_code, date_range, report_type, page)
 predictive_valuation.get_fusion(*, ts_code, asof_date, anchor_mode, model_version)
 predictive_valuation.get_status(*, report_type, model_version)
+
+stock_selection.screen(
+  *, universe, filters, report_type, asof_date,
+  page, page_size, sort_key, sort_direction,
+)
 ```
 
 这些名称是边界示意，不授权在确认前直接实现。服务必须返回明确的 `found/status/source/provenance` 信息，不能把空 QuerySet 和数据未就绪混为一谈。`query_financial_overview` 返回既有 `metrics` 以及版本化的 `evaluation`，评分规则由 `financials` 所有，Gateway 只负责认证、参数校验和统一响应封套。
@@ -905,7 +948,7 @@ predictive_valuation.get_status(*, report_type, model_version)
 1. **接口确认闸门**：逐项确认 PostgreSQL 字段、内部 query service 返回类型，以及本文档的公共请求/响应字段；确认后再开发。
 2. **基础骨架**：创建 `api_gateway`、`access_control` 边界、版本 URL、错误封套、request context 和合约测试。
 3. **只读低风险接口**：先接入 security、bars、regime 和 bounded financial read；禁止直接跨应用 ORM。
-4. **分析结果接口**：接入 sentiment、traditional valuation、predictive valuation current/history，先返回已持久化结果。
+4. **分析结果接口**：接入 sentiment、traditional valuation、predictive valuation current/history 和 stock selection，先返回已持久化结果。
 5. **聚合和运维**：最后实现 overview、依赖状态、缓存、指标和 timeout/degraded 区块策略。
 6. **发布闸门**：完成 PostgreSQL 集成测试、as-of/no-lookahead 测试、权限测试、secret redaction、性能和故障注入后，才开放外部客户端。
 
@@ -939,6 +982,9 @@ predictive_valuation.get_status(*, report_type, model_version)
 - [x] 实现登录授权的 `/public/api` 浏览测试页面及 `GET /api/v1/public-api/catalog` 目录接口。
 - [x] 将页面请求绑定到当前 Bearer Token，并验证 `401`、`403/SCOPE_REQUIRED`、`429`、`503` 等状态展示和敏感信息脱敏。
 - [ ] 冻结并实现股票研究列表融合接口 `GET /api/v1/market-analysis/securities/research-list`，确认股票池、市场、SW 行业、关键词、as-of 和分页参数。
+- [ ] 冻结并实现选股接口 `GET /api/v1/market-analysis/stock-selection/results`：确认预存方案、财务阈值单位、报告期、as-of、分页、排序和估值分来源。
+- [ ] 为选股接口注册 Public API catalog 元数据，确认 `market_analysis:read`、只读性、限流、响应大小和部分估值不可用语义。
+- [ ] 为选股服务补充 contract tests：财务点时边界、条件 AND 判定、单位转换、传统/模型估值分原值映射、缺失值、部分成功、稳定排序和无副作用。
 - [ ] 注册研究列表接口的 Public API catalog 元数据，确认 `market_analysis:read`、用户股票池授权和单项估值状态展示规则。
 - [ ] 为研究列表融合接口补充跨领域 contract tests：行情日期一致性、传统/预测字段来源、部分成功、空分数、权限、只读性和错误封套。
 - [ ] 完成研究首页对股票名称、规范代码、SW 行业、涨跌幅、传统估值标签和预测估值标签的真实接口验收。
