@@ -71,6 +71,24 @@ class AuthenticationApiTests(TestCase):
         role = AuthRole.objects.get(code='market_analysis_reader')
         self.assertEqual(role.role_scopes.count(), 7)
 
+    @patch('manniu_auth.services.token_service._secret', return_value=b'test-secret')
+    def test_logout_allows_frontend_origin_with_bearer_token(self, _secret):
+        login_response = self.client.post(
+            reverse('auth-login'),
+            data=json.dumps({'username': 'analyst', 'password': 'Valid-password-123'}),
+            content_type='application/json',
+        )
+        access_token = login_response.json()['data']['access_token']
+        csrf_checked_client = self.client_class(enforce_csrf_checks=True)
+
+        logout_response = csrf_checked_client.post(
+            reverse('auth-logout'),
+            HTTP_AUTHORIZATION=f'Bearer {access_token}',
+            HTTP_ORIGIN='http://localhost:5174',
+        )
+
+        self.assertEqual(logout_response.status_code, 200)
+
     def test_gateway_scope_boundary(self):
         factory = RequestFactory()
 

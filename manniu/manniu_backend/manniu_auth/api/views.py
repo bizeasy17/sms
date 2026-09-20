@@ -178,6 +178,7 @@ def revoke_session(request, session_id):
     return _response(request, data={'revoked': True})
 
 
+@csrf_exempt
 def logout(request):
     if request.method != 'POST':
         return _response(request, error=_error('INVALID_REQUEST', '仅支持 POST'), status=405)

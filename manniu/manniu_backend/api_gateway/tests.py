@@ -240,6 +240,21 @@ class MarketDataGatewayTests(TestCase):
         self.assertEqual(response.status_code, 401)
         self.assertEqual(response.json()['error']['code'], 'AUTHENTICATION_REQUIRED')
 
+    def test_security_events_requires_authenticated_user(self):
+        response = self.client.get('/api/v1/market-analysis/securities/000001.SZ/events')
+        self.assertEqual(response.status_code, 401)
+        self.assertEqual(response.json()['error']['code'], 'AUTHENTICATION_REQUIRED')
+
+    def test_security_events_serializes_financial_disclosure(self):
+        response = self.client.get(
+            '/api/v1/market-analysis/securities/000001.SZ/events',
+            {'event_type': 'FINANCIAL_DISCLOSED'},
+            **self.headers,
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()['data']['items'][0]['event_type'], 'FINANCIAL_DISCLOSED')
+        self.assertEqual(response.json()['data']['items'][0]['event_date'], '2026-08-30')
+
     def test_research_list_uses_latest_available_predictive_report(self):
         response = self.client.get(
             '/api/v1/market-analysis/securities/research-list',

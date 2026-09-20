@@ -5,6 +5,15 @@ export type TagAction = 'BUY' | 'SELL' | 'HOLD' | null
 export type StockTag = { text: string; label: string; action: TagAction; actionText?: string; scoreText?: string }
 export type Stock = { code: string; name: string; market: string; industry: string; listDate?: string | null; tags: StockTag[]; change: string; positive: boolean | null }
 export type StockQuote = { tradeDate: string; close: number | null; change: number | null; pctChange: number | null }
+export type SecurityEvent = {
+    eventType: 'FINANCIAL_DISCLOSED' | 'SECURITY_STYLE_CHANGED'
+    sourceSystem: string
+    sourceEventKey: string
+    eventDate: string
+    sourceTradeDate: string | null
+    payload: Record<string, unknown>
+    status: string
+}
 export type TechnicalBar = { tradeDate: string; open: number | null; high: number | null; low: number | null; close: number | null; volume: number | null }
 export type TechnicalChip = { tradeDate: string; price: number; percent: number }
 export type TechnicalTrend = {

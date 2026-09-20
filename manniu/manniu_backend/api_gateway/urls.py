@@ -28,6 +28,7 @@ urlpatterns = [
 	path('valuations/predictive/status', views.predictive_valuation_status, name='market-analysis-predictive-valuation-status'),
 	path('market/regime', views.market_regime, name='market-analysis-market-regime'),
 	path('securities/<str:ts_code>/regime', views.security_regime, name='market-analysis-security-regime'),
+	path('securities/<str:ts_code>/events', views.security_events, name='market-analysis-security-events'),
 	path('sentiment/market', views.sentiment_market, name='market-analysis-sentiment-market'),
 	path('sentiment/market/history', views.sentiment_market_history, name='market-analysis-sentiment-market-history'),
 	path('sentiment/stocks/ranking', views.sentiment_stock_ranking, name='market-analysis-sentiment-stock-ranking'),

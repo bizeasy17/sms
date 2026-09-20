@@ -1,7 +1,7 @@
 import './App.css'
 import './features/research/research-overrides.css'
-import { StockPickerPage } from './features/stock-picker/StockPickerPage'
-import { ApiLab, ApiLoginPage } from './ApiLab'
+import { AppRoutes } from './app/routes'
+import { readQueryParam, replaceQueryParams } from './shared/routing/queryParams'
 import { useEffect, useState } from 'react'
 import type { ReactNode } from 'react'
 import { Events } from './features/research/components/Events'
@@ -12,9 +12,9 @@ import { ResearchTabs } from './features/research/components/ResearchTabs'
 import { StockIdentity } from './features/research/components/StockIdentity'
 import { StockRail } from './features/research/components/StockRail'
 import { TechnicalTrend } from './features/research/components/TechnicalTrend'
-import { TopBar } from './features/research/components/TopBar'
+import { TopBar } from './shared/ui/TopBar'
 import { ValuationSummary } from './features/research/components/ValuationSummary'
-import { fetchFinancialOverview, fetchLatestStockQuote, fetchPersonalStockState, fetchPredictiveValuation, fetchResearchList, fetchTraditionalValuation, toggleHolding, toggleObservation, toggleWatchlist } from './features/research/services/researchApi'
+import { fetchFinancialOverview, fetchLatestStockQuote, fetchPersonalStockState, fetchPredictiveValuation, fetchResearchList, fetchSecurityByCode, fetchTraditionalValuation, toggleHolding, toggleObservation, toggleWatchlist } from './features/research/services/researchApi'
 import type { FinancialMetric, FinancialOverview, Market, PersonalStockState, Pool, PredictiveValuation, Stock, StockQuote, Tab, TraditionalValuation } from './features/research/types'
 
 function ResearchHomePage() {
@@ -44,20 +44,30 @@ function ResearchHomePage() {
   const [personalNoticeType, setPersonalNoticeType] = useState<'success' | 'error'>('success')
 
   useEffect(() => {
-    const params = new URLSearchParams(window.location.search)
-    if (['holding', 'watchlist', 'observe'].includes(params.get('pool') ?? '')) setPool(params.get('pool') as Pool)
-    if (['all', 'sh-main', 'sz-main', 'cyb', 'star'].includes(params.get('market') ?? '')) setMarket(params.get('market') as Market)
-    if (['summary', 'technical', 'fundamentals'].includes(params.get('tab') ?? '')) setTab(params.get('tab') as Tab)
+    const poolParam = readQueryParam('pool')
+    const marketParam = readQueryParam('market')
+    const tabParam = readQueryParam('tab')
+    if (['holding', 'watchlist', 'observe'].includes(poolParam ?? '')) setPool(poolParam as Pool)
+    if (['all', 'sh-main', 'sz-main', 'cyb', 'star'].includes(marketParam ?? '')) setMarket(marketParam as Market)
+    if (['summary', 'technical', 'fundamentals'].includes(tabParam ?? '')) {
+      const requestedTab = tabParam as Tab
+      setTab(requestedTab)
+      setVisitedTabs((current) => current[requestedTab] ? current : { ...current, [requestedTab]: true })
+    }
   }, [])
 
   useEffect(() => {
     const controller = new AbortController()
     setStocksLoading(true)
     setStocksError('')
-    fetchResearchList(pool, market, controller.signal).then((items) => {
-      setStocks(items)
-      const requestedCode = new URLSearchParams(window.location.search).get('ts_code')
-      setSelected((current) => current ?? items.find((stock) => stock.code === requestedCode) ?? items[0] ?? null)
+    fetchResearchList(pool, market, controller.signal).then(async (items) => {
+      const requestedCode = readQueryParam('ts_code')
+      const requestedStock = requestedCode && !items.some((stock) => stock.code === requestedCode)
+        ? await fetchSecurityByCode(requestedCode, controller.signal)
+        : items.find((stock) => stock.code === requestedCode)
+      const nextStocks = requestedStock && !items.some((stock) => stock.code === requestedStock.code) ? [...items, requestedStock] : items
+      setStocks(nextStocks)
+      setSelected((current) => current ?? requestedStock ?? items[0] ?? null)
     }).catch((error: unknown) => {
       if (!controller.signal.aborted) setStocksError(error instanceof Error ? error.message : '股票池加载失败，请稍后重试。')
     }).finally(() => {
@@ -169,17 +179,17 @@ function ResearchHomePage() {
   function selectStock(stock: Stock) {
     setSelected(stock)
     setRailOpen(false)
-    window.history.replaceState({}, '', `/?ts_code=${stock.code}&tab=${tab}&pool=${pool}&market=${market}`)
+    replaceQueryParams({ ts_code: stock.code, tab, pool, market })
   }
 
   function updatePool(nextPool: Pool) {
     setPool(nextPool)
-    window.history.replaceState({}, '', `/?${selected ? `ts_code=${selected.code}&` : ''}tab=${tab}&pool=${nextPool}&market=${market}`)
+    replaceQueryParams({ ts_code: selected?.code, tab, pool: nextPool, market })
   }
 
   function updateMarket(nextMarket: Market) {
     setMarket(nextMarket)
-    window.history.replaceState({}, '', `/?${selected ? `ts_code=${selected.code}&` : ''}tab=${tab}&pool=${pool}&market=${nextMarket}`)
+    replaceQueryParams({ ts_code: selected?.code, tab, pool, market: nextMarket })
   }
 
   function changeTab(nextTab: Tab) {
@@ -192,12 +202,9 @@ function ResearchHomePage() {
     return <div hidden={tab !== tabName}>{content}</div>
   }
 
-  return <div className="app-shell"><TopBar onMenu={() => setRailOpen(true)} onSelect={selectStock} /><main className="research-layout"><StockRail selected={selected} stocks={stocks} setSelected={selectStock} pool={pool} setPool={updatePool} market={market} setMarket={updateMarket} open={railOpen} loading={stocksLoading} error={stocksError} onRetry={() => setPool(pool)} />{selected ? <section className="research-dossier"><StockIdentity stock={selected} quote={quote} quoteState={quoteState} onRetry={() => setQuoteRetry((value) => value + 1)} personalState={personalState} personalStateStatus={personalStateStatus} personalNotice={personalNotice} personalNoticeType={personalNoticeType} onAction={handlePersonalAction} /><ResearchTabs tab={tab} setTab={changeTab} />{tabPanel('summary', <><ValuationSummary valuation={traditionalValuation ?? undefined} predictiveValuation={predictiveValuation ?? undefined} latestClose={quote?.close} state={traditionalState} predictiveState={predictiveState} /><MarketEvidence /><FundamentalEvidence metrics={financialMetrics} state={financialState} onRetry={() => setFinancialRetry((value) => value + 1)} /></>)}{tabPanel('technical', <TechnicalTrend stock={selected} />)}{tabPanel('fundamentals', <FundamentalsWorkspace stock={selected} metrics={financialMetrics} evaluation={financialOverview?.evaluation ?? null} financialOverview={financialOverview} financialState={financialState} onFinancialRetry={() => setFinancialRetry((value) => value + 1)} />)}</section> : <section className="research-dossier"><div className="tab-placeholder"><p className="kicker">RESEARCH LIST</p><h2>{stocksLoading ? '正在加载股票池' : stocksError ? '股票池暂时不可用' : '暂无可研究股票'}</h2></div></section>}<Events /></main><div className={`mobile-backdrop ${railOpen ? 'visible' : ''}`} onClick={() => setRailOpen(false)} /></div>
+  return <div className="app-shell"><TopBar onMenu={() => setRailOpen(true)} onSelect={selectStock} /><main className="research-layout"><StockRail selected={selected} stocks={stocks} setSelected={selectStock} pool={pool} setPool={updatePool} market={market} setMarket={updateMarket} open={railOpen} loading={stocksLoading} error={stocksError} onRetry={() => setPool(pool)} />{selected ? <section className="research-dossier"><StockIdentity stock={selected} quote={quote} quoteState={quoteState} onRetry={() => setQuoteRetry((value) => value + 1)} personalState={personalState} personalStateStatus={personalStateStatus} personalNotice={personalNotice} personalNoticeType={personalNoticeType} onAction={handlePersonalAction} /><ResearchTabs tab={tab} setTab={changeTab} />{tabPanel('summary', <><ValuationSummary valuation={traditionalValuation ?? undefined} predictiveValuation={predictiveValuation ?? undefined} latestClose={quote?.close} state={traditionalState} predictiveState={predictiveState} /><MarketEvidence /><FundamentalEvidence metrics={financialMetrics} state={financialState} onRetry={() => setFinancialRetry((value) => value + 1)} /></>)}{tabPanel('technical', <TechnicalTrend stock={selected} />)}{tabPanel('fundamentals', <FundamentalsWorkspace stock={selected} metrics={financialMetrics} evaluation={financialOverview?.evaluation ?? null} financialOverview={financialOverview} financialState={financialState} onFinancialRetry={() => setFinancialRetry((value) => value + 1)} />)}</section> : <section className="research-dossier"><div className="tab-placeholder"><p className="kicker">RESEARCH LIST</p><h2>{stocksLoading ? '正在加载股票池' : stocksError ? '股票池暂时不可用' : '暂无可研究股票'}</h2></div></section>}<Events tsCode={selected?.code} /></main><div className={`mobile-backdrop ${railOpen ? 'visible' : ''}`} onClick={() => setRailOpen(false)} /></div>
 }
 
 export default function RootApp() {
-  if (window.location.pathname === '/public/api') return <ApiLab />
-  if (window.location.pathname === '/login') return <ApiLoginPage />
-  if (window.location.pathname === '/stock-picker' || window.location.hash === '#universe') return <StockPickerPage />
-  return <ResearchHomePage />
+  return <AppRoutes researchPage={<ResearchHomePage />} />
 }

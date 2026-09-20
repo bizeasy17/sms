@@ -54,6 +54,13 @@ test('renders the research workspace with the selected stock', async () => {
   expect(screen.getByText('¥21.20 - ¥25.40')).toBeTruthy()
 })
 
+test('renders the fundamentals workspace when the tab is selected in the URL', async () => {
+  window.history.replaceState({}, '', '/?tab=fundamentals')
+  render(<App />)
+  expect(await screen.findByRole('heading', { name: '基本面与财务档案' })).toBeTruthy()
+  expect((await screen.findAllByText('净利润')).length).toBeGreaterThan(0)
+})
+
 test('switches stock and exposes research tabs from the API list', async () => {
   render(<App />)
   fireEvent.click(await screen.findByRole('button', { name: /贵州茅台/ }))

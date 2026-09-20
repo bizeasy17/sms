@@ -69,6 +69,11 @@ from .services.predictive_valuation import (
 )
 from .services.research_list import get_research_list
 from stock_selection.services import PRESETS, StockSelectionRequestError, screen as screen_stocks
+from domain_events.services.security_events import (
+    SecurityEventsDependencyError,
+    SecurityEventsRequestError,
+    list_security_events,
+)
 
 
 def _meta(page=None, *, data_status='COMPLETE', asof_date=None, source_trade_date=None, warnings=None):
@@ -118,6 +123,7 @@ def _handle_request_error(request, error):
         'VERSION_CONFLICT': 409,
         'FORBIDDEN': 403,
         'CONFIGURATION_UNAVAILABLE': 503,
+        'INVALID_EVENT_TYPE': 400,
     }
     return api_error(
         request,
@@ -530,6 +536,85 @@ def security_regime(request, ts_code):
         request, data={**result.__dict__, 'asof_trade_date': result.asof_trade_date.isoformat(), 'source_trade_date': result.source_trade_date.isoformat() if result.source_trade_date else None},
         meta=_meta(data_status=result.status, asof_date=asof_date, source_trade_date=result.source_trade_date),
     )
+
+
+def _event_auth(request):
+    historical = any(request.GET.get(name) for name in ('asof_date', 'start_date', 'end_date'))
+    scopes = ('market_analysis:read', 'market_analysis:history') if historical else ('market_analysis:read',)
+    return authenticate_request(request, *scopes)
+
+
+def _event_payload(event):
+    return {
+        'event_type': event.event_type,
+        'source_system': event.source_system,
+        'source_event_key': event.source_event_key,
+        'source_version': event.source_version,
+        'security': {'ts_code': event.ts_code, 'name': event.security_name},
+        'scope_key': event.scope_key,
+        'event_date': event.event_date.isoformat(),
+        'source_trade_date': event.source_trade_date.isoformat() if event.source_trade_date else None,
+        'payload': event.payload,
+        'status': event.status,
+        'warnings': list(event.warnings),
+    }
+
+
+def security_events(request, ts_code):
+    if (response := _require_get(request)) is not None:
+        return response
+    if (response := _event_auth(request)) is not None:
+        return response
+    try:
+        canonical = normalize_ts_code(ts_code)
+        start_date = parse_date(request.GET.get('start_date'), 'start_date')
+        end_date = parse_date(request.GET.get('end_date'), 'end_date')
+        asof_date = parse_date(request.GET.get('asof_date'), 'asof_date') or date.today()
+        if asof_date > date.today() or (end_date and end_date > date.today()):
+            raise SecurityEventsRequestError('INVALID_DATE', '日期不能晚于当前日期')
+        if start_date and end_date:
+            if start_date > end_date:
+                raise SecurityEventsRequestError('INVALID_DATE', 'start_date 不能晚于 end_date')
+            if end_date - start_date > timedelta(days=366):
+                raise SecurityEventsRequestError('RANGE_TOO_LARGE', '历史查询范围不能超过 366 个自然日')
+        page, page_size = parse_pagination(request.GET)
+        event_type = str(request.GET.get('event_type', '')).strip().upper() or None
+        result = list_security_events(
+            ts_codes=[canonical],
+            start_date=start_date,
+            end_date=end_date,
+            asof_date=asof_date,
+            event_types=[event_type] if event_type else None,
+            page=page,
+            page_size=page_size,
+        )
+    except (MarketDataRequestError, SecurityEventsRequestError) as error:
+        return _handle_request_error(request, error)
+    except SecurityEventsDependencyError as error:
+        return api_error(
+            request,
+            'UPSTREAM_DEPENDENCY_UNAVAILABLE',
+            '事件来源暂不可用',
+            status=503,
+            retryable=True,
+            details={'source_system': error.source_system},
+        )
+    counts = {
+        'financial_disclosed_count': sum(item.event_type == 'FINANCIAL_DISCLOSED' for item in result.items),
+        'security_style_changed_count': sum(item.event_type == 'SECURITY_STYLE_CHANGED' for item in result.items),
+    }
+    data = {
+        'items': [_event_payload(item) for item in result.items],
+        'summary': counts,
+    }
+    meta = _meta(
+        Page(data['items'], result.page, result.page_size, result.total),
+        data_status=result.data_status,
+        asof_date=result.asof_date,
+        warnings=list(result.warnings),
+    )
+    meta['total_pages'] = (result.total + result.page_size - 1) // result.page_size if result.total else 0
+    return api_response(request, data=data, meta=meta)
 
 
 @require_scopes('market_sentiment:read')

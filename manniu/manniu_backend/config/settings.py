@@ -52,6 +52,7 @@ INSTALLED_APPS = [
     'backtest_engine',
     'financials',
     'market_data',
+    'domain_events',
     'market_sentiment',
     'indices',
     'personal_user.apps.PersonalUserConfig',

@@ -4,6 +4,7 @@ from datetime import date
 from dataclasses import dataclass
 from decimal import Decimal
 import re
+import unicodedata
 
 from financials.models import (
     FinancialBalanceSheetRecord,
@@ -58,6 +59,14 @@ def _number(value):
 
 def _date(value):
     return value.isoformat() if value else None
+
+
+def _main_business_summary(value):
+    text = str(value or '').strip()
+    for index, character in enumerate(text):
+        if unicodedata.category(character).startswith('P'):
+            return text[:index].strip()
+    return text
 
 
 def _market_match(ts_code, market):
@@ -201,7 +210,7 @@ def screen(*, filters, report_type='26H1', asof_date=None, market='all', industr
         raise StockSelectionRequestError('INVALID_REQUEST', '排序参数不受支持')
     if page < 1 or page_size < 1 or page_size > 200:
         raise StockSelectionRequestError('INVALID_REQUEST', 'page 或 page_size 超出允许范围')
-    queryset = Security.objects.filter(asset_type=Security.AssetType.STOCK)
+    queryset = Security.objects.select_related('industry', 'company_profile').filter(asset_type=Security.AssetType.STOCK)
     if report_year:
         candidate_ids = FinancialIncomeRecord.objects.filter(
             end_date__year=report_year,
@@ -236,7 +245,19 @@ def screen(*, filters, report_type='26H1', asof_date=None, market='all', industr
     items = []
     for security, values in matched:
         values.update(valuations[security.id])
-        item = {'ts_code': security.ts_code, 'name': security.name, **values, 'data_status': 'PARTIAL_SUCCESS' if values['traditional_status'] != 'OK' or values['predictive_status'] != 'OK' else 'OK', 'warnings': []}
+        try:
+            main_business = security.company_profile.main_business or ''
+        except Security.company_profile.RelatedObjectDoesNotExist:
+            main_business = ''
+        item = {
+            'ts_code': security.ts_code,
+            'name': security.name,
+            'industry': security.industry.name if security.industry_id else '',
+            'main_business': _main_business_summary(main_business),
+            **values,
+            'data_status': 'PARTIAL_SUCCESS' if values['traditional_status'] != 'OK' or values['predictive_status'] != 'OK' else 'OK',
+            'warnings': [],
+        }
         items.append(item)
     key = 'financial_score' if sort_key == 'score' else sort_key
     items.sort(key=lambda item: (item.get(key) is None, item.get(key) if item.get(key) is not None else 0, item['ts_code']), reverse=sort_direction == 'desc')

@@ -1,4 +1,4 @@
-import type { FinancialOverview, FundamentalDimension, FundamentalEvaluation, Market, MarketEvidence, MarketEvidenceHistory, PersonalStockState, Pool, PredictiveTier, PredictiveValuation, Stock, StockQuote, StockTag, TagAction, TechnicalBar, TechnicalChip, TechnicalTrend, TraditionalValuation, TraditionalValuationMethod } from '../types'
+import type { FinancialOverview, FundamentalDimension, FundamentalEvaluation, Market, MarketEvidence, MarketEvidenceHistory, PersonalStockState, Pool, PredictiveTier, PredictiveValuation, SecurityEvent, Stock, StockQuote, StockTag, TagAction, TechnicalBar, TechnicalChip, TechnicalTrend, TraditionalValuation, TraditionalValuationMethod } from '../types'
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL ?? '/api/v1'
 
@@ -10,54 +10,12 @@ type ResearchListItem = {
     traditional_valuation?: { action?: string | null; undervalue_score?: number | null }
     predictive_valuation?: { action?: string | null; undervalue_score?: number | null }
 }
-
+type SecurityDetailResponse = { data?: { ts_code?: string; name?: string; industry?: string | null }; error?: { message?: string } }
 type ResearchListResponse = { data?: ResearchListItem[]; error?: { message?: string } }
-export type SwIndustry = { industry_code: string; index_code?: string; level: string; name: string }
-type SwIndustryResponse = { data?: SwIndustry[]; error?: { message?: string } }
-export type StockSelectionQuery = {
-    preset?: string
-    market: string
-    report_type: string
-    asof_date: string
-    industry?: string
-    revenue_yoy_min: number
-    profit_yoy_min: number
-    ebit_yoy_min: number
-    roe_min: number
-    gross_margin_improved: boolean
-    operating_cash_flow_positive: boolean
-    liquidity_ratio_min: number
-    net_cash: boolean
-    sort: string
-    direction: 'asc' | 'desc'
-    page: number
-    page_size: number
-}
-export type StockSelectionItem = {
-    ts_code: string
-    name: string
-    sw_industry?: { name?: string | null }
-    financial_score?: number | null
-    value_valuation_score?: number | null
-    model_valuation_score?: number | null
-    revenue_yoy?: number | null
-    profit_yoy?: number | null
-    ebit_yoy?: number | null
-    roe?: number | null
-    gross_margin_change?: number | null
-    operating_cash_flow?: number | null
-    liquidity_ratio?: number | null
-}
-type StockSelectionResponse = {
-    data?: { summary?: { market_stock_count?: number; matched_count?: number; returned_count?: number }; items?: StockSelectionItem[] }
-    error?: { message?: string }
-}
-export type SecuritySearchResult = Stock & { listDate: string | null }
-type SecuritiesResponse = { data?: Array<{ ts_code: string; name: string; industry?: string | null; list_date?: string | null }>; error?: { message?: string } }
-export type AuthUser = { display_name?: string; username?: string }
-type AuthUserResponse = { data?: AuthUser; error?: { message?: string } }
 type Bar = { trade_date?: string; open?: number | null; high?: number | null; low?: number | null; close?: number | null; volume?: number | null; change?: number | null; pct_change?: number | null }
 type BarsResponse = { data?: Bar[]; error?: { message?: string } }
+type SecurityEventItem = { event_type?: string; source_system?: string; source_event_key?: string; event_date?: string; source_trade_date?: string | null; payload?: Record<string, unknown>; status?: string }
+type SecurityEventsResponse = { data?: { items?: SecurityEventItem[] }; error?: { message?: string } }
 type TechnicalTrendResponse = { data?: { security?: { ts_code?: string; name?: string }; series?: Array<Bar & { ma25?: number | null; ma200?: number | null }>; momentum?: { latest?: { rsi14?: number | null; macd_histogram?: number | null; atr14?: number | null } }; summary?: { trend?: string | null; trend_score?: number | null; trend_level?: string | null; volatility_status?: string | null; data_status?: string }; relative_strength?: { name?: string | null; relative_strength?: number | null; direction?: string | null; status?: string }; market_sentiment?: { status?: string; score?: number | null; level?: string | null; source_trade_date?: string | null }; signals?: Array<{ trade_date?: string; type?: string; direction?: string; evidence?: string; status?: string }>; warnings?: string[]; rule_version?: string; adjust?: string; frequency?: string; period?: number }; error?: { message?: string } }
 type ChipsResponse = { data?: Array<{ trade_date?: string; price?: number | null; percent?: number | null }>; error?: { message?: string } }
 type MarketEvidenceResponse = { data?: { security?: { ts_code?: string; name?: string }; industry?: { index_code?: string | null; industry_code?: string | null; name?: string | null }; history?: Array<{ trade_date?: string; open?: number | null; high?: number | null; low?: number | null; close?: number | null; industry_close?: number | null }>; summary?: { atr_14?: number | null; atr_14_percentile_60d?: number | null; ma25?: number | null; ma25_trend?: string | null; ma200?: number | null; ma200_trend?: string | null; current_price?: number | null; price_to_ma25?: number | null; relative_strength_vs_industry?: number | null }; requested_days?: number; returned_days?: number; warnings?: string[] }; error?: { message?: string } }
@@ -121,6 +79,18 @@ function mapStock(item: ResearchListItem): Stock {
     }
 }
 
+function mapSecurityDetail(item: NonNullable<SecurityDetailResponse['data']>, code: string): Stock {
+    return {
+        code: item.ts_code ?? code,
+        name: item.name ?? code,
+        market: (item.ts_code ?? code).split('.')[1] ?? '',
+        industry: item.industry || '暂无行业',
+        tags: [valuationTag('价值'), valuationTag('模型')],
+        change: '暂无涨跌',
+        positive: null,
+    }
+}
+
 export async function fetchResearchList(pool: Pool, market: Market, signal?: AbortSignal): Promise<Stock[]> {
     const query = new URLSearchParams({ pool, market, page: '1', page_size: '200' })
     const accessToken = window.localStorage.getItem('access_token') ?? window.localStorage.getItem('auth_access_token')
@@ -130,6 +100,38 @@ export async function fetchResearchList(pool: Pool, market: Market, signal?: Abo
     const body = await response.json() as ResearchListResponse
     if (!response.ok || !Array.isArray(body.data)) throw new Error(body.error?.message ?? '股票池加载失败，请稍后重试。')
     return body.data.map(mapStock)
+}
+
+export async function fetchSecurityByCode(tsCode: string, signal?: AbortSignal): Promise<Stock> {
+    const accessToken = window.localStorage.getItem('access_token') ?? window.localStorage.getItem('auth_access_token')
+    const headers: HeadersInit = { Accept: 'application/json' }
+    if (accessToken) headers.Authorization = `Bearer ${accessToken}`
+    const response = await fetch(`${API_BASE}/market-analysis/securities/${encodeURIComponent(tsCode)}`, { headers, signal })
+    const body = await response.json() as SecurityDetailResponse
+    if (!response.ok || !body.data) throw new Error(body.error?.message ?? '股票信息加载失败，请稍后重试。')
+    return mapSecurityDetail(body.data, tsCode)
+}
+
+export async function fetchSecurityEvents(tsCode: string, signal?: AbortSignal): Promise<SecurityEvent[]> {
+    const endDate = new Date()
+    const startDate = new Date(endDate)
+    startDate.setFullYear(startDate.getFullYear() - 1)
+    const query = new URLSearchParams({ start_date: dateString(startDate), end_date: dateString(endDate), page: '1', page_size: '200' })
+    const accessToken = window.localStorage.getItem('access_token') ?? window.localStorage.getItem('auth_access_token')
+    const headers: HeadersInit = { Accept: 'application/json' }
+    if (accessToken) headers.Authorization = `Bearer ${accessToken}`
+    const response = await fetch(`${API_BASE}/market-analysis/securities/${encodeURIComponent(tsCode)}/events?${query}`, { headers, signal })
+    const body = await response.json() as SecurityEventsResponse
+    if (!response.ok || !Array.isArray(body.data?.items)) throw new Error(body.error?.message ?? '研究事件加载失败，请稍后重试。')
+    return body.data.items.filter((item): item is SecurityEventItem & Required<Pick<SecurityEventItem, 'event_type' | 'source_system' | 'source_event_key' | 'event_date'>> => Boolean(item.event_type && item.source_system && item.source_event_key && item.event_date)).map((item) => ({
+        eventType: item.event_type as SecurityEvent['eventType'],
+        sourceSystem: item.source_system,
+        sourceEventKey: item.source_event_key,
+        eventDate: item.event_date,
+        sourceTradeDate: item.source_trade_date ?? null,
+        payload: item.payload ?? {},
+        status: item.status ?? 'COMMITTED',
+    }))
 }
 
 function dateString(date: Date) {
@@ -405,64 +407,4 @@ export async function fetchTechnicalChips(tsCode: string, startDate: string, end
     const body = await response.json() as ChipsResponse
     if (!response.ok || !Array.isArray(body.data)) throw new Error(body.error?.message ?? '筹码分布加载失败，请稍后重试。')
     return body.data.filter((row): row is { trade_date: string; price: number; percent: number } => typeof row.trade_date === 'string' && typeof row.price === 'number' && Number.isFinite(row.price) && typeof row.percent === 'number' && Number.isFinite(row.percent)).map((row) => ({ tradeDate: row.trade_date, price: row.price, percent: row.percent }))
-}
-
-export async function searchSecurities(queryText: string, signal?: AbortSignal): Promise<SecuritySearchResult[]> {
-    const query = new URLSearchParams({ q: queryText, asset_type: 'STOCK', page: '1', page_size: '8' })
-    const accessToken = window.localStorage.getItem('access_token') ?? window.localStorage.getItem('auth_access_token')
-    const headers: HeadersInit = { Accept: 'application/json' }
-    if (accessToken) headers.Authorization = `Bearer ${accessToken}`
-    const response = await fetch(`${API_BASE}/market-analysis/securities?${query}`, { headers, signal })
-    const body = await response.json() as SecuritiesResponse
-    if (!response.ok || !Array.isArray(body.data)) throw new Error(body.error?.message ?? '证券搜索失败，请稍后重试。')
-    return body.data.map((item) => ({
-        code: item.ts_code,
-        name: item.name,
-        market: item.ts_code.split('.')[1] ?? '',
-        industry: item.industry || '暂无行业',
-        listDate: item.list_date ?? null,
-        tags: [],
-        change: '暂无涨跌',
-        positive: null,
-    }))
-}
-
-function authHeaders(): HeadersInit {
-    const accessToken = window.localStorage.getItem('access_token') ?? window.localStorage.getItem('auth_access_token')
-    return accessToken ? { Accept: 'application/json', Authorization: `Bearer ${accessToken}` } : { Accept: 'application/json' }
-}
-
-export async function fetchCurrentUser(signal?: AbortSignal): Promise<AuthUser | null> {
-    if (!window.localStorage.getItem('access_token') && !window.localStorage.getItem('auth_access_token')) return null
-    const response = await fetch(`${API_BASE}/auth/me`, { headers: authHeaders(), signal })
-    const body = await response.json() as AuthUserResponse
-    if (!response.ok || !body.data) throw new Error(body.error?.message ?? '当前账户加载失败。')
-    return body.data
-}
-
-export async function logoutCurrentUser(): Promise<void> {
-    const response = await fetch(`${API_BASE}/auth/logout`, { method: 'POST', headers: authHeaders() })
-    if (!response.ok && response.status !== 401) throw new Error('注销失败，请稍后重试。')
-}
-
-export async function fetchSwIndustries(level = 'L3', signal?: AbortSignal): Promise<SwIndustry[]> {
-    const query = new URLSearchParams({ level, page: '1', page_size: '200' })
-    const accessToken = window.localStorage.getItem('access_token') ?? window.localStorage.getItem('auth_access_token')
-    const headers: HeadersInit = { Accept: 'application/json' }
-    if (accessToken) headers.Authorization = `Bearer ${accessToken}`
-    const response = await fetch(`${API_BASE}/market-analysis/sw-industries?${query}`, { headers, signal })
-    const body = await response.json() as SwIndustryResponse
-    if (!response.ok || !Array.isArray(body.data)) throw new Error(body.error?.message ?? 'SW 行业列表加载失败，请稍后重试。')
-    return body.data
-}
-
-export async function fetchStockSelection(queryValues: StockSelectionQuery, signal?: AbortSignal): Promise<NonNullable<StockSelectionResponse['data']>> {
-    const query = new URLSearchParams()
-    Object.entries(queryValues).forEach(([key, value]) => {
-        if (value !== undefined && value !== '') query.set(key, String(value))
-    })
-    const response = await fetch(`${API_BASE}/market-analysis/stock-selection/results?${query}`, { headers: authHeaders(), signal })
-    const body = await response.json() as StockSelectionResponse
-    if (!response.ok || !body.data) throw new Error(body.error?.message ?? '选股结果加载失败，请稍后重试。')
-    return body.data
 }
