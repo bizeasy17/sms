@@ -65,8 +65,7 @@ function ResearchHomePage() {
       const requestedStock = requestedCode && !items.some((stock) => stock.code === requestedCode)
         ? await fetchSecurityByCode(requestedCode, controller.signal)
         : items.find((stock) => stock.code === requestedCode)
-      const nextStocks = requestedStock && !items.some((stock) => stock.code === requestedStock.code) ? [...items, requestedStock] : items
-      setStocks(nextStocks)
+      setStocks(items)
       setSelected((current) => current ?? requestedStock ?? items[0] ?? null)
     }).catch((error: unknown) => {
       if (!controller.signal.aborted) setStocksError(error instanceof Error ? error.message : '股票池加载失败，请稍后重试。')

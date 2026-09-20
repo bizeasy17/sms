@@ -34,6 +34,8 @@ call :sync_indices index-fundamentals || goto :failure
 call :sync sw-industry-daily by-date || goto :failure
 call :detect_regime_events || goto :failure
 call :sync_financials || goto :failure
+call :refresh_traditional_valuation || goto :failure
+call :refresh_predictive_valuation || goto :failure
 
 popd
 call :log Daily market-data synchronization completed.
@@ -77,6 +79,26 @@ if errorlevel 1 (
     exit /b 1
 )
 call :log Regime event detection completed.
+exit /b 0
+
+:refresh_traditional_valuation
+call :log Refreshing traditional valuation from pending events...
+"%PYTHON_EXE%" manage.py traditional_valuation refresh --scope all --limit 100 --retry-failed >> "%LOG_FILE%" 2>&1
+if errorlevel 1 (
+    call :log ERROR: traditional valuation event refresh failed. See %LOG_FILE%
+    exit /b 1
+)
+call :log Traditional valuation event refresh completed.
+exit /b 0
+
+:refresh_predictive_valuation
+call :log Refreshing predictive valuation from pending events...
+"%PYTHON_EXE%" manage.py predictive_valuation refresh --scope all --limit 500 --retry-failed >> "%LOG_FILE%" 2>&1
+if errorlevel 1 (
+    call :log ERROR: predictive valuation event refresh failed. See %LOG_FILE%
+    exit /b 1
+)
+call :log Predictive valuation event refresh completed.
 exit /b 0
 
 :failure
