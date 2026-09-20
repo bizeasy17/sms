@@ -181,6 +181,10 @@
   text-align: center;
 }
 
+.market-stats > div + div {
+  border-top: 1px solid var(--color-line);
+}
+
 .stock-tags i span:first-child {
   color: var(--color-text-muted);
 }
@@ -442,6 +446,8 @@
 
 .fundamentals-workspace { display: grid; gap: 18px; }
 .fundamentals-workspace .section { min-width: 0; }
+.fundamentals-workspace > .section { padding-top: 14px; }
+.fundamentals-bottom-grid > .section { padding-top: 14px; }
 .fundamentals-context { margin: 7px 0 0; color: var(--color-text-muted); font: 11px var(--mono); }
 .fundamentals-controls { display: flex; align-items: center; gap: 8px; color: var(--color-text-muted); font-size: 11px; }
 .fundamentals-controls select { min-width: 112px; padding: 7px 9px; border: 1px solid var(--color-line); border-radius: 4px; background: var(--color-surface-muted); color: var(--color-text); font-size: 11px; }
@@ -472,7 +478,7 @@
 .report-list { border-top: 1px solid var(--color-line); }.report-list details { border-bottom: 1px solid var(--color-line); }.report-list summary { display: grid; grid-template-columns: 60px minmax(0, 1fr) 88px 74px; align-items: center; gap: 10px; padding: 13px 0; cursor: pointer; list-style: none; }.report-list summary::-webkit-details-marker { display: none; }.report-list summary::before { content: '+'; color: var(--color-primary); font: 14px var(--mono); }.report-list details[open] summary::before { content: '-'; }.report-list summary strong { overflow: hidden; font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }.report-list summary small, .report-list summary em { color: var(--color-text-muted); font: 10px var(--mono); font-style: normal; }.report-list summary em { color: var(--color-negative); }.report-list p { margin: -3px 0 13px 70px; color: var(--color-text-muted); font-size: 11px; }
 .fundamental-signal-list { display: grid; gap: 0; }.fundamental-signal-list > div { display: grid; grid-template-columns: 8px 1fr; gap: 11px; padding: 13px 0; border-bottom: 1px solid var(--color-line); }.fundamental-signal-list > div:last-child { border-bottom: 0; }.signal-dot { width: 7px; height: 7px; margin-top: 5px; border-radius: 50%; background: var(--color-primary); }.signal-dot.positive { background: var(--color-positive); }.signal-dot.neutral { background: var(--color-warning); }.signal-meta { display: flex; align-items: center; gap: 9px; flex-wrap: wrap; }.signal-meta span, .signal-meta em { color: var(--color-text-muted); font: 10px var(--mono); font-style: normal; }.signal-meta strong { font-size: 12px; font-weight: 600; }.signal-meta em.positive { color: var(--color-positive); }.signal-meta em.neutral { color: var(--color-warning); }.fundamental-signal-list p { margin: 6px 0 0; color: var(--color-text-muted); font-size: 11px; line-height: 1.55; }
 @media (max-width: 900px) { .fundamentals-metric-grid { grid-template-columns: repeat(2, 1fr); }.fundamentals-bottom-grid { grid-template-columns: 1fr; } }
-@media (max-width: 650px) { .fundamentals-workspace .section { padding: 17px 0; }.fundamentals-workspace .section-heading { align-items: flex-start; gap: 12px; }.fundamentals-controls { align-items: flex-start; flex-direction: column; gap: 5px; }.fundamentals-summary-grid, .fundamentals-trend-grid { grid-template-columns: 1fr; gap: 16px; }.fundamentals-summary-grid { margin-top: 17px; padding-top: 15px; }.fundamentals-summary-grid strong { font-size: 16px; }.fundamentals-metric { padding: 14px 11px; }.fundamentals-metric strong { font-size: 15px; }.fundamentals-metric small { line-height: 1.4; }.report-list summary { grid-template-columns: 42px minmax(0, 1fr) 72px; gap: 7px; }.report-list summary small { grid-column: 2; }.report-list summary em { grid-column: 3; grid-row: 1 / span 2; }.report-list p { margin-left: 49px; } }
+@media (max-width: 650px) { .fundamentals-workspace .section { padding: 14px 0; }.fundamentals-workspace .section-heading { align-items: flex-start; gap: 12px; }.fundamentals-controls { align-items: flex-start; flex-direction: column; gap: 5px; }.fundamentals-summary-grid, .fundamentals-trend-grid { grid-template-columns: 1fr; gap: 16px; }.fundamentals-summary-grid { margin-top: 17px; padding-top: 15px; }.fundamentals-summary-grid strong { font-size: 16px; }.fundamentals-metric { padding: 14px 11px; }.fundamentals-metric strong { font-size: 15px; }.fundamentals-metric small { line-height: 1.4; }.report-list summary { grid-template-columns: 42px minmax(0, 1fr) 72px; gap: 7px; }.report-list summary small { grid-column: 2; }.report-list summary em { grid-column: 3; grid-row: 1 / span 2; }.report-list p { margin-left: 49px; } }
 
 @keyframes module-state-loading {
   from {
