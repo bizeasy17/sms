@@ -17,6 +17,9 @@ The module supports analysis and decision support only. It must never place or a
 | Trading bars and adjusted prices | Stocks | `stk_factor` | Daily, derived weekly/monthly |
 | Daily fundamentals | Stocks | `daily_basic` | Daily, derived weekly/monthly |
 | Cost distribution | Stocks | `cyq_perf` | Daily, derived weekly/monthly |
+| Stock repurchase announcements | Stocks | `repurchase` | Announcement/date-range delta |
+| Stockholder increase/decrease trades | Stocks | `stk_holdertrade` | Announcement/date-range delta |
+| Broker monthly recommendations | Stocks | `broker_recommend` | Monthly `YYYYMM` |
 | Trading bars | Indices | `index_daily` | Daily, derived weekly/monthly |
 | Daily fundamentals | Indices | `index_dailybasic` | Daily |
 
@@ -69,6 +72,104 @@ All identifiers, timestamps, and lifecycle fields use Django conventions when im
 | `source_updated_at`, `synced_at` | timestamp with time zone | Provider/source audit and local audit |
 
 Unique key: `ts_code`. Check constraint: `asset_type IN ('STOCK', 'INDEX')`.
+
+### 4.2 Stock Corporate-Action Source Data
+
+The first two stock event sources are persisted by `market_data` as
+normalized, replayable source records. They are source facts, not trading
+signals and not yet the downstream event state consumed by valuation or alert
+modules. The adapter uses explicit projections and keeps the provider's
+business fields so that revised announcements can be reconciled without
+re-fetching an opaque payload.
+
+`StockRepurchaseHistory` is sourced from Tushare `repurchase` and represents a
+company repurchase announcement or progress record:
+
+| Field | Type and constraint | Tushare field / meaning |
+| --- | --- | --- |
+| `security` | FK to `Security`, stock only | `ts_code` |
+| `ann_date` | date, indexed | Announcement date |
+| `end_date` | date, nullable | Progress/statistics cutoff date |
+| `proc` | constrained text, nullable | Repurchase progress/status |
+| `exp_date` | date, nullable | Expected completion/expiry date |
+| `volume` | `NUMERIC`, nullable | `vol`, repurchase quantity |
+| `amount` | `NUMERIC`, nullable | Repurchase amount |
+| `high_limit` / `low_limit` | `NUMERIC`, nullable | Upper/lower repurchase price |
+| `source_payload` | JSONB | Sanitized provider fields retained for audit |
+| `source_updated_at`, `synced_at` | timestamps | Provider/local audit timestamps |
+
+Natural key: `(security, ann_date, end_date, proc, exp_date, volume, amount)`
+after normalized null and numeric values are applied. Because the provider can
+publish progress revisions, a material revision updates the same logical
+record or creates a new source revision according to the configured source
+identity policy; it must never create duplicate current events. `amount` and
+`volume` retain the provider's units and are not silently converted for display.
+
+`StockHolderTradeHistory` is sourced from Tushare `stk_holdertrade` and
+represents a disclosed shareholder or executive increase/decrease record:
+
+| Field | Type and constraint | Tushare field / meaning |
+| --- | --- | --- |
+| `security` | FK to `Security`, stock only | `ts_code` |
+| `ann_date` | date, indexed | Announcement date |
+| `holder_name` | text, nullable | Holder name |
+| `holder_type` | constrained text, nullable | Holder category |
+| `in_de` | constrained text, nullable | `IN` increase or `DE` decrease |
+| `change_volume` | `NUMERIC`, nullable | `change_vol`, changed shares |
+| `change_ratio` | `NUMERIC`, nullable | `change_ratio`, provider percentage |
+| `after_share` / `after_ratio` | `NUMERIC`, nullable | Post-change shares/ratio |
+| `avg_price` | `NUMERIC`, nullable | Average transaction price |
+| `total_share` | `NUMERIC`, nullable | Total holding shares |
+| `begin_date` / `close_date` | dates, nullable | Disclosure change-window bounds |
+| `source_payload` | JSONB | Sanitized provider fields retained for audit |
+| `source_updated_at`, `synced_at` | timestamps | Provider/local audit timestamps |
+
+Natural key: `(security, ann_date, holder_name, holder_type, in_de,
+begin_date, close_date, change_volume)`. `change_ratio` is stored in the
+provider's percentage-point unit and must be labeled as such at read boundaries;
+it must not be interpreted as a ratio without an explicit conversion. Rows
+with neither a valid `ann_date` nor a valid source identity are rejected with a
+row-level quality reason.
+
+Both models are stock-only, historical, and indexed by
+`(security, ann_date DESC)` and the relevant date-range fields. They must not
+be modeled as daily bars, fundamentals, or latest snapshots. A later
+`StockEvent` projection may map them to canonical event types
+`STOCK_REPURCHASE` and `STOCK_HOLDER_TRADE`, with `direction=IN|DE` where
+applicable, but that projection is a separate idempotent layer. It must retain
+`source_dataset`, source row identity/revision, announcement date, effective
+date window, affected security, and normalized metrics. No projection may
+place orders, mutate source history, or treat a provider disclosure as a
+confirmed market outcome.
+
+`StockBrokerRecommendationHistory` is sourced from Tushare
+`broker_recommend` and represents a broker's monthly recommendation record.
+The source query uses the required `month` parameter in `YYYYMM` format; it is
+not a daily observation and is not generated by `resample`.
+
+| Field | Type and constraint | Tushare field / meaning |
+| --- | --- | --- |
+| `security` | FK to `Security`, stock only | `ts_code` |
+| `month` | `CHAR(6)`, indexed | Recommendation month, `YYYYMM` |
+| `broker` | text, normalized and non-empty | Broker name |
+| `stock_name` | text, nullable | Provider stock name snapshot |
+| `source_payload` | JSONB | Sanitized provider fields retained for audit |
+| `source_updated_at`, `synced_at` | timestamps | Provider/local audit timestamps |
+
+Natural key: `(security, month, broker)`. `stock_name` is descriptive source
+context and does not participate in identity because names can change. A
+repeated monthly response must converge through an upsert; a changed broker
+record is retained as an auditable source revision or updated according to the
+configured revision policy, without creating duplicate current
+recommendations. The month must parse strictly as a real calendar month and
+must not be inferred from the ingestion run date.
+
+This source is a disclosed research opinion, not a price target, investment
+instruction, or confirmed outcome. A later `StockEvent` projection may map it
+to `STOCK_BROKER_RECOMMENDATION`, retaining `source_dataset='broker_recommend'`,
+broker identity, recommendation month, affected security, and source revision.
+The projection is separate from the source table, idempotent, read-only for
+downstream consumers, and must not trigger automated trading.
 
 ## 5 Market And Security Regime Data
 
@@ -1055,7 +1156,7 @@ The detailed command contract, source projections, dataset ordering, and recover
 
 ```text
 python manage.py sync_market_data \
-  --dataset security-master|company-profile|citic-industry-membership|business-industry-matches|stock-bars|stock-fundamentals|stock-cost|index-bars|index-fundamentals|resample \
+  --dataset security-master|company-profile|citic-industry-membership|business-industry-matches|stock-bars|stock-fundamentals|stock-cost|stock-repurchase|stock-holder-trade|broker-recommend|index-bars|index-fundamentals|resample \
   --mode backfill|daily \
   --frequency D|W|M \
   --scope all|ts-code|index-universe \
@@ -1072,6 +1173,9 @@ Rules:
   PostgreSQL dataset and reads persisted profile/CITIC/SW inputs only.
 - `stock-bars` accepts daily provider data only; `W` and `M` are generated through `resample`.
 - `stock-fundamentals`, `stock-cost`, and `index-fundamentals` are daily provider datasets; weekly/monthly values are only created when a documented derived table exists.
+- `stock-repurchase` maps to Tushare `repurchase` and `stock-holder-trade` maps to `stk_holdertrade`; both are stock-only historical source datasets and do not support `W`/`M` derivation.
+- `stock-repurchase` and `stock-holder-trade` use announcement/date-range overlap for `daily` mode; the overlap must include the provider's revision window because announcement records can be amended after first publication.
+- `broker-recommend` maps to Tushare `broker_recommend`; it is stock-only, accepts `month=YYYYMM`, uses monthly source coverage, and does not support `W`/`M` derivation or date inference from run time.
 - `index-bars` supports daily provider data and derived weekly/monthly records.
 - `--mode daily` requires no historical date range and defaults to the last completed trading date plus overlap.
 - A first `--mode backfill` defaults to `--history-years 5` when neither a start date nor resumable watermark is available; this bounds source calls and disk use. An explicit start date is required for an exceptional range outside the configured five-year window and cannot be combined with `--history-years`.
@@ -1096,6 +1200,8 @@ Validation failures are stored with dataset, scope, natural key when available, 
 - Per-dataset date coverage and missing trading dates.
 - Source-to-target row counts for each completed chunk.
 - Missing stock adjustment-factor count and adjusted-price null count.
+- Repurchase and holder-trade coverage by announcement date, source revision count, duplicate natural-key count, and rejected invalid-date/invalid-identity rows.
+- Broker recommendation coverage by `month`, broker count, duplicate `(security, month, broker)` count, invalid-month count, and source revision count.
 - Region mapping coverage, unmapped province count, and mapping version used.
 - Index daily fundamental coverage for each configured index universe.
 
@@ -1109,6 +1215,9 @@ Reconciliation compares persisted coverage with the approved trading calendar an
 - A newly detected or revised `dividend` event queues one idempotent full retained-history `stk_factor` rebuild for the affected stock and updates historical adjusted prices.
 - An index daily bar persists raw values while adjusted fields remain null without an approved index factor source.
 - An `index_dailybasic` record persists all seven confirmed metrics under `(security, trade_date)`.
+- A valid `repurchase` response persists normalized rows under the documented stock natural key and retains provider amount/volume units.
+- A valid `stk_holdertrade` response persists `IN`/`DE` direction and percentage-point fields without converting provider units.
+- A valid `broker_recommend` response persists `month`, broker, security, and provider stock name under the documented natural key.
 - A daily overlap run upserts a revised provider record and advances the watermark only after its chunk commits.
 - Weekly/monthly derivation produces correct OHLCV and period-end fundamental/cost records from daily rows.
 - A completed ingestion transaction updates the relevant latest snapshot and invalidates only that security's affected EOD cache keys.
@@ -1137,6 +1246,9 @@ Reconciliation compares persisted coverage with the approved trading calendar an
 - An unmapped province remains without a region and appears in the mapping-quality report.
 - A non-trading day does not advance a daily watermark without trading-calendar confirmation.
 - A duplicate dividend event does not queue a second concurrent rebuild; a revised event queues exactly one replacement rebuild.
+- A repeated repurchase or holder-trade payload converges to one source record; a material provider revision is auditable and does not create duplicate current events.
+- A non-stock security, invalid announcement date, or missing holder-trade source identity is rejected without advancing the related watermark.
+- A repeated monthly broker response converges idempotently; an invalid `YYYYMM` or empty broker is rejected without advancing the related watermark.
 - A resample task does not publish an incomplete current week or month.
 - An empty, malformed, or partial CITIC response does not deactivate the last
   active mapping version or publish a partially validated hierarchy.
@@ -1169,15 +1281,20 @@ Reconciliation compares persisted coverage with the approved trading calendar an
 3. Completed: implement and migrate `StockDailyFundamentalHistory/Latest`, `StockCostDistributionHistory/Latest`, and `IndexDailyFundamentalHistory/Latest` using the field, raw-unit, precision, history/latest, and monthly partition contracts in this document.
 4. Replace the initial stock-bar `daily` adapter with the validated `stk_factor` adapter and tests for direct qfq/hfq persistence.
 5. Implement `dividend` event persistence, event-change detection, stock-specific full adjusted-history rebuild, retries, and regression tests.
-6. Implement backfill dry-run, persisted watermarks, daily overlap refresh, reconciliation reports, and failure exit behavior.
-7. Implement the versioned company-profile business matcher, ordered TopN
+6. Implement `repurchase` and `stk_holdertrade` source persistence, overlap refresh, revision reconciliation, and the separate `StockEvent` projection contract.
+7. Implement `broker_recommend` monthly source persistence, month-scoped refresh, revision reconciliation, and its separate `StockEvent` projection contract.
+8. Implement backfill dry-run, persisted watermarks, daily overlap refresh, reconciliation reports, and failure exit behavior.
+9. Implement the versioned company-profile business matcher, ordered TopN
   snapshot/latest read model, deterministic tie-breaks, and downstream read
   service before enabling multi-industry valuation.
-8. Implement weekly/monthly derivation and its source-coverage checks.
+10. Implement weekly/monthly derivation and its source-coverage checks.
 
 ## 13 TODO List
 
 - [ ] 按本文档完成市场数据后端剩余实现、PostgreSQL 验证和单元测试，并在测试通过后更新本条状态。
+- [ ] 实现 `repurchase` 股票回购源数据：模型与迁移、字段规范化、重叠同步、修订幂等、质量报告及 `STOCK_REPURCHASE` 事件投影。
+- [ ] 实现 `stk_holdertrade` 股东增减持源数据：模型与迁移、`IN/DE` 方向和百分比单位校验、重叠同步、修订幂等、质量报告及 `STOCK_HOLDER_TRADE` 事件投影。
+- [ ] 实现 `broker_recommend` 券商月度荐股源数据：模型与迁移、`YYYYMM` 月度同步、`(security, month, broker)` 幂等、修订处理、质量报告及 `STOCK_BROKER_RECOMMENDATION` 事件投影。
 - [x] 实现 `MARKET_STYLE_CHANGED`、`SECURITY_STYLE_CHANGED` 的提交后只读事件接口，返回幂等键、source version、风格指标和确认后的作用范围；下游 checkpoint/重放验证仍待补充。
 
 ## 14 API Gateway 接入需求

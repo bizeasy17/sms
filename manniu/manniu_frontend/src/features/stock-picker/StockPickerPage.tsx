@@ -62,8 +62,8 @@ export function StockPickerPage() {
   const { industries, industryStatus, industryError, resultRows, marketStockCount, matchedCount, queryStatus, queryError, updateResults: queryResults } = useStockSelection(filters, sortKey, sortDirection, market, reportType, asofDate, selectedIndustry)
 
   function updateFilter(key: FilterKey, value: number) { setFilters((current) => ({ ...current, [key]: value })); setSubmitted(false) }
-  function updateSort(nextKey: SortKey) { setSortKey(nextKey); setPage(1); setSubmitted(false) }
-  function toggleSortDirection() { setSortDirection((value) => value === 'desc' ? 'asc' : 'desc'); setPage(1); setSubmitted(false) }
+  function updateSort(nextKey: SortKey) { setSortKey(nextKey); setPage(1) }
+  function toggleSortDirection() { setSortDirection((value) => value === 'desc' ? 'asc' : 'desc'); setPage(1) }
   async function updateResults() {
     setPage(1)
     if (await queryResults(1)) { setSubmitted(true); setSidebarOpen(false) }

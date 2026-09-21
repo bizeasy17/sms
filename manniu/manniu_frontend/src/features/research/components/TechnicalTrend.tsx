@@ -15,10 +15,7 @@ function percentile(values: number[], ratio: number) {
 
 function PriceChart({ bars }: { bars: TechnicalTrendData['series'] }) {
 	const sourceCandles = bars.filter((bar): bar is TechnicalTrendData['series'][number] & { open: number; high: number; low: number; close: number; volume: number } => bar.open != null && bar.high != null && bar.low != null && bar.close != null && bar.volume != null)
-	const maxVisibleCandles = 90
-	const candles = sourceCandles.length > maxVisibleCandles
-		? sourceCandles.filter((_, index) => index % Math.ceil(sourceCandles.length / maxVisibleCandles) === 0).slice(-maxVisibleCandles)
-		: sourceCandles
+	const candles = sourceCandles
 	const width = 720
 	const plotLeft = 42
 	const plotRight = 674

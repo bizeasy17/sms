@@ -182,7 +182,16 @@
 }
 
 .market-stats > div + div {
+  padding-top: 9px;
   border-top: 1px solid var(--color-line);
+}
+
+.market-stats > div {
+  padding-bottom: 9px;
+}
+
+.market-grid .trend-chart {
+  height: 250px;
 }
 
 .stock-tags i span:first-child {
@@ -290,6 +299,15 @@
 
 .valuation-summary-section .thesis-strip.sell-signal h2 {
   color: var(--color-negative);
+  font-weight: 700;
+}
+
+.valuation-summary-section .thesis-strip.neutral-signal .verdict-dot {
+  background: var(--color-primary);
+}
+
+.valuation-summary-section .thesis-strip.neutral-signal h2 {
+  color: var(--color-primary);
   font-weight: 700;
 }
 
