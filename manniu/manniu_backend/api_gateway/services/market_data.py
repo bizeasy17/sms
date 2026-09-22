@@ -284,6 +284,16 @@ def _industry_security_for_identity(identity):
     ).first()
 
 
+def _industry_closes(security, rows):
+    if security is None:
+        return {}
+    return dict(SWIndustryDailyHistory.objects.filter(
+        security=security,
+        trade_date__in=[row.trade_date for row in rows],
+        close__isnull=False,
+    ).values_list('trade_date', 'close'))
+
+
 def get_market_evidence(*, ts_code, days=DEFAULT_EVIDENCE_DAYS):
     try:
         days = int(days)
@@ -312,21 +322,24 @@ def get_market_evidence(*, ts_code, days=DEFAULT_EVIDENCE_DAYS):
         industry_security = _industry_security_for_identity(industry_identity)
     except IndustryMappingError:
         warnings.append('SW_INDUSTRY_MAPPING_UNAVAILABLE')
-    if industry_security is None:
-        warnings.append('SW_INDUSTRY_DATA_UNAVAILABLE')
+    industry_closes = _industry_closes(industry_security, rows)
+    if not industry_closes:
+        parent_index_code = industry_identity.get('parent_index_code') or industry_identity.get('parent_code')
+        parent_identity = resolve_sw_industry_mapping(index_code=parent_index_code) if parent_index_code else {}
+        parent_security = _industry_security_for_identity(parent_identity)
+        parent_closes = _industry_closes(parent_security, rows)
+        if parent_closes:
+            warnings.append('SW_INDUSTRY_L3_DATA_UNAVAILABLE_FALLBACK_L2')
+            industry_identity = parent_identity
+            industry_security = parent_security
+            industry_closes = parent_closes
+        else:
+            warnings.append('SW_INDUSTRY_DATA_UNAVAILABLE')
 
     industry_name = (
         str(industry_identity.get('industry_name') or industry_identity.get('name') or '').strip()
         or (industry_security.name.strip() if industry_security and industry_security.name else None)
     )
-
-    industry_closes = {}
-    if industry_security is not None:
-        industry_closes = dict(SWIndustryDailyHistory.objects.filter(
-            security=industry_security,
-            trade_date__in=[row.trade_date for row in rows],
-            close__isnull=False,
-        ).values_list('trade_date', 'close'))
 
     atr_values = [item for item in _atr_values(calculation_rows) if item[0] >= rows[0].trade_date]
     current_atr = atr_values[-1][1] if atr_values else None

@@ -215,19 +215,22 @@ def _active_sw_industry_entries() -> dict[str, dict[str, Any]]:
     if mapping is None:
         raise SyncExecutionError('No active SW2021 industry mapping is published')
     levels = mapping.artifact.get('levels', {}) if isinstance(mapping.artifact, dict) else {}
-    l3_items = levels.get('L3', {}) if isinstance(levels, dict) else {}
-    if not isinstance(l3_items, dict):
-        raise SyncExecutionError('Active SW industry mapping has no L3 entries')
+    if not isinstance(levels, dict):
+        raise SyncExecutionError('Active SW industry mapping has no industry levels')
     entries = {}
-    for raw_code, raw_entry in l3_items.items():
-        if not isinstance(raw_entry, dict):
+    for level in ('L2', 'L3'):
+        level_items = levels.get(level, {})
+        if not isinstance(level_items, dict):
             continue
-        code = str(raw_entry.get('index_code') or raw_code or '').strip().upper()
-        name = str(raw_entry.get('industry_name') or '').strip()
-        if code and name:
-            entries[code] = {'index_code': code, 'industry_name': name, 'mapping_version': mapping.mapping_version}
+        for raw_code, raw_entry in level_items.items():
+            if not isinstance(raw_entry, dict):
+                continue
+            code = str(raw_entry.get('index_code') or raw_code or '').strip().upper()
+            name = str(raw_entry.get('industry_name') or '').strip()
+            if code and name:
+                entries[code] = {'index_code': code, 'industry_name': name, 'mapping_version': mapping.mapping_version, 'level': level}
     if not entries:
-        raise SyncExecutionError('Active SW2021 industry mapping has no valid L3 index codes')
+        raise SyncExecutionError('Active SW2021 industry mapping has no valid L2/L3 index codes')
     return entries
 
 
