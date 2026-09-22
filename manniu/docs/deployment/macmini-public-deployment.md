@@ -36,6 +36,58 @@ Caddy :8080
 - 项目使用 PostgreSQL，不要改成 SQLite。后台依赖见 `manniu_backend/requirements.txt`。
 - 生产环境不要运行 Vite `npm run dev`，应使用 `npm run build` 生成静态文件。
 
+### 2.1 具体确认操作
+
+以下命令应在 Mac mini 上以实际部署用户执行。它们只读取本机和 DNS 状态，不会安装软件、修改配置或写入数据库；出现失败时先处理问题，不要继续上线。
+
+```bash
+# 1. 确认机器架构、电源接入和自动睡眠设置
+uname -m
+pmset -g custom | grep -E ' sleep | displaysleep | disksleep | powernap | tcpkeepalive '
+pmset -g batt
+```
+
+通过标准：Apple Silicon 设备输出 `arm64`，或 Intel 设备明确使用 `x86_64`；`pmset -g batt` 显示 `AC Power`；接通电源时 `sleep`、`disksleep` 和 `displaysleep` 已按家庭服务器要求关闭或设置为足够长的时间。若 `grep` 没有输出完整配置，可直接执行 `pmset -g custom` 查看对应的 `AC Power` 区块。不要仅依赖锁定屏幕设置，必须确认系统电源设置实际生效。
+
+```bash
+# 2. 确认局域网地址和默认网关
+route get default | grep -E 'interface:|gateway:'
+networksetup -listallhardwareports
+ipconfig getifaddr en0
+```
+
+通过标准：`route get default` 有默认网关，且 `ipconfig getifaddr en0` 返回固定的局域网 IPv4 地址（例如 `192.168.1.50`）。如果网卡不是 `en0`，使用上一步 `networksetup` 找到当前接口后执行 `ipconfig getifaddr <接口名>`。再从同一局域网的另一台设备执行 `ping <Mac局域网IP>`，确认地址可达；Cloudflare Tunnel 方案不需要从公网 ping 家庭地址。
+
+```bash
+# 3. 确认域名 DNS 和本机外网连通性
+dig +short www.manniuniu.cn
+dig +short manniuniu.cn
+curl -I --max-time 10 https://developers.cloudflare.com/
+```
+
+通过标准：`dig` 能返回 Cloudflare 分配的记录（Tunnel 场景通常是 `*.cfargotunnel.com` 的 CNAME 或其解析结果），且 HTTPS 请求返回 HTTP 响应。若域名尚未迁移到 Cloudflare，先完成 Nameserver 迁移；不要因为本机能访问互联网就认为域名已经正确配置。
+
+```bash
+# 4. 确认代码目录、生产配置入口和 PostgreSQL 客户端
+test -d /opt/manniu/manniu_backend && echo 'backend directory: OK'
+test -d /opt/manniu/manniu_frontend && echo 'frontend directory: OK'
+test -f /opt/manniu/manniu_backend/requirements.txt && echo 'backend requirements: OK'
+test -f /opt/manniu/manniu_frontend/package.json && echo 'frontend package: OK'
+test -x /opt/homebrew/bin/psql -o -x /usr/local/bin/psql && echo 'psql: OK'
+```
+
+通过标准：四个目录/文件检查均输出 `OK`，并且 `psql` 存在。若代码尚未放在 `/opt/manniu`，先按第 4 节完成获取代码，再执行本检查；不要把 Windows 的 `.venv`、`node_modules` 或 `.env` 直接复制到 Mac。
+
+```bash
+# 5. 确认前端使用同域名 API 路径，而不是开发机地址
+grep -R --line-number --exclude-dir=node_modules \
+  'VITE_API_BASE_URL' /opt/manniu/manniu_frontend/.env* 2>/dev/null || true
+```
+
+通过标准：生产环境文件使用 `VITE_API_BASE_URL=/api/v1`，且没有 `localhost`、`127.0.0.1` 或 Windows 开发机地址。若文件不存在，按第 9 节创建 `.env.production`；这里的 `|| true` 仅用于允许“文件尚未创建”的只读检查，不表示部署可以忽略该配置。
+
+最后记录预检结果和执行时间。只有电源、网络、DNS、代码目录及前端 API 配置全部通过后，才继续第 3 节安装基础环境。
+
 ## 3. Mac mini 基础环境
 
 在 Mac 上安装 Xcode Command Line Tools、Homebrew、Python 和 Node.js：
