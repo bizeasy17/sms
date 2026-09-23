@@ -32,17 +32,22 @@ class Command(BaseCommand):
             ))
             return
         completed = 0
+        persisted_stocks = 0
         for trade_date in dates:
             if options['scope'] == 'MARKET':
                 market = engine.calculate_market(trade_date)
                 engine.persist(market, [])
             else:
-                market = engine.calculate_market(trade_date, ts_codes=codes or None)
                 stocks = engine.calculate_stocks(trade_date, ts_codes=codes or None)
-                engine.persist(market, stocks)
+                engine.persist(None, stocks)
+                persisted_stocks += len(stocks)
+                self.stdout.write(
+                    f'Stock sentiment date completed: date={trade_date} stocks={len(stocks)}'
+                )
             completed += 1
+        suffix = f' stocks={persisted_stocks}' if options['scope'] == 'STOCK' else ''
         self.stdout.write(self.style.SUCCESS(
-            f'Sentiment refresh completed: scope={options["scope"]} dates={completed} engine={options["engine_version"]}'
+            f'Sentiment refresh completed: scope={options["scope"]} dates={completed}{suffix} engine={options["engine_version"]}'
         ))
 
     def _resolve_dates(self, options):

@@ -99,9 +99,10 @@ class SentimentEngine:
         bars.reverse()
         if len(bars) < 20:
             return StockDayFactors(security, trade_date, None, None, None, len(bars), 0.0, self._industry_key(security))
+        fundamental_dates = [row.trade_date for row in bars]
         fundamentals = {
             row.trade_date: row for row in StockDailyFundamentalHistory.objects.filter(
-                security=security, trade_date=trade_date,
+                security=security, trade_date__in=fundamental_dates,
             )
         }
         closes = [_safe_float(row.close) for row in bars]
@@ -190,12 +191,14 @@ class SentimentEngine:
 
     @transaction.atomic
     def persist(self, market_payload, stock_payloads):
-        market_snapshot, _ = MarketSentimentSnapshot.objects.update_or_create(
-            market='CN', scope_type='MARKET', scope_code='ALL_A', trade_date=market_payload['trade_date'], engine_version=self.engine_version,
-            defaults={key: value for key, value in market_payload.items() if key not in {'market', 'scope_type', 'scope_code', 'trade_date'}},
-        )
-        for code, payload in market_payload.get('factor_details', {}).items():
-            MarketSentimentFactor.objects.update_or_create(snapshot=market_snapshot, factor_code=code, defaults=payload)
+        market_snapshot = None
+        if market_payload is not None:
+            market_snapshot, _ = MarketSentimentSnapshot.objects.update_or_create(
+                market='CN', scope_type='MARKET', scope_code='ALL_A', trade_date=market_payload['trade_date'], engine_version=self.engine_version,
+                defaults={key: value for key, value in market_payload.items() if key not in {'market', 'scope_type', 'scope_code', 'trade_date'}},
+            )
+            for code, payload in market_payload.get('factor_details', {}).items():
+                MarketSentimentFactor.objects.update_or_create(snapshot=market_snapshot, factor_code=code, defaults=payload)
         snapshots = []
         for payload in stock_payloads:
             security = payload.pop('security')

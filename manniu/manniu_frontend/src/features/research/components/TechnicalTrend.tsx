@@ -14,6 +14,7 @@ function percentile(values: number[], ratio: number) {
 }
 
 function PriceChart({ bars }: { bars: TechnicalTrendData['series'] }) {
+	const [hoveredIndex, setHoveredIndex] = useState<number | null>(null)
 	const sourceCandles = bars.filter((bar): bar is TechnicalTrendData['series'][number] & { open: number; high: number; low: number; close: number; volume: number } => bar.open != null && bar.high != null && bar.low != null && bar.close != null && bar.volume != null)
 	const candles = sourceCandles
 	const width = 720
@@ -42,6 +43,13 @@ function PriceChart({ bars }: { bars: TechnicalTrendData['series'] }) {
 	const ma200 = candles.filter((candle) => candle.ma200 != null).map((candle) => ({ x: x(candles.indexOf(candle)), y: priceY(candle.ma200 as number) }))
 	const maPath = ma.map((point, index) => `${index === 0 ? 'M' : 'L'}${point.x} ${point.y}`).join(' ')
 	const ma200Path = ma200.map((point, index) => `${index === 0 ? 'M' : 'L'}${point.x} ${point.y}`).join(' ')
+	const hoveredCandle = hoveredIndex == null ? null : candles[hoveredIndex]
+	const tooltipWidth = 152
+	const tooltipHeight = 142
+	const tooltipX = hoveredIndex == null ? 0 : Math.min(Math.max(plotLeft, x(hoveredIndex) - tooltipWidth / 2), width - tooltipWidth - 6)
+	const tooltipY = hoveredIndex == null ? 0 : x(hoveredIndex) > width / 2 ? 8 : 8
+	const formatTooltipValue = (value: number | null | undefined, digits = 2) => value == null ? '--' : value.toFixed(digits)
+	const changePercent = hoveredCandle?.open ? (hoveredCandle.close - hoveredCandle.open) / hoveredCandle.open * 100 : null
 	return <svg className="technical-price-chart" viewBox={`0 0 ${width} 285`} role="img" aria-label="价格、均线与成交量技术图表">
 		{[priceTop, priceTop + 54, priceTop + 108, priceBottom, volumeTop, volumeTop + 25, volumeBottom].map((line) => <path key={line} className="technical-grid-line" d={`M${plotLeft} ${line}H${plotRight}`} />)}
 		{percentiles.map((item) => <path key={item.label} className={`percentile-line ${item.className}`} d={`M${plotLeft} ${priceY(item.value)}H${plotRight}`} />)}
@@ -52,8 +60,21 @@ function PriceChart({ bars }: { bars: TechnicalTrendData['series'] }) {
 			const rising = candle.close >= candle.open
 			const top = priceY(Math.max(candle.open, candle.close))
 			const bodyHeight = Math.max(2, Math.abs(priceY(candle.open) - priceY(candle.close)))
-			return <g key={candleX} className={rising ? 'technical-candle rising' : 'technical-candle falling'}><path d={`M${candleX} ${priceY(candle.high)}V${priceY(candle.low)}`} /><rect x={candleX - candleWidth / 2} y={top} width={candleWidth} height={bodyHeight} /><rect className="technical-volume" x={candleX - candleWidth / 2} y={volumeY(candle.volume)} width={candleWidth} height={volumeBottom - volumeY(candle.volume)} /></g>
+			return <g key={candleX} className={rising ? 'technical-candle rising' : 'technical-candle falling'} onMouseEnter={() => setHoveredIndex(index)} onMouseLeave={() => setHoveredIndex(null)}><path d={`M${candleX} ${priceY(candle.high)}V${priceY(candle.low)}`} /><rect x={candleX - candleWidth / 2} y={top} width={candleWidth} height={bodyHeight} /><rect className="technical-volume" x={candleX - candleWidth / 2} y={volumeY(candle.volume)} width={candleWidth} height={volumeBottom - volumeY(candle.volume)} /></g>
 		})}
+		{hoveredCandle && hoveredIndex != null && <g className="technical-tooltip" pointerEvents="none">
+			<path className="technical-hover-line" d={`M${x(hoveredIndex)} ${priceTop}V${volumeBottom}`} />
+			<rect className="technical-tooltip-box" x={tooltipX} y={tooltipY} width={tooltipWidth} height={tooltipHeight} rx="2" />
+			<text className="technical-tooltip-title" x={tooltipX + 8} y={tooltipY + 16}>{hoveredCandle.tradeDate}</text>
+			<text x={tooltipX + 8} y={tooltipY + 34}>开盘 {formatTooltipValue(hoveredCandle.open)}</text>
+			<text x={tooltipX + 8} y={tooltipY + 49}>最高 {formatTooltipValue(hoveredCandle.high)}</text>
+			<text x={tooltipX + 8} y={tooltipY + 64}>最低 {formatTooltipValue(hoveredCandle.low)}</text>
+			<text x={tooltipX + 8} y={tooltipY + 79}>收盘 {formatTooltipValue(hoveredCandle.close)}</text>
+			<text x={tooltipX + 8} y={tooltipY + 94}>涨跌 {changePercent == null ? '--' : `${changePercent >= 0 ? '+' : ''}${changePercent.toFixed(2)}%`}</text>
+			<text x={tooltipX + 8} y={tooltipY + 109}>成交量 {formatTooltipValue(hoveredCandle.volume, 0)}</text>
+			<text x={tooltipX + 8} y={tooltipY + 124}>MA25 {formatTooltipValue(hoveredCandle.ma25)}</text>
+			<text x={tooltipX + 8} y={tooltipY + 139}>MA200 {formatTooltipValue(hoveredCandle.ma200)}</text>
+		</g>}
 		{[priceMax, priceMax - (priceMax - priceMin) / 3, priceMax - (priceMax - priceMin) * 2 / 3, priceMin].map((value) => <text key={value} className="technical-axis-label chart-axis-right" x="714" y={priceY(value) + 4}>{value.toFixed(2)}</text>)}
 		{[volumeMax, volumeMax / 2, 0].map((value) => <text key={value} className="technical-axis-label" x="2" y={volumeY(value) + 4}>{value >= 10000 ? `${(value / 10000).toFixed(1)}万` : Math.round(value).toString()}</text>)}
 		{percentiles.map((item) => <text key={`${item.label}-axis`} className="technical-axis-label chart-axis-right" x="714" y={priceY(item.value) + 4}>{item.label} {item.value.toFixed(2)}</text>)}
@@ -138,7 +159,7 @@ export function TechnicalTrend({ stock }: Props) {
 		</section>
 		<section className="section technical-workspace">
 			<div className="section-heading"><div><p className="kicker">PRICE &amp; CHIPS</p><h2>价格趋势与筹码</h2></div><div className="technical-periods" role="group" aria-label="技术趋势周期">{['60D', '120D', '250D'].map((value) => <button className={period === value ? 'active' : ''} key={value} onClick={() => setPeriod(value)}>{value}</button>)}</div></div>
-			<div className="technical-chart-layout"><div className="technical-chart-panel"><div className="technical-legend"><span><i className="legend-candle-up" />上涨</span><span><i className="legend-candle-down" />下跌</span><span><i className="legend-ma" />MA25</span><span><i className="legend-ma200" />MA200</span><span><i className="legend-percentile percentile-p10" />P10</span><span><i className="legend-percentile percentile-median" />P50</span><span><i className="legend-percentile percentile-p90" />P90</span></div>{barsState === 'error' ? <ModuleStateNotice state="error" label="价格趋势" onRetry={() => setRetry((value) => value + 1)} /> : barsState === 'empty' ? <ModuleStateNotice state="empty" label="价格趋势" /> : barsState === 'loading' ? <ModuleStateNotice state="loading" label="价格趋势" /> : <PriceChart bars={bars} />}<div className="technical-sentiment"><div><span>情绪指数</span><strong>{sentimentScore == null ? '暂无' : sentimentScore.toFixed(1)}</strong></div><div className="sentiment-track"><i style={{ width: `${sentimentScore == null ? 0 : Math.min(100, Math.max(0, sentimentScore))}%` }} /></div><small>{trend?.marketSentiment.status === 'NOT_AVAILABLE' ? '情绪数据暂无' : `${trend?.marketSentiment.level ?? '情绪状态暂无'} · 截至 ${trend?.marketSentiment.sourceTradeDate ?? '暂无日期'}`}</small></div></div>
+			<div className="technical-chart-layout"><div className="technical-chart-panel"><div className="technical-legend"><span><i className="legend-candle-up" />上涨</span><span><i className="legend-candle-down" />下跌</span><span><i className="legend-ma" />MA25</span><span><i className="legend-ma200" />MA200</span><span><i className="legend-percentile percentile-p10" />P10</span><span><i className="legend-percentile percentile-median" />P50</span><span><i className="legend-percentile percentile-p90" />P90</span></div>{barsState === 'error' ? <ModuleStateNotice state="error" label="价格趋势" detail="新股上市时间较短或历史行情不足，后台暂时无法计算技术趋势。" onRetry={() => setRetry((value) => value + 1)} /> : barsState === 'empty' ? <ModuleStateNotice state="empty" label="价格趋势" detail="新股或历史行情不足时，尚未积累足够交易日计算技术指标。" /> : barsState === 'loading' ? <ModuleStateNotice state="loading" label="价格趋势" /> : <PriceChart bars={bars} />}<div className="technical-sentiment"><div><span>情绪指数</span><strong>{sentimentScore == null ? '暂无' : sentimentScore.toFixed(1)}</strong></div><div className="sentiment-track"><i style={{ width: `${sentimentScore == null ? 0 : Math.min(100, Math.max(0, sentimentScore))}%` }} /></div><small>{trend?.marketSentiment.status === 'NOT_AVAILABLE' ? '情绪数据暂无' : `${trend?.marketSentiment.level ?? '情绪状态暂无'} · 截至 ${trend?.marketSentiment.sourceTradeDate ?? '暂无日期'}`}</small></div></div>
 				{chipsState === 'error' ? <ChipPanelNotice state="error" onRetry={() => setChipsRetry((value) => value + 1)} /> : chipsState === 'empty' ? <ChipPanelNotice state="empty" /> : chipsState === 'loading' ? <ChipPanelNotice state="loading" /> : <ChipPanel chips={chips} currentPrice={latestBar?.close ?? null} tradeDate={chips[0]?.tradeDate ?? latestBar?.tradeDate ?? '暂无'} />}
 			</div>
 		</section>
