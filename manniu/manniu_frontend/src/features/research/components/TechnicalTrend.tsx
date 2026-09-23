@@ -1,9 +1,20 @@
 import { useEffect, useRef, useState } from 'react'
-import { fetchTechnicalChips, fetchTechnicalTrend } from '../services/researchApi'
-import type { Stock, TechnicalChip, TechnicalTrend as TechnicalTrendData } from '../types'
+import { fetchStockSentiment, fetchTechnicalChips, fetchTechnicalTrend } from '../services/researchApi'
+import type { Stock, StockSentiment, TechnicalChip, TechnicalTrend as TechnicalTrendData } from '../types'
 import { ModuleStateNotice, type ModuleState } from './ModuleStateNotice'
 
 type Props = { stock: Stock }
+
+type SentimentBand = { code: 'PANIC' | 'CAUTIOUS' | 'NEUTRAL' | 'POSITIVE' | 'EUPHORIC'; label: string; meaning: string }
+
+function sentimentBand(score: number | null): SentimentBand | null {
+	if (score == null || !Number.isFinite(score)) return null
+	if (score < 30) return { code: 'PANIC', label: '恐慌', meaning: '显著抛压' }
+	if (score < 45) return { code: 'CAUTIOUS', label: '谨慎', meaning: '偏弱' }
+	if (score <= 55) return { code: 'NEUTRAL', label: '中性', meaning: '多空均衡' }
+	if (score < 70) return { code: 'POSITIVE', label: '偏乐观', meaning: '趋势偏强' }
+	return { code: 'EUPHORIC', label: '亢奋', meaning: '追涨风险较高' }
+}
 
 function percentile(values: number[], ratio: number) {
 	const sorted = [...values].sort((left, right) => left - right)
@@ -106,6 +117,9 @@ export function TechnicalTrend({ stock }: Props) {
 	const [chips, setChips] = useState<TechnicalChip[]>([])
 	const [chipsState, setChipsState] = useState<ModuleState>('loading')
 	const [chipsRetry, setChipsRetry] = useState(0)
+	const [sentiment, setSentiment] = useState<StockSentiment | null>(null)
+	const [sentimentState, setSentimentState] = useState<ModuleState>('loading')
+	const [sentimentRetry, setSentimentRetry] = useState(0)
 	const chipsLoadedStock = useRef('')
 	const requestedDays = Number.parseInt(period, 10)
 	useEffect(() => {
@@ -128,6 +142,18 @@ export function TechnicalTrend({ stock }: Props) {
 		return () => controller.abort()
 	}, [requestedDays, retry, stock.code])
 	useEffect(() => {
+		const controller = new AbortController()
+		setSentiment(null)
+		setSentimentState('loading')
+		fetchStockSentiment(stock.code, controller.signal).then((result) => {
+			setSentiment(result)
+			setSentimentState('ready')
+		}).catch(() => {
+			if (!controller.signal.aborted) setSentimentState('error')
+		})
+		return () => controller.abort()
+	}, [sentimentRetry, stock.code])
+	useEffect(() => {
 		if (barsState !== 'ready' || barsStockCode !== stock.code || !trend?.series.length) return
 		if (chipsLoadedStock.current === stock.code && chipsRetry === 0) return
 		const controller = new AbortController()
@@ -148,7 +174,8 @@ export function TechnicalTrend({ stock }: Props) {
 	}, [trend, barsStockCode, barsState, chipsRetry, stock.code])
 	const bars = trend?.series ?? []
 	const latestBar = bars[bars.length - 1]
-	const sentimentScore = trend?.marketSentiment.score
+	const sentimentScore = sentiment?.score ?? null
+	const sentimentBandValue = sentimentBand(sentimentScore)
 	const formatMetric = (value: number | null | undefined, digits = 2) => value == null ? '暂无' : value.toFixed(digits)
 	const trendLabel = trend?.summary.trend === 'UP' ? '上行' : trend?.summary.trend === 'DOWN' ? '下行' : trend?.summary.trend === 'FLAT' ? '横盘' : '暂无'
 	const directionLabel = (direction: string | null | undefined) => direction === 'UP' ? '偏强' : direction === 'DOWN' ? '偏弱' : direction === 'FLAT' ? '平稳' : '暂无'
@@ -159,7 +186,7 @@ export function TechnicalTrend({ stock }: Props) {
 		</section>
 		<section className="section technical-workspace">
 			<div className="section-heading"><div><p className="kicker">PRICE &amp; CHIPS</p><h2>价格趋势与筹码</h2></div><div className="technical-periods" role="group" aria-label="技术趋势周期">{['60D', '120D', '250D'].map((value) => <button className={period === value ? 'active' : ''} key={value} onClick={() => setPeriod(value)}>{value}</button>)}</div></div>
-			<div className="technical-chart-layout"><div className="technical-chart-panel"><div className="technical-legend"><span><i className="legend-candle-up" />上涨</span><span><i className="legend-candle-down" />下跌</span><span><i className="legend-ma" />MA25</span><span><i className="legend-ma200" />MA200</span><span><i className="legend-percentile percentile-p10" />P10</span><span><i className="legend-percentile percentile-median" />P50</span><span><i className="legend-percentile percentile-p90" />P90</span></div>{barsState === 'error' ? <ModuleStateNotice state="error" label="价格趋势" detail="新股上市时间较短或历史行情不足，后台暂时无法计算技术趋势。" onRetry={() => setRetry((value) => value + 1)} /> : barsState === 'empty' ? <ModuleStateNotice state="empty" label="价格趋势" detail="新股或历史行情不足时，尚未积累足够交易日计算技术指标。" /> : barsState === 'loading' ? <ModuleStateNotice state="loading" label="价格趋势" /> : <PriceChart bars={bars} />}<div className="technical-sentiment"><div><span>情绪指数</span><strong>{sentimentScore == null ? '暂无' : sentimentScore.toFixed(1)}</strong></div><div className="sentiment-track"><i style={{ width: `${sentimentScore == null ? 0 : Math.min(100, Math.max(0, sentimentScore))}%` }} /></div><small>{trend?.marketSentiment.status === 'NOT_AVAILABLE' ? '情绪数据暂无' : `${trend?.marketSentiment.level ?? '情绪状态暂无'} · 截至 ${trend?.marketSentiment.sourceTradeDate ?? '暂无日期'}`}</small></div></div>
+			<div className="technical-chart-layout"><div className="technical-chart-panel"><div className="technical-legend"><span><i className="legend-candle-up" />上涨</span><span><i className="legend-candle-down" />下跌</span><span><i className="legend-ma" />MA25</span><span><i className="legend-ma200" />MA200</span><span><i className="legend-percentile percentile-p10" />P10</span><span><i className="legend-percentile percentile-median" />P50</span><span><i className="legend-percentile percentile-p90" />P90</span></div>{barsState === 'error' ? <ModuleStateNotice state="error" label="价格趋势" detail="新股上市时间较短或历史行情不足，后台暂时无法计算技术趋势。" onRetry={() => setRetry((value) => value + 1)} /> : barsState === 'empty' ? <ModuleStateNotice state="empty" label="价格趋势" detail="新股或历史行情不足时，尚未积累足够交易日计算技术指标。" /> : barsState === 'loading' ? <ModuleStateNotice state="loading" label="价格趋势" /> : <PriceChart bars={bars} />}<div className="technical-sentiment"><div><span>情绪指数{sentimentBandValue ? ` · ${sentimentBandValue.label}` : ''}</span><strong>{sentimentState === 'loading' ? '加载中' : sentimentScore == null ? '暂无' : sentimentScore.toFixed(1)}</strong></div><div className="sentiment-track"><i style={{ width: `${sentimentScore == null ? 0 : Math.min(100, Math.max(0, sentimentScore))}%` }} /></div>{sentimentState === 'error' ? <small>情绪数据加载失败 <button type="button" onClick={() => setSentimentRetry((value) => value + 1)}>重试</button></small> : <small>{sentiment?.status === 'WARMING_UP' || sentiment?.status === 'INSUFFICIENT_DATA' || sentiment?.status === 'STALE' ? `情绪数据${sentiment.status === 'WARMING_UP' ? '预热中' : '暂不可用'} · 截至 ${sentiment.sourceTradeDate ?? sentiment.tradeDate}` : `${sentimentBandValue ? `${sentimentBandValue.code} · ${sentimentBandValue.meaning}` : '情绪状态暂无'} · 截至 ${sentiment?.sourceTradeDate ?? sentiment?.tradeDate ?? '暂无日期'}`}</small>}</div></div>
 				{chipsState === 'error' ? <ChipPanelNotice state="error" onRetry={() => setChipsRetry((value) => value + 1)} /> : chipsState === 'empty' ? <ChipPanelNotice state="empty" /> : chipsState === 'loading' ? <ChipPanelNotice state="loading" /> : <ChipPanel chips={chips} currentPrice={latestBar?.close ?? null} tradeDate={chips[0]?.tradeDate ?? latestBar?.tradeDate ?? '暂无'} />}
 			</div>
 		</section>

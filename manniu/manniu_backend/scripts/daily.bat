@@ -34,6 +34,8 @@ call :sync_indices index-fundamentals || goto :failure
 call :sync sw-industry-daily by-date || goto :failure
 call :detect_regime_events || goto :failure
 call :sync_financials || goto :failure
+call :refresh_market_sentiment MARKET || goto :failure
+call :refresh_market_sentiment STOCK || goto :failure
 call :refresh_traditional_valuation || goto :failure
 call :refresh_predictive_valuation || goto :failure
 
@@ -69,6 +71,16 @@ if errorlevel 1 (
     exit /b 1
 )
 call :log Financial synchronization completed.
+exit /b 0
+
+:refresh_market_sentiment
+call :log Refreshing %~1 sentiment...
+"%PYTHON_EXE%" manage.py refresh_market_sentiment --scope %~1 --latest >> "%LOG_FILE%" 2>&1
+if errorlevel 1 (
+    call :log ERROR: %~1 sentiment refresh failed. See %LOG_FILE%
+    exit /b 1
+)
+call :log %~1 sentiment refresh completed.
 exit /b 0
 
 :detect_regime_events

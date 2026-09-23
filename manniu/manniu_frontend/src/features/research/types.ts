@@ -16,6 +16,20 @@ export type SecurityEvent = {
 }
 export type TechnicalBar = { tradeDate: string; open: number | null; high: number | null; low: number | null; close: number | null; volume: number | null }
 export type TechnicalChip = { tradeDate: string; price: number; percent: number }
+export type StockSentiment = {
+    tsCode: string
+    tradeDate: string
+    score: number | null
+    level: string | null
+    status: string
+    sourceTradeDate: string | null
+    momentum: number | null
+    activity: number | null
+    fear: number | null
+    coverage: number | null
+    sampleCount: number
+    engineVersion: string
+}
 export type TechnicalTrend = {
     security: { tsCode: string; name: string }
     series: Array<TechnicalBar & { ma25: number | null; ma200: number | null }>

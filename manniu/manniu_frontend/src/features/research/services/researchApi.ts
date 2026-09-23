@@ -1,4 +1,4 @@
-import type { FinancialOverview, FundamentalDimension, FundamentalEvaluation, Market, MarketEvidence, MarketEvidenceHistory, PersonalStockState, Pool, PredictiveTier, PredictiveValuation, SecurityEvent, Stock, StockQuote, StockTag, TagAction, TechnicalBar, TechnicalChip, TechnicalTrend, TraditionalValuation, TraditionalValuationMethod } from '../types'
+import type { FinancialOverview, FundamentalDimension, FundamentalEvaluation, Market, MarketEvidence, MarketEvidenceHistory, PersonalStockState, Pool, PredictiveTier, PredictiveValuation, SecurityEvent, Stock, StockQuote, StockSentiment, StockTag, TagAction, TechnicalBar, TechnicalChip, TechnicalTrend, TraditionalValuation, TraditionalValuationMethod } from '../types'
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL ?? '/api/v1'
 
@@ -17,6 +17,7 @@ type BarsResponse = { data?: Bar[]; error?: { message?: string } }
 type SecurityEventItem = { event_type?: string; source_system?: string; source_event_key?: string; event_date?: string; source_trade_date?: string | null; payload?: Record<string, unknown>; status?: string }
 type SecurityEventsResponse = { data?: { items?: SecurityEventItem[] }; error?: { message?: string } }
 type TechnicalTrendResponse = { data?: { security?: { ts_code?: string; name?: string }; series?: Array<Bar & { ma25?: number | null; ma200?: number | null }>; momentum?: { latest?: { rsi14?: number | null; macd_histogram?: number | null; atr14?: number | null } }; summary?: { trend?: string | null; trend_score?: number | null; trend_level?: string | null; volatility_status?: string | null; data_status?: string }; relative_strength?: { name?: string | null; relative_strength?: number | null; direction?: string | null; status?: string }; market_sentiment?: { status?: string; score?: number | null; level?: string | null; source_trade_date?: string | null }; signals?: Array<{ trade_date?: string; type?: string; direction?: string; evidence?: string; status?: string }>; warnings?: string[]; rule_version?: string; adjust?: string; frequency?: string; period?: number }; error?: { message?: string } }
+type StockSentimentResponse = { data?: { ts_code?: string; trade_date?: string; score?: number | null; level?: string | null; status?: string; source_trade_date?: string | null; momentum?: number | null; activity?: number | null; fear?: number | null; coverage?: number | null; sample_count?: number; engine_version?: string }; error?: { message?: string } }
 type ChipsResponse = { data?: Array<{ trade_date?: string; price?: number | null; percent?: number | null }>; error?: { message?: string } }
 type MarketEvidenceResponse = { data?: { security?: { ts_code?: string; name?: string }; industry?: { index_code?: string | null; industry_code?: string | null; name?: string | null }; history?: Array<{ trade_date?: string; open?: number | null; high?: number | null; low?: number | null; close?: number | null; industry_close?: number | null }>; summary?: { atr_14?: number | null; atr_14_percentile_60d?: number | null; ma25?: number | null; ma25_trend?: string | null; ma200?: number | null; ma200_trend?: string | null; current_price?: number | null; price_to_ma25?: number | null; relative_strength_vs_industry?: number | null }; requested_days?: number; returned_days?: number; warnings?: string[] }; error?: { message?: string } }
 type FinancialOverviewResponse = { data?: { period?: string | null; report_type?: string; metrics?: Record<string, FinancialMetricResponse>; evaluation?: FinancialEvaluationResponse | null; source_dates?: Record<string, string>; warnings?: string[] }; meta?: { warnings?: string[] }; error?: { message?: string } }
@@ -395,6 +396,30 @@ export async function fetchTechnicalTrend(tsCode: string, days: number, signal?:
         marketSentiment: { status: data.market_sentiment?.status ?? 'NOT_AVAILABLE', score: data.market_sentiment?.score ?? null, level: data.market_sentiment?.level ?? null, sourceTradeDate: data.market_sentiment?.source_trade_date ?? null },
         signals: (data.signals ?? []).map((signal) => ({ tradeDate: signal.trade_date ?? '', type: signal.type ?? '', direction: signal.direction ?? '', evidence: signal.evidence ?? '', status: signal.status ?? '' })),
         warnings: data.warnings ?? [], ruleVersion: data.rule_version ?? '', adjust: data.adjust ?? 'qfq', frequency: data.frequency ?? 'D', period: data.period ?? period,
+    }
+}
+
+export async function fetchStockSentiment(tsCode: string, signal?: AbortSignal): Promise<StockSentiment> {
+    const accessToken = window.localStorage.getItem('access_token') ?? window.localStorage.getItem('auth_access_token')
+    const headers: HeadersInit = { Accept: 'application/json' }
+    if (accessToken) headers.Authorization = `Bearer ${accessToken}`
+    const response = await fetch(`${API_BASE}/market-analysis/sentiment/stocks/${encodeURIComponent(tsCode)}`, { headers, signal })
+    const body = await response.json() as StockSentimentResponse
+    const data = body.data
+    if (!response.ok || !data?.ts_code || !data.trade_date || !data.status) throw new Error(body.error?.message ?? '个股情绪加载失败，请稍后重试。')
+    return {
+        tsCode: data.ts_code,
+        tradeDate: data.trade_date,
+        score: data.score ?? null,
+        level: data.level ?? null,
+        status: data.status,
+        sourceTradeDate: data.source_trade_date ?? null,
+        momentum: data.momentum ?? null,
+        activity: data.activity ?? null,
+        fear: data.fear ?? null,
+        coverage: data.coverage ?? null,
+        sampleCount: data.sample_count ?? 0,
+        engineVersion: data.engine_version ?? '',
     }
 }
 
