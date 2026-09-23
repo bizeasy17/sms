@@ -44,7 +44,6 @@ export function LoginPage() {
         <h1>让每一次判断，<br /><em>更接近事实。</em></h1>
         <p>连接行情、财务与估值信号，在一个清晰的工作台里理解市场。</p>
       </div>
-      <div className="login-signal" aria-hidden="true"><span>LIVE SIGNAL</span><strong>+18.6%</strong><i /></div>
       <p className="login-showcase-foot">慢牛牛 · 研究工作台</p>
     </section>
     <section className="login-panel">
