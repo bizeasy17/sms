@@ -1,4 +1,4 @@
-import { type FormEvent, useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import './ApiLab.css'
 import './ApiLabOverrides.css'
 import { currentPathWithQuery, loginPath } from './shared/routing/queryParams'
@@ -10,17 +10,6 @@ type ApiBody = { data?: Catalog; success?: boolean; error?: { message?: string }
 const API_BASE = import.meta.env.VITE_API_BASE_URL ?? '/api/v1'
 
 function token() { return window.localStorage.getItem('access_token') ?? window.localStorage.getItem('auth_access_token') }
-
-function loginRedirect() {
-  const redirect = new URLSearchParams(window.location.search).get('redirect')
-  return redirect && redirect.startsWith('/') && !redirect.startsWith('//') ? redirect : '/public/api'
-}
-
-export function ApiLoginPage() {
-  const [username, setUsername] = useState(''); const [password, setPassword] = useState(''); const [error, setError] = useState(''); const [loading, setLoading] = useState(false)
-  async function submit(event: FormEvent<HTMLFormElement>) { event.preventDefault(); setError(''); setLoading(true); try { const result = await fetch(`${API_BASE}/auth/login`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ username, password, client_type: 'WEB' }) }); const body = await result.json() as { data?: { access_token?: string; refresh_token?: string }; error?: { message?: string } }; if (!result.ok || !body.data?.access_token) throw new Error(body.error?.message ?? '登录失败，请检查用户名和密码。'); window.localStorage.setItem('access_token', body.data.access_token); if (body.data.refresh_token) window.localStorage.setItem('refresh_token', body.data.refresh_token); window.location.assign(loginRedirect()) } catch (submitError) { setError(submitError instanceof Error ? submitError.message : '登录失败，请稍后重试。') } finally { setLoading(false) } }
-  return <main className="api-auth"><div className="api-auth-box"><p className="api-eyebrow">MARKET ANALYSIS GATEWAY</p><h1>登录 API Lab</h1><p>使用已有账号访问受保护的接口目录和只读测试工具。</p><form onSubmit={submit}><label>用户名<input autoComplete="username" value={username} onChange={(event) => setUsername(event.target.value)} required /></label><label>密码<input autoComplete="current-password" type="password" value={password} onChange={(event) => setPassword(event.target.value)} required /></label>{error && <div className="api-error">{error}</div>}<button className="api-primary" disabled={loading}>{loading ? '登录中...' : '登录并继续'}</button></form><a href={loginPath('/')}>返回研究工作台</a></div></main>
-}
 
 export function ApiLab() {
   const [activeToken, setActiveToken] = useState(token); const [catalog, setCatalog] = useState<Catalog | null>(null); const [selectedId, setSelectedId] = useState(''); const [search, setSearch] = useState(''); const [groupFilter, setGroupFilter] = useState('all'); const [methodFilter, setMethodFilter] = useState('all'); const [values, setValues] = useState<Record<string, string>>({}); const [status, setStatus] = useState('正在加载接口目录...'); const [response, setResponse] = useState(''); const [responseStatus, setResponseStatus] = useState<number | null>(null); const [responseDuration, setResponseDuration] = useState<number | null>(null); const [requestId, setRequestId] = useState('')
