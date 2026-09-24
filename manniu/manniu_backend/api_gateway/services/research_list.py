@@ -192,7 +192,9 @@ def get_research_list(*, user, pool='market', market='all', industry=None, q='',
         raise MarketDataRequestError('INVALID_DATE', 'asof_date 不能晚于当前日期')
     mapping = _active_mapping()
     industry_codes = _industry_codes(mapping, industry) if industry else None
-    queryset = Security.objects.filter(asset_type=Security.AssetType.STOCK).select_related('industry').order_by('ts_code')
+    queryset = Security.objects.filter(asset_type=Security.AssetType.STOCK).select_related(
+        'industry', 'company_profile',
+    ).order_by('ts_code')
     if industry_codes is not None:
         queryset = queryset.filter(ts_code__in=industry_codes)
     if pool != 'market':
@@ -231,6 +233,8 @@ def get_research_list(*, user, pool='market', market='all', industry=None, q='',
         data.append({
             'ts_code': security.ts_code,
             'name': security.name,
+            'website': security.company_profile.website if hasattr(security, 'company_profile') else '',
+            'website_protocol': security.company_profile.protocol if hasattr(security, 'company_profile') else '',
             'sw_industry': _industry_identity(mapping, security),
             'market': {
                 'trade_date': _date(bar.trade_date) if bar else None,

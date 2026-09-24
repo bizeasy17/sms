@@ -33,18 +33,29 @@ class Command(BaseCommand):
             return
         completed = 0
         persisted_stocks = 0
-        for trade_date in dates:
-            if options['scope'] == 'MARKET':
+        if options['scope'] == 'MARKET':
+            self.stdout.write(
+                f'Market sentiment daily backfill started: dates={dates[0]}..{dates[-1]} total={len(dates)}'
+            )
+            for index, trade_date in enumerate(dates, start=1):
+                self.stdout.write(
+                    f'Market sentiment calculating: {index}/{len(dates)} date={trade_date}'
+                )
                 market = engine.calculate_market(trade_date)
                 engine.persist(market, [])
-            else:
+                completed += 1
+                self.stdout.write(
+                    f'Market sentiment date completed: {index}/{len(dates)} date={market["trade_date"]}'
+                )
+        else:
+            for trade_date in dates:
                 stocks = engine.calculate_stocks(trade_date, ts_codes=codes or None)
                 engine.persist(None, stocks)
                 persisted_stocks += len(stocks)
                 self.stdout.write(
                     f'Stock sentiment date completed: date={trade_date} stocks={len(stocks)}'
                 )
-            completed += 1
+                completed += 1
         suffix = f' stocks={persisted_stocks}' if options['scope'] == 'STOCK' else ''
         self.stdout.write(self.style.SUCCESS(
             f'Sentiment refresh completed: scope={options["scope"]} dates={completed}{suffix} engine={options["engine_version"]}'

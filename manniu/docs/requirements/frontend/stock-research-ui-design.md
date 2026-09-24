@@ -208,6 +208,7 @@ AppShell
 - 股票名称和交易所代码。
 - 行业、覆盖状态、数据周期。
 - 最新价格、涨跌额和涨跌幅。
+- 公司名称绑定公司官网：研究列表接口返回已校验的 `website`；有合法 `http/https` 地址时名称作为外链在新标签页打开，无地址时仍显示普通文本。
 
 **规则**：
 
@@ -216,6 +217,7 @@ AppShell
 - 数据时间必须明确，例如“数据截至 2026-08-17”。
 - 数据延迟或非交易时段应显示状态，不把旧数据伪装为实时数据。
 - 头部基本信息卡片不展示“已覆盖”状态，保留行业、数据周期、最新价格和涨跌信息。
+- 研究列表接口返回 `website: string | null` 和 `website_protocol: string | null`，字段来自 `CompanyProfile.website` 与 `CompanyProfile.protocol`；后端使用 `select_related('company_profile')` 避免逐股票查询。前端仅在协议为 `http` 或 `https` 时组装并渲染链接，不接受其他协议或未验证地址。
 
 #### 5.3.1 行情接口接入契约
 
@@ -247,6 +249,10 @@ GET /api/v1/market-analysis/securities/:ts_code/bars
 - 持仓状态通过 `GET /api/v1/me/portfolios` 获取当前用户第一个未归档组合，再调用 `GET /api/v1/me/portfolios/{portfolio_id}/positions` 判断当前股票是否已有持仓。没有组合时创建“默认组合”，并以数量、可用数量、平均成本为 `0` 的初始化快照加入；再次点击调用 `DELETE /api/v1/me/portfolios/{portfolio_id}/positions/{position_id}` 移除。
 - 观察状态通过 `GET /api/v1/me/observations` 加载；点击未激活的“观察”调用 `POST /api/v1/me/observations`，点击已激活的“观察”调用 `DELETE /api/v1/me/observations/{item_id}`。
 - 操作成功或失败使用 popup message 反馈；状态请求失败只影响三个标签，不清空股票身份、行情或研究内容，并避免旧股票请求覆盖当前股票。
+
+#### 5.3.3 公司网址绑定
+
+研究列表接口在每个股票项中返回 `website` 和 `website_protocol`。后端网址校验命令只把收到成功响应或有效重定向的协议写入 `CompanyProfile.protocol`，不修改 `website`；日同步更新公司网址时也不得覆盖已校验的 `protocol`。前端仅在协议为 `http` 或 `https` 时组装地址，并将股票名称渲染为新标签页外链，使用 `noopener noreferrer`；没有有效协议或网址时名称保持普通文本。
 
 示例响应：
 
@@ -878,6 +884,18 @@ type ResearchContext = {
 - [x] 固定展示基本面和模型两个标签，标签顺序保持一致，并展示后台返回的动作与估值分数。
 - [x] 无匹配市场时展示“暂无股票”空状态。
 - [x] 从后端研究结果读取两个标签的实际动作和估值分，避免固定显示“买”或伪造分数。
+- [x] 股票名称绑定后台返回的已验证公司网址；缺失网址时保持不可点击文本。
+
+### 14.7 公司网址校验 CLI
+
+后台提供 `verify_company_websites` 管理命令扫描 `CompanyProfile.website`。命令默认只报告不写库：
+
+```text
+python manage.py verify_company_websites
+python manage.py verify_company_websites --execute
+```
+
+校验器对无协议地址依次尝试 `https://` 和 `http://`，跟随重定向，并仅在收到成功响应或有效重定向时将协议视为有效。Windows 上若 Python/OpenSSL 仅因证书兼容性拒绝连接，命令会回退到 Windows 系统 HTTP 栈确认可访问性。`--execute` 只更新 `CompanyProfile.protocol`，不会覆盖同步得到的 `website`；网络失败、非法协议和无效域名只记录为 `INVALID`。可用 `--timeout` 和 `--limit` 控制单次扫描，增加 `--verbose` 可显示每个协议的 `HEAD/GET` 尝试及失败原因。
 
 ### 14.3 全局涨跌样式
 

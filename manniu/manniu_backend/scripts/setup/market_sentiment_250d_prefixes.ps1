@@ -1,7 +1,8 @@
 param(
     [int]$Days = 365,
     [string]$EngineVersion = 'sentiment_v1',
-    [int]$ChunkSize = 300
+    [int]$ChunkSize = 300,
+    [int]$StartBatch = 1
 )
 
 $ErrorActionPreference = 'Stop'
@@ -32,12 +33,21 @@ if ($tsCodes.Count -eq 0) {
     throw 'No 00/30/60/68 stock codes were found.'
 }
 
-Write-Host "Refreshing stock sentiment: $StartText..$EndText, codes=$($tsCodes.Count), engine=$EngineVersion"
+$batchCount = [Math]::Ceiling($tsCodes.Count / [double]$ChunkSize)
+if ($StartBatch -lt 1 -or $StartBatch -gt $batchCount) {
+    throw "StartBatch must be between 1 and $batchCount."
+}
+
+Write-Host "Refreshing stock sentiment: $StartText..$EndText, codes=$($tsCodes.Count), batches=$batchCount, start_batch=$StartBatch, engine=$EngineVersion"
 for ($offset = 0; $offset -lt $tsCodes.Count; $offset += $ChunkSize) {
+    $batchNumber = [int]($offset / $ChunkSize) + 1
+    if ($batchNumber -lt $StartBatch) {
+        continue
+    }
     $last = [Math]::Min($offset + $ChunkSize - 1, $tsCodes.Count - 1)
     $chunk = @($tsCodes[$offset..$last])
     $chunkText = $chunk -join ','
-    Write-Host "Refreshing stock batch: $($offset + 1)-$($last + 1)/$($tsCodes.Count)"
+    Write-Host "Refreshing stock batch $batchNumber/${batchCount}: $($offset + 1)-$($last + 1)/$($tsCodes.Count)"
     & $PythonExe manage.py refresh_market_sentiment --scope STOCK --start-date $StartText --end-date $EndText --ts-codes $chunkText --engine-version $EngineVersion
     if ($LASTEXITCODE -ne 0) {
         throw "Stock sentiment refresh failed for code chunk $($offset + 1)-$($last + 1)."

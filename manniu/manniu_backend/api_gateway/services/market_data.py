@@ -139,6 +139,7 @@ def security_payload(security, *, include_profile=False):
             'city': profile.city_name,
             'exchange': profile.exchange,
             'website': profile.website,
+            'protocol': profile.protocol,
             'employees': profile.employees,
             'main_business': profile.main_business,
             'business_scope': profile.business_scope,

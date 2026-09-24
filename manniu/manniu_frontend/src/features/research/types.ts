@@ -3,7 +3,7 @@ export type Market = 'all' | 'sh-main' | 'sz-main' | 'cyb' | 'star'
 export type Tab = 'summary' | 'technical' | 'fundamentals'
 export type TagAction = 'BUY' | 'SELL' | 'HOLD' | null
 export type StockTag = { text: string; label: string; action: TagAction; actionText?: string; scoreText?: string }
-export type Stock = { code: string; name: string; market: string; industry: string; listDate?: string | null; tags: StockTag[]; change: string; positive: boolean | null }
+export type Stock = { code: string; name: string; website?: string | null; market: string; industry: string; listDate?: string | null; tags: StockTag[]; change: string; positive: boolean | null }
 export type StockQuote = { tradeDate: string; close: number | null; change: number | null; pctChange: number | null }
 export type SecurityEvent = {
     eventType: 'FINANCIAL_DISCLOSED' | 'SECURITY_STYLE_CHANGED'

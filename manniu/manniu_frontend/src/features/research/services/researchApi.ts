@@ -5,12 +5,14 @@ const API_BASE = import.meta.env.VITE_API_BASE_URL ?? '/api/v1'
 type ResearchListItem = {
     ts_code: string
     name: string
+    website?: string | null
+    website_protocol?: string | null
     sw_industry?: { name?: string }
     market?: { pct_change?: number | null }
     traditional_valuation?: { action?: string | null; undervalue_score?: number | null }
     predictive_valuation?: { action?: string | null; undervalue_score?: number | null }
 }
-type SecurityDetailResponse = { data?: { ts_code?: string; name?: string; industry?: string | null }; error?: { message?: string } }
+type SecurityDetailResponse = { data?: { ts_code?: string; name?: string; industry?: string | null; company_profile?: { website?: string | null; protocol?: string | null } | null }; error?: { message?: string } }
 type ResearchListResponse = { data?: ResearchListItem[]; error?: { message?: string } }
 type Bar = { trade_date?: string; open?: number | null; high?: number | null; low?: number | null; close?: number | null; volume?: number | null; change?: number | null; pct_change?: number | null }
 type BarsResponse = { data?: Bar[]; error?: { message?: string } }
@@ -64,11 +66,20 @@ function valuationTag(label: string, valuation?: ValuationResult): StockTag {
     }
 }
 
+function composeWebsite(website?: string | null, protocol?: string | null) {
+    const value = website?.trim()
+    if (!value) return null
+    if (/^https?:\/\//i.test(value)) return value
+    if (protocol !== 'http' && protocol !== 'https') return null
+    return `${protocol}://${value.replace(/^\/\//, '')}`
+}
+
 function mapStock(item: ResearchListItem): Stock {
     const change = item.market?.pct_change
     return {
         code: item.ts_code,
         name: item.name,
+        website: composeWebsite(item.website, item.website_protocol),
         market: item.ts_code.split('.')[1] ?? '',
         industry: item.sw_industry?.name || '暂无行业',
         tags: [
@@ -84,6 +95,7 @@ function mapSecurityDetail(item: NonNullable<SecurityDetailResponse['data']>, co
     return {
         code: item.ts_code ?? code,
         name: item.name ?? code,
+        website: composeWebsite(item.company_profile?.website, item.company_profile?.protocol),
         market: (item.ts_code ?? code).split('.')[1] ?? '',
         industry: item.industry || '暂无行业',
         tags: [valuationTag('价值'), valuationTag('模型')],

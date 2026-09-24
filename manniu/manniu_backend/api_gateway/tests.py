@@ -13,7 +13,7 @@ from api_gateway.services.market_data import (
     parse_history_range,
 )
 from market_data.services.cyq_chips import CyqChipsResult
-from market_data.models import MarketBarDailyHistory, Security, StockDailyFundamentalHistory
+from market_data.models import CompanyProfile, MarketBarDailyHistory, Security, StockDailyFundamentalHistory
 from financials.models import (
     FinancialDisclosureRecord,
     FinancialExpressRecord,
@@ -64,6 +64,7 @@ class MarketDataGatewayTests(TestCase):
             ts_code='000001.SZ', asset_type=Security.AssetType.STOCK,
             symbol='000001', name='Ping An Bank', market='主板', exchange='SZSE', list_status='L',
         )
+        CompanyProfile.objects.create(security=cls.security, website='example.com/company', protocol='https')
         for offset in range(2):
             trade_date = date(2026, 9, 8 + offset)
             MarketBarDailyHistory.objects.create(
@@ -265,6 +266,8 @@ class MarketDataGatewayTests(TestCase):
         item = next(row for row in response.json()['data'] if row['ts_code'] == self.security.ts_code)
         self.assertEqual(item['predictive_valuation']['action'], 'BUY')
         self.assertEqual(item['predictive_valuation']['report_type'], 'FUSION')
+        self.assertEqual(item['website'], 'example.com/company')
+        self.assertEqual(item['website_protocol'], 'https')
 
     def test_sentiment_market_and_stock_snapshot_routes(self):
         market = self.client.get(

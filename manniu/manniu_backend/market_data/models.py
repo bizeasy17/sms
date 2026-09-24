@@ -92,6 +92,7 @@ class CompanyProfile(models.Model):
     city_name = models.CharField(max_length=64, blank=True)
     exchange = models.CharField(max_length=32, blank=True)
     website = models.URLField(blank=True)
+    protocol = models.CharField(max_length=8, blank=True)
     email = models.EmailField(blank=True)
     office = models.CharField(max_length=256, blank=True)
     employees = models.PositiveIntegerField(null=True, blank=True)

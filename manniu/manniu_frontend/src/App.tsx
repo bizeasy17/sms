@@ -175,10 +175,15 @@ function ResearchHomePage() {
     }
   }
 
-  function selectStock(stock: Stock) {
+  async function selectStock(stock: Stock) {
     setSelected(stock)
     setRailOpen(false)
     replaceQueryParams({ ts_code: stock.code, tab, pool, market })
+    if (stock.website) return
+    try {
+      const detailed = await fetchSecurityByCode(stock.code)
+      setSelected((current) => current?.code === stock.code ? detailed : current)
+    } catch {}
   }
 
   function updatePool(nextPool: Pool) {
