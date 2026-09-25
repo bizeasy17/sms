@@ -5,7 +5,7 @@ class SentimentSnapshotBase(models.Model):
     trade_date = models.DateField()
     score = models.DecimalField(max_digits=10, decimal_places=4, null=True, blank=True)
     level = models.CharField(max_length=24, blank=True)
-    status = models.CharField(max_length=24)
+    status = models.CharField(max_length=32)
     raw_score = models.DecimalField(max_digits=12, decimal_places=6, null=True, blank=True)
     standardized_score = models.DecimalField(max_digits=12, decimal_places=6, null=True, blank=True)
     momentum = models.DecimalField(max_digits=12, decimal_places=6, null=True, blank=True)

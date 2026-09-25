@@ -5,7 +5,7 @@ from bisect import bisect_right
 from collections import defaultdict
 from dataclasses import dataclass
 from datetime import date, timedelta
-from statistics import median, pstdev
+from statistics import median, pstdev, stdev
 
 from django.db import transaction
 from django.db.models import F, Window
@@ -17,6 +17,7 @@ from market_data.models import (
     IngestionWatermark,
     MarketBarDailyHistory,
     Security,
+    SWIndustryMappingVersion,
     StockDailyFundamentalHistory,
 )
 from market_sentiment.models import (
@@ -28,6 +29,10 @@ from market_sentiment.models import (
 
 
 ENGINE_VERSION = 'sentiment_v1'
+STOCK_ENGINE_VERSION = 'stock_daily_v2_20260830'
+SCORE_WINDOW = 252
+Z_WINDOW = 20
+MIN_STOCK_HISTORY = 20
 MARKET_SCOPE = ('CN', 'MARKET', 'ALL_A')
 
 
@@ -98,6 +103,140 @@ def _percentile(values, value):
     if not valid or value is None:
         return None
     return 100.0 * sum(item <= value for item in valid) / len(valid)
+
+
+def _smart_zscore(value, history, window=Z_WINDOW):
+    history = history[-window:]
+    if value is None or len(history) < window:
+        return None
+    deviation = stdev(history)
+    if deviation == 0:
+        return None
+    return max(-3.0, min(3.0, (value - sum(history) / len(history)) / deviation))
+
+
+def _smart_percentile_rank(value, values):
+    if value is None or not values:
+        return None
+    below = sum(candidate < value for candidate in values)
+    equal = sum(candidate == value for candidate in values)
+    return 100.0 * (below + equal / 2.0) / len(values)
+
+
+def _stock_dimension_samples(rows):
+    returns = []
+    returns_5 = []
+    returns_20 = []
+    volumes = []
+    amounts = []
+    turnovers = []
+    volume_ratios = []
+    amplitudes = []
+    lower_shadows = []
+    volatilities = []
+    down_returns = []
+    streaks = []
+    streak_up = 0
+    samples = []
+
+    for index, row in enumerate(rows):
+        close = _safe_float(row.get('close'))
+        pre_close = _safe_float(row.get('pre_close'))
+        open_price = _safe_float(row.get('open'))
+        high = _safe_float(row.get('high'))
+        low = _safe_float(row.get('low'))
+        volume = _safe_float(row.get('volume'))
+        amount = _safe_float(row.get('amount'))
+        turnover_f = _safe_float(row.get('turnover_rate_f'))
+        turnover = turnover_f if turnover_f is not None else _safe_float(row.get('turnover_rate'))
+        volume_ratio = _safe_float(row.get('volume_ratio'))
+
+        return_1 = close / pre_close - 1 if close is not None and pre_close and pre_close > 0 else None
+        streak_up = streak_up + 1 if return_1 is not None and return_1 > 0 else 0
+        previous_close_5 = _safe_float(rows[index - 5].get('close')) if index >= 5 else None
+        previous_close_20 = _safe_float(rows[index - 20].get('close')) if index >= 20 else None
+        return_5 = close / previous_close_5 - 1 if close and previous_close_5 else None
+        return_20 = close / previous_close_20 - 1 if close and previous_close_20 else None
+        amplitude = (high - low) / pre_close if high is not None and low is not None and pre_close and pre_close > 0 else None
+        lower_shadow = (
+            (min(open_price, close) - low) / (high - low)
+            if None not in (open_price, close, high, low) and high > low else None
+        )
+        volatility = stdev(returns[-10:]) if len(returns) >= 10 else None
+
+        return_1_z = _smart_zscore(return_1, returns)
+        return_5_z = _smart_zscore(return_5, returns_5)
+        return_20_z = _smart_zscore(return_20, returns_20)
+        streak_z = _smart_zscore(streak_up, streaks)
+        volume_z = _smart_zscore(volume, volumes)
+        amount_z = _smart_zscore(amount, amounts)
+        turnover_z = _smart_zscore(turnover, turnovers)
+        volume_ratio_z = _smart_zscore(volume_ratio, volume_ratios)
+        volatility_z = _smart_zscore(volatility, volatilities)
+        amplitude_z = _smart_zscore(amplitude, amplitudes)
+        lower_shadow_z = _smart_zscore(lower_shadow, lower_shadows)
+        down_volume_z = _smart_zscore(volume, volumes) if return_1 is not None and return_1 < 0 else None
+        down_return = max(-return_1, 0) if return_1 is not None else None
+        down_return_z = _smart_zscore(down_return, down_returns)
+
+        momentum = _weighted_mean(
+            [return_1_z, return_5_z, return_20_z, streak_z],
+            [0.40, 0.30, 0.20, 0.10],
+        )
+        activity = _weighted_mean(
+            [volume_z, amount_z, turnover_z, volume_ratio_z],
+            [0.25, 0.20, 0.40, 0.15],
+        )
+        fear = _weighted_mean(
+            [volatility_z, amplitude_z, lower_shadow_z, down_volume_z, down_return_z],
+            [0.30, 0.25, 0.15, 0.20, 0.10],
+        )
+        samples.append({
+            'trade_date': row['trade_date'],
+            'momentum': momentum,
+            'activity': activity,
+            'fear': fear,
+            'complete': all(value is not None for value in (close, pre_close, volume, amount)),
+            'turnover_source': 'turnover_rate_f' if turnover_f is not None else 'turnover_rate' if turnover is not None else None,
+        })
+
+        if return_1 is not None:
+            returns.append(return_1)
+            down_returns.append(max(-return_1, 0))
+            streaks.append(streak_up)
+        if return_5 is not None:
+            returns_5.append(return_5)
+        if return_20 is not None:
+            returns_20.append(return_20)
+        if volume is not None:
+            volumes.append(volume)
+        if amount is not None:
+            amounts.append(amount)
+        if turnover is not None:
+            turnovers.append(turnover)
+        if volume_ratio is not None:
+            volume_ratios.append(volume_ratio)
+        if amplitude is not None:
+            amplitudes.append(amplitude)
+        if lower_shadow is not None:
+            lower_shadows.append(lower_shadow)
+        if volatility is not None:
+            volatilities.append(volatility)
+    return samples
+
+
+def _stock_level(score, status):
+    if score is None:
+        return 'INSUFFICIENT_DATA' if status == 'INSUFFICIENT_DATA' else 'WARMING_UP'
+    if score < 30:
+        return 'PANIC'
+    if score < 45:
+        return 'CAUTIOUS'
+    if score <= 55:
+        return 'NEUTRAL'
+    if score < 70:
+        return 'POSITIVE'
+    return 'EUPHORIC'
 
 
 class SentimentEngine:
@@ -506,6 +645,226 @@ class SentimentEngine:
 
     def _stock_payload(self, item, score, status, peer_type, peer_count):
         return {'security': item.security, 'trade_date': item.trade_date, 'source_trade_date': item.trade_date, 'score': score, 'level': _level(score), 'status': status, 'raw_score': score, 'standardized_score': score, 'momentum': item.momentum, 'activity': item.activity, 'fear': item.fear, 'universe_count': 0, 'valid_count': 1 if status == 'VALID' else 0, 'coverage': item.coverage, 'peer_type': peer_type, 'peer_code': item.industry_key if peer_type == 'industry' else '', 'peer_name': '', 'peer_count': peer_count, 'normalization_mode': 'same_day_peer_percentile', 'metadata': {'valid_history': item.valid_history, 'engine_version': self.engine_version}}
+
+    @staticmethod
+    def _load_stock_rows(securities, start_date, end_date):
+        if not securities:
+            return {}
+        security_by_id = {security.id: security.ts_code for security in securities}
+        security_ids = list(security_by_id)
+        fundamentals = {
+            (row['security_id'], row['trade_date']): row
+            for row in StockDailyFundamentalHistory.objects.filter(
+                security_id__in=security_ids,
+                trade_date__gte=start_date,
+                trade_date__lte=end_date,
+            ).values('security_id', 'trade_date', 'turnover_rate_f', 'turnover_rate', 'volume_ratio')
+        }
+        rows_by_code = defaultdict(list)
+        rows = MarketBarDailyHistory.objects.filter(
+            security_id__in=security_ids,
+            trade_date__gte=start_date,
+            trade_date__lte=end_date,
+            close__gt=0,
+            pre_close__gt=0,
+        ).order_by('security_id', 'trade_date').values(
+            'security_id', 'trade_date', 'open', 'high', 'low', 'close',
+            'pre_close', 'volume', 'amount',
+        )
+        for row in rows.iterator(chunk_size=50000):
+            row.update(fundamentals.get((row['security_id'], row['trade_date']), {}))
+            rows_by_code[security_by_id[row['security_id']]].append(row)
+        return rows_by_code
+
+    def calculate_stocks_v2(self, trade_dates, ts_codes=None, require_watermark=True):
+        dates = sorted(set(trade_dates))
+        results_by_date = {trade_date: [] for trade_date in dates}
+        if not dates:
+            return results_by_date
+
+        securities = list(Security.objects.filter(
+            asset_type=Security.AssetType.STOCK,
+            list_status='L',
+        ).select_related('industry').order_by('ts_code'))
+        target_codes = set(ts_codes or (security.ts_code for security in securities))
+        targets = [security for security in securities if security.ts_code in target_codes]
+        if not targets:
+            return results_by_date
+
+        if require_watermark:
+            latest_source_date = MarketBarDailyHistory.objects.filter(
+                trade_date__lte=dates[-1],
+            ).order_by('-trade_date').values_list('trade_date', flat=True).first()
+            if latest_source_date is None:
+                raise ValueError('No daily market bars are available for the requested period')
+            self.validate_watermarks(latest_source_date)
+
+        mapping_row = SWIndustryMappingVersion.objects.filter(
+            market='CN', taxonomy='SW2021', is_active=True,
+        ).order_by('-published_at').first()
+        mapping = mapping_row.artifact if mapping_row and isinstance(mapping_row.artifact, dict) else {}
+        memberships = mapping.get('ts_code_to_levels') or mapping.get('membership') or {}
+        sw_counts = defaultdict(int)
+        industry_counts = defaultdict(int)
+        for security in securities:
+            membership = memberships.get(security.ts_code.upper(), {})
+            if membership.get('l3_code'):
+                sw_counts[str(membership['l3_code'])] += 1
+            if security.industry_id:
+                industry_counts[security.industry_id] += 1
+
+        contexts = {}
+        group_members = defaultdict(list)
+        for security in securities:
+            membership = memberships.get(security.ts_code.upper(), {})
+            sw_code = str(membership.get('l3_code') or '')
+            if sw_code and sw_counts[sw_code] >= 10:
+                group_key = ('SW_L3', sw_code)
+                context = {
+                    'benchmark_type': 'SW_L3', 'benchmark_code': sw_code,
+                    'benchmark_name': str(membership.get('l3_name') or ''),
+                    'benchmark_minimum_size': 10,
+                }
+            elif security.industry_id and industry_counts[security.industry_id] >= 20:
+                group_key = ('INDUSTRY', security.industry_id)
+                context = {
+                    'benchmark_type': 'INDUSTRY', 'benchmark_code': str(security.industry_id),
+                    'benchmark_name': security.industry.name, 'benchmark_minimum_size': 20,
+                }
+            else:
+                group_key = ('MARKET', 'ALL_A')
+                context = {
+                    'benchmark_type': 'MARKET', 'benchmark_code': 'ALL_A',
+                    'benchmark_name': '全A', 'benchmark_minimum_size': 500,
+                }
+            group_members[group_key].append(security)
+            if security in targets:
+                contexts[security.ts_code] = (group_key, context)
+
+        target_start = dates[0] - timedelta(days=(SCORE_WINDOW + Z_WINDOW + 30) * 2)
+        target_rows = self._load_stock_rows(targets, target_start, dates[-1])
+        target_samples = {
+            code: _stock_dimension_samples(rows)
+            for code, rows in target_rows.items()
+        }
+
+        used_groups = {group_key for group_key, _context in contexts.values()}
+        peer_securities = {
+            security.ts_code: security
+            for group_key in used_groups
+            for security in group_members[group_key]
+        }
+        peer_start = dates[0] - timedelta(days=120)
+        peer_rows = self._load_stock_rows(list(peer_securities.values()), peer_start, dates[-1])
+        peer_samples = {
+            code: target_samples[code] if code in target_samples else _stock_dimension_samples(rows)
+            for code, rows in peer_rows.items()
+        }
+        peer_samples_by_group_date = defaultdict(list)
+        requested_dates = set(dates)
+        for group_key in used_groups:
+            for security in group_members[group_key]:
+                for sample in peer_samples.get(security.ts_code, []):
+                    if sample['trade_date'] in requested_dates:
+                        peer_samples_by_group_date[(group_key, sample['trade_date'])].append(sample)
+
+        for security in targets:
+            samples = target_samples.get(security.ts_code, [])
+            if not samples:
+                continue
+            group_key, context = contexts[security.ts_code]
+            raw_history = []
+            for history_days, sample in enumerate(samples, start=1):
+                dimensions = (sample['momentum'], sample['activity'], sample['fear'])
+                raw_score = (
+                    0.35 * sample['momentum'] + 0.35 * sample['activity'] - 0.30 * sample['fear']
+                    if all(value is not None for value in dimensions) else None
+                )
+                standardized = _smart_zscore(
+                    raw_score, raw_history, window=SCORE_WINDOW,
+                ) if len(raw_history) >= SCORE_WINDOW else None
+                if raw_score is not None:
+                    raw_history.append(raw_score)
+                trade_date = sample['trade_date']
+                if trade_date not in requested_dates:
+                    continue
+
+                peer_samples_for_date = peer_samples_by_group_date[(group_key, trade_date)]
+                valid_peers = [
+                    peer for peer in peer_samples_for_date
+                    if None not in (peer['momentum'], peer['activity'], peer['fear'])
+                ]
+                score = None
+                normalization_mode = 'INSUFFICIENT_DATA'
+                if raw_score is None:
+                    status = 'INSUFFICIENT_DATA'
+                elif standardized is not None:
+                    score = round(100.0 / (1.0 + math.exp(-standardized)), 2)
+                    status = 'SUCCESS'
+                    normalization_mode = 'ROLLING_Z_SCORE'
+                elif history_days >= MIN_STOCK_HISTORY and len(valid_peers) >= context['benchmark_minimum_size']:
+                    momentum_percentile = _smart_percentile_rank(
+                        sample['momentum'], [peer['momentum'] for peer in valid_peers],
+                    )
+                    activity_percentile = _smart_percentile_rank(
+                        sample['activity'], [peer['activity'] for peer in valid_peers],
+                    )
+                    fear_percentile = _smart_percentile_rank(
+                        sample['fear'], [peer['fear'] for peer in valid_peers],
+                    )
+                    score = round(
+                        0.35 * momentum_percentile + 0.35 * activity_percentile
+                        + 0.30 * (100.0 - fear_percentile),
+                        2,
+                    )
+                    status = 'CROSS_SECTIONAL_PROVISIONAL'
+                    normalization_mode = 'CROSS_SECTIONAL_PERCENTILE'
+                else:
+                    status = 'WARMING_UP'
+                    normalization_mode = 'WARMING_UP'
+
+                turnover_sources = defaultdict(int)
+                for peer in peer_samples_for_date:
+                    if peer['turnover_source']:
+                        turnover_sources[peer['turnover_source']] += 1
+                metadata = {
+                    **context,
+                    'normalization_mode': normalization_mode,
+                    'benchmark_sample_size': len(valid_peers),
+                    'stock_history_days': history_days,
+                    'minimum_history_days': MIN_STOCK_HISTORY,
+                    'turnover_sources': dict(turnover_sources),
+                    'windows': {'z_score': Z_WINDOW, 'volatility': 10, 'score': SCORE_WINDOW},
+                }
+                if mapping_row:
+                    metadata['sw_mapping_version'] = mapping_row.mapping_version
+                    metadata['sw_mapping_source_hash'] = mapping_row.source_hash
+                results_by_date[trade_date].append({
+                    'security': security,
+                    'trade_date': trade_date,
+                    'source_trade_date': trade_date,
+                    'score': score,
+                    'level': _stock_level(score, status),
+                    'status': status,
+                    'raw_score': raw_score,
+                    'standardized_score': standardized,
+                    'momentum': sample['momentum'],
+                    'activity': sample['activity'],
+                    'fear': sample['fear'],
+                    'universe_count': len(peer_samples_for_date),
+                    'valid_count': len(valid_peers),
+                    'coverage': (
+                        sum(peer['complete'] for peer in peer_samples_for_date) / len(peer_samples_for_date)
+                        if peer_samples_for_date else 0.0
+                    ),
+                    'peer_type': context['benchmark_type'],
+                    'peer_code': context['benchmark_code'],
+                    'peer_name': context['benchmark_name'],
+                    'peer_count': len(valid_peers),
+                    'normalization_mode': normalization_mode,
+                    'metadata': metadata,
+                })
+        return results_by_date
 
     @transaction.atomic
     def persist(self, market_payload, stock_payloads):

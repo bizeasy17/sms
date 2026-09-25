@@ -6,7 +6,7 @@ from api_gateway.services.market_data import Page, normalize_ts_code
 from market_data.models import Security
 
 from market_sentiment.models import MarketSentimentSnapshot, StockSentimentSnapshot
-from market_sentiment.services.engine import ENGINE_VERSION
+from market_sentiment.services.engine import ENGINE_VERSION, STOCK_ENGINE_VERSION
 
 
 class SentimentQueryError(ValueError):
@@ -117,7 +117,7 @@ def get_stock_snapshot(*, ts_code, asof_date, engine_version=None):
     queryset, _ = _require_engine(
         StockSentimentSnapshot.objects.filter(security=security, trade_date__lte=asof_date),
         StockSentimentSnapshot,
-        engine_version,
+        engine_version or STOCK_ENGINE_VERSION,
     )
     snapshot = queryset.select_related('security').order_by('-trade_date').first()
     if snapshot is None:

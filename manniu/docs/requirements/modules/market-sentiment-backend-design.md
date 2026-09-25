@@ -60,7 +60,9 @@ amplitude_t = \frac{H_t - L_t}{P_{t-1}},\qquad
 lowerShadow_t = \frac{\min(O_t, P_t) - L_t}{\max(H_t - L_t, \epsilon)}
 $$
 
-Volume, amount, turnover, and volume ratio use a preceding 20-trading-day baseline. Current-day values are excluded from their own normalization window:
+Parity target: `smartinvestor_be/market_sentiment/services/daily_engine.py` `stock_daily_v2_20260830`. The implementation uses sample standard deviation (`n - 1`), clips valid z-scores to `[-3, 3]`, and requires at least 20 prior valid observations for a component. Missing observations are skipped when building each component's history; the current observation is excluded from its baseline. A zero-variance baseline makes that component unavailable rather than assigning zero. These details are part of the parity contract and must not be replaced by population standard deviation or a different missing-value policy.
+
+Volume, amount, turnover, and volume ratio use the preceding 20 valid observations. Current-day values are excluded from their own normalization window:
 
 $$
 z(X_t) = clip\left(\frac{X_t - mean(X_{t-20}, \ldots, X_{t-1})}{std(X_{t-20}, \ldots, X_{t-1})}, -3, 3\right)
@@ -80,7 +82,7 @@ $$
 F_t = 0.30z(volatility_{10}) + 0.25z(amplitude) + 0.15z(lowerShadow) + 0.20z(downVolume) + 0.10z(downReturn)
 $$
 
-`turnover_rate_f` is preferred; `turnover_rate` is used only when free-float turnover is unavailable. Component weights are renormalized only across valid inputs. If available weight is below 70 percent, the affected dimension is null and records an availability reason.
+`turnover_rate_f` is preferred; `turnover_rate` is used only when free-float turnover is unavailable. `streakUp` is the consecutive positive-return streak and resets on a non-positive or unavailable return. `volatility_10` is calculated from the preceding 10 valid daily returns. On a down day, `downVolume` uses the volume z-score; otherwise that component is unavailable. Component weights are renormalized only across valid inputs. If available weight is below 70 percent, the affected dimension is null and records an availability reason. The parity implementation must also match the reference return source (`close / pre_close - 1` for daily return), handling of missing values, and per-component availability.
 
 ### 5.2 Market And Stock Scores
 
@@ -90,15 +92,27 @@ $$
 rawMarket_t = 0.35M_t + 0.35A_t - 0.30F_t
 $$
 
-It is normalized against the preceding 252 market raw scores and converted through a sigmoid to a 0-100 score. Until 252 valid market observations exist, the snapshot is `WARMING_UP` and does not publish a formal 0-100 market score.
+It is normalized against the preceding 252 valid market raw scores using sample standard deviation, clipped to `[-3, 3]`, and converted through a sigmoid to a 0-100 score. The current raw score is excluded from the normalization history. Until 252 prior valid observations exist, the snapshot is `WARMING_UP` and does not publish a formal 0-100 market score.
 
-For stock scope, the primary score is a same-day peer percentile. The peer hierarchy is: compatible versioned industry classification with at least 10 valid peers, then Tushare industry with at least 20, then all eligible A-shares with at least 500. The stock provisional score is:
+For stock scope, the primary score after 252 prior valid stock raw scores exist is the stock's own rolling-history score. Calculate `rawStock_t = 0.35M_t + 0.35A_t - 0.30F_t`, standardize against the preceding 252 valid raw scores using sample standard deviation, clip to `[-3, 3]`, then apply the sigmoid. Record this mode as `ROLLING_Z_SCORE`; peer membership does not enter this primary score.
+
+Before the rolling score is available, use a same-day cross-sectional provisional score only when the stock has at least 20 history days and the selected peer group meets its minimum valid size. The peer hierarchy must match smartinvestor_be: SW L3 with at least 10 eligible listed stocks, then the internal industry classification with at least 20, then all eligible A-shares with at least 500. Percentile ranking uses the reference midpoint-tie rule. The provisional score is:
 
 $$
 stockScore_t = 0.35 percentile(M_t) + 0.35 percentile(A_t) + 0.30(100 - percentile(F_t))
 $$
 
-Each stock snapshot records its normalization mode, peer type/code/name, valid peer count, stock-history count, and calculation-engine version. A stock with fewer than 20 valid trading days is `INSUFFICIENT_DATA`; it does not receive a fabricated neutral score.
+If neither rolling normalization nor the minimum peer fallback is available, return `WARMING_UP` with a null score. A stock with fewer than 20 valid trading days is `INSUFFICIENT_DATA`; it does not receive a fabricated neutral score. Each snapshot records the normalization mode, selected peer type/code/name, eligible and valid peer counts, stock history count, turnover source counts, windows, and engine version. In `ROLLING_Z_SCORE` mode, retain the selected peer as provenance metadata but do not imply that it affected the score.
+
+### 5.3 SmartInvestor BE Parity Rules
+
+The parity reference is the deployed smartinvestor_be stock engine and its exact engine version, not a re-interpretation of this design's earlier formulas. Before implementation, freeze the reference source revision, engine version, taxonomy snapshot, and comparison date range. Any intentional deviation becomes a separately named engine version and is reported as a parity exception.
+
+The implementation must match the reference for factor formulas and weights, sample standard deviation, z-score clipping, minimum valid-history rules, component availability and weight renormalization, percentile tie handling, score rounding, sigmoid conversion, status and normalization-mode selection, and peer fallback thresholds. Market and stock scores must be checked separately; a stock's SW L3 peer metadata is not evidence that its long-history rolling score is peer-normalized.
+
+The stock CLI separates the requested output codes from the calculation universe. `--ts-codes` limits which snapshots are emitted, but must not shrink the population used to select peers or calculate cross-sectional fallback scores. Date-range replay computes all required pre-roll history but persists only the requested output dates. Each target date is calculated using source rows dated on or before that date. Load enough prior trading rows to build 252 prior valid raw scores and the factor lookback needed to calculate them (at least 272 prior trading observations before the first target date, with additional allowance for missing rows); do not start calculation at the first requested output date.
+
+Historical peer membership must be point-in-time safe. The reference currently reads the corporation's stored industry fields; before historical parity replay, confirm whether those fields are point-in-time snapshots. If not, either provide dated membership history or explicitly limit parity claims to a frozen taxonomy snapshot and record that limitation in output metadata. Do not silently use future membership to claim historical point-in-time correctness.
 
 ## 6 PostgreSQL Persistence Design
 
@@ -343,17 +357,34 @@ token 或原始 query string，不执行写操作，不在 cache miss 时补算�
 - A request for an unbounded stock history/ranking range is rejected by the future API layer.
 - No calculation path emits a trading command, broker credential, or automatic execution request.
 
+### 9.4 SmartInvestor BE Parity Acceptance
+
+- The reference source revision, `engine_version`, input date range, data fields, and taxonomy snapshot are recorded with each parity run.
+- For each sample stock, compare input row counts, date coverage, and canonical per-field fingerprints through the target date. Any mismatch in `amount`, units, missing rows, or same-day fundamentals is resolved or documented as a blocking parity exception before score comparison.
+- Compare each date in dependency order: source inputs; per-component z-scores and availability; momentum/activity/fear; raw score; 252-observation standardized score; final score, level, status, normalization mode, and peer metadata.
+- Include 688583.SH and 000001.SZ for 2026-09-07 through 2026-09-11, with the required pre-roll history. Also cover a stock with fewer than 252 valid raw-score observations to verify the cross-sectional fallback and a stock below minimum history to verify null-score status.
+- For identical input rows, taxonomy, reference version, and eligible universe, all parity fields match the reference within documented Decimal/rounding tolerance. Any intentional difference requires a separate engine version and an explicit exception; do not weaken tolerance to hide an unexplained mismatch.
+- A parity replay writes only to a new engine version or a local comparison artifact. It does not overwrite existing snapshots, historical baselines, or the currently published engine version.
+- Promotion is blocked until the calculation and persistence checks pass, the CLI's target-output filter does not affect its peer universe, and reruns are deterministic and idempotent.
+
 ## 10 Implementation Sequence
 
-1. Confirm PostgreSQL table/field types, engine version naming, market-universe rules, peer taxonomy, coverage threshold, and future API request/response contracts.
-2. Create and register the `market_sentiment` Django app; implement PostgreSQL models and migrations with the documented unique keys and indexes.
-3. Implement strict `market_data` read repositories and data-coverage checks with unit tests.
-4. Implement the daily factor engine, no-lookahead safeguards, market/stock snapshots, and deterministic replay tests.
-5. Implement the operator command, daily dependency gating, and local reconciliation artifacts.
-6. Confirm API and authorization contracts, then implement authorized read endpoints through `api_gateway` and `access_control`.
+1. Freeze the smartinvestor_be parity reference: source revision, stock engine version, market engine version, comparison dates, and taxonomy/membership snapshot policy. Confirm whether market scoring is also in scope for this parity release.
+2. Confirm the PostgreSQL source and target table/field types, including `amount` units and lineage; engine-version naming; stock universe; SW L3 mapping source; coverage thresholds; and required snapshot/provenance fields. Review all proposed database fields and API request/response fields with the user before implementing changes that affect either contract.
+3. Build read-only baseline artifacts for 688583.SH and 000001.SZ, including target dates plus pre-roll history. Compare source row counts, coverage, and per-field values/fingerprints. Resolve the observed historical `amount` mismatch before treating a score difference as an algorithm defect.
+4. Implement the strict `market_data` read repository, watermark/coverage checks, point-in-time-safe membership policy, and separate target-output codes from the full calculation/peer universe.
+5. Implement the parity algorithm under a new engine version; preserve existing versions. Add deterministic tests for factors, rolling normalization, peer fallback, score/status metadata, no-lookahead behavior, and persistence idempotency.
+6. Run read-only/reference comparisons in dependency order (inputs, factor components, dimensions, raw score, standardized score, final output). Write only to the new engine version or local artifacts; do not replace snapshots or historical baselines during investigation.
+7. Promote the new version only after Section 9.4 acceptance passes. Record known exceptions and rollback by selecting the previous engine version; do not delete or rewrite historical versioned rows.
+8. Implement the operator command and daily dependency gating, then confirm API and authorization contracts before implementing authorized read endpoints through `api_gateway` and `access_control`.
 
 ## 11 TODO List
 
+- [ ] Freeze smartinvestor_be source/engine reference and confirm whether parity scope includes both market and stock scores.
+- [ ] Compare 688583.SH and 000001.SZ source history field-by-field; resolve historical `amount` lineage/units mismatch before parity sign-off.
+- [ ] Confirm SW L3 mapping source, point-in-time membership policy, and whether manniu needs a new mapping table/model field; confirm proposed database fields before coding.
+- [ ] Define new parity engine-version name and retain the current engine version for side-by-side replay and rollback.
+- [ ] Complete Section 9.4 parity acceptance before publishing the aligned engine.
 - [ ] 确认 PostgreSQL 实际表名、字段类型、`engine_version` 命名规则、市场 universe、
   peer taxonomy、coverage threshold，以及 8.4 中的 DTO 字段是否与实现一致。
 - [ ] 与 `access_control` 确认并注册 `market_sentiment:read`、`history_read`、
