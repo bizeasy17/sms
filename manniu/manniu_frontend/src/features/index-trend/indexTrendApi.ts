@@ -20,6 +20,8 @@ type CompositeResponse = {
 
 type ShanghaiRow = { trade_date?: string; pe?: number | null; pe_ttm?: number | null; pb?: number | null }
 type ShanghaiResponse = { data?: ShanghaiRow[]; error?: { message?: string } }
+type MarketSentimentRow = { trade_date?: string; score?: number | null }
+type MarketSentimentResponse = { data?: MarketSentimentRow[]; meta?: { has_next?: boolean }; error?: { message?: string } }
 
 export type IndexTrendPoint = { date: string; value: number }
 export type IndexTrendPayload = { points: IndexTrendPoint[]; summary: ApiSummary }
@@ -61,6 +63,24 @@ export async function fetchCompositeTrend(metric: Metric, window: WindowKey, sig
     return { points, summary: body.data?.summary ?? {} }
 }
 
+export async function fetchMarketSentimentTrend(startDate: string, endDate: string, signal: AbortSignal): Promise<IndexTrendPoint[]> {
+    const points: IndexTrendPoint[] = []
+    let page = 1
+    let hasNext = true
+    while (hasNext && page <= 10) {
+        const query = new URLSearchParams({ start_date: startDate, end_date: endDate, page: String(page), page_size: '200' })
+        const body = await readJson<MarketSentimentResponse>(`${API_BASE}/market-analysis/sentiment/market/history?${query}`, signal)
+        for (const row of body.data ?? []) {
+            if (typeof row.trade_date === 'string' && typeof row.score === 'number' && Number.isFinite(row.score)) {
+                points.push({ date: row.trade_date, value: row.score })
+            }
+        }
+        hasNext = body.meta?.has_next === true
+        page += 1
+    }
+    return points.sort((left, right) => left.date.localeCompare(right.date))
+}
+
 export async function fetchShanghaiTrend(metric: Metric, window: WindowKey, signal: AbortSignal): Promise<IndexTrendPayload> {
     const query = new URLSearchParams({ ...dateRange(window), page: '1', page_size: '200' })
     const body = await readJson<ShanghaiResponse>(`${API_BASE}/market-analysis/indices/sh/fundamentals?${query}`, signal)
@@ -76,3 +96,5 @@ export async function fetchShanghaiTrend(metric: Metric, window: WindowKey, sign
     const percentile = current == null || !sorted.length ? null : (sorted.filter((value) => value <= current).length / sorted.length) * 100
     return { points, summary: { current, percentile, p10: quantile(.1), p50: quantile(.5), p90: quantile(.9), start_date: points[0]?.date, end_date: points.at(-1)?.date } }
 }
+
+

@@ -1,4 +1,5 @@
 from datetime import date, timedelta
+import math
 
 from market_data.models import Security
 from market_data.services.regime import get_market_regime, get_security_regime
@@ -99,6 +100,7 @@ def _meta(page=None, *, data_status='COMPLETE', asof_date=None, source_trade_dat
 def _handle_request_error(request, error):
     status_map = {
         'INVALID_REQUEST': 400,
+        'INVALID_SCREEN_FILTER': 400,
         'INVALID_DATE': 400,
         'INVALID_SYMBOL': 400,
         'RANGE_TOO_LARGE': 400,
@@ -324,7 +326,10 @@ def _query_number(params, name, default):
     if value in (None, ''):
         return default
     try:
-        return float(value)
+        number = float(value)
+        if not math.isfinite(number):
+            raise ValueError(name)
+        return number
     except (TypeError, ValueError) as error:
         raise MarketDataRequestError('INVALID_REQUEST', f'{name} 必须为数字') from error
 
@@ -335,16 +340,60 @@ def stock_selection_results(request):
         return response
     try:
         params = request.GET
-        preset = str(params.get('preset', 'quality-growth')).strip().lower()
+        screen_mode = str(params.get('screen_mode', 'screen')).strip().lower()
+        if screen_mode not in {'screen', 'risk'}:
+            raise StockSelectionRequestError('INVALID_SCREEN_FILTER', 'screen_mode 不受支持')
+        preset_value = str(params.get('preset', '')).strip().lower()
+        preset = preset_value or ('risk-scan' if screen_mode == 'risk' else 'maniu-selected')
         if preset not in PRESETS:
             raise StockSelectionRequestError('UNSUPPORTED_PRESET', 'preset 不受支持')
+        if (screen_mode == 'risk') != (preset == 'risk-scan'):
+            raise StockSelectionRequestError('INVALID_SCREEN_FILTER', 'risk 模式必须使用 risk-scan，普通筛选不能使用 risk-scan')
         filters = dict(PRESETS[preset])
-        for key in ('revenue_yoy_min', 'profit_yoy_min', 'ebit_yoy_min', 'roe_min', 'liquidity_ratio_min'):
+
+        numeric_filter_keys = (
+            'revenue_yoy_min', 'revenue_yoy_max', 'profit_yoy_min', 'profit_yoy_max',
+            'ebit_yoy_min', 'ebit_yoy_max', 'roe_min', 'roe_max', 'roic_min', 'roic_max',
+            'gross_margin_min', 'gross_margin_max', 'cash_profit_ratio_min',
+            'cash_profit_ratio_max', 'debt_to_assets_min', 'debt_to_assets_max', 'liquidity_ratio_min',
+            'liquidity_ratio_max', 'goodwill_to_equity_min', 'goodwill_to_equity_max', 'pe_ttm_min', 'pe_ttm_max',
+            'pb_min', 'pb_max', 'peg_min', 'peg_max', 'dividend_yield_min',
+            'dividend_yield_max', 'market_cap_min', 'market_cap_max',
+        )
+        boolean_filter_keys = (
+            'net_profit_positive', 'gross_margin_improved', 'operating_cash_flow_positive',
+            'free_cash_flow_positive', 'net_cash',
+        )
+        allowed_keys = {
+            'preset', 'screen_mode', 'pool', 'market', 'industry', 'report_type', 'asof_date',
+            'sort', 'direction', 'page', 'page_size', *numeric_filter_keys, *boolean_filter_keys,
+        }
+        unknown_keys = set(params.keys()) - allowed_keys
+        if unknown_keys:
+            raise StockSelectionRequestError('INVALID_SCREEN_FILTER', '包含不受支持的选股参数', {'fields': sorted(unknown_keys)})
+        if params.get('pool', 'market') != 'market':
+            raise StockSelectionRequestError('INVALID_SCREEN_FILTER', 'pool 仅支持 market')
+        if screen_mode == 'risk' and any(key in params for key in numeric_filter_keys + boolean_filter_keys):
+            raise StockSelectionRequestError('INVALID_SCREEN_FILTER', 'risk 模式只接受内置风险规则，不接受正向筛选条件')
+
+        for key in numeric_filter_keys:
             if key in params:
-                filters[key] = _query_number(params, key, filters[key])
-        for key in ('gross_margin_improved', 'operating_cash_flow_positive', 'net_cash'):
+                if params.get(key) == '':
+                    filters[key] = None
+                    continue
+                filters[key] = _query_number(params, key, filters.get(key))
+        for key in boolean_filter_keys:
             if key in params:
-                filters[key] = _query_bool(params, key, filters[key])
+                filters[key] = _query_bool(params, key, filters.get(key, False))
+        for name in (
+            'revenue_yoy', 'profit_yoy', 'ebit_yoy', 'roe', 'roic', 'gross_margin',
+            'cash_profit_ratio', 'debt_to_assets', 'liquidity_ratio', 'goodwill_to_equity', 'pe_ttm', 'pb', 'peg',
+            'dividend_yield', 'market_cap',
+        ):
+            minimum = filters.get(f'{name}_min')
+            maximum = filters.get(f'{name}_max')
+            if minimum is not None and maximum is not None and minimum > maximum:
+                raise StockSelectionRequestError('INVALID_SCREEN_FILTER', f'{name}_min 不能大于 {name}_max')
         page = _query_int(params, 'page', 1)
         page_size = _query_int(params, 'page_size', 20, maximum=200)
         asof_date = parse_date(params.get('asof_date'), 'asof_date') or date.today()
@@ -358,25 +407,53 @@ def stock_selection_results(request):
             page_size=page_size,
             sort_key=str(params.get('sort', 'score')),
             sort_direction=str(params.get('direction', 'desc')).lower(),
+            screen_mode=screen_mode,
         )
     except (MarketDataRequestError, StockSelectionRequestError) as error:
         return _handle_request_error(request, error)
-    meta = _meta(result, data_status='OK' if total else 'NO_DATA', asof_date=asof_date)
+    response_status = 'PARTIAL_SUCCESS' if result.unassessed_count and total else (
+        'INSUFFICIENT_DATA' if result.unassessed_count else ('OK' if total else 'NO_DATA')
+    )
+    meta = _meta(result, data_status=response_status, asof_date=asof_date)
     meta.update({
         'total_pages': (total + result.page_size - 1) // result.page_size if total else 0,
         'has_previous': result.page > 1 and total > 0,
     })
     return api_response(request, data={
+        'screen_mode': screen_mode,
         'preset_key': preset,
         'preset_version': 'v1',
         'filters': filters,
         'summary': {
             'market_stock_count': market_stock_count,
-            'screened_count': total,
+            'screened_count': market_stock_count,
             'matched_count': total,
             'returned_count': len(result.items),
+            'unassessed_count': result.unassessed_count,
         },
         'items': result.items,
+        'risk_summary': result.risk_summary,
+        'units': {
+            'revenue_yoy': 'percentage_points',
+            'profit_yoy': 'percentage_points',
+            'ebit_yoy': 'percentage_points',
+            'roe': 'percentage_points',
+            'roic': 'percentage_points',
+            'gross_margin': 'percentage_points',
+            'gross_margin_change': 'percentage_points',
+            'operating_cash_flow': 'CNY',
+            'free_cash_flow': 'CNY',
+            'cash_profit_ratio': 'ratio',
+            'debt_to_assets': 'percentage_points',
+            'liquidity_ratio': 'multiple',
+            'goodwill_to_equity': 'percentage_points',
+            'market_cap': 'CNY_100M',
+            'pe_ttm': 'multiple',
+            'pb': 'multiple',
+            'peg': 'multiple',
+            'dividend_yield': 'percentage_points',
+        },
+        'filter_units': {'market_cap': 'CNY_10K'},
         'valuation_status': {
             'traditional': 'PARTIAL_SUCCESS' if any(item['traditional_status'] != 'OK' for item in result.items) else 'COMPLETE',
             'predictive': 'PARTIAL_SUCCESS' if any(item['predictive_status'] != 'OK' for item in result.items) else 'COMPLETE',

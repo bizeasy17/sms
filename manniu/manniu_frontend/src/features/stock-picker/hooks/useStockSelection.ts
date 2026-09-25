@@ -1,21 +1,10 @@
 import { useEffect, useState } from 'react'
-import { fetchStockSelection, fetchSwIndustries, type StockSelectionItem, type StockSelectionQuery, type SwIndustry } from '../services/stockSelectionApi'
-
-export type StockSelectionFilters = {
-    roe: boolean
-    grossMargin: boolean
-    cashFlow: boolean
-    netCash: boolean
-    revenueYoy: number
-    profitYoy: number
-    ebitYoy: number
-    liquidityRatio: number
-}
+import { fetchStockSelection, fetchSwIndustries, type StockSelectionFilterDraft, type StockSelectionItem, type StockSelectionPreset, type StockSelectionQuery, type StockSelectionRangeKey, type SwIndustry } from '../services/stockSelectionApi'
 
 type SortKey = 'score' | 'valueValuationScore' | 'modelValuationScore' | 'revenueYoy' | 'profitYoy' | 'ebitYoy' | 'roe' | 'liquidityRatio'
 type QueryStatus = 'idle' | 'loading' | 'error'
 
-export function useStockSelection(filters: StockSelectionFilters, sortKey: SortKey, sortDirection: 'asc' | 'desc', market: string, reportType: string, asofDate: string, selectedIndustry: string) {
+export function useStockSelection(preset: StockSelectionPreset, filters: StockSelectionFilterDraft, sortKey: SortKey, sortDirection: 'asc' | 'desc', market: string, reportType: string, asofDate: string, selectedIndustry: string) {
     const [industries, setIndustries] = useState<SwIndustry[]>([])
     const [industryStatus, setIndustryStatus] = useState<'loading' | 'ready' | 'error'>('loading')
     const [industryError, setIndustryError] = useState('')
@@ -40,7 +29,31 @@ export function useStockSelection(filters: StockSelectionFilters, sortKey: SortK
         if (queryStatus === 'loading') return false
         setQueryStatus('loading'); setQueryError('')
         const controller = new AbortController()
-        const query: StockSelectionQuery = { preset: 'quality-growth', market, report_type: reportType, asof_date: asofDate, industry: selectedIndustry === 'all' ? undefined : selectedIndustry, revenue_yoy_min: filters.revenueYoy, profit_yoy_min: filters.profitYoy, ebit_yoy_min: filters.ebitYoy, roe_min: filters.roe ? 10 : -100, gross_margin_improved: filters.grossMargin, operating_cash_flow_positive: filters.cashFlow, liquidity_ratio_min: filters.liquidityRatio, net_cash: filters.netCash, sort: sortKey === 'valueValuationScore' ? 'value_valuation_score' : sortKey === 'modelValuationScore' ? 'model_valuation_score' : sortKey === 'revenueYoy' ? 'revenue_yoy' : sortKey === 'profitYoy' ? 'profit_yoy' : sortKey === 'ebitYoy' ? 'ebit_yoy' : sortKey, direction: sortDirection, page, page_size: 10 }
+        const query: StockSelectionQuery = {
+            preset,
+            screen_mode: preset === 'risk-scan' ? 'risk' : 'screen',
+            market,
+            report_type: reportType,
+            asof_date: asofDate,
+            industry: selectedIndustry === 'all' ? undefined : selectedIndustry,
+            sort: sortKey === 'valueValuationScore' ? 'value_valuation_score' : sortKey === 'modelValuationScore' ? 'model_valuation_score' : sortKey === 'revenueYoy' ? 'revenue_yoy' : sortKey === 'profitYoy' ? 'profit_yoy' : sortKey === 'ebitYoy' ? 'ebit_yoy' : sortKey,
+            direction: sortDirection,
+            page,
+            page_size: 10,
+        }
+        if (preset !== 'risk-scan') {
+            const numericFilters: Partial<Record<`${StockSelectionRangeKey}_${'min' | 'max'}`, number | ''>> = {}
+            for (const key of Object.keys(filters.ranges) as StockSelectionRangeKey[]) {
+                for (const bound of ['min', 'max'] as const) {
+                    const rawValue = filters.ranges[key][bound]
+                    const parsedValue = rawValue.trim() === '' ? '' : Number(rawValue)
+                    numericFilters[`${key}_${bound}`] = parsedValue === '' || !Number.isFinite(parsedValue)
+                        ? ''
+                        : key === 'market_cap' ? parsedValue * 10_000 : parsedValue
+                }
+            }
+            Object.assign(query, numericFilters, filters.toggles)
+        }
         try {
             const data = await fetchStockSelection(query, controller.signal)
             setResultRows(data.items ?? []); setMarketStockCount(data.summary?.market_stock_count ?? 0); setMatchedCount(data.summary?.matched_count ?? 0); setQueryStatus('idle')

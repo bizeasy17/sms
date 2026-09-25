@@ -1,11 +1,76 @@
 import { useState } from 'react'
 import { TopBar } from '../../shared/ui/TopBar'
-import type { StockSelectionItem } from './services/stockSelectionApi'
+import type { StockSelectionFilterDraft, StockSelectionItem, StockSelectionPreset, StockSelectionRangeKey, StockSelectionToggleKey } from './services/stockSelectionApi'
 import { useStockSelection } from './hooks/useStockSelection'
 import './stock-picker.css'
 
-type FilterKey = 'revenueYoy' | 'profitYoy' | 'ebitYoy' | 'liquidityRatio'
 type SortKey = 'score' | 'valueValuationScore' | 'modelValuationScore' | 'revenueYoy' | 'profitYoy' | 'ebitYoy' | 'roe' | 'liquidityRatio'
+const PRESET_OPTIONS: { key: StockSelectionPreset; label: string; group: '精选方案' | '全部预设' }[] = [
+  { key: 'maniu-selected', label: '慢牛牛精选', group: '精选方案' },
+  { key: 'buffett-moat', label: '巴菲特护城河', group: '精选方案' },
+  { key: 'high-growth', label: '高成长', group: '精选方案' },
+  { key: 'cash-cow', label: '现金奶牛', group: '精选方案' },
+  { key: 'undervalued', label: '低估价值股', group: '精选方案' },
+  { key: 'high-dividend', label: '高股息', group: '全部预设' },
+  { key: 'small-beautiful', label: '小而美', group: '全部预设' },
+  { key: 'turnaround', label: '困境反转', group: '全部预设' },
+  { key: 'net-cash-bargain', label: '净现金便宜货', group: '全部预设' },
+  { key: 'risk-scan', label: '排雷模式', group: '全部预设' },
+]
+
+const RANGE_GROUPS: { title: string; fields: { key: StockSelectionRangeKey; label: string; unit: string; hint: string }[] }[] = [
+  { title: '成长性', fields: [
+    { key: 'revenue_yoy', label: '营收增长率', unit: '%', hint: '建议 0–50%' },
+    { key: 'profit_yoy', label: '净利润增长率', unit: '%', hint: '建议 0–50%' },
+    { key: 'ebit_yoy', label: 'EBIT 增长率', unit: '%', hint: '建议 0–50%' },
+  ] },
+  { title: '盈利质量', fields: [
+    { key: 'roe', label: 'ROE', unit: '%', hint: '建议 0–30%' },
+    { key: 'roic', label: 'ROIC', unit: '%', hint: '建议 0–30%' },
+    { key: 'gross_margin', label: '毛利率', unit: '%', hint: '建议 0–80%' },
+  ] },
+  { title: '现金流质量', fields: [
+    { key: 'cash_profit_ratio', label: '现金利润比', unit: '倍', hint: '可按需设上下限' },
+  ] },
+  { title: '财务健康', fields: [
+    { key: 'debt_to_assets', label: '资产负债率', unit: '%', hint: '建议 0–100%' },
+    { key: 'liquidity_ratio', label: '流动比率', unit: '倍', hint: '建议 0–5' },
+    { key: 'goodwill_to_equity', label: '商誉 / 净资产', unit: '%', hint: '建议 0–100%' },
+  ] },
+  { title: '估值水平', fields: [
+    { key: 'pe_ttm', label: 'PE（TTM）', unit: '倍', hint: '建议 0–100' },
+    { key: 'pb', label: 'PB', unit: '倍', hint: '建议 0–10' },
+    { key: 'peg', label: 'PEG', unit: '倍', hint: '建议 0–5' },
+    { key: 'dividend_yield', label: '股息率', unit: '%', hint: '建议 0–10%' },
+    { key: 'market_cap', label: '总市值', unit: '亿', hint: '建议 20–200 亿' },
+  ] },
+]
+
+const TOGGLE_GROUPS: { title: string; fields: { key: StockSelectionToggleKey; label: string }[] }[] = [
+  { title: '盈利质量', fields: [{ key: 'net_profit_positive', label: '净利润为正' }, { key: 'gross_margin_improved', label: '毛利率同比改善' }] },
+  { title: '现金流质量', fields: [{ key: 'operating_cash_flow_positive', label: '经营现金流为正' }, { key: 'free_cash_flow_positive', label: '自由现金流为正' }, { key: 'net_cash', label: '净现金企业' }] },
+]
+
+const PRESET_DEFAULTS: Record<StockSelectionPreset, { ranges?: Partial<Record<StockSelectionRangeKey, { min?: number; max?: number }>>; toggles?: Partial<Record<StockSelectionToggleKey, boolean>> }> = {
+  'maniu-selected': { ranges: { revenue_yoy: { min: 8 }, profit_yoy: { min: 8 }, ebit_yoy: { min: 8 }, roe: { min: 15 }, roic: { min: 12 }, debt_to_assets: { max: 50 }, liquidity_ratio: { min: 1.5 }, pe_ttm: { max: 25 }, dividend_yield: { min: 2 } }, toggles: { gross_margin_improved: true, operating_cash_flow_positive: true, free_cash_flow_positive: true } },
+  'buffett-moat': { ranges: { revenue_yoy: { min: 5 }, profit_yoy: { min: 5 }, roe: { min: 20 }, roic: { min: 15 }, gross_margin: { min: 40 }, debt_to_assets: { max: 50 }, pe_ttm: { max: 30 } }, toggles: { operating_cash_flow_positive: true, free_cash_flow_positive: true } },
+  'high-growth': { ranges: { revenue_yoy: { min: 20 }, profit_yoy: { min: 20 }, ebit_yoy: { min: 20 }, roe: { min: 10 }, peg: { max: 1.5 } }, toggles: { operating_cash_flow_positive: true } },
+  'cash-cow': { ranges: { roe: { min: 15 }, roic: { min: 12 }, pe_ttm: { max: 20 } }, toggles: { operating_cash_flow_positive: true, free_cash_flow_positive: true, net_cash: true } },
+  undervalued: { ranges: { roe: { min: 10 }, debt_to_assets: { max: 60 }, pe_ttm: { max: 15 }, pb: { max: 1.5 } }, toggles: { operating_cash_flow_positive: true } },
+  'high-dividend': { ranges: { roe: { min: 10 }, dividend_yield: { min: 5 } }, toggles: { operating_cash_flow_positive: true } },
+  'small-beautiful': { ranges: { revenue_yoy: { min: 15 }, profit_yoy: { min: 15 }, roe: { min: 15 }, market_cap: { min: 20, max: 200 } }, toggles: { operating_cash_flow_positive: true } },
+  turnaround: { ranges: { revenue_yoy: { min: 0 }, profit_yoy: { min: 0 }, roe: { min: 8 }, pb: { max: 2 } }, toggles: { operating_cash_flow_positive: true } },
+  'net-cash-bargain': { ranges: { pe_ttm: { max: 12 }, pb: { max: 1.5 } }, toggles: { net_profit_positive: true, net_cash: true } },
+  'risk-scan': {},
+}
+
+function createFilterDraft(preset: StockSelectionPreset): StockSelectionFilterDraft {
+  const defaults = PRESET_DEFAULTS[preset]
+  return {
+    ranges: Object.fromEntries(RANGE_GROUPS.flatMap((group) => group.fields).map(({ key }) => [key, { min: String(defaults.ranges?.[key]?.min ?? ''), max: String(defaults.ranges?.[key]?.max ?? '') }])) as StockSelectionFilterDraft['ranges'],
+    toggles: Object.fromEntries(TOGGLE_GROUPS.flatMap((group) => group.fields).map(({ key }) => [key, Boolean(defaults.toggles?.[key])])) as StockSelectionFilterDraft['toggles'],
+  }
+}
 
 type StockRow = {
   code: string
@@ -28,7 +93,7 @@ function mapSelectionRow(item: StockSelectionItem): StockRow {
   const industry = item.industry || item.sw_industry?.name || '暂无行业'
   const mainBusiness = item.main_business || '主营业务暂无数据'
   const wrappedBusiness = mainBusiness.match(/.{1,15}/g)?.join('\n') || mainBusiness
-  return { code: item.ts_code, name: item.name, industry: `${industry}\n${wrappedBusiness}`, mainBusiness, score: roundValue(item.financial_score, 0), valueValuationScore: roundValue(item.value_valuation_score, 0), modelValuationScore: roundValue(item.model_valuation_score, 0), revenueYoy: roundValue(item.revenue_yoy != null ? item.revenue_yoy * 100 : null, 1), profitYoy: roundValue(item.profit_yoy != null ? item.profit_yoy * 100 : null, 1), ebitYoy: roundValue(item.ebit_yoy != null ? item.ebit_yoy * 100 : null, 1), roe: roundValue(item.roe, 1), grossMarginChange: roundValue(item.gross_margin_change, 1), cashFlow: roundValue(item.operating_cash_flow != null ? Number(item.operating_cash_flow) / 100000000 : null, 2), liquidityRatio: roundValue(item.liquidity_ratio, 1) }
+  return { code: item.ts_code, name: item.name, industry: `${industry}\n${wrappedBusiness}`, mainBusiness, score: roundValue(item.financial_score, 0), valueValuationScore: roundValue(item.value_valuation_score, 0), modelValuationScore: roundValue(item.model_valuation_score, 0), revenueYoy: roundValue(item.revenue_yoy, 1), profitYoy: roundValue(item.profit_yoy, 1), ebitYoy: roundValue(item.ebit_yoy, 1), roe: roundValue(item.roe, 1), grossMarginChange: roundValue(item.gross_margin_change, 1), cashFlow: roundValue(item.operating_cash_flow != null ? Number(item.operating_cash_flow) / 100000000 : null, 2), liquidityRatio: roundValue(item.liquidity_ratio, 1) }
 }
 
 function displayNumber(value: number, digits = 1, suffix = '') { return Number.isNaN(value) ? '--' : `${value.toFixed(digits)}${suffix}` }
@@ -40,11 +105,11 @@ function roundValue(value: number | string | null | undefined, digits: number) {
 }
 
 function ToggleField({ label, checked, onChange }: { label: string; checked: boolean; onChange: () => void }) {
-  return <label className="filter-toggle"><span>{label}</span><button type="button" role="switch" aria-checked={checked} aria-label={label} className={`toggle ${checked ? 'on' : ''}`} onClick={onChange}><i /></button></label>
+  return <div className="filter-toggle"><span>{label}</span><button type="button" role="switch" aria-checked={checked} aria-label={label} className={`toggle ${checked ? 'on' : ''}`} onClick={onChange}><i /></button></div>
 }
 
-function ThresholdField({ label, value, max, unit = '%', step = 1, onChange }: { label: string; value: number; max: number; unit?: string; step?: number; onChange: (value: number) => void }) {
-  return <div className="threshold-field"><label htmlFor={`threshold-${label}`}>{label} <b>≥ {value}{unit}</b></label><input id={`threshold-${label}`} aria-label={`${label}阈值`} type="range" min="0" max={max} step={step} value={value} onChange={(event) => onChange(Number(event.target.value))} /><div><span>0{unit}</span><span>{max}{unit}</span></div></div>
+function ThresholdField({ name, label, unit, hint, minValue, maxValue, onChange }: { name: string; label: string; unit: string; hint: string; minValue: string; maxValue: string; onChange: (bound: 'min' | 'max', value: string) => void }) {
+  return <div className="threshold-field" role="group" aria-labelledby={`${name}-label`}><span id={`${name}-label`} className="threshold-label">{label}</span><div className="threshold-inputs"><input id={`${name}-min`} aria-label={`${label}最低值`} type="number" step="any" value={minValue} onChange={(event) => onChange('min', event.target.value)} /><span aria-hidden="true">~</span><input id={`${name}-max`} aria-label={`${label}最高值`} type="number" step="any" value={maxValue} onChange={(event) => onChange('max', event.target.value)} /><span>{unit}</span></div><small>{hint}</small></div>
 }
 
 export function StockPickerPage() {
@@ -57,11 +122,14 @@ export function StockPickerPage() {
   const [reportType, setReportType] = useState('26H1')
   const [market, setMarket] = useState('all')
   const [asofDate, setAsofDate] = useState('2026-09-19')
-  const [filters, setFilters] = useState({ roe: true, grossMargin: true, cashFlow: true, netCash: true, revenueYoy: 10, profitYoy: 10, ebitYoy: 10, liquidityRatio: 1.5 })
+  const [selectedPreset, setSelectedPreset] = useState<StockSelectionPreset>('maniu-selected')
+  const [filterDraft, setFilterDraft] = useState(() => createFilterDraft('maniu-selected'))
 
-  const { industries, industryStatus, industryError, resultRows, marketStockCount, matchedCount, queryStatus, queryError, updateResults: queryResults } = useStockSelection(filters, sortKey, sortDirection, market, reportType, asofDate, selectedIndustry)
+  const { industries, industryStatus, industryError, resultRows, marketStockCount, matchedCount, queryStatus, queryError, updateResults: queryResults } = useStockSelection(selectedPreset, filterDraft, sortKey, sortDirection, market, reportType, asofDate, selectedIndustry)
 
-  function updateFilter(key: FilterKey, value: number) { setFilters((current) => ({ ...current, [key]: value })); setSubmitted(false) }
+  function updateBound(key: StockSelectionRangeKey, bound: 'min' | 'max', value: string) { setFilterDraft((current) => ({ ...current, ranges: { ...current.ranges, [key]: { ...current.ranges[key], [bound]: value } } })); setSubmitted(false) }
+  function updateToggle(key: StockSelectionToggleKey) { setFilterDraft((current) => ({ ...current, toggles: { ...current.toggles, [key]: !current.toggles[key] } })); setSubmitted(false) }
+  function selectPreset(value: string) { const preset = value as StockSelectionPreset; setSelectedPreset(preset); setFilterDraft(createFilterDraft(preset)); setSubmitted(false) }
   function updateSort(nextKey: SortKey) { setSortKey(nextKey); setPage(1) }
   function toggleSortDirection() { setSortDirection((value) => value === 'desc' ? 'asc' : 'desc'); setPage(1) }
   async function updateResults() {
@@ -91,10 +159,11 @@ export function StockPickerPage() {
     <div className="stock-picker-layout">
       <aside className={`picker-sidebar ${sidebarOpen ? 'open' : ''}`} aria-label="选股筛选器">
         <div className="sidebar-title">筛选器</div>
-        <label className="saved-screen-picker">预存筛选器<select defaultValue="quality-growth" aria-label="选择预存筛选器"><option value="quality-growth">优质盈利增长</option><option value="steady-growth">稳健成长</option><option value="cash-flow">现金流改善</option><option value="low-risk">低风险财务表现</option></select></label>
-        <section className="filter-group"><h2>成长性</h2><ThresholdField label="营收增长" value={filters.revenueYoy} max={30} onChange={(value) => updateFilter('revenueYoy', value)} /><ThresholdField label="净利润增长" value={filters.profitYoy} max={30} onChange={(value) => updateFilter('profitYoy', value)} /><ThresholdField label="EBIT 增长" value={filters.ebitYoy} max={30} onChange={(value) => updateFilter('ebitYoy', value)} /></section>
-        <section className="filter-group"><h2>盈利质量</h2><ToggleField label="ROE ≥ 10%" checked={filters.roe} onChange={() => setFilters((current) => ({ ...current, roe: !current.roe }))} /><ToggleField label="毛利率同比改善" checked={filters.grossMargin} onChange={() => setFilters((current) => ({ ...current, grossMargin: !current.grossMargin }))} /><ToggleField label="经营现金流为正" checked={filters.cashFlow} onChange={() => setFilters((current) => ({ ...current, cashFlow: !current.cashFlow }))} /></section>
-        <section className="filter-group"><h2>财务健康</h2><ThresholdField label="流动比率" value={filters.liquidityRatio} max={5} unit="" step={0.1} onChange={(value) => updateFilter('liquidityRatio', value)} /><ToggleField label="净现金企业" checked={filters.netCash} onChange={() => setFilters((current) => ({ ...current, netCash: !current.netCash }))} /></section>
+        <label className="saved-screen-picker">预设方案<select value={selectedPreset} aria-label="选择预设方案" onChange={(event) => selectPreset(event.target.value)}><optgroup label="首页精选">{PRESET_OPTIONS.filter((option) => option.group === '精选方案').map((option) => <option key={option.key} value={option.key}>{option.label}</option>)}</optgroup><optgroup label="全部预设">{PRESET_OPTIONS.filter((option) => option.group === '全部预设').map((option) => <option key={option.key} value={option.key}>{option.label}</option>)}</optgroup></select></label>
+        <div className="filter-draft-actions"><button type="button" onClick={() => { setFilterDraft(createFilterDraft(selectedPreset)); setSubmitted(false) }}>恢复预设</button><button type="button" onClick={() => { setFilterDraft(createFilterDraft('risk-scan')); setSubmitted(false) }}>清空条件</button></div>
+        {selectedPreset === 'risk-scan' ? <section className="filter-group risk-rules"><h2>排雷规则 <span>命中任一项</span></h2>{['连续两年净利润同比为负', 'ROE < 5%', '经营现金流为负', '资产负债率 > 70%', '商誉 / 净资产 > 30%'].map((rule) => <div key={rule}><i aria-hidden="true">!</i><span>{rule}</span></div>)}</section> : <>
+          {RANGE_GROUPS.map((group) => <section className="filter-group" key={group.title}><h2>{group.title}</h2>{group.fields.map(({ key, ...field }) => <ThresholdField key={key} name={key} {...field} minValue={filterDraft.ranges[key].min} maxValue={filterDraft.ranges[key].max} onChange={(bound, value) => updateBound(key, bound, value)} />)}{TOGGLE_GROUPS.filter((toggleGroup) => toggleGroup.title === group.title).flatMap((toggleGroup) => toggleGroup.fields).map((field) => <ToggleField key={field.key} label={field.label} checked={filterDraft.toggles[field.key]} onChange={() => updateToggle(field.key)} />)}</section>)}
+        </>}
         <section className="filter-group range-group"><h2>数据范围</h2><label>报告期<select value={reportType} onChange={(event) => { setReportType(event.target.value); setSubmitted(false) }}><option value="26H1">2026 H1</option><option value="26FY">2026 FY</option><option value="25FY">2025 FY</option><option value="25H1">2025 H1</option></select></label><label>市场<select value={market} onChange={(event) => { setMarket(event.target.value); setSubmitted(false) }}><option value="all">沪深 A 股</option><option value="sh-main">沪市主板</option><option value="sz-main">深市主板</option><option value="cyb">创业板</option><option value="star">科创板</option></select></label><label>选股日期<input type="date" value={asofDate} max="2026-09-19" onChange={(event) => { setAsofDate(event.target.value); setSubmitted(false) }} /></label><label>SW 行业<select value={selectedIndustry} onChange={(event) => { setSelectedIndustry(event.target.value); setSubmitted(false) }} disabled={industryStatus === 'loading'} aria-label="选择 SW 行业"><option value="all">{industryStatus === 'error' ? '行业列表加载失败' : industryStatus === 'loading' ? '正在加载行业...' : industries.length ? '全部行业' : '暂无可选行业'}</option>{industries.map((industry) => <option key={industry.industry_code} value={industry.industry_code}>{industry.name}</option>)}</select>{industryStatus === 'error' && <small role="alert" className="filter-error">{industryError}</small>}</label></section>
         <button type="button" className="sidebar-run" onClick={updateResults} disabled={queryStatus === 'loading'}>{queryStatus === 'loading' ? '更新中...' : submitted ? '已更新结果' : '更新结果'} <b>↗</b></button>
       </aside>

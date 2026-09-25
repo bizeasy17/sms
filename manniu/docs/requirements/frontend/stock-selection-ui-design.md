@@ -4,14 +4,15 @@
 
 | 项目 | 内容 |
 | --- | --- |
-| 页面名称 | 财务表现选股工作台 |
+| 页面名称 | 股票选股工作台 |
 | 参考截面 | `docs/requirements/ui/financial-performance-screener.html` |
 | 前端项目 | `manniu/manniu_frontend` |
 | 技术栈 | React、TypeScript、Vite |
 | 页面入口 | 顶部导航“选股” |
 | 页面路径 | `/stock-picker` |
-| 页面定位 | 通过盈利质量、成长性、估值与风险条件筛选候选股票 |
-| 当前阶段 | SW 行业目录和选股结果均已接入服务端；结果页使用真实查询返回值 |
+| 页面定位 | 通过成长性、盈利质量、现金流质量、财务健康和估值水平发现候选股票，并支持风险排查 |
+| 指标体系 | `docs/requirements/modules/stock-selection-pre-select-filter-design.md` |
+| 当前阶段 | SW 行业目录、五维筛选器 UI、V1.0 预设及后台选股 query 参数已接入；结果表字段展示和风险命中详情仍按页面能力逐步完善 |
 
 本页面服务于研究工作流中的候选发现阶段。用户应能在同一工作区完成筛选条件配置、查看结果摘要、扫描财务指标，并进入个股研究档案。
 
@@ -40,10 +41,13 @@ AppShell
 └── StockPickerPage
     ├── FilterSidebar（桌面端固定、移动端抽屉）
     │   ├── 筛选器标题
-    │   ├── 保存的筛选方案提示
-    │   ├── 盈利质量
+    │   ├── 预设筛选器（首页五个默认方案）
+    │   ├── 预设筛选器
     │   ├── 成长性
-    │   ├── 估值与风险
+    │   ├── 盈利质量
+    │   ├── 现金流质量
+    │   ├── 财务健康
+    │   ├── 估值水平
     │   └── 数据范围
     └── ResultWorkspace
         ├── Breadcrumb
@@ -93,44 +97,49 @@ AppShell
 
 ## 6. 左侧筛选器
 
-### 6.1 筛选器头部
+### 6.1 预设筛选器
 
-- 顶部显示小号字母间距标题“筛选器”。
-- 首次进入页面显示一个“优质盈利增长”保存方案提示区域。
-- 保存方案提示包括方案名称和一句简短说明，例如“高 ROE、收入与利润增长，同时控制估值与负债风险”。
-- 当前阶段保存方案可以是静态展示；接入接口后再支持保存、覆盖和删除。
+- 顶部显示“筛选器”，并突出首页默认的五个方案：慢牛牛精选、巴菲特护城河、高成长、现金奶牛、低估价值股。
+- 其余方案在“全部预设”列表中可选：高股息、小而美、困境反转、净现金便宜货、排雷模式。
+- 选择正向预设时，将方案阈值载入可编辑草稿；选择方案不代表用户已保存个人方案。
+- 提供“恢复预设”以恢复当前方案条件，以及“清空条件”以清除指标限制；报告期、市场、日期和行业不随清空操作改变。
+- 排雷模式是独立风险扫描模式，命中任一风险条件即返回，并显示命中原因；不得与正向筛选条件混用。
+- 用户保存、覆盖和删除个人方案不在本阶段范围内。
 
-### 6.2 盈利质量
+### 6.2 五大指标维度
 
-使用开关型条件，每行左侧为条件名称，右侧为开关：
+阈值均可编辑，支持单边或上下限；未设置的边界表示不限制。预设值载入后，用户仍可修改单项条件。
 
-| 条件 | 默认值 |
+| 维度 | 条件 | 控件建议范围 |
+| --- | --- | --- |
+| 成长性 | 营收增长率、净利润增长率、EBIT 增长率 | `0%~50%` |
+| 盈利质量 | ROE、ROIC、毛利率、毛利率同比改善 | ROE/ROIC `0%~30%`；毛利率 `0%~80%`；改善使用开关 |
+| 现金流质量 | 经营现金流为正、自由现金流为正、净现金企业、现金利润比 | 三个布尔开关；现金利润比为数值阈值 |
+| 财务健康 | 资产负债率、流动比率、商誉占净资产比例 | 百分比 `0%~100%`；流动比率 `0~5` |
+| 估值水平 | PE(TTM)、PB、PEG、股息率、总市值 | PE `0~100`；PB `0~10`；PEG `0~5`；股息率 `0%~10%`；总市值以亿元输入 |
+
+范围端点是控件建议值，不代表截断真实财务值。阈值控件需显示当前值和范围端点，并提供可键盘编辑的数值输入。布尔开关必须使用 `role="switch"`、同步 `aria-checked`，并且不能仅依赖颜色传达状态。
+
+### 6.3 预设条件
+
+同一正向预设内所有已设置条件按 AND 组合；排雷模式按 OR 组合。未列出的指标不限制。
+
+| 预设 | 默认条件 |
 | --- | --- |
-| ROE ≥ 10% | 开启 |
-| 毛利率同比改善 | 开启 |
-| 经营现金流为正 | 开启 |
+| 慢牛牛精选 | 营收/净利润/EBIT 增长 ≥8%；ROE ≥15%、ROIC ≥12%、毛利率同比改善；经营现金流和自由现金流为正；资产负债率 ≤50%、流动比率 ≥1.5；PE ≤25、股息率 ≥2% |
+| 巴菲特护城河 | 营收/净利润增长 ≥5%；ROE ≥20%、ROIC ≥15%、毛利率 ≥40%；经营现金流和自由现金流为正；资产负债率 ≤50%；PE ≤30 |
+| 高成长 | 营收/净利润/EBIT 增长 ≥20%；ROE ≥10%；经营现金流为正；PEG ≤1.5 |
+| 现金奶牛 | ROE ≥15%、ROIC ≥12%；经营现金流和自由现金流为正、净现金企业；PE ≤20 |
+| 低估价值股 | ROE ≥10%；经营现金流为正；资产负债率 ≤60%；PE ≤15、PB ≤1.5 |
+| 高股息 | ROE ≥10%；经营现金流为正；股息率 ≥5% |
+| 小而美 | 营收/净利润增长 ≥15%；ROE ≥15%；经营现金流为正；总市值 `20亿~200亿元` |
+| 困境反转 | 营收/净利润增长 ≥0%；ROE ≥8%；经营现金流为正；PB ≤2 |
+| 净现金便宜货 | 净利润为正、净现金企业；PE ≤12、PB ≤1.5 |
+| 排雷模式 | 连续 2 年净利润增长为负、ROE <5%、经营现金流为负、资产负债率 >70%、商誉/净资产 >30%；命中任一项即标记风险，估值不参与判断 |
 
-开关必须使用 `role="switch"` 和 `aria-checked`。开启使用青绿色，关闭使用浅灰色，不能仅依赖颜色传达状态。
+指标定义、期间、计算单位和缺失处理遵循后台接口契约。总市值输入框使用亿元；提交 query 时换算为人民币万元（UI 值乘 `10000`），该值直接与后台 `total_mv` 万元比较；结果行的 `market_cap` 使用人民币亿元。排雷结果需返回风险标记及逐项命中原因。
 
-### 6.3 成长性
-
-使用范围滑块或等效数值范围控件：
-
-| 条件 | 默认值 | 范围 |
-| --- | --- | --- |
-| 营收增速 | ≥ 10% | `0%` 至 `30%` |
-| 净利润增速 | ≥ 10% | `0%` 至 `30%` |
-
-每个范围控件必须显示当前阈值和范围端点。若项目暂不使用双端滑块，单阈值滑块也必须提供可键盘调整的数字输入或步进按钮。
-
-### 6.4 估值与风险
-
-| 条件 | 控件 | 默认值 |
-| --- | --- | --- |
-| PE 分位低于 | 范围滑块或数值输入 | `70%` |
-| 资产负债率 | 开关或阈值控件 | `≤ 60%`，开启 |
-
-### 6.5 数据范围
+### 6.4 数据范围
 
 | 字段 | 控件 | 默认值 |
 | --- | --- | --- |
@@ -157,7 +166,7 @@ AppShell
 从盈利质量、成长性与财务安全性中筛出值得深入研究的公司。
 ```
 
-“更新结果”按钮是主操作。侧栏和标题区的两个按钮共用同一个提交处理器，提交当前筛选条件到 `GET /api/v1/market-analysis/stock-selection/results`，不能在每次输入时发起请求。请求进行中时两个按钮均禁用并显示“更新中...”。请求成功后，服务端返回的当前页结果替换演示行；请求失败时保留当前结果并显示错误提示。
+“更新结果”按钮是主操作。侧栏和标题区的两个按钮共用同一个提交处理器，提交当前 `preset`、`screen_mode`、五大维度条件及数据范围到 `GET /api/v1/market-analysis/stock-selection/results`，不能在每次输入时发起请求。请求必须提交当前预设 key、全部区间边界和布尔开关：数值边界有值时发送数值，空边界发送空字符串以清除对应 preset 阈值；显式 `false` 覆盖 preset 中的 `true`。总市值按 UI 亿元值乘 `10000` 转为 API 人民币万元。排雷模式发送 `screen_mode=risk` 和 `preset=risk-scan`，不得混发正向筛选条件。请求进行中时两个按钮均禁用并显示“更新中...”。请求成功后，服务端返回的当前页结果替换演示行；请求失败时保留当前结果并显示错误提示。
 
 ### 7.2 结果摘要
 
@@ -192,10 +201,15 @@ AppShell
 | 3 | 财务评分 | 评分徽标，支持普通和关注两级样式 |
 | 4 | 营收增速 | 百分比，正向值带 `+` |
 | 5 | 净利润增速 | 百分比，正向值带 `+` |
-| 6 | ROE | 百分比 |
-| 7 | 毛利率变化 | 使用 `pct` 单位，例如 `+2.1pct` |
-| 8 | 经营现金流 | 百分比或接口约定单位 |
-| 9 | PE 分位 | 百分比 |
+| 6 | EBIT 增速 | 百分比，正向值带 `+` |
+| 7 | ROE / ROIC | 百分比 |
+| 8 | 毛利率 / 同比变化 | 毛利率为百分比；变化使用 `pct`，例如 `+2.1pct` |
+| 9 | 经营现金流 / 自由现金流 | 金额按亿元展示，不得展示为百分比 |
+| 10 | 资产负债率 / 流动比率 / 商誉占净资产 / 净现金 | 百分比 / 倍数 / 状态 |
+| 11 | 价值估分 / 模型估分 | 原始评分；缺失显示 `--` |
+| 12 | PE(TTM) / PB / PEG / 股息率 | 指标值与估值评分分开展示，并遵循各自单位 |
+| 13 | 风险标记 | 排雷模式显示风险等级和命中原因 |
+| 14 | 现金利润比 / 总市值 | 按后台单位元数据展示 |
 
 ### 8.2 表格规则
 
@@ -207,6 +221,8 @@ AppShell
 - 表头保持单行优先；窄屏通过表格容器横向滚动。
 - 表格行可以支持点击进入详情，但点击公司链接不能触发两次导航。
 - 服务端分页时前端只渲染当前页，不一次性渲染完整结果集。
+- 指标列可按财务表现、现金流/健康和估值分组；窄屏通过表格容器滚动，不隐藏排雷命中原因。
+- 结果区回显本次查询使用的预设、筛选模式和实际阈值；普通筛选与风险扫描分别统计。
 
 ## 9. 状态与交互
 
@@ -232,7 +248,7 @@ AppShell
 ### 9.3 排序与分页
 
 - 默认按综合财务评分降序。
-- 支持按财务评分、营收增速、净利润增速、ROE 和 PE 分位排序。
+- 支持按财务评分、营收/净利润/EBIT 增速、ROE、ROIC、流动比率和估值指标排序；具体字段以后台排序白名单为准，不提供当前契约未定义的 PE 分位。
 - 切换排序字段或方向后回到第一页，并在工具栏显示当前排序。
 - 分页信息展示“命中总数”和当前范围，例如“命中总数：86｜当前范围：1-20”。
 - 上一页在第一页禁用，下一页在最后一页禁用。
@@ -249,25 +265,34 @@ AppShell
 
 ```ts
 type PickerQuery = {
-  tradeDate: string;
-  fiscalYear: number;
-  reportType: 'Q1' | 'H1' | 'Q3' | 'FY';
-  market: 'all' | 'sh' | 'sz' | 'chinext' | 'star';
+  asofDate: string;
+  reportType: `${number}${'Q1' | 'H1' | 'Q3' | 'FY'}`;
+  market: 'all' | 'sh-main' | 'sz-main' | 'cyb' | 'star';
   swIndustry?: string;
-  profitability: {
-    roeMin: number | null;
-    grossMarginImproved: boolean;
-    operatingCashFlowPositive: boolean;
-  };
+  screenMode: 'screen' | 'risk';
+  preset: 'maniu-selected' | 'buffett-moat' | 'high-growth' | 'cash-cow' | 'undervalued' | 'high-dividend' | 'small-beautiful' | 'turnaround' | 'net-cash-bargain' | 'risk-scan';
   growth: {
-    revenueYoyMin: number | null;
-    netProfitYoyMin: number | null;
+    revenueYoy: { min: number | null; max: number | null };
+    profitYoy: { min: number | null; max: number | null };
+    ebitYoy: { min: number | null; max: number | null };
   };
-  valuationRisk: {
-    pePercentileMax: number | null;
-    debtToAssetsMax: number | null;
+  profitability: {
+    netProfitPositive: boolean;
+    roe: { min: number | null; max: number | null };
+    roic: { min: number | null; max: number | null };
+    grossMargin: { min: number | null; max: number | null };
+    grossMarginImproved: boolean;
   };
-  sortBy: 'financialScore' | 'revenueYoy' | 'netProfitYoy' | 'roe' | 'pePercentile';
+  cashFlow: { operatingCashFlowPositive: boolean; freeCashFlowPositive: boolean; netCash: boolean; cashProfitRatio: { min: number | null; max: number | null } };
+  financialHealth: { debtToAssets: { min: number | null; max: number | null }; liquidityRatio: { min: number | null; max: number | null }; goodwillToEquity: { min: number | null; max: number | null } };
+  valuation: {
+    peTtm: { min: number | null; max: number | null };
+    pb: { min: number | null; max: number | null };
+    peg: { min: number | null; max: number | null };
+    dividendYield: { min: number | null; max: number | null };
+  };
+  marketCap: { min: number | null; max: number | null };
+  sortBy: 'financialScore' | 'valueValuationScore' | 'modelValuationScore' | 'revenueYoy' | 'profitYoy' | 'ebitYoy' | 'roe' | 'roic' | 'grossMargin' | 'grossMarginChange' | 'operatingCashFlow' | 'freeCashFlow' | 'cashProfitRatio' | 'debtToAssets' | 'liquidityRatio' | 'goodwillToEquity' | 'marketCap' | 'peTtm' | 'pb' | 'peg' | 'dividendYield';
   sortDirection: 'asc' | 'desc';
   page: number;
   pageSize: number;
@@ -276,7 +301,7 @@ type PickerQuery = {
 type PickerViewState =
   | { status: 'idle' }
   | { status: 'loading'; query: PickerQuery }
-  | { status: 'ready'; query: PickerQuery; total: number; rows: PickerRow[] }
+  | { status: 'ready'; query: PickerQuery; total: number; rows: PickerRow[]; riskSummary?: Record<string, { hitCount: number; unassessedCount: number }> }
   | { status: 'empty'; query: PickerQuery }
   | { status: 'error'; query: PickerQuery; message: string };
 ```
@@ -288,13 +313,13 @@ type PickerViewState =
 - `AppShell`：固定顶栏、品牌、全局导航、搜索和用户入口。
 - `StockPickerPage`：页面状态、查询提交、请求取消和错误边界。
 - `FilterSidebar`：桌面筛选器和移动端抽屉容器。
-- `SavedScreenCard`：保存方案提示或保存方案入口。
-- `FilterGroup`：盈利质量、成长性、估值风险和数据范围分组。
+- `PresetPicker`：首页默认方案、完整方案列表、恢复预设、清空条件及排雷模式切换。
+- `FilterGroup`：成长性、盈利质量、现金流质量、财务健康、估值水平和数据范围分组。
 - `ToggleField`：带无障碍语义的开关字段。
 - `ThresholdRangeField`：滑块、数值输入和范围端点。
 - `ResultSummary`：符合条件、覆盖公司、最近更新。
 - `ResultToolbar`：结果标题、排序说明和视图切换。
-- `FinancialResultTable`：表头、行、缺失值、公司链接和排序状态。
+- `FinancialResultTable`：分组表头、指标行、缺失值、公司链接、排序状态和排雷原因。
 - `PickerStateView`：加载、空结果和错误状态。
 - `PaginationBar`：分页、结果范围和导出。
 
@@ -315,11 +340,12 @@ type PickerViewState =
 
 - 选股菜单直接进入 `/stock-picker`，进入页面后选股导航为选中态。
 - 桌面端显示左侧固定筛选器和右侧结果工作区，移动端筛选器可抽屉打开。
-- 盈利质量三个开关、成长性两个阈值、PE 分位和资产负债率条件可修改。
+- 五大维度的阈值和开关可修改，九个正向预设按定义加载条件；首页突出展示指定的五个默认方案。
+- 排雷模式按 OR 规则返回风险股票，估值指标不参与，结果行显示逐项命中原因。
 - 报告期、市场、日期和 SW 行业可选择，并显示当前实际条件。
 - 点击“更新结果”才提交查询，查询期间不能重复提交。
 - 摘要正确展示命中数、覆盖公司和最近更新状态。
-- 结果表按财务表现截面展示九列核心指标，缺失值显示 `--`。
+- 结果表覆盖成长、盈利、现金流、财务健康和估值指标；缺失值显示 `--`，排雷原因可追溯。
 - 支持排序、服务端分页、CSV 导出和股票详情跳转。
 - 无结果、加载失败、字段缺失和导出失败均有明确状态和恢复操作。
 
