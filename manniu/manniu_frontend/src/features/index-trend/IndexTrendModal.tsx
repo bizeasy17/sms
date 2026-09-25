@@ -49,7 +49,7 @@ function toSummary(payload: IndexTrendPayload): Summary {
   }
 }
 
-function TrendChart({ values, dates, summary, metric, label, color, loading, onSentimentPoint, onSentimentLoading, onSentimentError }: { values: number[]; dates: string[]; summary: Summary; metric: Metric; label: string; color: string; loading?: boolean; onSentimentPoint: (point: IndexTrendPoint | null) => void; onSentimentLoading: (loading: boolean) => void; onSentimentError: (error: boolean) => void }) {
+function TrendChart({ values, dates, summary, metric, label, color, loading }: { values: number[]; dates: string[]; summary: Summary; metric: Metric; label: string; color: string; loading?: boolean }) {
   const width = 640
   const height = 216
   const pad = { top: 18, right: 46, bottom: 30, left: 38 }
@@ -80,11 +80,11 @@ function TrendChart({ values, dates, summary, metric, label, color, loading, onS
       {[['P90', summary.p90, '#e56b55'], ['P50', summary.p50, '#e6a33d'], ['P10', summary.p10, '#39a98b']].map(([name, value, lineColor]) => <g key={name as string}><line x1={pad.left} x2={width - pad.right} y1={y(value as number)} y2={y(value as number)} stroke={lineColor as string} className="index-trend-reference" /><text x={width - pad.right + 7} y={y(value as number) + 4} fill={lineColor as string} className="index-trend-reference-label">{name as string}</text></g>)}
       <polyline points={points} fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
     </svg>
-    <MarketSentimentChart dates={dates} onSentimentPoint={onSentimentPoint} onSentimentLoading={onSentimentLoading} onSentimentError={onSentimentError} />
+    <MarketSentimentChart dates={dates} />
   </div>
 }
 
-function MarketSentimentChart({ dates, onSentimentPoint, onSentimentLoading, onSentimentError }: { dates: string[]; onSentimentPoint: (point: IndexTrendPoint | null) => void; onSentimentLoading: (loading: boolean) => void; onSentimentError: (error: boolean) => void }) {
+function MarketSentimentChart({ dates }: { dates: string[] }) {
   const [points, setPoints] = useState<IndexTrendPoint[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -98,25 +98,17 @@ function MarketSentimentChart({ dates, onSentimentPoint, onSentimentLoading, onS
     const controller = new AbortController()
     setLoading(true)
     setError('')
-    onSentimentLoading(true)
-    onSentimentError(false)
     fetchMarketSentimentTrend(startDate, endDate, controller.signal).then((loadedPoints) => {
       setPoints(loadedPoints)
-      onSentimentPoint(loadedPoints.at(-1) ?? null)
     }).catch((requestError: unknown) => {
       if (!controller.signal.aborted) {
         setError(requestError instanceof Error ? requestError.message : '市场情绪历史加载失败。')
-        onSentimentPoint(null)
-        onSentimentError(true)
       }
     }).finally(() => {
-      if (!controller.signal.aborted) {
-        setLoading(false)
-        onSentimentLoading(false)
-      }
+      if (!controller.signal.aborted) setLoading(false)
     })
     return () => controller.abort()
-  }, [startDate, endDate, onSentimentPoint, onSentimentLoading, onSentimentError])
+  }, [startDate, endDate])
 
   const width = 640
   const height = 80
@@ -142,7 +134,7 @@ function MarketSentimentChart({ dates, onSentimentPoint, onSentimentLoading, onS
   const latest = points.at(-1)
 
   return <section className="index-trend-sentiment" aria-label="市场情绪指数历史">
-    <div className="index-trend-sentiment-heading"><span>市场情绪指数</span><strong>{latest ? latest.value.toFixed(2) : '--'}</strong></div>
+    <div className="index-trend-sentiment-heading"><span>市场情绪指数</span><MarketSentimentSummary point={latest ?? null} loading={loading} error={Boolean(error)} /></div>
     {loading ? <div className="index-trend-sentiment-state">正在加载情绪历史...</div> : error ? <div className="index-trend-sentiment-state is-error" role="alert">{error}</div> : points.length ? <svg className="index-trend-sentiment-chart" viewBox={`0 0 ${width} ${height}`} role="img" aria-label="市场情绪 score 历史趋势">
       {[0.25, 0.75].map((ratio) => <line key={ratio} x1={pad.left} x2={width - pad.right} y1={pad.top + ratio * (height - pad.top - pad.bottom)} y2={pad.top + ratio * (height - pad.top - pad.bottom)} className="index-trend-grid" />)}
       {[['P90', p90, '#e56b55'], ['P10', p10, '#39a98b']].map(([name, value, color]) => <g key={name as string}><line x1={pad.left} x2={width - pad.right} y1={y(value as number)} y2={y(value as number)} stroke={color as string} className="index-trend-reference" /><text x={width - pad.right + 7} y={y(value as number) + 4} fill={color as string} className="index-trend-reference-label">{name as string}</text></g>)}
@@ -166,7 +158,6 @@ function MarketSentimentSummary({ point, loading, error }: { point: IndexTrendPo
   const status = loading ? '正在获取情绪摘要' : error ? '情绪摘要加载失败' : band ? `${band.code} · ${band.label} · ${band.meaning}` : '情绪数据暂无'
   return <div className={`index-trend-market-sentiment ${band?.code.toLowerCase() ?? ''}`} aria-label="指数情绪摘要">
     <div className="index-trend-market-sentiment-value"><span>指数情绪</span><strong>{score == null ? '--' : score.toFixed(1)}</strong></div>
-    <div className="index-trend-market-sentiment-track" role="progressbar" aria-label="指数情绪分数" aria-valuemin={0} aria-valuemax={100} aria-valuenow={score ?? 0}><i style={{ width: `${score == null ? 0 : Math.min(100, Math.max(0, score))}%` }} /></div>
     <small>{status}{point?.date ? ` · 截至 ${point.date}` : ''}</small>
   </div>
 }
@@ -177,13 +168,10 @@ function SummaryStrip({ summary, metric, title }: { summary: Summary; metric: Me
 
 export function IndexTrendModal({ onClose }: { onClose: () => void }) {
   const [metric, setMetric] = useState<Metric>('PE')
-  const [windowKey, setWindowKey] = useState<WindowKey>('1Y')
+  const [windowKey, setWindowKey] = useState<WindowKey>('60D')
   const [target, setTarget] = useState<TrendTarget>('composite')
   const [compositePayload, setCompositePayload] = useState<IndexTrendPayload | null>(null)
   const [shanghaiPayload, setShanghaiPayload] = useState<IndexTrendPayload | null>(null)
-  const [marketSentimentPoint, setMarketSentimentPoint] = useState<IndexTrendPoint | null>(null)
-  const [marketSentimentLoading, setMarketSentimentLoading] = useState(true)
-  const [marketSentimentError, setMarketSentimentError] = useState(false)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const closeButtonRef = useRef<HTMLButtonElement>(null)
@@ -224,13 +212,11 @@ export function IndexTrendModal({ onClose }: { onClose: () => void }) {
       <div className="index-trend-summary-slot">{compositeSummary && shanghaiSummary && <SummaryStrip summary={target === 'composite' ? compositeSummary : shanghaiSummary} metric={metric} title={target === 'composite' ? '综合指数' : '上证综指'} />}</div>
       <div className="index-trend-panels">
         {target === 'composite' ? <article className="index-trend-panel">
-          <div className="index-trend-panel-heading"><div><span className="index-trend-panel-tag">OVERALL · 7 INDICES</span><h3>综合指数</h3><p>7 指数共同有效日期的 {metric} 估值序列</p></div>{compositeSummary && <strong>{formatValue(compositeSummary.current, metric)}</strong>}</div>
-          {compositePayload?.points.length && compositeSummary ? <TrendChart values={compositePayload.points.map((point) => point.value)} dates={compositePayload.points.map((point) => point.date)} summary={compositeSummary} metric={metric} label="综合指数" color="#3268d6" loading={loading} onSentimentPoint={setMarketSentimentPoint} onSentimentLoading={setMarketSentimentLoading} onSentimentError={setMarketSentimentError} /> : <div className="index-trend-chart-loading is-empty">正在加载...</div>}
-          <div className="index-trend-panel-foot"><span>数据完整 · 7/7 指数参与</span><MarketSentimentSummary point={marketSentimentPoint} loading={marketSentimentLoading} error={marketSentimentError} /></div>
+          <div className="index-trend-panel-heading"><div><span className="index-trend-panel-tag">OVERALL · 7 INDICES</span><h3>综合指数</h3><p>7 指数共同有效日期的 {metric} 估值序列</p></div><div className="index-trend-panel-value">{compositeSummary && <strong>{formatValue(compositeSummary.current, metric)}</strong>}</div></div>
+          {compositePayload?.points.length && compositeSummary ? <TrendChart values={compositePayload.points.map((point) => point.value)} dates={compositePayload.points.map((point) => point.date)} summary={compositeSummary} metric={metric} label="综合指数" color="#3268d6" loading={loading} /> : <div className="index-trend-chart-loading is-empty">正在加载...</div>}
         </article> : <article className="index-trend-panel">
-          <div className="index-trend-panel-heading"><div><span className="index-trend-panel-tag">000001.SH · SHANGHAI</span><h3>上证综指</h3><p>000001.SH 日频 {metric} 基本面趋势</p></div>{shanghaiSummary && <strong>{formatValue(shanghaiSummary.current, metric)}</strong>}</div>
-          {shanghaiPayload?.points.length && shanghaiSummary ? <TrendChart values={shanghaiPayload.points.map((point) => point.value)} dates={shanghaiPayload.points.map((point) => point.date)} summary={shanghaiSummary} metric={metric} label="上证综指" color="#168c83" loading={loading} onSentimentPoint={setMarketSentimentPoint} onSentimentLoading={setMarketSentimentLoading} onSentimentError={setMarketSentimentError} /> : <div className="index-trend-chart-loading is-empty">正在加载...</div>}
-          <div className="index-trend-panel-foot"><span>数据完整 · 交易日序列</span><MarketSentimentSummary point={marketSentimentPoint} loading={marketSentimentLoading} error={marketSentimentError} /></div>
+          <div className="index-trend-panel-heading"><div><span className="index-trend-panel-tag">000001.SH · SHANGHAI</span><h3>上证综指</h3><p>000001.SH 日频 {metric} 基本面趋势</p></div><div className="index-trend-panel-value">{shanghaiSummary && <strong>{formatValue(shanghaiSummary.current, metric)}</strong>}</div></div>
+          {shanghaiPayload?.points.length && shanghaiSummary ? <TrendChart values={shanghaiPayload.points.map((point) => point.value)} dates={shanghaiPayload.points.map((point) => point.date)} summary={shanghaiSummary} metric={metric} label="上证综指" color="#168c83" loading={loading} /> : <div className="index-trend-chart-loading is-empty">正在加载...</div>}
         </article>}
       </div>
     </>}
