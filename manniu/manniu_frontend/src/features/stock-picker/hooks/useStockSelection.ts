@@ -1,8 +1,12 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { fetchStockSelection, fetchSwIndustries, type StockSelectionFilterDraft, type StockSelectionItem, type StockSelectionPreset, type StockSelectionQuery, type StockSelectionRangeKey, type SwIndustry } from '../services/stockSelectionApi'
 
 type SortKey = 'score' | 'valueValuationScore' | 'modelValuationScore' | 'revenueYoy' | 'profitYoy' | 'ebitYoy' | 'roe' | 'liquidityRatio'
 type QueryStatus = 'idle' | 'loading' | 'error'
+type StockSelectionResult = Awaited<ReturnType<typeof fetchStockSelection>>
+
+const MAX_CACHED_QUERIES = 8
+const MAX_CACHED_PAGES_PER_QUERY = 20
 
 export function useStockSelection(preset: StockSelectionPreset, filters: StockSelectionFilterDraft, sortKey: SortKey, sortDirection: 'asc' | 'desc', market: string, reportType: string, asofDate: string, selectedIndustry: string) {
     const [industries, setIndustries] = useState<SwIndustry[]>([])
@@ -13,6 +17,7 @@ export function useStockSelection(preset: StockSelectionPreset, filters: StockSe
     const [matchedCount, setMatchedCount] = useState(0)
     const [queryStatus, setQueryStatus] = useState<QueryStatus>('idle')
     const [queryError, setQueryError] = useState('')
+    const resultCache = useRef(new Map<string, Map<number, StockSelectionResult>>())
 
     useEffect(() => {
         const controller = new AbortController()
@@ -25,10 +30,8 @@ export function useStockSelection(preset: StockSelectionPreset, filters: StockSe
         return () => controller.abort()
     }, [])
 
-    async function updateResults(page = 1): Promise<boolean> {
+    async function updateResults(page = 1, forceRefresh = false): Promise<boolean> {
         if (queryStatus === 'loading') return false
-        setQueryStatus('loading'); setQueryError('')
-        const controller = new AbortController()
         const query: StockSelectionQuery = {
             preset,
             screen_mode: preset === 'risk-scan' ? 'risk' : 'screen',
@@ -54,8 +57,43 @@ export function useStockSelection(preset: StockSelectionPreset, filters: StockSe
             }
             Object.assign(query, numericFilters, filters.toggles)
         }
+        const cacheKey = JSON.stringify({ ...query, page: 1 })
+        if (forceRefresh) {
+            resultCache.current.delete(cacheKey)
+        } else {
+            const cachedPages = resultCache.current.get(cacheKey)
+            const cachedResult = cachedPages?.get(page)
+            if (cachedResult) {
+                cachedPages?.delete(page)
+                cachedPages?.set(page, cachedResult)
+                setResultRows(cachedResult.items ?? [])
+                setMarketStockCount(cachedResult.summary?.market_stock_count ?? 0)
+                setMatchedCount(cachedResult.summary?.matched_count ?? 0)
+                setQueryError('')
+                setQueryStatus('idle')
+                return true
+            }
+        }
+        setQueryStatus('loading'); setQueryError('')
+        const controller = new AbortController()
         try {
             const data = await fetchStockSelection(query, controller.signal)
+            let cachedPages = resultCache.current.get(cacheKey)
+            if (!cachedPages) {
+                cachedPages = new Map<number, StockSelectionResult>()
+                resultCache.current.set(cacheKey, cachedPages)
+            }
+            cachedPages.set(page, data)
+            while (cachedPages.size > MAX_CACHED_PAGES_PER_QUERY) {
+                const oldestPage = cachedPages.keys().next().value
+                if (oldestPage === undefined) break
+                cachedPages.delete(oldestPage)
+            }
+            while (resultCache.current.size > MAX_CACHED_QUERIES) {
+                const oldestQuery = resultCache.current.keys().next().value
+                if (oldestQuery === undefined) break
+                resultCache.current.delete(oldestQuery)
+            }
             setResultRows(data.items ?? []); setMarketStockCount(data.summary?.market_stock_count ?? 0); setMatchedCount(data.summary?.matched_count ?? 0); setQueryStatus('idle')
         } catch (error: unknown) {
             if (error instanceof DOMException && error.name === 'AbortError') return false
