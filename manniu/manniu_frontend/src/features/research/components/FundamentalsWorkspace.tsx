@@ -24,6 +24,13 @@ function dimensionLabel(key: string) {
   return ({ growth: '增长能力', profitability: '盈利能力', cash_flow_quality: '现金流质量', solvency: '偿债能力' } as Record<string, string>)[key] ?? key
 }
 
+const dimensionLogic: Record<string, string> = {
+  growth: '取营收同比、归母净利润同比（缺失时用净利润同比），分别按低于 -10%、0%、10%、20% 映射为 0、25、50、75、100 分，再对可用项取平均。净利润同比低于 -20% 时，维度分最高为 49 分。',
+  profitability: '取扣非 ROE（缺失时用 ROE）和净利率，分别按低于 0%、8%、12%、18% 映射为 0、25、50、75、100 分，再对可用项取平均。',
+  cash_flow_quality: '基础分按经营现金流 / 营收的比例分段：低于 0%、5%、10%、20% 分别对应 0、25、50、75、100 分。经营现金流不为正时最高 50 分；若经营现金流同比不低于净利润同比，加 10 分（最高 100）；若经营现金流同比低于 -10%，减 10 分（最低 0）。',
+  solvency: '资产负债率低于 30%、50%、70%、85% 时分别计 100、75、50、25、0 分；流动比率和速动比率按低于 0.75、1、1.5、2 分别计 0、25、50、75、100 分。对当前可用指标分数取平均。',
+}
+
 export function FundamentalsWorkspace({ stock, metrics, evaluation, financialOverview, financialState, onFinancialRetry }: { stock: Stock; metrics: Record<string, FinancialMetric> | null; evaluation: FundamentalEvaluation | null; financialOverview: FinancialOverview | null; financialState: 'loading' | 'ready' | 'empty' | 'error'; onFinancialRetry: () => void }) {
   const trend = evaluation?.trend ?? []
   const dimensions = Object.entries(evaluation?.dimensions ?? {})
@@ -33,7 +40,36 @@ export function FundamentalsWorkspace({ stock, metrics, evaluation, financialOve
   return <div className="fundamentals-workspace">
     <section className="section fundamentals-summary"><div className="section-heading"><div><p className="kicker">03 / FUNDAMENTALS &amp; FILINGS</p><h2>基本面与财务档案</h2><p className="fundamentals-context">{stock.name} · {stock.code} · 最新报告期 {financialOverview?.period ?? '暂无报告期'}</p></div><div className="fundamentals-controls"><label htmlFor="fundamentals-period">报告期</label><select id="fundamentals-period" defaultValue="LATEST"><option value="LATEST">最新报告期</option></select></div></div><div className="fundamentals-summary-grid"><div><span>经营结论</span><strong className={overall?.status === 'WEAK' ? 'weak' : overall?.status === 'STRONG' || overall?.status === 'HEALTHY' ? 'positive' : ''}>{overallLabel(overall?.status ?? 'NOT_AVAILABLE')}</strong><p>{overall?.score == null ? '当前暂无综合评分。' : `综合评分 ${Math.round(overall.score)}/100`}</p></div><div><span>可用权重</span><strong>{overall?.availableWeight == null ? '暂无' : `${Math.round(overall.availableWeight)}%`}</strong><p>{overall?.missingDimensions.length ? `缺失：${overall.missingDimensions.map(dimensionLabel).join('、')}` : '评判维度完整'}</p></div><div><span>数据状态</span><strong>{financialState === 'ready' ? '完整' : financialState === 'loading' ? '加载中' : '待补充'}</strong><p className="mono">{evaluation?.evaluationVersion ?? '评判版本暂无'} · {financialOverview?.period ?? '暂无报告期'}</p></div></div>{evaluation?.warnings.map((warning) => <p className="fundamentals-warning" key={warning}>{warning}</p>)}</section>
     <FundamentalEvidence metrics={metrics} state={financialState} onRetry={onFinancialRetry} />
-    <section className="section"><div className="section-heading"><div><p className="kicker">FINANCIAL TRENDS</p><h2>财务趋势</h2></div><span className="section-note">后端评判结果</span></div><div className="fundamentals-trend-grid">{dimensions.map(([key, dimension], index) => { const points = trend.map((item) => ({ value: scoreValue(item.dimensions[key]), label: item.period ?? '暂无期次' })).filter((point): point is { value: number; label: string } => point.value != null); const current = scoreValue(dimension); const isWeak = dimension.status === 'WEAK'; const tone = isWeak ? 'weak' : index % 2 ? 'red' : 'blue'; return <div className="fundamentals-trend" key={key}><div className="fundamentals-trend-heading"><div><h3>{dimensionLabel(key)}</h3><span className={isWeak ? 'weak' : ''}>{dimension.available ? overallLabel(dimension.status) : '数据不足'}</span></div><b className={isWeak ? 'weak' : index % 2 ? 'positive' : 'primary'}>{current == null ? '暂无' : current}<small>{current == null ? '' : '/100'}</small></b></div>{points.length ? <TrendChart points={points} tone={tone} /> : <p className="fundamentals-empty">暂无趋势数据</p>}</div> })}</div></section>
+    <section className="section">
+      <div className="section-heading">
+        <div><p className="kicker">FINANCIAL TRENDS</p><h2>财务趋势</h2></div>
+        <span className="section-note">后端评判结果</span>
+      </div>
+      <div className="fundamentals-trend-grid">
+        {dimensions.map(([key, dimension], index) => {
+          const points = trend.map((item) => ({ value: scoreValue(item.dimensions[key]), label: item.period ?? '暂无期次' })).filter((point): point is { value: number; label: string } => point.value != null)
+          const current = scoreValue(dimension)
+          const isWeak = dimension.status === 'WEAK'
+          const tone = isWeak ? 'weak' : index % 2 ? 'red' : 'blue'
+          return <div className="fundamentals-trend" key={key}>
+            <div className="fundamentals-trend-heading">
+              <div>
+                <div className="fundamentals-trend-title">
+                  <h3>{dimensionLabel(key)}</h3>
+                  <details className="fundamentals-score-help">
+                    <summary aria-label={`查看${dimensionLabel(key)}计算逻辑`}>?</summary>
+                    <span role="tooltip">{dimensionLogic[key] ?? '评分依据财务数据计算；数据不足时不生成评分。'}</span>
+                  </details>
+                </div>
+                <span className={isWeak ? 'weak' : ''}>{dimension.available ? overallLabel(dimension.status) : '数据不足'}</span>
+              </div>
+              <b className={isWeak ? 'weak' : index % 2 ? 'positive' : 'primary'}>{current == null ? '暂无' : current}<small>{current == null ? '' : '/100'}</small></b>
+            </div>
+            {points.length ? <TrendChart points={points} tone={tone} /> : <p className="fundamentals-empty">暂无趋势数据</p>}
+          </div>
+        })}
+      </div>
+    </section>
     <div className="fundamentals-bottom-grid"><section className="section"><div className="section-heading"><div><p className="kicker">REPORT ARCHIVE</p><h2>财报档案</h2></div><span className="section-note">{reports.length} 个报告期</span></div><div className="report-list">{reports.length ? reports.map((report) => <details key={`${report.period}-${report.endDate}`} open={report === reports[0]}><summary><span className="mono">{report.period}</span><strong>{report.reportType ?? '报告'}</strong><small>{report.endDate}</small><em>{report.dataStatus}</em></summary><p>{report.annDate ?? '暂无发布日期'} · {report.sourceRevision ?? '当前版本'}</p></details>) : <p className="fundamentals-empty">暂无财报档案</p>}</div></section><section className="section"><div className="section-heading"><div><p className="kicker">FUNDAMENTAL SIGNALS</p><h2>基本面信号</h2></div><span className="section-note">后端确认</span></div><div className="fundamental-signal-list">{signals.length ? signals.map((signal) => <div key={`${signal.asofDate}-${signal.signalCode}`}><span className={`signal-dot ${signal.severity.toLowerCase()}`} /><div><div className="signal-meta"><span>{signal.asofDate ?? '暂无日期'}</span><strong>{signal.label}</strong><em>{signal.status}</em></div><p>{signal.evidence || '暂无证据'}</p></div></div>) : <p className="fundamentals-empty">近期暂无明确基本面信号</p>}</div></section></div>
   </div>
 }
