@@ -23,5 +23,6 @@ urlpatterns = [
     path('api/v1/', include('api_gateway.personal_urls')),
     path('api/v1/public-api/', include('api_gateway.public_urls')),
     path('api/v1/market-analysis/', include('api_gateway.urls')),
+    path('api/v1/financial-health/', include('metrics.urls')),
     path('health/', include('api_gateway.health_urls')),
 ]

@@ -51,6 +51,7 @@ INSTALLED_APPS = [
     'stock_selection',
     'backtest_engine',
     'financials',
+    'metrics',
     'market_data',
     'domain_events',
     'market_sentiment',
