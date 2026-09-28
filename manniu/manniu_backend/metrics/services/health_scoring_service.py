@@ -82,6 +82,15 @@ def _context(ts_code: str, asof_date: str | None = None) -> dict[str, Any]:
     income = _latest(FinancialIncomeRecord, security)
     balance = _latest(FinancialBalanceSheetRecord, security)
     cashflow = _latest(FinancialCashFlowRecord, security)
+    if cashflow is not None and (cashflow.raw_payload or {}).get('update_flag') != '1':
+        updated_cashflow = FinancialCashFlowRecord.objects.filter(
+            security=security,
+            end_date=cashflow.end_date,
+            ann_date=cashflow.ann_date,
+            raw_payload__update_flag='1',
+        ).order_by('-id').first()
+        if updated_cashflow is not None:
+            cashflow = updated_cashflow
     main_business = _latest(FinancialMainBusinessRecord, security)
     bz_query = FinancialMainBusinessRecord.objects.filter(security=security, end_date=main_business.end_date) if main_business else FinancialMainBusinessRecord.objects.none()
     bz_items = list(bz_query.exclude(bz_item='').values_list('bz_item', flat=True).distinct())

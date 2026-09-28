@@ -23,6 +23,14 @@
 | [market-sentiment-backend-design.md](market-sentiment-backend-design.md) | 市场和个股情绪数据、快照及查询职责。 |
 | [security-events-backend-design.md](security-events-backend-design.md) | 证券事件数据与相关后端处理设计。 |
 
+## 指标评分
+
+| 文档 | 用途 / 适用场景 |
+| --- | --- |
+| [metrics 评分持久化需求](../metrics/requirements.md) | 常规财务六维、TopN 六维和 CGPS 的结果存储、历史保留与搜索需求。 |
+| [metrics 评分快照后端设计](../metrics/backend-design.md) | 三类评分的 PostgreSQL 快照/维度模型、幂等写入和查询 API 提案；字段与 API 待确认。 |
+| [metrics-backend-design.md](metrics-backend-design.md) | 常规六维、TopN 六维及 CGPS 的评分算法基线和历史对照。 |
+
 ## 选股与估值
 
 | 文档 | 用途 / 适用场景 |

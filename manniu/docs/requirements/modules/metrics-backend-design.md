@@ -6,33 +6,33 @@
 - 所属服务：UAT `manniu_backend`
 - 文档状态：设计基线与对齐建议
 - 关联实现：`metrics/services/health_scoring_service.py`、`metrics/services/model_topn_scoring.py`、`metrics/views.py`
-- 设计范围：普通财务六维健康评分、模型 TopN 特征六维评分、两者的数据与响应契约
+- 设计范围：普通财务六维健康评分、模型 TopN 特征六维评分、企业增长潜力信号（CGPS）及其各自的数据与响应契约
 - 非目标：本文件不授权直接变更评分代码、API 行为或数据库结构；实施前应按变更流程确认接口和持久化字段
 
 ## 2 设计定位与原则
 
-`metrics` 将已落库的财务、行情及模型特征转换为可解释的评分结果。普通财务六维描述公司基本面状态；TopN 特征六维描述指定模型版本所选特征在六个分析维度上的分布与评分。两类结果相关但语义不同，不应互相覆盖、混称或被当作同一算法的不同参数。
+`metrics` 将已落库的财务、行情及模型特征转换为可解释的评分结果。普通财务六维描述公司基本面状态；TopN 特征六维描述指定模型版本所选特征在六个分析维度上的分布与评分；企业增长潜力信号（CGPS）使用独立的七个增长证据维度评估未来业绩改善的相对信号。三类结果目的、维度和算法不同，不应互相覆盖、混称或被当作同一算法的不同参数。
 
 核心原则：
 
-1. 六个维度使用稳定的领域键；股票类型或行业差异通过显式 profile 表达，不改变响应维度身份。
+1. 普通财务评分和 TopN 评分各自使用稳定的六维领域键；CGPS 使用独立的七维键。股票类型或行业差异通过显式 profile 表达，不改变各自的维度身份。
 2. 原始值、单位、报告期、行情时点、数据来源和计算版本可追溯；评分不能替代原始证据。
 3. 模型特征重要性/预测方向不等价于财务指标的好坏方向。预测解释与健康评分分别表达。
 4. 缺失、低覆盖、降级数据和不可比结果显式返回，不以静默中性分伪装为有效证据。
 5. 维度归属、归一化、权重、行业分位和特殊行业规则必须显式、可测试、可版本化。
 6. `metrics` 只读取项目内已落库事实或受控内部 provider，不在用户请求中直接回源外部数据源；不产生买卖指令或自动交易行为。
 
-## 3 两类评分的产品定义
+## 3 评分类型的产品定义
 
-| 项目 | 普通财务六维 | TopN 特征六维 |
-| --- | --- | --- |
-| 回答的问题 | 这家公司的基本面在六个常规领域表现如何？ | 某个模型版本选出的 TopN 特征分别落在哪些领域，其观测值和评分如何？ |
-| 核心输入 | 报告期财务指标及指定 as-of 行情/估值数据 | 模型版本、特征排序清单、特征值快照、报告期与行情时点 |
-| 维度来源 | 稳定领域维度；可按股票类型选择不同证据与 profile | 稳定领域维度；特征按版本化映射规则归类 |
-| 解释属性 | 描述性基本面评价，不是估值目标或投资建议 | 模型特征诊断与可选的业务质量评分；不能把预测贡献直接称为健康度 |
-| 必要版本 | `scoring_version`、`profile_version` | `model_version`、`feature_set_version`、`mapping_version`、`normalization_version`、`profile_version` |
+| 项目 | 普通财务六维 | TopN 特征六维 | 企业增长潜力信号（CGPS） |
+| --- | --- | --- | --- |
+| 回答的问题 | 这家公司的基本面在六个常规领域表现如何？ | 某个模型版本选出的 TopN 特征分别落在哪些领域，其观测值和评分如何？ | 已披露财报中哪些增长证据相对同业转强，综合信号是否有足够覆盖？ |
+| 核心输入 | 报告期财务指标及指定 as-of 行情/估值数据 | 模型版本、特征排序清单、特征值快照、报告期与行情时点 | as-of 时点可见的利润表、资产负债表、现金流量表、财务指标和行业 peer 样本 |
+| 维度来源 | 稳定领域维度；可按股票类型选择不同证据与 profile | 稳定领域维度；特征按版本化映射规则归类 | 版本化七维增长证据规则；首期适用非金融企业 |
+| 解释属性 | 描述性基本面评价，不是估值目标或投资建议 | 模型特征诊断与可选的业务质量评分；不能把预测贡献直接称为健康度 | 同行相对的业绩改善信号，不是增长概率、估值结论或投资建议 |
+| 必要版本 | `scoring_version`、`profile_version` | `model_version`、`feature_set_version`、`mapping_version`、`normalization_version`、`profile_version` | `calculation_version`、`peer_mapping_version`、`profile_version` |
 
-六个规范维度键：
+普通财务评分和 TopN 评分的六个规范维度键：
 
 | 规范键 | 名称 | 解释边界 | 常见证据示例 |
 | --- | --- | --- | --- |
@@ -55,13 +55,67 @@
 
 设计结论：普通评分应继续允许股票类型 profile 使用不同有效证据，但 API 对外维度身份应规范化；代理项作为维度内 `factors` 返回，并标出 `proxy`、数据状态与 profile。缺值应区分“指标缺失”“行业不适用”“provider 降级”，不能用零值或中性分隐藏。
 
+#### 当前计算步骤
+
+1. `_context` 按证券分别读取财务指标、利润表、资产负债表、现金流量表和主营构成各自最新的记录，排序依据为报告期、公告日和记录 ID；各表当前不强制对齐到同一个 `end_date`，因此输入可能来自不同报告期。现金流同一报告期/公告日有多个版本时优先选择 `raw_payload.update_flag=1`。行情特征读取指定 `asof_date` 之前最新的日行情/基本面记录；未传日期时使用当前最新日快照。收入优先取 `total_revenue`，为空时回退 `revenue`；毛利率优先取指标表 `grossprofit_margin`，必要时从收入和营业成本计算。负债率绝对值不大于 1 时按比例转成百分点。
+2. `_classify` 根据行业、主营范围和主营构成关键词计算股票类型候选，再应用噪声词、冲突规则及配置兜底，选择一个 profile。当前 profile 包括 `growth_tech`、`stable_consumer`、`stable_income`、`cyclical_resource`、`finance_realestate`、`heavy_manufacturing` 和通用兜底。
+3. 对输入值使用下列函数，归一化后截断至 `[0,100]`：
+
+	- 正向：`N+(x; low, high) = clip(100 * (x - low) / (high - low))`。
+	- 负向：`N-(x; low, high) = 100 - N+(x; low, high)`。
+	- 当前 `_normalize_positive` 将缺失值替换为 `0` 后归一；显式回退还包括 `current_ratio` 缺失按 `1`、`pe_ttm` 缺失按 `30`。因此缺失值可能实际影响分数，普通评分当前并非只对有效证据重归一。
+	- 市值输入 `total_mv` 从万元换算为元后参与市值层级代理；现金流绝对值以元直接带入 `[-1,1]` 区间并截断，数值远大于上界时会达到 100 分。这是当前实现行为，不代表金额值已作规模标准化。
+
+各 profile 的六项（括号为权重）由以下表达式组成；`rev=N+(or_yoy;-20,60)`、`profit=N+(netprofit_yoy;-30,80)`、`cash=(N+(n_cashflow_act;-1,1)+N+(free_cashflow;-1,1))/2`、`safe=(N-(debt_pct;20,85)+N+(current_ratio 或缺失回退 1;0.8,2.5))/2`、`value=N-(pe_ttm 或缺失回退 30;5,80)`、`profitability=(N+(roe;0,25)+N+(netprofit_margin;0,40))/2`。`debt_pct` 为统一到百分点后的资产负债率；下表未展开的 `N+`、`N-` 均按上述定义：
+
+| profile | 六项分数（key、权重、公式） |
+| --- | --- |
+| `growth_tech` | `growth_quality` 0.20 `N+(or_yoy;-20,60)`；`profit_conversion` 0.18 `N+(netprofit_yoy;-30,80)`；`cash_runway` 0.16 `cash`；`rd_intensity_proxy` 0.16 `N+(gross_margin;20,70)`；`tech_moat_proxy` 0.15 `N+(roe_dt;0,20)`；`market_position_proxy` 0.15 `N+(total_mv元;1e9,3e11)`。 |
+| `stable_consumer` | `moat_proxy` 0.20 `N+(gross_margin;20,75)`；`profitability` 0.18 `profitability`；`channel_proxy` 0.16 `N-(assets_to_eqt;1,8)`；`growth_stability` 0.16 `(rev+profit)/2`；`cash_quality` 0.16 `cash`；`shareholder_return` 0.14 `N+(dv_ttm;0,8)`。 |
+| `stable_income` | `cash_stability` 0.20 `cash`；`dividend_support` 0.18 `N+(dv_ttm;0,8)`；`earnings_stability` 0.16 `N-(abs(netprofit_yoy);0,80)`；`leverage_safety` 0.16 `safe`；`valuation_defense` 0.16 `value`；`moderate_growth` 0.14 `N+(or_yoy;-10,25)`。 |
+| `cyclical_resource` | `profit_elasticity` 0.20 `profit`；`cost_proxy` 0.18 `N+(gross_margin;5,50)`；`financial_safety` 0.16 `N-(debt_pct;20,85)`；`capital_discipline` 0.16 `cash`；`operation_proxy` 0.16 `N+(ocf_yoy;-50,100)`；`cycle_position_proxy` 0.14 `(value+N+(dv_ttm;0,10))/2`。 |
+| `finance_realestate` | `asset_quality_proxy` 0.20 `N-(debt_pct;30,90)`；`capital_safety` 0.18 `N-(assets_to_eqt;1,20)`；`profitability` 0.16 `N+(roe;3,20)`；`risk_exposure_proxy` 0.16 `N-(netprofit_yoy;-100,80)`；`valuation_safety` 0.16 `value`；`growth_space_proxy` 0.14 `rev`。 |
+| `heavy_manufacturing` | `capital_efficiency` 0.20 `N+(roe;0,20)`；`order_proxy` 0.18 `rev`；`capacity_proxy` 0.16 `N+(assets_to_eqt;0.8,5)`；`profitability` 0.16 `profitability`；`operation_efficiency` 0.16 `N+(ocf_yoy;-50,100)`；`financial_safety` 0.14 `safe`。 |
+| 通用兜底 | `growth_quality` 0.20 `rev`；`income_quality` 0.18 `N+(gross_margin;10,80)`；`profit_path` 0.16 `profit`；`cash_runway` 0.16 `cash`；`light_asset_proxy` 0.16 `N+(roa;0,20)`；`competition_proxy` 0.14 `N+(total_mv元;1e9,3e11)`。 |
+
+每项分数截断后乘 profile 权重求和，得到总分并再次限制在 `[0,100]`；当前各 profile 权重合计为 1。等级阈值为 A `>=85`、B `>=70`、C `>=55`、D `>=40`，否则 E。普通评分不单独输出 TopN 式的维度有效覆盖率；解释结果时应同时查看各项 `evidence`，特别注意上面的缺失值回退行为。
+
 ### 4.2 TopN 特征评分
 
 `metrics/views.py` 以 `score_topn`（默认 20，允许 6–20）控制实际参与评分的特征数，以 `store_topn`（默认 50，允许 20–50）控制取回特征清单数量；`use_top20_dimension=true` 时加载特征值并调用 `rebuild_score`。provider 元信息包括 `model_version`、`report_type`、`model_scope`、`model_degraded` 和 `model_degrade_reason`。
 
-当前 UAT TopN 评分已切换至 `topn-dimension-v2`：六维权重仍为增长 0.18、盈利 0.18、现金流 0.16、资产安全 0.16、估值 0.16、经营 0.16；特征通过 `FEATURE_SCHEMA` 显式映射，不再使用关键词或动态均衡 fallback。字段 schema 声明规范单位、业务方向、变换 ID 和是否可计分。行业/历史 rank 统一要求 `[0,1]` 百分位；`debt_to_assets` 支持比例值转百分点并返回输入单位与转换记录。PE/PB/PS、杠杆、增长、回报率等使用各自有版本的变换；未经定义、无单调业务含义的原始金额/换手率仅作为证据，不直接计入维度分。
+当前 UAT TopN 评分已切换至 `topn-dimension-v2`：六维固定权重为增长 0.18、盈利 0.18、现金流 0.16、资产安全 0.16、估值 0.16、经营 0.16；特征通过 `FEATURE_SCHEMA` 显式映射，不使用关键词或未知特征的动态均衡 fallback。字段 schema 声明规范单位、业务方向、变换 ID 和是否可计分。`score_topn` 默认 20（范围 6–20），`store_topn` 默认 50（范围 20–50）；先按模型顺序去重并排除 `fiscal_year`，取前 `score_topn` 项。若入选经营周转特征少于 2 项，则从已取回候选中补入经营特征，并按替换优先级移除可替换项；候选不足时不强行补齐。该替换会改变最终计分子集，返回结果应以 `feature_dimension_mapping` 中的映射及逐特征结果为准。
+
+特征值来自已落库 `_context` 与普通评分证据，不直接在 metrics 请求中回源。财务特征按最新报告期读取，估值/排名特征使用 `asof_date` 前的行情快照；模型 TopN 清单按 `report_type` 选择。行业/历史 rank 在普通特征上下文中以 `[0,1]` 小数分位计算。对于 `roe`、`roe_dt`、`netprofit_margin`、`gross_margin`/`grossprofit_margin`、`assets_turn`，若可取得同一财务期 peer 样本，TopN 评分使用其同业百分位覆盖固定区间归一；同业有效样本少于 20 时改用同一财务期全市场样本。行业/市场百分位 override 以 0–100 分提供给 TopN 变换，不改变原始特征值。
+
+#### 当前特征归一化与聚合
+
+对可计分特征先按 schema 计算 `[0,100]` 的业务分；普通区间变换为 `clip(100 * (x-low)/(high-low))`，负向区间反转为 `100-score`。主要范围如下，区间外截断：
+
+| transform | 输入范围 | 方向/计算 |
+| --- | --- | --- |
+| `growth_percent_v1` | `[-50,100]` | 正向线性 |
+| `return_percent_v1` | `[-30,30]` | 正向线性 |
+| `roe_percent_v1` / `roe_dt_percent_v1` | `[0,25]` / `[0,20]` | 正向线性 |
+| `quarterly_roe_percent_v1` / `roa_percent_v1` | `[-10,20]` / `[0,15]` | 正向线性 |
+| `margin_percent_v1` / `eps_v1` | `[-5,40]` / `[-50,100]` | 正向线性 |
+| `cashflow_ratio_percent_v1` | `[-20,50]` | 正向线性 |
+| `debt_percent_v1` / `leverage_multiple_v1` | `[20,90]` / `[1,10]` | 负向线性；`debt_to_assets` 比例输入（绝对值 `<=1`）先乘 100 |
+| `liquidity_ratio_v1` / `assets_turn_v1` | `[0,3]` / `[0,2]` | 正向线性 |
+| `pe_multiple_v1` / `pb_multiple_v1` / `ps_multiple_v1` | `[5,80]` / `[0.5,10]` / `[0.5,10]` | 负向线性 |
+| `dividend_yield_v1` | `[0,8]` | 正向线性 |
+| `rank_low_better_v1` / `rank_high_better_v1` | `[0,1]` | `100*(1-x)` / `100*x` |
+| `cash_amount_v1` / `revenue_size_v1` | CNY | `clip(50 + 50*tanh(x/1e9))` |
+
+未列入可计分 schema 的特征、schema 中 `scoreable=false` 的证据特征不会进入分数。`MISSING`、`INVALID`、`UNMAPPED`、`EVIDENCE_ONLY` 均保留诊断状态，不作为 50 分或 0 分参与特征均值。对每个维度，使用计分特征的绝对模型权重作加权平均；若这些权重合计为 0，则对计分特征做算术平均。预测方向只用于贡献解释，不乘入业务维度分。维度权重仍采用固定六维权重；总分为有分数的维度按其固定权重加权后，除以可用维度权重之和，即对可用维度重归一。
+
+`feature_coverage` 为成功计分特征数/入选特征数；`feature_weight_coverage` 为已计分特征绝对模型权重/入选特征绝对模型权重。维度无计分项为 `NOT_AVAILABLE`，部分特征未计分为 `PARTIAL`，全部维度均可用时仍可能因入选证据特征未计分而使总状态为 `PARTIAL`。总等级阈值与普通评分相同（A `>=85`、B `>=70`、C `>=55`、D `>=40`、否则 E）；没有可用维度时总分为 `null`、等级 `N/A`。当前不设置最低覆盖率门槛，因此低覆盖时仍可能返回可用维度重归一后的总分。
 
 缺失、非法、未映射和仅证据特征分别输出状态。缺失或非法值不计分；未知特征进入顶层 `unmapped_features`，不会动态分配；无可计分特征的维度分为 `null`，维度间按可用固定权重重归一化，全部不可用时总分为 `null`、等级为 `N/A`。响应增加 `score_type`、`score_status`、特征覆盖率、可用维度权重，以及 `scoring_version`、`feature_schema_version`、`mapping_version`、`normalization_version`、`dimension_weight_version` 和 `profile_version`。特征项同时区分模型 `predictive_direction` 与业务 `business_direction`；前者只用于贡献解释，不改变业务质量归一化分。
+
+`industry_code` 的含义需要与数据库字段 `Security.industry_id` 区分：前者是预测特征构建器根据 `Security.industry.name` 生成的数值类别输入，后者只是 `Industry` 表的数据库主键，两者不可互换，也不是 Tushare/SW 的官方行业代码。当前预测构建器将本地行业名称集合排序后按位置编码，未知行业使用配置的 `unknown_code`（默认 `-1`）；因此该数值依赖本地行业集合，不应视为跨环境稳定的行业标识。以 UAT 当前数据为例，300502.SZ 的行业名称为“通信设备”、`industry_id=132`，预测构建器当前得到 `industry_code=97.0`；该 `97.0` 仅是当前映射快照的类别序号。
+
+当前 `metrics` TopN 六维输入没有把预测构建器生成的 `industry_code` 注入评分特征值；同时 `FEATURE_SCHEMA` 将其定义为 `valuation_position` 下的类别型、仅证据特征，不参与计分。因此模型 TopN 清单选中该特征时，评分会显示其值缺失并使估值维度状态为 `PARTIAL`，但这不表示股票缺少行业分类，也不应把数据库 `industry_id` 或其它行业代码直接填入替代。若要消除该状态，须先定义可复现、版本化的行业编码来源及评分/覆盖语义，再单独评审接口与 schema 变更。
 
 本版使用静态通用 schema/profile，尚未引入行业分位 peer 样本门槛、银行等专属 profile 或配置化 schema 文件；这些属于后续经验证后再纳入的策略，不影响本版明确单位、映射、缺失和版本状态的目标。
 
@@ -71,7 +125,7 @@
 
 | 对齐点 | ASI_DEV 源端表现 | UAT v2 表现 | 设计判断与建议 |
 | --- | --- | --- | --- |
-| 特征候选上下文 | `_build_top20_dimension_payload` 可基于 Top50 候选补位/调整经营维度特征 | 直接按模型排序取前 `score_topn` 项；不做维度补位 | 候选池与计分子集继续分开定义；如增加补位，必须作为版本化 profile policy |
+| 特征候选上下文 | `_build_top20_dimension_payload` 可基于 Top50 候选补位/调整经营维度特征 | 按模型排序取前 `score_topn` 项；经营周转特征少于 2 项时可从候选池替换补入 | 保持候选池与计分子集分开；替换规则应版本化并记录最终清单及替换理由 |
 | 维度映射 | 显式映射与规则之外，含 operation 最低特征数等替换/补位 | `FEATURE_SCHEMA` 显式映射；未知键返回 `UNMAPPED` 并从计分排除 | 继续扩充受审查的 schema；不要恢复关键词或按负载动态分配 |
 | 金融/房地产等特殊类型 | 存在行业/类型代理指标与维度规则 | 当前使用通用 `generic` profile，无行业专属 TopN 代理规则 | 只在业务含义、公式、单位、来源及适用范围经验证后增加 profile；不为追逐单次分数复制特例 |
 | 盈利与资产安全归一化 | 部分场景采用同业分位或类型专用逻辑 | 使用版本化固定区间变换；当前未启用行业分位 | 后续如引入同业分位，需最小样本数、peer cohort、时点及 fallback 状态；固定区间可作为显式 fallback |
@@ -189,3 +243,157 @@ TopN v2 已按直接切换方式替换旧 UAT 评分语义；后续验证与扩�
 ## 9 本轮结论
 
 当前证据支持先统一 TopN 特征 schema、单位、映射、缺失状态及版本 provenance，而非直接复制源端所有 operation 补位、银行代理或行业分位实现。源端规则只有在能解释业务差异、具有稳定数据输入、可清晰定义方向与回退并通过分行业验证时，才纳入独立 profile。普通六维与 TopN 六维保持两种 `score_type`，共用数据质量和审计规范，但不强求相同指标、权重或总分含义。
+
+## 10 企业增长潜力信号（CGPS）
+
+### 10.1 定位与边界
+
+CGPS（Corporate Growth Potential Signal，企业增长潜力信号）回答“截至指定信息时点，这家公司相对可比公司有哪些未来业绩改善证据”。综合结果为“增长潜力综合分”，范围 0–100。它是**第三种独立评分类型**，不得并入普通财务六维、TopN 特征六维或预测估值模型；高分是同行相对信号，不是未来增长概率、目标价或投资建议。
+
+本章只定义需求算法，不授权直接变更 API、数据库结构或评分代码。计算只读消费 PostgreSQL 中已落库财报事实和版本化行业映射，不在请求中回源 Tushare。首期适用一般工商及非金融企业；银行、保险、证券、多元金融的报表经济含义不同，返回 `NOT_APPLICABLE`，待专属 profile 经验证后再支持。
+
+七个稳定维度键及 `cgps-v1` 初始权重如下：
+
+| 维度键 | 维度名称 | 权重 | 关注信号 |
+| --- | --- | ---: | --- |
+| `demand_momentum` | 需求与收入动能 | 20% | 单季度收入增速及其加速度 |
+| `order_visibility` | 订单与收入能见度 | 15% | 合同负债、预收款相对收入的变化 |
+| `profitability_leverage` | 盈利能力与经营杠杆 | 15% | 营业利润增长、毛利率和净利率变化 |
+| `earnings_quality` | 利润质量与可持续性 | 15% | 扣非利润增长、非经常性利润占比 |
+| `cash_conversion` | 回款与现金转化 | 15% | 销售回款、经营现金流与利润的匹配 |
+| `growth_investment` | 成长投入与产能准备 | 10% | 研发、资本开支和在建工程强度 |
+| `balance_operation_safety` | 资产负债与营运安全 | 10% | 应收、库存、杠杆、流动性和周转 |
+| **合计** | **七维** | **100%** | 固定权重 |
+
+维度键和顺序固定，权重集中配置且总和必须为 1。任何字段、公式、权重、行业适用范围或阈值变化都必须升级 `calculation_version`，不能静默改变已发布口径。
+
+### 10.2 数据时点与单季度口径
+
+1. 计算必须指定 `asof_date`，只使用 `ann_date` 或实际公告日 `f_ann_date` 不晚于该日的信息，并返回所用报告期、公告日期和来源记录。
+2. 历史回测必须还原当时可见的财报版本；不可仅按当前 `update_flag=1` 选最新记录，因为后续更正可能造成前视偏差。
+3. 利润表、资产负债表、现金流量表和财务指标按同一 `end_date`、合并口径和报告类型对齐；报告期不一致时相关维度标记部分或缺失，不得拼成完整季度。
+4. 单季度流量优先使用 Tushare 单季合并报表 `report_type=2` 或明确的 `q_*` 指标。仅有累计值时按同一会计年度相邻累计数相减：Q2=半年累计−Q1，Q3=前三季度累计−半年累计，Q4=全年累计−前三季度累计。资产负债表时点余额不得作累计差分。
+5. 单季度同比增长为 `g_x(t)=100*(x_q(t)/x_q(t-4)-1)`。基期为零、缺失或正负跨越时标记 `INVALID_BASE`，不生成极端增长率；金额统一为人民币元，比例/百分点单位显式声明，不猜测尺度。
+
+### 10.3 同行百分位归一化
+
+金额、比率和增长率不可直接相加。每个因子在相同报告期、报告类型和行业 peer cohort 中计算百分位，行业映射须版本化。行业有效样本少于 20 家时回退至相同报告期和报告类型的非金融全市场样本；回退样本仍少于 20 家时该因子不可用。
+
+同值使用平均名次。样本数为 `N`、平均名次为 `rank_avg`：
+
+```text
+P+(x) = 100 * (rank_avg - 1) / (N - 1)   # 越高越好
+P-(x) = 100 - P+(x)                     # 越低越好
+```
+
+百分位范围为 `[0,100]`。因子结果需保留原始值、单位、方向、peer 范围、样本数和回退状态；缺失、非法、未知方向或低样本因子不赋 0/50。
+
+### 10.4 七维因子和计算公式
+
+以下 `R_TTM` 为报告期最近四个单季度营业收入之和；`Δ_yoy(z)=z(t)-z(t-4)`。每个维度对有效因子按其配置权重重归一，但有效因子权重覆盖率低于该维度配置权重的 50% 时，该维度为 `NOT_AVAILABLE`；有缺项且达到门槛时标记 `PARTIAL`。
+
+1. **需求与收入动能**：`g_rev` 为单季度营业收入同比增速，优先 `q_sales_yoy`，否则以单季度 `revenue` 计算；`accel_rev = g_rev(t)-g_rev(t-1)`，单位为百分点。`S1 = 0.65*P+(g_rev) + 0.35*P+(accel_rev)`。
+2. **订单与收入能见度**：`cl_ratio=contract_liab/R_TTM`，`prepay_ratio=prepayment/R_TTM`；分别计算相对上年同期变化 `d_cl`、`d_prepay`。`S2 = 0.60*P+(d_cl) + 0.40*P+(d_prepay)`。二者是收入能见度代理，不等同于已确认订单；合同资产不作正向订单因子。
+3. **盈利能力与经营杠杆**：`g_op` 为单季度营业利润同比增速，优先 `q_op_yoy`；`d_gross_margin`、`d_net_margin` 为 `q_gsprofit_margin`、`q_netprofit_margin` 同比百分点变化。`S3 = 0.40*P+(g_op) + 0.30*P+(d_gross_margin) + 0.30*P+(d_net_margin)`。
+4. **利润质量与可持续性**：`g_deducted_profit` 为同口径单季度扣非归母净利润同比增速；`dtprofit_to_profit` 为扣非净利润/净利润（分母须为正）；`nop_to_ebt` 为非营业利润/利润总额（利润总额须为正，越低越好）。`S4 = 0.50*P+(g_deducted_profit) + 0.30*P+(dtprofit_to_profit) + 0.20*P-(nop_to_ebt)`。
+5. **回款与现金转化**：`salescash_to_or` 为销售收现/营业收入，`ocf_to_or` 为经营现金流/营业收入，`ocf_to_profit` 为经营现金流/营业利润（营业利润非正时不计）。均使用同期间单季度值。`S5 = 0.40*P+(salescash_to_or) + 0.35*P+(ocf_to_or) + 0.25*P+(ocf_to_profit)`。
+6. **成长投入与产能准备**：计算 `rd_intensity=rd_exp/R_TTM`、`capex_intensity=c_pay_acq_const_fiolta/R_TTM`、`cip_intensity=cip/R_TTM` 相比上年同期的变化 `d_rd`、`d_capex`、`d_cip`。`S6_base = 0.40*P+(d_rd) + 0.30*P+(d_capex) + 0.30*P+(d_cip)`。投入上升不无条件加分：若 `S1<50` 或 `S5<40`，则 `S6=min(S6_base,50)`；否则 `S6=S6_base`。
+7. **资产负债与营运安全**：`gap_ar=g_accounts_receiv-g_rev`、`gap_inv=g_inventories-g_rev`；另计算资产周转变化 `d_assets_turn`、`debt_to_assets` 和 `current_ratio`。`S7 = 0.25*P-(gap_ar) + 0.25*P-(gap_inv) + 0.20*P-(debt_to_assets) + 0.15*P+(current_ratio) + 0.15*P+(d_assets_turn)`。合同资产增速超过收入时作为风险解释证据，不在本版本单独加分。
+
+### 10.5 综合分和数据状态
+
+设固定维度权重为 `w_d`，有效维度集合为 `A`：
+
+```text
+coverage = sum(w_d for d in A) / sum(w_d for all applicable dimensions)
+CGPS = sum(w_d * S_d for d in A) / sum(w_d for d in A)
+```
+
+仅当 `coverage >= 80%` 且 `demand_momentum`、`profitability_leverage`、`cash_conversion`、`balance_operation_safety` 四个核心维度均有效时返回数值分；否则 `CGPS=null`、状态为 `INSUFFICIENT_DATA` 并列出缺项。达到门槛但有非核心维度缺失时标记 `PARTIAL`，返回 coverage 和实际参与权重；不以 0 或 50 补缺。
+
+解释标签按版本化阈值：`>=80` 强、`65–<80` 偏强、`45–<65` 中性、`30–<45` 偏弱、`<30` 弱。结果须保留 `score_type=COMPANY_GROWTH_POTENTIAL`、`calculation_version`、`profile_version`、`asof_date`、报告期/公告日、peer 范围、七维分数/状态/权重、因子原值/单位/方向/分位、coverage、缺失原因和 warnings。具体 API 请求/响应字段须另行确认，本章不冻结 API 契约。
+
+### 10.6 回测和验收
+
+- 使用按公告时点还原财报版本的滚动样本外回测，不得用后续修订数据回填历史，也不得随机打散时间序列。
+- 分别评估未来 2 个季度和未来 4 个季度的收入、扣非归母净利润增长；基期非正、退市/停牌和报告缺失样本须有明确处理规则。
+- 报告分数分组的后续业绩均值/中位数、最高分组相对全样本 lift、Spearman 秩相关、行业分层、覆盖率及不同版本表现，并与收入/扣非利润增速等简单基准比较。
+- 对基期非正、累计转单季、财报修订、同行不足与回退、因子缺失、投入上升但需求/现金走弱、金融行业不适用和覆盖门槛建立确定性验证。
+- 同一输入快照和算法版本结果必须确定；未通过样本外验证或覆盖不足时标注实验性，不作为生产预测结论。
+
+## 11 三类评分结果持久化与检索
+
+本节将常规财务六维、TopN 特征六维和 CGPS 的结果持久化与搜索列为 metrics 的后续需求。本文档及配套详细设计只定义目标和候选方案，不代表数据库 schema 或公开 API 已批准；实施前必须确认字段、唯一性、权限及请求/响应契约。需求和字段提案分别见 [metrics 评分持久化需求](../metrics/requirements.md) 与 [metrics 评分快照后端设计](../metrics/backend-design.md)。
+
+### 11.1 目标与边界
+
+1. 将三类评分结果及其维度、因子/特征证据持久化到 PostgreSQL，支持按证券和评分类型搜索当前及历史结果。
+2. 查询读取已保存快照，不隐式触发重算，也不在请求过程中回源 Tushare 或其他外部数据源。
+3. 三种评分类型及其算法、维度键和权重保持独立；不能因共用存储而把不同类型分数直接视为同一口径。
+4. 持久化是 metrics 内部结果能力，不增加自动买卖、下单或资金操作行为。
+
+### 11.2 评分类型与结果快照
+
+建议统一快照主表使用稳定的 `score_type` 区分结果：
+
+| `score_type` | 评分类型 | 维度身份 |
+| --- | --- | --- |
+| `FINANCIAL_HEALTH_6D` | 常规财务六维 | 保留当前评分 profile 实际输出的维度 key，不强制改成 TopN 键 |
+| `MODEL_TOPN_6D` | TopN 特征六维 | 保留 TopN 维度映射键、实际计分特征集合及模型版本 |
+| `COMPANY_GROWTH_POTENTIAL` | CGPS | 固定使用第 10 章定义的七个维度键 |
+
+每条快照候选字段包括：证券引用、评分类型、`asof_date`、实际财务报告期、适用时的行情快照日、总分、标签、状态、coverage、来源期摘要、warnings、输入 fingerprint 和创建时间。类型专属 provenance 按需记录：常规评分保存 scoring/profile 版本；TopN 保存 model/report type/model scope、feature set、TopN 参数、mapping/normalization 版本及 provider 降级状态；CGPS 保存 calculation/profile/peer mapping 版本、公告时点、peer 范围与样本数。
+
+总分不可用时保存 `NULL` 与明确状态/缺失原因；常规六维当前没有统一 coverage 定义，不得为了共用 schema 伪造 coverage 值。上述字段及长度/精度均为候选项，实施前须与现有模型及调用方确认。
+
+### 11.3 维度与证据明细
+
+建议以维度明细表关联快照，至少保存 `dimension_key`、名称、权重、nullable 分数、状态、可用权重和 evidence。对 `(snapshot_id, dimension_key)` 建唯一约束。维度 key 原样保留各评分算法语义，不作跨类型重命名。
+
+Evidence 保存可审计的因子/特征原值、规范单位、业务方向、归一化分/百分位、来源字段与报告期、peer 范围和样本数、缺失/非法/降级原因。TopN 的逐特征证据与 CGPS 的逐因子证据应可通过快照详情读取。首期不为每个 evidence 字段单独建列；如后续需要高频按因子值筛选，再依据查询负载评估关系化明细表和索引。
+
+### 11.4 写入、历史与幂等
+
+1. 各评分 service 继续负责计算；独立持久化适配层按 `score_type` 校验结果和必需 provenance。
+2. 主快照和全部维度在同一 PostgreSQL 事务内写入；任一明细失败则整体回滚。
+3. 对规范化输入快照及算法版本计算 fingerprint；主表以 `(security_id, score_type, input_fingerprint)` 复合唯一约束保证幂等，相同三元组重复写入不生成重复结果。
+4. 不同算法版本或输入 fingerprint 的结果作为独立历史快照保留，不原位覆盖既有分数和证据。旧结果的失效/替代标记机制在实现前确认。
+5. 仅由受控计算/刷新流程触发写入；列表和详情查询均为只读操作。
+
+### 11.5 搜索与查询
+
+建议提供评分快照列表和详情查询。候选过滤项包括证券代码、证券名称、`score_type`、as-of 日期范围、财报期、状态、总分区间、标签、`dimension_key` 和维度分数区间；列表支持分页及按日期/分数排序，默认最新快照优先。详情返回完整 provenance、维度和 evidence；列表仅返回摘要，避免默认加载大型 TopN evidence。
+
+索引候选：证券 + 类型 + as-of 日期、类型 + as-of 日期 + 状态、类型 + 总分、`(security_id, score_type, input_fingerprint)` 复合唯一键，以及维度 key + 维度分 + 状态。Evidence 初期不默认建立 JSONB 全量索引，须以代表性查询验证索引必要性和写入成本。
+
+### 11.5.1 入库管理命令与 daily job 边界
+
+首期提供 Django management command 手工计算并持久化指定证券、as-of 日期和评分类型，支持显式证券清单及 `--scope all` 两种范围、dry-run，并输出成功、跳过、失败及幂等命中统计；命令须使用与服务相同的评分 service 和持久化适配层，不复制算法逻辑。命令名称、参数及 TopN 所需 model/report 参数以配套后端设计的确认结果为准。
+
+首期不修改 `scripts/daily.bat`。待手工运行、幂等性、耗时和失败退出码验证后，再单独评审 daily job 的调度频率、证券范围、重试、日志与断点策略。
+
+URL、参数名、分页格式、默认页大小、认证授权和错误响应须复用 API Gateway 约定，并在实现前确认；本节不冻结公开 API 契约。查询缺失分数时不得将 `NULL` 当成 0；查询不得触发评分重算。
+
+### 11.6 状态和数据可追溯性
+
+有效、部分、数据不足、不适用和降级状态应按原评分算法保留。CGPS 的公告时点和历史版本遵循 10.2；TopN 降级结果须保留 model/provider 降级标志；常规六维也须保留其 profile 与数据来源期。无论状态如何，保存的结果都应能通过类型和版本追溯到对应算法基线，不以 0 或 50 插补缺失数据。
+
+### 11.7 测试用例定义
+
+1. 三种评分类型分别保存和读取，验证 score type、算法 provenance 与各自维度 key 原样往返。
+2. 保存部分维度、缺失 evidence、`INSUFFICIENT_DATA`、CGPS `NOT_APPLICABLE` 和 TopN 降级结果，验证 NULL、状态与原因保留。
+3. 相同 `(security_id, score_type, input_fingerprint)` 的重复/并发写入只产生一个快照；改变任一键成员时保留独立历史记录。
+4. 对证券、类型、日期、状态、总分和维度分组合筛选，验证分页、排序及 NULL 分数边界。
+5. 主表或任一维度写入失败时验证事务回滚；无效类型、重复维度 key 和非法分数应明确拒绝。
+6. 验证查询不触发重算或外部数据访问，并按确认后的权限范围隔离数据。
+7. 在 PostgreSQL 上验证唯一约束、索引、并发幂等和代表性搜索性能；不以 SQLite 替代。
+
+### 11.8 TODO List
+
+- [ ] TODO-01（对应 11.2–11.3）：确认快照/维度字段、类型枚举、证据粒度、精度和删除策略。
+- [ ] TODO-02（对应 11.4）：确认 fingerprint 组成及历史结果失效/替代规则。
+- [ ] TODO-03（对应 11.5–11.6）：确认搜索 API 字段、分页/排序、认证授权和错误语义。
+- [x] TODO-04（对应 11.2–11.4、11.7）：两张 PostgreSQL 结果表、复合幂等写入和定向测试已完成；6 项 metrics 测试通过。
+- [x] TODO-05（对应 11.5.1、11.7）：手工入库 CLI 已实现，单证券三类评分 dry-run 通过。
+- [ ] TODO-06（对应 11.5）：确认 HTTP 搜索/详情 API 请求响应和权限契约后实现查询接口。
+- [ ] TODO-07（对应 11.5.1）：完成 CLI 稳定性验证后，另行接入 `scripts/daily.bat` 并验证失败重试和日志。
