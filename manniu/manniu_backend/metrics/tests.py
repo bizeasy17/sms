@@ -1,8 +1,10 @@
 import unittest
-
 from datetime import date
 from decimal import Decimal
+from io import StringIO
+from unittest.mock import patch
 
+from django.core.management import call_command
 from django.db import IntegrityError, transaction
 from django.test import TestCase
 from market_data.models import Security
@@ -103,3 +105,31 @@ class MetricsScorePersistenceTests(TestCase):
                 **common,
                 score_type=MetricsScoreSnapshot.ScoreType.FINANCIAL_HEALTH_6D,
             )
+
+    def test_command_reports_progress_for_each_batch(self):
+        second_security = getattr(Security, 'objects').create(
+            ts_code='600001.SH',
+            asset_type=Security.AssetType.STOCK,
+            name='Second Test Security',
+        )
+        output = StringIO()
+        with (
+            patch('metrics.management.commands.persist_metrics_scores.compute_score') as compute_score,
+            patch('metrics.management.commands.persist_metrics_scores.persist_score_result') as persist,
+        ):
+            compute_score.side_effect = lambda ts_code, *_args, **_kwargs: {'ts_code': ts_code, 'total_score': 60}
+            persist.return_value = {'created': True, 'already_exists': False}
+            call_command(
+                'persist_metrics_scores',
+                '--asof-date', '2026-09-28',
+                '--score-types', 'FINANCIAL_HEALTH_6D',
+                '--scope', 'ts-codes',
+                '--ts-code', self.security.ts_code,
+                '--ts-code', second_security.ts_code,
+                '--batch-size', '1',
+                stdout=output,
+            )
+
+        self.assertIn('Batch 1/2 started: securities=1-1/2', output.getvalue())
+        self.assertIn('Batch 1/2 completed: securities=1/2 progress=50.0%', output.getvalue())
+        self.assertIn('Batch 2/2 completed: securities=2/2 progress=100.0%', output.getvalue())

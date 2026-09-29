@@ -71,7 +71,7 @@ fingerprint 的输入组成及旧记录失效/替代机制属于实施前待确�
 
 ### 4.1 管理命令提案
 
-建议新增 Django management command `persist_metrics_scores`，负责按指定证券、as-of 日期和评分类型调用已有评分 service，并将结果通过统一适配层保存。候选参数为必填 `--asof-date`、`--score-types`、`--scope ts-codes|all`，以及与 `ts-codes` scope 配套的一个或多个 `--ts-code` 或证券文件输入；支持 `--dry-run`。选择 TopN 时另支持 `--report-type`、`--model-version`、`--score-topn`、`--store-topn`。命令输出成功、跳过、失败及幂等命中数量，并以非零退出码报告失败。dry-run 只计算和校验、不写库。
+建议新增 Django management command `persist_metrics_scores`，负责按指定证券、as-of 日期和评分类型调用已有评分 service，并将结果通过统一适配层保存。候选参数为必填 `--asof-date`、`--score-types`、`--scope ts-codes|all`，以及与 `ts-codes` scope 配套的一个或多个 `--ts-code` 或证券文件输入；`--batch-size` 默认为 100，按证券分批并在每批开始/完成时报告范围、进度、计数和耗时；支持 `--dry-run`。选择 TopN 时另支持 `--report-type`、`--model-version`、`--score-topn`、`--store-topn`。命令输出成功、跳过、失败及幂等命中数量，并以非零退出码报告失败。dry-run 只计算和校验、不写库。
 
 首期由用户或运维手工调用该命令；本轮不接入 `scripts/daily.bat`。daily job 接入作为后续独立 TODO，届时需确认运行频率、证券 scope、失败重试和日志契约。
 

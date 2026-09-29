@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+from bisect import bisect_left, bisect_right
 from collections import defaultdict
 from datetime import date, datetime
 from math import isfinite
 from typing import Any
 
+from django.db import DatabaseError
 from django.db.models import Q
 
 from financials.models import (
@@ -394,21 +396,41 @@ def _raw_factors(
     }
 
 
-def _percentile_score(target: float, peers: list[float], direction: str) -> float | None:
-    values = sorted(value for value in peers if isfinite(value))
-    if len(values) < 2 or target not in values:
+def _factor_distributions(
+    peers: list[dict[str, float | None]],
+) -> tuple[dict[str, list[float]], dict[str, int]]:
+    values: dict[str, list[float]] = defaultdict(list)
+    counts: dict[str, int] = defaultdict(int)
+    for peer in peers:
+        for factor, value in peer.items():
+            if value is not None:
+                counts[factor] += 1
+                if isfinite(value):
+                    values[factor].append(value)
+    return (
+        {factor: sorted(factor_values) for factor, factor_values in values.items()},
+        dict(counts),
+    )
+
+
+def _percentile_score(target: float, sorted_peers: list[float], direction: str) -> float | None:
+    if len(sorted_peers) < 2:
         return None
-    lower_count = sum(value < target for value in values)
-    equal_count = sum(value == target for value in values)
+    lower_count = bisect_left(sorted_peers, target)
+    equal_count = bisect_right(sorted_peers, target) - lower_count
+    if equal_count == 0:
+        return None
     average_rank = lower_count + (equal_count + 1) / 2.0
-    score = 100.0 * (average_rank - 1.0) / (len(values) - 1.0)
+    score = 100.0 * (average_rank - 1.0) / (len(sorted_peers) - 1.0)
     return 100.0 - score if direction == 'lower' else score
 
 
 def _dimension_results(
     target: dict[str, float | None],
-    industry_peers: list[dict[str, float | None]],
-    market_peers: list[dict[str, float | None]],
+    industry_peers: dict[str, list[float]],
+    market_peers: dict[str, list[float]],
+    industry_sample_counts: dict[str, int],
+    market_sample_counts: dict[str, int],
 ) -> list[dict[str, Any]]:
     results = []
     for key, name, weight in DIMENSIONS:
@@ -416,9 +438,11 @@ def _dimension_results(
         evidence = []
         for factor, factor_weight, direction in _DIMENSION_FACTORS[key]:
             raw = target.get(factor)
-            industry_values = [item[factor] for item in industry_peers if item.get(factor) is not None]
-            use_market = len(industry_values) < PEER_MIN_SAMPLE
-            peer_values = [item[factor] for item in market_peers if item.get(factor) is not None] if use_market else industry_values
+            industry_values = industry_peers.get(factor, [])
+            industry_sample_count = industry_sample_counts.get(factor, 0)
+            use_market = industry_sample_count < PEER_MIN_SAMPLE
+            peer_values = market_peers.get(factor, []) if use_market else industry_values
+            peer_sample_count = market_sample_counts.get(factor, 0) if use_market else industry_sample_count
             score = _percentile_score(raw, peer_values, direction) if raw is not None and len(peer_values) >= PEER_MIN_SAMPLE else None
             evidence.append({
                 'factor': factor,
@@ -428,7 +452,7 @@ def _dimension_results(
                 'direction': 'higher_better' if direction == 'higher' else 'lower_better',
                 'normalized_score': round(score, 4) if score is not None else None,
                 'peer_scope': 'non_financial_market' if use_market else 'industry',
-                'peer_sample_count': len(peer_values),
+                'peer_sample_count': peer_sample_count,
                 'status': 'AVAILABLE' if score is not None else 'INSUFFICIENT_DATA' if raw is not None else 'MISSING',
             })
             if score is not None:
@@ -482,9 +506,82 @@ def _load_data(
     }
 
 
-def compute_growth_potential_score(ts_code: str, asof_date: date | str) -> dict[str, Any]:
+class GrowthPotentialScoreContext:
+    def __init__(self, asof_date: date | str):
+        self.cutoff = _as_date(asof_date)
+        self._industry_cache: dict[
+            tuple[int, date],
+            tuple[dict[int, dict[str, float | None]], int, dict[str, list[float]], dict[str, int]],
+        ] = {}
+        self._market_cache: dict[date, tuple[int, dict[str, list[float]], dict[str, int]]] = {}
+
+    def industry_context(
+        self,
+        industry_id: int,
+        end_date: date,
+        target_id: int,
+        target_data: dict[str, dict[int, dict[date, list[Any]]]],
+    ) -> tuple[dict[str, float | None], int, dict[str, list[float]], dict[str, int]]:
+        key = (industry_id, end_date)
+        cached = self._industry_cache.get(key)
+        if cached is None:
+            security_manager = getattr(Security, 'objects')
+            industry_ids = list(security_manager.filter(
+                asset_type=Security.AssetType.STOCK,
+                industry_id=industry_id,
+            ).values_list('id', flat=True))
+            data = _load_data(industry_ids, self.cutoff, date(end_date.year - 5, 1, 1), _factor_periods(end_date))
+            peer_factors = {}
+            for peer_id in industry_ids:
+                if (
+                    _non_financial(peer_id, data, end_date)
+                    and all(end_date in data[name].get(peer_id, {}) for name in _TABLES)
+                ):
+                    peer_factors[peer_id] = _raw_factors(data, peer_id, end_date)
+            distributions, sample_counts = _factor_distributions(list(peer_factors.values()))
+            cached = (peer_factors, len(peer_factors), distributions, sample_counts)
+            self._industry_cache[key] = cached
+
+        peer_factors, peer_count, distributions, sample_counts = cached
+        target_factors = peer_factors.get(target_id)
+        if target_factors is None:
+            target_factors = _raw_factors(target_data, target_id, end_date)
+        return target_factors, peer_count, distributions, sample_counts
+
+    def market_context(self, end_date: date) -> tuple[int, dict[str, list[float]], dict[str, int]]:
+        cached = self._market_cache.get(end_date)
+        if cached is None:
+            security_manager = getattr(Security, 'objects')
+            market_ids = list(security_manager.filter(
+                asset_type=Security.AssetType.STOCK,
+                industry_id__isnull=False,
+            ).values_list('id', flat=True))
+            data = _load_data(market_ids, self.cutoff, date(end_date.year - 5, 1, 1), _factor_periods(end_date))
+            peer_factors = [
+                _raw_factors(data, peer_id, end_date)
+                for peer_id in market_ids
+                if _non_financial(peer_id, data, end_date)
+                and all(end_date in data[name].get(peer_id, {}) for name in _TABLES)
+            ]
+            distributions, sample_counts = _factor_distributions(peer_factors)
+            cached = (len(peer_factors), distributions, sample_counts)
+            self._market_cache[end_date] = cached
+        return cached
+
+
+def compute_growth_potential_score(
+    ts_code: str,
+    asof_date: date | str,
+    *,
+    context: GrowthPotentialScoreContext | None = None,
+    financial_end_date: date | None = None,
+) -> dict[str, Any]:
     """Compute CGPS from persisted financial reports visible at ``asof_date``; no writes."""
     cutoff = _as_date(asof_date)
+    if context is None:
+        context = GrowthPotentialScoreContext(cutoff)
+    elif context.cutoff != cutoff:
+        raise ValueError('growth potential context cutoff does not match asof_date')
     security_manager = getattr(Security, 'objects')
     security = security_manager.select_related('industry').filter(
         ts_code=str(ts_code).strip().upper(),
@@ -501,6 +598,7 @@ def compute_growth_potential_score(ts_code: str, asof_date: date | str) -> dict[
             'profile_version': PROFILE_VERSION,
             'ts_code': security.ts_code,
             'asof_date': cutoff.isoformat(),
+            'financial_end_date': financial_end_date.isoformat() if financial_end_date else None,
             'score': None,
             'status': 'INSUFFICIENT_DATA',
             'coverage': 0.0,
@@ -509,11 +607,22 @@ def compute_growth_potential_score(ts_code: str, asof_date: date | str) -> dict[
             'warnings': ['industry_missing'],
         }
 
-    history_start = date(cutoff.year - 5, 1, 1)
-    target_data = _load_data([security.id], cutoff, history_start)
+    history_date = financial_end_date or cutoff
+    history_start = date(history_date.year - 5, 1, 1)
+    target_data = _load_data(
+        [security.id],
+        cutoff,
+        history_start,
+        {financial_end_date} if financial_end_date is not None else None,
+    )
     common_dates = set.intersection(*(
         set(target_data[name].get(security.id, {})) for name in _TABLES
     ))
+    if financial_end_date is not None and financial_end_date not in common_dates:
+        raise ValueError(
+            f'financial period {financial_end_date.isoformat()} is not available in all core reports '
+            f'disclosed by {cutoff.isoformat()}'
+        )
     if not common_dates:
         return {
             'score_type': 'COMPANY_GROWTH_POTENTIAL',
@@ -528,7 +637,7 @@ def compute_growth_potential_score(ts_code: str, asof_date: date | str) -> dict[
             'missing_dimensions': empty_dimensions,
             'warnings': ['aligned_financial_period_missing'],
         }
-    end_date = max(common_dates)
+    end_date = financial_end_date or max(common_dates)
     if not _non_financial(security.id, target_data, end_date):
         return {
             'score_type': 'COMPANY_GROWTH_POTENTIAL',
@@ -544,42 +653,31 @@ def compute_growth_potential_score(ts_code: str, asof_date: date | str) -> dict[
             'missing_dimensions': empty_dimensions,
             'warnings': ['financial_company_type_not_supported'],
         }
-    industry_ids = list(security_manager.filter(
-        asset_type=Security.AssetType.STOCK,
-        industry_id=security.industry_id,
-    ).values_list('id', flat=True))
-    history_start = date(end_date.year - 5, 1, 1)
-    factor_periods = _factor_periods(end_date)
-    industry_data = _load_data(industry_ids, cutoff, history_start, factor_periods)
-    target_factors = _raw_factors(industry_data, security.id, end_date)
-    industry_peers = [
-        _raw_factors(industry_data, peer_id, end_date)
-        for peer_id in industry_ids
-        if _non_financial(peer_id, industry_data, end_date)
-        and all(end_date in industry_data[name].get(peer_id, {}) for name in _TABLES)
-    ]
+    target_factors, industry_peer_count, industry_peers, industry_sample_counts = context.industry_context(
+        security.industry_id,
+        end_date,
+        security.id,
+        target_data,
+    )
 
     needs_market = any(
-        sum(peer.get(factor) is not None for peer in industry_peers) < PEER_MIN_SAMPLE
+        industry_sample_counts.get(factor, 0) < PEER_MIN_SAMPLE
         for specs in _DIMENSION_FACTORS.values()
         for factor, _, _ in specs
     )
-    market_peers: list[dict[str, float | None]] = []
+    market_peer_count = 0
+    market_peers: dict[str, list[float]] = {}
+    market_sample_counts: dict[str, int] = {}
     if needs_market:
-        market_ids = list(security_manager.filter(
-            asset_type=Security.AssetType.STOCK,
-            industry_id__isnull=False,
-        ).values_list('id', flat=True))
-        market_data = _load_data(market_ids, cutoff, history_start, factor_periods)
-        target_factors = _raw_factors(market_data, security.id, end_date)
-        market_peers = [
-            _raw_factors(market_data, peer_id, end_date)
-            for peer_id in market_ids
-            if _non_financial(peer_id, market_data, end_date)
-            and all(end_date in market_data[name].get(peer_id, {}) for name in _TABLES)
-        ]
+        market_peer_count, market_peers, market_sample_counts = context.market_context(end_date)
 
-    dimensions = _dimension_results(target_factors, industry_peers, market_peers)
+    dimensions = _dimension_results(
+        target_factors,
+        industry_peers,
+        market_peers,
+        industry_sample_counts,
+        market_sample_counts,
+    )
     available = {item['key']: item for item in dimensions if item['score'] is not None}
     coverage = sum(weight for key, _, weight in DIMENSIONS if key in available)
     score_valid = coverage >= 0.80 and _CORE_DIMENSIONS.issubset(available)
@@ -617,8 +715,8 @@ def compute_growth_potential_score(ts_code: str, asof_date: date | str) -> dict[
         'asof_date': cutoff.isoformat(),
         'financial_end_date': end_date.isoformat(),
         'source_periods': source_periods,
-        'peer_industry_sample_count': len(industry_peers),
-        'peer_market_sample_count': len(market_peers),
+        'peer_industry_sample_count': industry_peer_count,
+        'peer_market_sample_count': market_peer_count,
         'score': round(score, 2) if score is not None else None,
         'label': label,
         'status': status,
@@ -628,3 +726,35 @@ def compute_growth_potential_score(ts_code: str, asof_date: date | str) -> dict[
         'factor_values': target_factors,
         'warnings': warnings,
     }
+
+
+def compute_growth_potential_scores(
+    ts_codes: list[str],
+    asof_date: date | str,
+    *,
+    context: GrowthPotentialScoreContext | None = None,
+    financial_end_dates: dict[str, date] | None = None,
+) -> dict[str, tuple[dict[str, Any] | None, Exception | None]]:
+    """Compute a batch while reusing peer distributions; each code keeps its own outcome."""
+    cutoff = _as_date(asof_date)
+    if context is None:
+        context = GrowthPotentialScoreContext(cutoff)
+    elif context.cutoff != cutoff:
+        raise ValueError('growth potential context cutoff does not match asof_date')
+
+    outcomes = {}
+    for ts_code in ts_codes:
+        normalized_code = str(ts_code).strip().upper()
+        try:
+            outcomes[normalized_code] = (
+                compute_growth_potential_score(
+                    normalized_code,
+                    cutoff,
+                    context=context,
+                    financial_end_date=(financial_end_dates or {}).get(normalized_code),
+                ),
+                None,
+            )
+        except (ValueError, LookupError, TypeError, KeyError, AttributeError, ImportError, RuntimeError, OSError, DatabaseError) as exc:
+            outcomes[normalized_code] = (None, exc)
+    return outcomes

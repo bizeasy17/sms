@@ -368,7 +368,7 @@ Evidence 保存可审计的因子/特征原值、规范单位、业务方向、�
 
 ### 11.5.1 入库管理命令与 daily job 边界
 
-首期提供 Django management command 手工计算并持久化指定证券、as-of 日期和评分类型，支持显式证券清单及 `--scope all` 两种范围、dry-run，并输出成功、跳过、失败及幂等命中统计；命令须使用与服务相同的评分 service 和持久化适配层，不复制算法逻辑。命令名称、参数及 TopN 所需 model/report 参数以配套后端设计的确认结果为准。
+首期提供 Django management command 手工计算并持久化指定证券、as-of 日期和评分类型，支持显式证券清单及 `--scope all` 两种范围、dry-run，并以 `--batch-size`（默认 100）按证券分批打印处理区间、累计进度、结果计数和耗时；命令须使用与服务相同的评分 service 和持久化适配层，不复制算法逻辑。命令名称、参数及 TopN 所需 model/report 参数以配套后端设计的确认结果为准。
 
 首期不修改 `scripts/daily.bat`。待手工运行、幂等性、耗时和失败退出码验证后，再单独评审 daily job 的调度频率、证券范围、重试、日志与断点策略。
 

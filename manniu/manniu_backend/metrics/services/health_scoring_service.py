@@ -17,6 +17,7 @@ from market_data.models import (
     StockDailyFundamentalHistory,
     StockDailyFundamentalLatest,
 )
+from .financial_period_service import report_announcement_date
 from .classification_mapping import load_classification_mapping
 
 TS_CODE_LENGTH = 9
@@ -68,30 +69,64 @@ def _normalize(value: float | None, low: float, high: float, *, invert: bool = F
     return 100.0 - score if invert else score
 
 
-def _latest(model, security: Security):
-    return model.objects.filter(security=security).order_by('-end_date', '-ann_date', '-id').first()
+def _latest(
+    model,
+    security: Security,
+    cutoff: date | None = None,
+    financial_end_date: date | None = None,
+    **filters,
+):
+    query = model.objects.filter(security=security, **filters)
+    if financial_end_date is not None:
+        query = query.filter(end_date=financial_end_date)
+    elif cutoff is not None:
+        query = query.filter(end_date__lte=cutoff)
+    rows = query.order_by('-end_date', '-ann_date', '-id')
+    if cutoff is None:
+        return rows.first()
+    return next((
+        row for row in rows
+        if (announced := report_announcement_date(row)) is not None and announced <= cutoff
+    ), None)
 
 
-def _context(ts_code: str, asof_date: str | None = None) -> dict[str, Any]:
+def _context(
+    ts_code: str,
+    asof_date: str | None = None,
+    financial_end_date: date | None = None,
+) -> dict[str, Any]:
     code = normalize_ts_code(ts_code)
     security = Security.objects.select_related('industry').filter(ts_code=code, asset_type='STOCK').first()
     if security is None:
         raise LookupError('security not found')
 
-    indicator = _latest(FinancialIndicatorRecord, security)
-    income = _latest(FinancialIncomeRecord, security)
-    balance = _latest(FinancialBalanceSheetRecord, security)
-    cashflow = _latest(FinancialCashFlowRecord, security)
+    cutoff = None
+    if financial_end_date is not None and asof_date:
+        text = str(asof_date).strip()
+        cutoff = (
+            date(int(text[:4]), int(text[4:6]), int(text[6:8]))
+            if len(text) == 8 and text.isdigit()
+            else date.fromisoformat(text[:10])
+        )
+    indicator = _latest(FinancialIndicatorRecord, security, cutoff, financial_end_date)
+    income = _latest(FinancialIncomeRecord, security, cutoff, financial_end_date)
+    balance = _latest(FinancialBalanceSheetRecord, security, cutoff, financial_end_date)
+    cashflow = _latest(FinancialCashFlowRecord, security, cutoff, financial_end_date)
     if cashflow is not None and (cashflow.raw_payload or {}).get('update_flag') != '1':
-        updated_cashflow = FinancialCashFlowRecord.objects.filter(
+        updated_cashflows = FinancialCashFlowRecord.objects.filter(
             security=security,
             end_date=cashflow.end_date,
             ann_date=cashflow.ann_date,
             raw_payload__update_flag='1',
-        ).order_by('-id').first()
+        ).order_by('-id')
+        updated_cashflow = next((
+            row for row in updated_cashflows
+            if cutoff is None
+            or ((announced := report_announcement_date(row)) is not None and announced <= cutoff)
+        ), None)
         if updated_cashflow is not None:
             cashflow = updated_cashflow
-    main_business = _latest(FinancialMainBusinessRecord, security)
+    main_business = _latest(FinancialMainBusinessRecord, security, cutoff, financial_end_date)
     bz_query = FinancialMainBusinessRecord.objects.filter(security=security, end_date=main_business.end_date) if main_business else FinancialMainBusinessRecord.objects.none()
     bz_items = list(bz_query.exclude(bz_item='').values_list('bz_item', flat=True).distinct())
     market_asof_date = None
@@ -137,11 +172,13 @@ def _context(ts_code: str, asof_date: str | None = None) -> dict[str, Any]:
     free_cashflow = value(cashflow, 'free_cashflow')
     roe_dt_value = value(indicator, 'roe_dt')
     if roe_dt_value is None and indicator is not None:
-        roe_dt_row = FinancialIndicatorRecord.objects.filter(
-            security=security,
-            end_date=indicator.end_date,
+        roe_dt_row = _latest(
+            FinancialIndicatorRecord,
+            security,
+            cutoff,
+            financial_end_date or indicator.end_date,
             roe_dt__isnull=False,
-        ).order_by('-ann_date', '-id').first()
+        )
         roe_dt_value = value(roe_dt_row, 'roe_dt')
     total_assets = value(balance, 'total_assets')
     total_equity = value(balance, 'total_hldr_eqy_exc_min_int')
@@ -252,19 +289,25 @@ def _context(ts_code: str, asof_date: str | None = None) -> dict[str, Any]:
             target = features.get(feature_key)
             if target is None:
                 continue
-            peer_rows = FinancialIndicatorRecord.objects.filter(
+            peer_query = FinancialIndicatorRecord.objects.filter(
                 security_id__in=peer_security_ids,
                 end_date=indicator.end_date,
-            ).order_by('security_id', '-ann_date', '-id').distinct('security_id')
+            )
+            if cutoff is not None:
+                peer_query = peer_query.filter(ann_date__lte=cutoff)
+            peer_rows = peer_query.order_by('security_id', '-ann_date', '-id').distinct('security_id')
             peer_values = [
                 parsed for raw in peer_rows.values_list(field_name, flat=True)
                 if (parsed := _number(raw)) is not None
                 and (field_name != 'assets_turn' or parsed != 0)
             ]
             if len(peer_values) < 20:
-                market_rows = FinancialIndicatorRecord.objects.filter(
+                market_query = FinancialIndicatorRecord.objects.filter(
                     end_date=indicator.end_date,
-                ).order_by('security_id', '-ann_date', '-id').distinct('security_id')
+                )
+                if cutoff is not None:
+                    market_query = market_query.filter(ann_date__lte=cutoff)
+                market_rows = market_query.order_by('security_id', '-ann_date', '-id').distinct('security_id')
                 peer_values = [
                     parsed for raw in market_rows.values_list(field_name, flat=True)
                     if (parsed := _number(raw)) is not None
@@ -291,6 +334,7 @@ def _context(ts_code: str, asof_date: str | None = None) -> dict[str, Any]:
         'balance': balance,
         'cashflow': cashflow,
         'daily': daily_row,
+        'financial_end_date': financial_end_date,
     }
 
 
@@ -564,8 +608,12 @@ def _display_metrics(evidence: dict[str, float | None]) -> list[dict[str, str]]:
     ][:3]
 
 
-def classify_stock(ts_code: str, asof_date: str | None = None) -> dict[str, Any]:
-    context = _context(ts_code, asof_date)
+def classify_stock(
+    ts_code: str,
+    asof_date: str | None = None,
+    financial_end_date: date | None = None,
+) -> dict[str, Any]:
+    context = _context(ts_code, asof_date, financial_end_date)
     security = context['security']
     stock_type, source, reasons, confidence, candidates = _classify(context['industry'], context['business_text'], context['bz_items'])
     return {
@@ -584,12 +632,13 @@ def compute_score(
     asof_date: str | None = None,
     force_recompute: bool = False,
     include_feature_values: bool = False,
+    financial_end_date: date | None = None,
 ) -> dict[str, Any]:
     del force_recompute
-    context = _context(ts_code, asof_date)
+    context = _context(ts_code, asof_date, financial_end_date)
     security = context['security']
     features = context['features']
-    classification = classify_stock(security.ts_code, asof_date)
+    classification = classify_stock(security.ts_code, asof_date, financial_end_date)
     dimension_specs = _source_dimensions(classification['stock_type'], features)
     dimensions = []
     weights: dict[str, float] = {}
@@ -626,7 +675,7 @@ def compute_score(
         for key in ('income', 'indicator', 'balance', 'cashflow', 'main_business')
         if (row := context.get(key)) is not None and row.end_date is not None
     ]
-    snapshot_asof_date = max(financial_end_dates, default=None)
+    snapshot_asof_date = financial_end_date or max(financial_end_dates, default=None)
     if snapshot_asof_date is None and context.get('daily') is not None:
         snapshot_asof_date = context['daily'].trade_date
 

@@ -48,7 +48,7 @@
 
 ### 4.4 手工入库 CLI
 
-提供 Django management command 手工计算并持久化指定评分类型。CLI 支持 `--scope ts-codes|all`；`ts-codes` scope 接收一个或多个证券代码或证券文件，`all` scope 选择证券主表中的股票。命令要求指定 as-of 日期和评分类型，并提供只计算、不写库的 dry-run；选择 TopN 时可指定 report type、model version、score_topn 和 store_topn。命令输出每类评分的成功、跳过、失败和幂等命中汇总，存在失败时返回非零退出码。具体 command 名称和证券文件格式由后端设计确认。首期不自动加入 daily job；后续另行接入并明确调度和失败重试策略。
+提供 Django management command 手工计算并持久化指定评分类型。CLI 支持 `--scope ts-codes|all`；`ts-codes` scope 接收一个或多个证券代码或证券文件，`all` scope 选择证券主表中的股票。命令要求指定 as-of 日期和评分类型，并提供只计算、不写库的 dry-run；`--batch-size`（默认 100）控制每批证券数，批次开始/完成输出处理区间、累计进度、结果计数和耗时。选择 TopN 时可指定 report type、model version、score_topn 和 store_topn。命令输出每类评分的成功、跳过、失败和幂等命中汇总，存在失败时返回非零退出码。具体 command 名称和证券文件格式由后端设计确认。首期不自动加入 daily job；后续另行接入并明确调度和失败重试策略。
 
 ## 5 数据质量与安全要求
 
