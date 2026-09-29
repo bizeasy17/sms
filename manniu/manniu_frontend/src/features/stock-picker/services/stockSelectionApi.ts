@@ -1,12 +1,15 @@
 export type SwIndustry = { industry_code: string; index_code?: string; level: string; name: string }
 export type StockSelectionPreset = 'maniu-selected' | 'buffett-moat' | 'high-growth' | 'cash-cow' | 'undervalued' | 'high-dividend' | 'small-beautiful' | 'turnaround' | 'net-cash-bargain' | 'risk-scan'
 export type StockSelectionRangeKey = 'revenue_yoy' | 'profit_yoy' | 'ebit_yoy' | 'roe' | 'roic' | 'gross_margin' | 'cash_profit_ratio' | 'debt_to_assets' | 'liquidity_ratio' | 'goodwill_to_equity' | 'pe_ttm' | 'pb' | 'peg' | 'dividend_yield' | 'market_cap'
+export type StockSelectionMetricScoreRangeKey = 'financial_health_score' | 'topn_score' | 'growth_score'
 export type StockSelectionToggleKey = 'net_profit_positive' | 'gross_margin_improved' | 'operating_cash_flow_positive' | 'free_cash_flow_positive' | 'net_cash'
 export type StockSelectionFilterDraft = {
     ranges: Record<StockSelectionRangeKey, { min: string; max: string }>
+    metricScoreRanges: Record<StockSelectionMetricScoreRangeKey, { min: string; max: string }>
     toggles: Record<StockSelectionToggleKey, boolean>
 }
 type NumericFilterKey = `${StockSelectionRangeKey}_${'min' | 'max'}`
+type MetricScoreFilterKey = `${StockSelectionMetricScoreRangeKey}_${'min' | 'max'}`
 
 export type StockSelectionQuery = {
     preset: StockSelectionPreset
@@ -20,6 +23,7 @@ export type StockSelectionQuery = {
     page: number
     page_size: number
 } & Partial<Record<NumericFilterKey, number | ''>>
+    & Partial<Record<MetricScoreFilterKey, number | ''>>
     & Partial<Record<StockSelectionToggleKey, boolean>>
 export type StockSelectionItem = {
     ts_code: string

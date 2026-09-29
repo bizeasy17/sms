@@ -1,8 +1,11 @@
 from datetime import date, timedelta
+from decimal import Decimal, InvalidOperation
 import math
 
 from market_data.models import Security
 from market_data.services.regime import get_market_regime, get_security_regime
+from metrics.models import MetricsScoreSnapshot
+from metrics.services.score_snapshot_query_service import get_score_snapshot, list_score_snapshots
 
 from .errors import api_error, api_response
 from .catalog import public_api_catalog
@@ -115,6 +118,7 @@ def _handle_request_error(request, error):
         'SCREEN_RANGE_TOO_LARGE': 400,
         'SCREEN_DATA_NOT_READY': 503,
         'VALUATION_DEPENDENCY_UNAVAILABLE': 503,
+        'METRICS_DEPENDENCY_UNAVAILABLE': 503,
         'INVALID_INDEX_KEY': 400,
         'INVALID_METRIC': 400,
         'INVALID_WINDOW': 400,
@@ -134,6 +138,7 @@ def _handle_request_error(request, error):
         status=status_map.get(error.code, 400),
         retryable=error.code in {
             'UPSTREAM_TIMEOUT', 'UPSTREAM_RATE_LIMITED', 'UPSTREAM_DEPENDENCY_UNAVAILABLE',
+            'METRICS_DEPENDENCY_UNAVAILABLE',
         },
         details=error.details,
     )
@@ -359,6 +364,8 @@ def stock_selection_results(request):
             'liquidity_ratio_max', 'goodwill_to_equity_min', 'goodwill_to_equity_max', 'pe_ttm_min', 'pe_ttm_max',
             'pb_min', 'pb_max', 'peg_min', 'peg_max', 'dividend_yield_min',
             'dividend_yield_max', 'market_cap_min', 'market_cap_max',
+            'financial_health_score_min', 'financial_health_score_max',
+            'topn_score_min', 'topn_score_max', 'growth_score_min', 'growth_score_max',
         )
         boolean_filter_keys = (
             'net_profit_positive', 'gross_margin_improved', 'operating_cash_flow_positive',
@@ -388,7 +395,7 @@ def stock_selection_results(request):
         for name in (
             'revenue_yoy', 'profit_yoy', 'ebit_yoy', 'roe', 'roic', 'gross_margin',
             'cash_profit_ratio', 'debt_to_assets', 'liquidity_ratio', 'goodwill_to_equity', 'pe_ttm', 'pb', 'peg',
-            'dividend_yield', 'market_cap',
+            'dividend_yield', 'market_cap', 'financial_health_score', 'topn_score', 'growth_score',
         ):
             minimum = filters.get(f'{name}_min')
             maximum = filters.get(f'{name}_max')
@@ -430,6 +437,7 @@ def stock_selection_results(request):
             'matched_count': total,
             'returned_count': len(result.items),
             'unassessed_count': result.unassessed_count,
+            'metric_score_unassessed': result.metric_score_unassessed or {},
         },
         'items': result.items,
         'risk_summary': result.risk_summary,
@@ -452,6 +460,7 @@ def stock_selection_results(request):
             'pb': 'multiple',
             'peg': 'multiple',
             'dividend_yield': 'percentage_points',
+            'metric_scores': 'score_0_100',
         },
         'filter_units': {'market_cap': 'CNY_10K'},
         'valuation_status': {
@@ -692,6 +701,136 @@ def security_events(request, ts_code):
     )
     meta['total_pages'] = (result.total + result.page_size - 1) // result.page_size if result.total else 0
     return api_response(request, data=data, meta=meta)
+
+
+def _metrics_decimal(params, name):
+    value = params.get(name)
+    if value in (None, ''):
+        return None
+    try:
+        parsed = Decimal(str(value))
+    except (InvalidOperation, ValueError) as exc:
+        raise MarketDataRequestError('INVALID_REQUEST', f'{name} 必须为有效数字') from exc
+    if not parsed.is_finite():
+        raise MarketDataRequestError('INVALID_REQUEST', f'{name} 必须为有效数字')
+    return parsed
+
+
+def _metrics_snapshot_payload(snapshot, *, include_evidence=False):
+    data = {
+        'id': snapshot.pk,
+        'ts_code': snapshot.security.ts_code,
+        'name': snapshot.security.name,
+        'score_type': snapshot.score_type,
+        'asof_date': snapshot.asof_date.isoformat(),
+        'financial_end_date': snapshot.financial_end_date.isoformat() if snapshot.financial_end_date else None,
+        'market_asof_date': snapshot.market_asof_date.isoformat() if snapshot.market_asof_date else None,
+        'report_type': snapshot.report_type or None,
+        'score': float(snapshot.score) if snapshot.score is not None else None,
+        'label': snapshot.label or None,
+        'score_status': snapshot.score_status,
+        'coverage': float(snapshot.coverage) if snapshot.coverage is not None else None,
+        'created_at': snapshot.created_at.isoformat(),
+        'dimensions': [],
+    }
+    if include_evidence:
+        data.update({
+            'calculation_version': snapshot.calculation_version or None,
+            'scoring_version': snapshot.scoring_version or None,
+            'profile_version': snapshot.profile_version or None,
+            'peer_mapping_version': snapshot.peer_mapping_version or None,
+            'model_version': snapshot.model_version or None,
+            'feature_set_version': snapshot.feature_set_version or None,
+            'mapping_version': snapshot.mapping_version or None,
+            'normalization_version': snapshot.normalization_version or None,
+            'dimension_weight_version': snapshot.dimension_weight_version or None,
+            'score_topn': snapshot.score_topn,
+            'store_topn': snapshot.store_topn,
+            'model_scope': snapshot.model_scope or None,
+            'model_degraded': snapshot.model_degraded,
+            'model_degrade_reason': snapshot.model_degrade_reason or None,
+            'source_periods': snapshot.source_periods,
+            'warnings': snapshot.warnings,
+            'input_fingerprint': snapshot.input_fingerprint,
+        })
+    for dimension in snapshot.dimensions.all():
+        item = {
+            'dimension_key': dimension.dimension_key,
+            'dimension_name': dimension.dimension_name,
+            'weight': float(dimension.weight),
+            'score': float(dimension.score) if dimension.score is not None else None,
+            'status': dimension.status,
+            'available_weight': float(dimension.available_weight) if dimension.available_weight is not None else None,
+        }
+        if include_evidence:
+            item['evidence'] = dimension.evidence
+        data['dimensions'].append(item)
+    return data
+
+
+@require_scopes('market_analysis:read')
+def metrics_score_snapshots(request):
+    if (response := _require_get(request)) is not None:
+        return response
+    params = request.GET
+    try:
+        score_type = str(params.get('score_type', '')).strip().upper() or None
+        if score_type and score_type not in MetricsScoreSnapshot.ScoreType.values:
+            raise MarketDataRequestError('INVALID_REQUEST', 'score_type 不受支持')
+        score_status = str(params.get('score_status', '')).strip().upper() or None
+        if score_status and score_status not in MetricsScoreSnapshot.Status.values:
+            raise MarketDataRequestError('INVALID_REQUEST', 'score_status 不受支持')
+        ts_code = normalize_ts_code(params.get('ts_code')) if params.get('ts_code') else None
+        asof_from = parse_date(params.get('asof_from'), 'asof_from')
+        asof_to = parse_date(params.get('asof_to'), 'asof_to')
+        financial_end_date = parse_date(params.get('financial_end_date'), 'financial_end_date')
+        if asof_from and asof_to and asof_from > asof_to:
+            raise MarketDataRequestError('INVALID_DATE', 'asof_from 不能晚于 asof_to')
+        min_score = _metrics_decimal(params, 'min_score')
+        max_score = _metrics_decimal(params, 'max_score')
+        dimension_min_score = _metrics_decimal(params, 'dimension_min_score')
+        dimension_max_score = _metrics_decimal(params, 'dimension_max_score')
+        if min_score is not None and max_score is not None and min_score > max_score:
+            raise MarketDataRequestError('INVALID_REQUEST', 'min_score 不能大于 max_score')
+        if dimension_min_score is not None and dimension_max_score is not None and dimension_min_score > dimension_max_score:
+            raise MarketDataRequestError('INVALID_REQUEST', 'dimension_min_score 不能大于 dimension_max_score')
+        ordering_value = str(params.get('ordering', '')).strip()
+        ordering = tuple(part.strip() for part in ordering_value.split(',')) if ordering_value else ('-asof_date', '-created_at')
+        sortable_fields = {'asof_date', 'score', 'created_at'}
+        if any(not part or part.lstrip('-') not in sortable_fields or part.startswith('--') for part in ordering):
+            raise MarketDataRequestError('INVALID_REQUEST', 'ordering 仅支持 asof_date、score、created_at')
+        page, page_size = parse_pagination(params)
+        filters = {
+            'score_type': score_type,
+            'ts_code': ts_code,
+            'name': str(params.get('name', '')).strip() or None,
+            'asof_from': asof_from,
+            'asof_to': asof_to,
+            'financial_end_date': financial_end_date,
+            'score_status': score_status,
+            'min_score': min_score,
+            'max_score': max_score,
+            'label': str(params.get('label', '')).strip() or None,
+            'dimension_key': str(params.get('dimension_key', '')).strip() or None,
+            'dimension_min_score': dimension_min_score,
+            'dimension_max_score': dimension_max_score,
+        }
+        items, total = list_score_snapshots(filters=filters, ordering=ordering, page=page, page_size=page_size)
+    except MarketDataRequestError as error:
+        return _handle_request_error(request, error)
+    data = [_metrics_snapshot_payload(item) for item in items]
+    page_result = Page(data, page, page_size, total)
+    return api_response(request, data=data, meta=_meta(page_result, data_status='NO_DATA' if total == 0 else 'COMPLETE'))
+
+
+@require_scopes('market_analysis:read')
+def metrics_score_snapshot_detail(request, snapshot_id):
+    if (response := _require_get(request)) is not None:
+        return response
+    snapshot = get_score_snapshot(snapshot_id)
+    if snapshot is None:
+        return api_error(request, 'RESULT_NOT_FOUND', 'metrics score snapshot 不存在', status=404)
+    return api_response(request, data=_metrics_snapshot_payload(snapshot, include_evidence=True))
 
 
 @require_scopes('market_sentiment:read')

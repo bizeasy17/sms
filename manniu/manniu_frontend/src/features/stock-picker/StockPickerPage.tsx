@@ -1,10 +1,17 @@
 import { useState } from 'react'
 import { TopBar } from '../../shared/ui/TopBar'
-import type { StockSelectionFilterDraft, StockSelectionItem, StockSelectionPreset, StockSelectionRangeKey, StockSelectionToggleKey } from './services/stockSelectionApi'
+import type { StockSelectionFilterDraft, StockSelectionItem, StockSelectionMetricScoreRangeKey, StockSelectionPreset, StockSelectionRangeKey, StockSelectionToggleKey } from './services/stockSelectionApi'
 import { useStockSelection } from './hooks/useStockSelection'
 import './stock-picker.css'
 
 type SortKey = 'score' | 'valueValuationScore' | 'modelValuationScore' | 'revenueYoy' | 'profitYoy' | 'ebitYoy' | 'roe' | 'liquidityRatio'
+function getLocalDateString() {
+  const today = new Date()
+  const month = String(today.getMonth() + 1).padStart(2, '0')
+  const day = String(today.getDate()).padStart(2, '0')
+  return `${today.getFullYear()}-${month}-${day}`
+}
+
 const PRESET_OPTIONS: { key: StockSelectionPreset; label: string; group: '精选方案' | '全部预设' }[] = [
   { key: 'maniu-selected', label: '慢牛牛精选', group: '精选方案' },
   { key: 'buffett-moat', label: '巴菲特护城河', group: '精选方案' },
@@ -46,6 +53,12 @@ const RANGE_GROUPS: { title: string; fields: { key: StockSelectionRangeKey; labe
   ] },
 ]
 
+const METRIC_SCORE_FIELDS: { key: StockSelectionMetricScoreRangeKey; label: string; tooltip: string }[] = [
+  { key: 'financial_health_score', label: '财务健康分', tooltip: '评级区间：A 85–100 分；B 70–<85 分；C 55–<70 分；D 40–<55 分；E 0–<40 分。' },
+  { key: 'topn_score', label: 'TopN特征分', tooltip: '评级区间：A 85–100 分；B 70–<85 分；C 55–<70 分；D 40–<55 分；E 0–<40 分。' },
+  { key: 'growth_score', label: '增长潜力分', tooltip: '评级区间：强 80–100 分；偏强 65–<80 分；中性 45–<65 分；偏弱 30–<45 分；弱 0–<30 分。' },
+]
+
 const TOGGLE_GROUPS: { title: string; fields: { key: StockSelectionToggleKey; label: string }[] }[] = [
   { title: '盈利质量', fields: [{ key: 'net_profit_positive', label: '净利润为正' }, { key: 'gross_margin_improved', label: '毛利率同比改善' }] },
   { title: '现金流质量', fields: [{ key: 'operating_cash_flow_positive', label: '经营现金流为正' }, { key: 'free_cash_flow_positive', label: '自由现金流为正' }, { key: 'net_cash', label: '净现金企业' }] },
@@ -68,6 +81,7 @@ function createFilterDraft(preset: StockSelectionPreset): StockSelectionFilterDr
   const defaults = PRESET_DEFAULTS[preset]
   return {
     ranges: Object.fromEntries(RANGE_GROUPS.flatMap((group) => group.fields).map(({ key }) => [key, { min: String(defaults.ranges?.[key]?.min ?? ''), max: String(defaults.ranges?.[key]?.max ?? '') }])) as StockSelectionFilterDraft['ranges'],
+    metricScoreRanges: Object.fromEntries(METRIC_SCORE_FIELDS.map(({ key }) => [key, { min: '', max: '' }])) as StockSelectionFilterDraft['metricScoreRanges'],
     toggles: Object.fromEntries(TOGGLE_GROUPS.flatMap((group) => group.fields).map(({ key }) => [key, Boolean(defaults.toggles?.[key])])) as StockSelectionFilterDraft['toggles'],
   }
 }
@@ -115,8 +129,8 @@ function ToggleField({ label, checked, onChange }: { label: string; checked: boo
   return <div className="filter-toggle"><span>{label}</span><button type="button" role="switch" aria-checked={checked} aria-label={label} className={`toggle ${checked ? 'on' : ''}`} onClick={onChange}><i /></button></div>
 }
 
-function ThresholdField({ name, label, unit, hint, minValue, maxValue, onChange }: { name: string; label: string; unit: string; hint: string; minValue: string; maxValue: string; onChange: (bound: 'min' | 'max', value: string) => void }) {
-  return <div className="threshold-field" role="group" aria-labelledby={`${name}-label`}><span id={`${name}-label`} className="threshold-label">{label}</span><div className="threshold-inputs"><input id={`${name}-min`} aria-label={`${label}最低值`} type="number" step="any" value={minValue} onChange={(event) => onChange('min', event.target.value)} /><span aria-hidden="true">~</span><input id={`${name}-max`} aria-label={`${label}最高值`} type="number" step="any" value={maxValue} onChange={(event) => onChange('max', event.target.value)} /><span>{unit}</span></div><small>{hint}</small></div>
+function ThresholdField({ name, label, unit, hint, minValue, maxValue, min, max, tooltip, tooltipOpen = false, onTooltipToggle, onChange }: { name: string; label: string; unit: string; hint: string; minValue: string; maxValue: string; min?: number; max?: number; tooltip?: string; tooltipOpen?: boolean; onTooltipToggle?: () => void; onChange: (bound: 'min' | 'max', value: string) => void }) {
+  return <div className="threshold-field" role="group" aria-labelledby={`${name}-label`}><div className="threshold-label-row"><span id={`${name}-label`} className="threshold-label">{label}</span>{tooltip && <><button type="button" className="metric-score-help" aria-label={`${label}评级说明`} aria-expanded={tooltipOpen} aria-controls={`${name}-tooltip`} onClick={onTooltipToggle}>?</button>{tooltipOpen && <span id={`${name}-tooltip`} className="metric-score-tooltip" role="tooltip">{tooltip}</span>}</>}</div><div className="threshold-inputs"><input id={`${name}-min`} aria-label={`${label}最低值`} type="number" step="any" min={min} max={max} value={minValue} onChange={(event) => onChange('min', event.target.value)} /><span aria-hidden="true">~</span><input id={`${name}-max`} aria-label={`${label}最高值`} type="number" step="any" min={min} max={max} value={maxValue} onChange={(event) => onChange('max', event.target.value)} /><span>{unit}</span></div><small>{hint}</small></div>
 }
 
 export function StockPickerPage() {
@@ -128,15 +142,17 @@ export function StockPickerPage() {
   const [selectedIndustry, setSelectedIndustry] = useState('all')
   const [reportType, setReportType] = useState('26H1')
   const [market, setMarket] = useState('all')
-  const [asofDate, setAsofDate] = useState('2026-09-19')
+  const [asofDate, setAsofDate] = useState(() => getLocalDateString())
   const [selectedPreset, setSelectedPreset] = useState<StockSelectionPreset>('maniu-selected')
   const [filterDraft, setFilterDraft] = useState(() => createFilterDraft('maniu-selected'))
+  const [openMetricTooltip, setOpenMetricTooltip] = useState<string | null>(null)
 
   const { industries, industryStatus, industryError, resultRows, marketStockCount, matchedCount, queryStatus, queryError, updateResults: queryResults } = useStockSelection(selectedPreset, filterDraft, sortKey, sortDirection, market, reportType, asofDate, selectedIndustry)
 
   function updateBound(key: StockSelectionRangeKey, bound: 'min' | 'max', value: string) { setFilterDraft((current) => ({ ...current, ranges: { ...current.ranges, [key]: { ...current.ranges[key], [bound]: value } } })); setSubmitted(false) }
+  function updateMetricScoreBound(key: StockSelectionMetricScoreRangeKey, bound: 'min' | 'max', value: string) { setFilterDraft((current) => ({ ...current, metricScoreRanges: { ...current.metricScoreRanges, [key]: { ...current.metricScoreRanges[key], [bound]: value } } })); setSubmitted(false) }
   function updateToggle(key: StockSelectionToggleKey) { setFilterDraft((current) => ({ ...current, toggles: { ...current.toggles, [key]: !current.toggles[key] } })); setSubmitted(false) }
-  function selectPreset(value: string) { const preset = value as StockSelectionPreset; setSelectedPreset(preset); setFilterDraft(createFilterDraft(preset)); setSubmitted(false) }
+  function selectPreset(value: string) { const preset = value as StockSelectionPreset; setSelectedPreset(preset); setFilterDraft(createFilterDraft(preset)); setOpenMetricTooltip(null); setSubmitted(false) }
   function updateSort(nextKey: SortKey) { setSortKey(nextKey); setPage(1) }
   function toggleSortDirection() { setSortDirection((value) => value === 'desc' ? 'asc' : 'desc'); setPage(1) }
   async function updateResults() {
@@ -170,8 +186,9 @@ export function StockPickerPage() {
         <div className="filter-draft-actions"><button type="button" onClick={() => { setFilterDraft(createFilterDraft(selectedPreset)); setSubmitted(false) }}>恢复预设</button><button type="button" onClick={() => { setFilterDraft(createFilterDraft('risk-scan')); setSubmitted(false) }}>清空条件</button></div>
         {selectedPreset === 'risk-scan' ? <section className="filter-group risk-rules"><h2>排雷规则 <span>命中任一项</span></h2>{['连续两年净利润同比为负', 'ROE < 5%', '经营现金流为负', '资产负债率 > 70%', '商誉 / 净资产 > 30%'].map((rule) => <div key={rule}><i aria-hidden="true">!</i><span>{rule}</span></div>)}</section> : <>
           {RANGE_GROUPS.map((group) => <section className="filter-group" key={group.title}><h2>{group.title}</h2>{group.fields.map(({ key, ...field }) => <ThresholdField key={key} name={key} {...field} minValue={filterDraft.ranges[key].min} maxValue={filterDraft.ranges[key].max} onChange={(bound, value) => updateBound(key, bound, value)} />)}{TOGGLE_GROUPS.filter((toggleGroup) => toggleGroup.title === group.title).flatMap((toggleGroup) => toggleGroup.fields).map((field) => <ToggleField key={field.key} label={field.label} checked={filterDraft.toggles[field.key]} onChange={() => updateToggle(field.key)} />)}</section>)}
+          <section className="filter-group metric-score-group"><h2>Metrics Score 综合评分</h2>{METRIC_SCORE_FIELDS.map(({ key, label, tooltip }) => <ThresholdField key={key} name={key} label={label} tooltip={tooltip} tooltipOpen={openMetricTooltip === key} onTooltipToggle={() => setOpenMetricTooltip((current) => current === key ? null : key)} unit="分" hint="范围 0–100 分" min={0} max={100} minValue={filterDraft.metricScoreRanges[key].min} maxValue={filterDraft.metricScoreRanges[key].max} onChange={(bound, value) => updateMetricScoreBound(key, bound, value)} />)}</section>
         </>}
-        <section className="filter-group range-group"><h2>数据范围</h2><label>报告期<select value={reportType} onChange={(event) => { setReportType(event.target.value); setSubmitted(false) }}><option value="26H1">2026 H1</option><option value="26FY">2026 FY</option><option value="25FY">2025 FY</option><option value="25H1">2025 H1</option></select></label><label>市场<select value={market} onChange={(event) => { setMarket(event.target.value); setSubmitted(false) }}><option value="all">沪深 A 股</option><option value="sh-main">沪市主板</option><option value="sz-main">深市主板</option><option value="cyb">创业板</option><option value="star">科创板</option></select></label><label>选股日期<input type="date" value={asofDate} max="2026-09-19" onChange={(event) => { setAsofDate(event.target.value); setSubmitted(false) }} /></label><label>SW 行业<select value={selectedIndustry} onChange={(event) => { setSelectedIndustry(event.target.value); setSubmitted(false) }} disabled={industryStatus === 'loading'} aria-label="选择 SW 行业"><option value="all">{industryStatus === 'error' ? '行业列表加载失败' : industryStatus === 'loading' ? '正在加载行业...' : industries.length ? '全部行业' : '暂无可选行业'}</option>{industries.map((industry) => <option key={industry.industry_code} value={industry.industry_code}>{industry.name}</option>)}</select>{industryStatus === 'error' && <small role="alert" className="filter-error">{industryError}</small>}</label></section>
+        <section className="filter-group range-group"><h2>数据范围</h2><label>报告期<select value={reportType} onChange={(event) => { setReportType(event.target.value); setSubmitted(false) }}><option value="26H1">2026 H1</option><option value="26FY">2026 FY</option><option value="25FY">2025 FY</option><option value="25H1">2025 H1</option></select></label><label>市场<select value={market} onChange={(event) => { setMarket(event.target.value); setSubmitted(false) }}><option value="all">沪深 A 股</option><option value="sh-main">沪市主板</option><option value="sz-main">深市主板</option><option value="cyb">创业板</option><option value="star">科创板</option></select></label><label>选股日期<input type="date" value={asofDate} max={getLocalDateString()} onChange={(event) => { setAsofDate(event.target.value); setSubmitted(false) }} /></label><label>SW 行业<select value={selectedIndustry} onChange={(event) => { setSelectedIndustry(event.target.value); setSubmitted(false) }} disabled={industryStatus === 'loading'} aria-label="选择 SW 行业"><option value="all">{industryStatus === 'error' ? '行业列表加载失败' : industryStatus === 'loading' ? '正在加载行业...' : industries.length ? '全部行业' : '暂无可选行业'}</option>{industries.map((industry) => <option key={industry.industry_code} value={industry.industry_code}>{industry.name}</option>)}</select>{industryStatus === 'error' && <small role="alert" className="filter-error">{industryError}</small>}</label></section>
         <button type="button" className="sidebar-run" onClick={updateResults} disabled={queryStatus === 'loading'}>{queryStatus === 'loading' ? '更新中...' : submitted ? '已更新结果' : '更新结果'} <b>↗</b></button>
       </aside>
       {sidebarOpen && <button className="sidebar-backdrop" aria-label="关闭筛选器" onClick={() => setSidebarOpen(false)} />}

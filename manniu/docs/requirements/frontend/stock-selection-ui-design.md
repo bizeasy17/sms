@@ -120,7 +120,21 @@ AppShell
 
 范围端点是控件建议值，不代表截断真实财务值。阈值控件需显示当前值和范围端点，并提供可键盘编辑的数值输入。布尔开关必须使用 `role="switch"`、同步 `aria-checked`，并且不能仅依赖颜色传达状态。
 
-### 6.3 预设条件
+### 6.3 Metric Score 综合评分
+
+在五大指标维度之后、数据范围之前新增独立筛选 section。筛选的是评分快照的综合分，不是各个分维度；包含以下三组可编辑区间：
+
+| 展示名称 | 来源 `score_type` | 分数范围 |
+| --- | --- | --- |
+| 财务健康六维综合分 | `FINANCIAL_HEALTH_6D` | `0~100` |
+| TopN 特征六维综合分 | `MODEL_TOPN_6D` | `0~100` |
+| 企业增长潜力七维综合分 | `COMPANY_GROWTH_POTENTIAL` | `0~100` |
+
+每组支持仅设置下限、仅设置上限或闭区间；未设置表示不按该评分筛选。区间下限不得大于上限。多个已设置的评分区间与其他正向筛选条件按 AND 组合。对应评分快照不存在、分数为 NULL 或不满足 as-of/报告期条件时，该证券不匹配该项，不以 0 替代。排雷模式不展示、不提交 Metric Score 条件。
+
+提交到选股结果接口的参数为 `financial_health_score_min/max`、`topn_score_min/max`、`growth_score_min/max`，单位均为 0–100 分；未设置边界发送空字符串以表达不应用该边界。Metric Score 不载入预设默认值；切换/恢复预设或清空条件后均为空。
+
+### 6.4 预设条件
 
 同一正向预设内所有已设置条件按 AND 组合；排雷模式按 OR 组合。未列出的指标不限制。
 
@@ -139,7 +153,7 @@ AppShell
 
 指标定义、期间、计算单位和缺失处理遵循后台接口契约。总市值输入框使用亿元；提交 query 时换算为人民币万元（UI 值乘 `10000`），该值直接与后台 `total_mv` 万元比较；结果行的 `market_cap` 使用人民币亿元。排雷结果需返回风险标记及逐项命中原因。
 
-### 6.4 数据范围
+### 6.5 数据范围
 
 | 字段 | 控件 | 默认值 |
 | --- | --- | --- |
@@ -166,7 +180,7 @@ AppShell
 从盈利质量、成长性与财务安全性中筛出值得深入研究的公司。
 ```
 
-“更新结果”按钮是主操作。侧栏和标题区的两个按钮共用同一个提交处理器，提交当前 `preset`、`screen_mode`、五大维度条件及数据范围到 `GET /api/v1/market-analysis/stock-selection/results`，不能在每次输入时发起请求。请求必须提交当前预设 key、全部区间边界和布尔开关：数值边界有值时发送数值，空边界发送空字符串以清除对应 preset 阈值；显式 `false` 覆盖 preset 中的 `true`。总市值按 UI 亿元值乘 `10000` 转为 API 人民币万元。排雷模式发送 `screen_mode=risk` 和 `preset=risk-scan`，不得混发正向筛选条件。请求进行中时两个按钮均禁用并显示“更新中...”。请求成功后，服务端返回的当前页结果替换演示行；请求失败时保留当前结果并显示错误提示。
+“更新结果”按钮是主操作。侧栏和标题区的两个按钮共用同一个提交处理器，提交当前 `preset`、`screen_mode`、五大维度条件、Metric Score 综合分条件及数据范围到 `GET /api/v1/market-analysis/stock-selection/results`，不能在每次输入时发起请求。请求必须提交当前预设 key、全部区间边界和布尔开关：数值边界有值时发送数值，空边界发送空字符串以清除对应 preset 阈值；显式 `false` 覆盖 preset 中的 `true`。Metric Score 发送三类综合分的上下限；总市值按 UI 亿元值乘 `10000` 转为 API 人民币万元。排雷模式发送 `screen_mode=risk` 和 `preset=risk-scan`，不得混发正向筛选或 Metric Score 条件。请求进行中时两个按钮均禁用并显示“更新中...”。请求成功后，服务端返回的当前页结果替换演示行；请求失败时保留当前结果并显示错误提示。
 
 ### 7.2 结果摘要
 
@@ -291,6 +305,11 @@ type PickerQuery = {
     peg: { min: number | null; max: number | null };
     dividendYield: { min: number | null; max: number | null };
   };
+  metricScores: {
+    financialHealth: { min: number | null; max: number | null };
+    topn: { min: number | null; max: number | null };
+    growth: { min: number | null; max: number | null };
+  };
   marketCap: { min: number | null; max: number | null };
   sortBy: 'financialScore' | 'valueValuationScore' | 'modelValuationScore' | 'revenueYoy' | 'profitYoy' | 'ebitYoy' | 'roe' | 'roic' | 'grossMargin' | 'grossMarginChange' | 'operatingCashFlow' | 'freeCashFlow' | 'cashProfitRatio' | 'debtToAssets' | 'liquidityRatio' | 'goodwillToEquity' | 'marketCap' | 'peTtm' | 'pb' | 'peg' | 'dividendYield';
   sortDirection: 'asc' | 'desc';
@@ -314,7 +333,7 @@ type PickerViewState =
 - `StockPickerPage`：页面状态、查询提交、请求取消和错误边界。
 - `FilterSidebar`：桌面筛选器和移动端抽屉容器。
 - `PresetPicker`：首页默认方案、完整方案列表、恢复预设、清空条件及排雷模式切换。
-- `FilterGroup`：成长性、盈利质量、现金流质量、财务健康、估值水平和数据范围分组。
+- `FilterGroup`：成长性、盈利质量、现金流质量、财务健康、估值水平、Metric Score 综合评分和数据范围分组。
 - `ToggleField`：带无障碍语义的开关字段。
 - `ThresholdRangeField`：滑块、数值输入和范围端点。
 - `ResultSummary`：符合条件、覆盖公司、最近更新。
@@ -341,6 +360,7 @@ type PickerViewState =
 - 选股菜单直接进入 `/stock-picker`，进入页面后选股导航为选中态。
 - 桌面端显示左侧固定筛选器和右侧结果工作区，移动端筛选器可抽屉打开。
 - 五大维度的阈值和开关可修改，九个正向预设按定义加载条件；首页突出展示指定的五个默认方案。
+- Metric Score section 提供财务健康六维、TopN 特征六维和企业增长潜力七维综合分区间；多个已设置区间按 AND 筛选，缺失分数不补零。
 - 排雷模式按 OR 规则返回风险股票，估值指标不参与，结果行显示逐项命中原因。
 - 报告期、市场、日期和 SW 行业可选择，并显示当前实际条件。
 - 点击“更新结果”才提交查询，查询期间不能重复提交。

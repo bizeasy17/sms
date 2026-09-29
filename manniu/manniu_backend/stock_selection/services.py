@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import date
 from dataclasses import dataclass
 from decimal import Decimal
+import math
 import re
 import unicodedata
 
@@ -20,6 +21,7 @@ from financials.services.query import (
     _rate_yoy,
 )
 from market_data.models import Security, StockDailyFundamentalHistory
+from metrics.services.screening_query_service import MetricsScoreQueryError, query_screening_scores
 from predictive_valuation.models import PredictiveValuationCurrent
 from traditional_valuation.models import TraditionalValuationVariantSummaryLatest
 
@@ -74,6 +76,11 @@ SORT_KEYS = {
     'free_cash_flow', 'cash_profit_ratio', 'debt_to_assets', 'liquidity_ratio',
     'goodwill_to_equity', 'market_cap', 'pe_ttm', 'pb', 'peg', 'dividend_yield',
 }
+METRIC_SCORE_FILTERS = (
+    ('financial_health_score', 'financial_health_6d', 'FINANCIAL_HEALTH_6D'),
+    ('topn_score', 'topn_6d', 'MODEL_TOPN_6D'),
+    ('growth_score', 'growth_potential_7d', 'COMPANY_GROWTH_POTENTIAL'),
+)
 REPORT_MONTHS = {'Q1': 3, 'H1': 6, 'Q3': 9, 'FY': 12}
 REPORT_TYPE_PATTERN = re.compile(r'^(?P<year>\d{2})(?P<period>Q1|H1|Q3|FY)$')
 NUMERIC_FILTER_FIELDS = {
@@ -131,6 +138,7 @@ class Page:
     total: int
     unassessed_count: int = 0
     risk_summary: dict | None = None
+    metric_score_unassessed: dict | None = None
 
     @property
     def has_next(self):
@@ -435,6 +443,19 @@ def screen(*, filters, report_type='26H1', asof_date=None, market='all', industr
         raise StockSelectionRequestError('INVALID_REQUEST', 'market 不受支持')
     if screen_mode not in {'screen', 'risk'}:
         raise StockSelectionRequestError('INVALID_REQUEST', 'screen_mode 不受支持')
+    active_metric_filters = {}
+    for filter_key, response_key, score_type in METRIC_SCORE_FILTERS:
+        minimum = filters.get(f'{filter_key}_min')
+        maximum = filters.get(f'{filter_key}_max')
+        for bound, value in (('min', minimum), ('max', maximum)):
+            if value is not None and (not math.isfinite(float(value)) or not 0 <= float(value) <= 100):
+                raise StockSelectionRequestError('INVALID_SCREEN_FILTER', f'{filter_key}_{bound} 必须在 0 到 100 之间')
+        if minimum is not None and maximum is not None and minimum > maximum:
+            raise StockSelectionRequestError('INVALID_SCREEN_FILTER', f'{filter_key}_min 不能大于 {filter_key}_max')
+        if minimum is not None or maximum is not None:
+            active_metric_filters[score_type] = (filter_key, response_key, minimum, maximum)
+    if screen_mode == 'risk' and active_metric_filters:
+        raise StockSelectionRequestError('INVALID_SCREEN_FILTER', 'risk 模式不接受 Metric Score 条件')
     if sort_key not in SORT_KEYS or sort_direction not in {'asc', 'desc'}:
         raise StockSelectionRequestError('INVALID_REQUEST', '排序参数不受支持')
     if page < 1 or page_size < 1 or page_size > 200:
@@ -454,6 +475,26 @@ def screen(*, filters, report_type='26H1', asof_date=None, market='all', industr
         securities = [security for security in securities if getattr(security, 'industry_code', '') == industry]
     financial_values = _batch_financial_values(securities, asof_date, report_year, report_month)
     market_values = _market_fundamental_values(securities, asof_date)
+    metric_scores_by_security = {}
+    metric_score_unassessed = {response_key: 0 for _, response_key, _ in METRIC_SCORE_FILTERS}
+    if active_metric_filters:
+        eligible_securities = [security for security in securities if security.id in financial_values]
+        try:
+            score_snapshots = query_screening_scores(
+                securities=eligible_securities,
+                score_types=tuple(active_metric_filters),
+                asof_date=asof_date,
+                report_type=report_type,
+            )
+        except MetricsScoreQueryError as error:
+            raise StockSelectionRequestError(
+                'METRICS_DEPENDENCY_UNAVAILABLE',
+                'metrics 评分快照暂不可用',
+            ) from error
+        metric_scores_by_security = {
+            (snapshot.ts_code, snapshot.score_type): snapshot
+            for snapshot in score_snapshots
+        }
     matched = []
     unassessed_count = 0
     risk_counts = {
@@ -470,6 +511,7 @@ def screen(*, filters, report_type='26H1', asof_date=None, market='all', industr
         if not values:
             continue
         values.update(market_values.get(security.id, {}))
+        values['metric_scores'] = {response_key: None for _, response_key, _ in METRIC_SCORE_FILTERS}
         pe_ttm = values.get('pe_ttm')
         profit_yoy = values.get('profit_yoy')
         values['peg'] = pe_ttm / profit_yoy if pe_ttm is not None and profit_yoy is not None and profit_yoy > 0 else None
@@ -489,11 +531,48 @@ def screen(*, filters, report_type='26H1', asof_date=None, market='all', industr
             continue
 
         is_match, missing_filters = _matches_filters(values, filters)
-        if missing_filters:
+        metric_matches = True
+        missing_metric_scores = []
+        for score_type, (filter_key, response_key, minimum, maximum) in active_metric_filters.items():
+            snapshot = metric_scores_by_security.get((security.ts_code, score_type))
+            if snapshot is None:
+                metric_payload = {
+                    'score': None,
+                    'score_status': 'NOT_AVAILABLE',
+                    'filterable': False,
+                    'asof_date': None,
+                    'financial_end_date': None,
+                    'report_type': report_type,
+                    'provenance': {},
+                    'reason_code': 'SCORE_SNAPSHOT_NOT_FOUND',
+                }
+            else:
+                metric_payload = {
+                    'score': _number(snapshot.score),
+                    'score_status': snapshot.score_status,
+                    'filterable': snapshot.filterable,
+                    'asof_date': _date(snapshot.asof_date),
+                    'financial_end_date': _date(snapshot.financial_end_date),
+                    'report_type': snapshot.report_type,
+                    'provenance': snapshot.provenance,
+                    'reason_code': snapshot.reason_code,
+                }
+            values['metric_scores'][response_key] = metric_payload
+            if not metric_payload['filterable']:
+                metric_score_unassessed[response_key] += 1
+                missing_metric_scores.append(response_key)
+                metric_matches = False
+                continue
+            score = metric_payload['score']
+            if (minimum is not None and score < minimum) or (maximum is not None and score > maximum):
+                metric_matches = False
+        if missing_filters or missing_metric_scores:
             unassessed_count += 1
-        if is_match:
+        if is_match and metric_matches:
             values['risk_flags'] = []
             values['unassessed_risk_rules'] = []
+            if missing_metric_scores:
+                values['metric_score_unassessed'] = missing_metric_scores
             matched.append((security, values))
 
     valuations = _valuation_rows([security for security, _ in matched], asof_date)
@@ -508,6 +587,8 @@ def screen(*, filters, report_type='26H1', asof_date=None, market='all', industr
         warnings = []
         if values.get('unassessed_risk_rules'):
             warnings.append({'code': 'RISK_RULES_UNASSESSED', 'rules': values['unassessed_risk_rules']})
+        if values.get('metric_score_unassessed'):
+            warnings.append({'code': 'METRIC_SCORE_UNASSESSED', 'score_types': values['metric_score_unassessed']})
         missing_metrics = [
             field for field in (
                 'revenue_yoy', 'profit_yoy', 'ebit_yoy', 'roe', 'roic', 'gross_margin',
@@ -524,7 +605,7 @@ def screen(*, filters, report_type='26H1', asof_date=None, market='all', industr
             'industry': security.industry.name if security.industry_id else '',
             'main_business': _main_business_summary(main_business),
             **values,
-            'data_status': 'PARTIAL_SUCCESS' if missing_metrics or values['traditional_status'] != 'OK' or values['predictive_status'] != 'OK' or values.get('unassessed_risk_rules') else 'OK',
+            'data_status': 'PARTIAL_SUCCESS' if missing_metrics or values['traditional_status'] != 'OK' or values['predictive_status'] != 'OK' or values.get('unassessed_risk_rules') or values.get('metric_score_unassessed') else 'OK',
             'warnings': warnings,
         }
         items.append(item)
@@ -541,6 +622,7 @@ def screen(*, filters, report_type='26H1', asof_date=None, market='all', industr
             items[(page - 1) * page_size:page * page_size], page, page_size, total,
             unassessed_count=unassessed_count,
             risk_summary={'version': 'risk_v1', 'rules': risk_counts} if screen_mode == 'risk' else None,
+            metric_score_unassessed=metric_score_unassessed,
         ),
         total,
         len(securities),

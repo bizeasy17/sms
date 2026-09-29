@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { fetchStockSelection, fetchSwIndustries, type StockSelectionFilterDraft, type StockSelectionItem, type StockSelectionPreset, type StockSelectionQuery, type StockSelectionRangeKey, type SwIndustry } from '../services/stockSelectionApi'
+import { fetchStockSelection, fetchSwIndustries, type StockSelectionFilterDraft, type StockSelectionItem, type StockSelectionMetricScoreRangeKey, type StockSelectionPreset, type StockSelectionQuery, type StockSelectionRangeKey, type SwIndustry } from '../services/stockSelectionApi'
 
 type SortKey = 'score' | 'valueValuationScore' | 'modelValuationScore' | 'revenueYoy' | 'profitYoy' | 'ebitYoy' | 'roe' | 'liquidityRatio'
 type QueryStatus = 'idle' | 'loading' | 'error'
@@ -55,7 +55,15 @@ export function useStockSelection(preset: StockSelectionPreset, filters: StockSe
                         : key === 'market_cap' ? parsedValue * 10_000 : parsedValue
                 }
             }
-            Object.assign(query, numericFilters, filters.toggles)
+            const metricScoreFilters: Partial<Record<`${StockSelectionMetricScoreRangeKey}_${'min' | 'max'}`, number | ''>> = {}
+            for (const key of Object.keys(filters.metricScoreRanges) as StockSelectionMetricScoreRangeKey[]) {
+                for (const bound of ['min', 'max'] as const) {
+                    const rawValue = filters.metricScoreRanges[key][bound]
+                    const parsedValue = rawValue.trim() === '' ? '' : Number(rawValue)
+                    metricScoreFilters[`${key}_${bound}`] = parsedValue === '' || !Number.isFinite(parsedValue) ? '' : parsedValue
+                }
+            }
+            Object.assign(query, numericFilters, metricScoreFilters, filters.toggles)
         }
         const cacheKey = JSON.stringify({ ...query, page: 1 })
         if (forceRefresh) {

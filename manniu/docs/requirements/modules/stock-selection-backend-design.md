@@ -45,10 +45,12 @@ flowchart LR
     SS --> FIN[financials query service]
     SS --> TV[traditional_valuation query service]
     SS --> PV[predictive_valuation query service]
+    SS --> METRICS[metrics persisted score query service]
     MD --> PG[(PostgreSQL)]
     FIN --> PG
     TV --> PG
     PV --> PG
+    METRICS --> PG
 ```
 
 ### 3.1 `stock_selection` 负责
@@ -58,6 +60,7 @@ flowchart LR
 - 批量请求财务基础数据。
 - 按筛选规则判定命中、未命中和数据不足。
 - 批量关联传统估值与预测估值当前结果。
+- 按需批量读取 metrics 已持久化的综合评分快照，并按请求范围筛选证券。
 - 生成面向前台的行级结果、摘要统计、分页和稳定排序。
 - 维护结果的 `data_status`、来源日期、版本和 warning，不伪造缺失值。
 
@@ -121,12 +124,17 @@ stock_selection.screen(
 | `peg_min` / `peg_max` | number | 否 | 未设置 | PEG；增长率为零或负数时为不可用，不参与隐式转换 |
 | `dividend_yield_min` / `dividend_yield_max` | number | 否 | 未设置 | 股息率百分比点 |
 | `market_cap_min` / `market_cap_max` | number | 否 | 未设置 | 总市值，单位为人民币万元（`CNY_10K`）；前台以亿元编辑并乘 `10000` 后提交；小而美预设 20 亿至 200 亿元对应 `200000` 至 `2000000` |
+| `financial_health_score_min` / `financial_health_score_max` | number | 否 | 未设置 | `FINANCIAL_HEALTH_6D` 快照综合分，0–100 分；上下限可独立设置 |
+| `topn_score_min` / `topn_score_max` | number | 否 | 未设置 | `MODEL_TOPN_6D` 快照综合分，0–100 分；上下限可独立设置 |
+| `growth_score_min` / `growth_score_max` | number | 否 | 未设置 | `COMPANY_GROWTH_POTENTIAL`（CGPS）快照综合分，0–100 分；上下限可独立设置 |
 | `sort` | enum | 否 | `score` | `score`、`value_valuation_score`、`model_valuation_score`、`revenue_yoy`、`profit_yoy`、`ebit_yoy`、`roe`、`roic`、`gross_margin`、`gross_margin_change`、`operating_cash_flow`、`free_cash_flow`、`cash_profit_ratio`、`debt_to_assets`、`liquidity_ratio`、`goodwill_to_equity`、`market_cap`、`pe_ttm`、`pb`、`peg`、`dividend_yield` |
 | `direction` | enum | 否 | `desc` | `asc` 或 `desc` |
 | `page` | integer | 否 | 1 | 从 1 开始 |
 | `page_size` | integer | 否 | 20 | 范围 `1-200`，默认前台可使用 20 |
 
-前台百分比阈值与财务模型的百分数字段统一使用百分点数值，例如 `10` 表示 `10%`；不得再乘以 100 或按比例值转换。流动比率使用倍数，现金利润比和 PEG 使用无量纲数值，现金流使用人民币元。总市值筛选使用人民币万元：前台亿元值乘 `10000` 后提交，直接与 `StockDailyFundamentalHistory.total_mv` 比较；结果行 `market_cap` 以人民币亿元返回，为 `total_mv / 10000`。未提供阈值表示沿用 preset；数值参数显式传空字符串表示清除该 preset 边界、不应用该阈值；显式 `false` 表示关闭对应布尔条件。区间下限不得大于上限。`report_type` 是候选池边界而不是仅用于响应展示：服务必须先按报告期年份、期末月份和 `ann_date <= asof_date` 查询可用财务证券，再执行逐证券筛选，以避免对全市场逐股扫描。
+前台百分比阈值与财务模型的百分数字段统一使用百分点数值，例如 `10` 表示 `10%`；不得再乘以 100 或按比例值转换。流动比率使用倍数，现金利润比和 PEG 使用无量纲数值，现金流使用人民币元。总市值筛选使用人民币万元：前台亿元值乘 `10000` 后提交，直接与 `StockDailyFundamentalHistory.total_mv` 比较；结果行 `market_cap` 以人民币亿元返回，为 `total_mv / 10000`。Metric Score 综合分范围为 0–100，使用快照 `score` 原值比较，不映射成维度分；未提供边界表示不按该边界限制，数值参数显式传空字符串表示不应用该边界。区间下限不得大于上限。多个已设置的 Metric Score 区间与其他正向筛选条件按 AND 组合。`report_type` 是候选池边界而不是仅用于响应展示：服务必须先按报告期年份、期末月份和 `ann_date <= asof_date` 查询可用财务证券，再执行逐证券筛选，以避免对全市场逐股扫描。
+
+Metric Score 来源为 metrics 提供的只读、批量 typed query service；选股服务不得直接读取 metrics ORM/model 或复制评分算法。参数与评分类型映射固定为：`financial_health_score_*` → `FINANCIAL_HEALTH_6D`、`topn_score_*` → `MODEL_TOPN_6D`、`growth_score_*` → `COMPANY_GROWTH_POTENTIAL`。详细调用顺序、快照选择、版本消歧和缺失语义见 5.1.1。排雷模式只执行风险规则，不接受或应用 Metric Score 范围。metrics 查询服务不可用且请求启用了评分条件时，查询不能静默忽略条件，必须 fail closed 并返回明确依赖不可用状态/错误。
 
 ### 4.2 预存筛选器
 
@@ -153,7 +161,7 @@ V1.0 完全替换旧预设；默认方案为 `maniu-selected`，不再保留 `qu
 
 ### 5.1 来源边界
 
-`stock_selection` 只调用 `financials` 暴露的 typed query service，例如：
+`stock_selection` 只调用各领域暴露的 typed query service。财务服务示例：
 
 ```python
 financials.query_screening_fundamentals(
@@ -162,6 +170,36 @@ financials.query_screening_fundamentals(
 ```
 
 财务服务负责报告期选择、公告有效性、修订版本和 as-of 语义；选股服务不得自行从收入、利润或资产负债表 raw 表拼接事实。
+
+Metric Score 通过 metrics 的 typed query service 读取 PostgreSQL 中已持久化的当前/历史快照；查询不得触发重算、外部回源或写入。该依赖沿用 metrics 持久化设计提出的只读检索能力，不要求 stock_selection 新增评分表或迁移。
+
+### 5.1.1 Metric Score 快照查询与筛选流程
+
+选股内部依赖建议采用如下批量接口；这是领域间 typed service 契约，不是新增公开 API：
+
+```python
+metrics.query_screening_scores(
+  *,
+  securities,
+  score_types,
+  asof_date,
+  report_type,
+) -> Sequence[ScreeningScoreSnapshot]
+```
+
+`ScreeningScoreSnapshot` 至少包含 `ts_code`、`score_type`、`score`、`score_status`、`filterable`、`asof_date`、`financial_end_date`、`report_type` 和 provenance。Provenance 应保留对应类型原有字段：常规财务六维的 scoring/profile version，TopN 特征六维的 model/feature-set/mapping/normalization version 及降级信息，CGPS 的 calculation/profile/peer-mapping version。该 DTO 是供 stock_selection 消费的 typed 结果，不暴露 ORM 行。
+
+处理顺序冻结如下：
+
+1. 校验六个分数边界为 0–100 闭区间，且同一组下限不大于上限；空字符串表示该边界未启用。
+2. 先按 market、industry、report_type、asof_date 和财务可用性构造有界候选证券集合，不为全市场逐股调用 metrics。
+3. 仅收集至少有一个边界启用的 score type；若没有任何 Metric Score 边界，不调用 metrics 查询服务。排雷模式拒绝或忽略的行为由请求校验契约冻结为拒绝，不执行 metrics 查询。
+4. 对候选证券和所需 score types 发起一次批量查询。外部 `report_type` 使用 `YYQ1|YYH1|YYQ3|YYFY`；metrics 服务将其映射为存储的期间代码（如 `26H1` → `H1`），并同时要求 `financial_end_date` 年份为 2026、`asof_date <= request.asof_date`。证券、评分类型、财务年度、期间和 as-of 必须共同匹配；不得使用空 `report_type` 或其他财务年度的快照。
+5. 同一证券/类型/报告期存在多个 fingerprint、修订或模型版本时，由 metrics 按其明确的 active/current version 规则解析为唯一适用快照，并返回所用版本。不得仅按 `created_at` 任意挑选，也不得混用多个版本。若无法唯一解析，返回可识别的歧义/不可用状态，选股不能静默选一条继续筛选。
+6. 快照 `score` 非 NULL 且 `score_status != NOT_APPLICABLE` 时设置 `filterable=true` 并进行闭区间比较；`PARTIAL` 等状态只要有综合分即可参与筛选。`NOT_APPLICABLE`、NULL 分数、缺快照和版本歧义不匹配启用的范围，并计入分类型未评估数及 warning。不得补 0、跨报告期回退或使用晚于请求日期的结果。
+7. 三类启用的综合分区间彼此按 AND 组合，并与其他正向条件 AND 组合。所有过滤完成后才做稳定排序和分页。
+
+metrics 查询服务内部须按证券集合和类型批量查询，禁止 N+1；可利用或评估 metrics 主表的证券、score_type、as-of、状态索引。若查询计划证明需要增加索引，应由 metrics 领域单独确认和迁移，stock_selection 不直接访问或改造 metrics 表。单个 score type 服务不可用时不得跳过该过滤并返回看似成功的结果；采用 Gateway 统一依赖错误封套，具体错误码列入 10.1 确认项。
 
 ### 5.2 必需基础字段
 
@@ -237,6 +275,11 @@ financials.query_screening_fundamentals(
   "financial_score": 92,
   "value_valuation_score": 81,
   "model_valuation_score": 86,
+  "metric_scores": {
+    "financial_health_6d": {"score": 84.5, "score_status": "VALID", "filterable": true, "asof_date": "2026-08-31", "financial_end_date": "2026-06-30", "report_type": "26H1", "provenance": {"scoring_version": "v1", "profile_version": "v1"}},
+    "topn_6d": null,
+    "growth_potential_7d": null
+  },
   "revenue_yoy": 18.4,
   "profit_yoy": 22.8,
   "ebit_yoy": 20.6,
@@ -264,6 +307,8 @@ financials.query_screening_fundamentals(
 
 缺失字段保持 `null`，不使用 `0` 替代。字段应附带单位或在响应 `meta` 中统一声明。
 
+`metric_scores` 按评分类型返回本次查询读取到的快照综合分和 provenance；仅请求了对应分数范围时调用 metrics 并填充结果。未请求的评分类型使用 `null`/`NOT_REQUESTED` 语义，不暗示分数为零；请求范围已启用但无适用快照时返回 `score: null` 和明确 `score_status`/原因。TopN、CGPS 和常规财务评分分别返回自己的版本字段，不把版本信息归并成一个算法版本。
+
 ### 7.2 响应封套
 
 响应沿用 API Gateway 统一封套，`data` 建议包含：
@@ -279,7 +324,8 @@ financials.query_screening_fundamentals(
     "screened_count": 5214,
     "matched_count": 86,
     "returned_count": 20,
-    "unassessed_count": 0
+    "unassessed_count": 0,
+    "metric_score_unassessed": {"financial_health_6d": 0, "topn_6d": 0, "growth_potential_7d": 0}
   },
   "items": [],
   "risk_summary": null,
@@ -327,6 +373,7 @@ financials.query_screening_fundamentals(
 | `SCREEN_RANGE_TOO_LARGE` | 400 | 日期或返回范围超出限制 |
 | `SCREEN_DATA_NOT_READY` | 503 | 财务基础数据尚未就绪 |
 | `VALUATION_DEPENDENCY_UNAVAILABLE` | 503 | 必要估值领域不可用且无法形成结果 |
+| `METRICS_DEPENDENCY_UNAVAILABLE` | 503 | 启用了 Metric Score 条件，但 metrics 持久化查询服务不可用 |
 
 日志和指标必须记录 `request_id`、筛选方案、规范化参数摘要、as-of、命中数、各下游耗时、数据状态和版本；不得记录 Token、完整 Authorization、SQL、连接串或模型私密路径。
 
@@ -366,6 +413,9 @@ GET /api/v1/market-analysis/stock-selection/results
 - 预测估值 `signal_score` 的范围、模型版本、anchor 和当前结果选择。
 - 五大维度的 API 请求参数、响应字段、单位元数据、风险规则 key、新预设 key/version；旧预设 key 不再兼容，默认使用 `maniu-selected`。
 - `financial_score` 的权重、版本和是否直接复用 `financials.evaluation.overall.score`。
+- 三组 Metric Score 的 typed query service DTO、`YY期间` 到存储期间代码及 `financial_end_date` 年份的映射规则、active/current 版本消歧策略，以及 `filterable` 的责任归属和原因码；筛选规则为非空分数且状态非 `NOT_APPLICABLE`。
+- metrics service 不可用、版本歧义或无适用快照时的行级/summary 状态与 API Gateway 错误封套；确认是否需要专用稳定错误码。
+- Metric Score 行级响应字段、三类 provenance 映射和按评分类型统计的未评估数量。
 - `asof_date` 下财务报告有效边界与估值来源日期对齐规则。
 
 ### 10.2 验收标准
@@ -374,6 +424,8 @@ GET /api/v1/market-analysis/stock-selection/results
 - 任何缺失值都保持 `null` 并有状态/原因，不被填充为 0 或静态样例。
 - 财务条件判定不使用未来公告或未来行情；`asof_date` 测试不得发生 look-ahead。
 - 传统估值分直接来自传统估值服务，模型估值分直接来自预测估值服务，选股服务不复制公式。
+- 启用 Metric Score 范围时只批量读取所需 score type，在分页前按候选证券、报告期、as-of 和已确认版本策略完成闭区间 AND 筛选；无范围时不调用 metrics。
+- 三类评分的数值、状态和版本 provenance 可追溯；缺失/不可筛选结果不补零，服务不可用或版本歧义时不静默绕过筛选。
 - 估值单域失败不会丢弃财务命中的股票，列表可返回 `PARTIAL_SUCCESS`。
 - 未认证、scope 不足、非法参数、超范围、下游超时和数据未就绪均返回稳定错误语义。
 - 查询不写库、不回源、不推理、不生成快照，且 contract test 能证明这些边界。
