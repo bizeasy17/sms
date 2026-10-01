@@ -5,7 +5,7 @@ from datetime import date
 from calendar import isleap
 from decimal import Decimal
 
-from django.db.models import Q
+from django.db.models import Exists, OuterRef, Q
 
 from financials.models import (
     FinancialAuditRecord,
@@ -32,6 +32,13 @@ DATASET_MODELS = {
     'dividend': FinancialDividendRecord,
     'audit': FinancialAuditRecord,
     'main_business': FinancialMainBusinessRecord,
+}
+
+UPDATE_FLAG_MODELS = {
+    FinancialIncomeRecord,
+    FinancialBalanceSheetRecord,
+    FinancialCashFlowRecord,
+    FinancialIndicatorRecord,
 }
 
 PUBLIC_FIELDS = {
@@ -93,17 +100,30 @@ def _payload(row, dataset):
     return payload
 
 
-def _queryset(model, security, asof_date):
-    queryset = model.objects.select_related('security').filter(security=security)
+def _apply_asof_filter(queryset, model, asof_date):
     if model is FinancialMainBusinessRecord:
-        pass
-    elif hasattr(model, 'actual_date'):
-        queryset = queryset.filter(
+        return queryset
+    if hasattr(model, 'actual_date'):
+        return queryset.filter(
             Q(actual_date__isnull=False, actual_date__lte=asof_date)
             | Q(actual_date__isnull=True, ann_date__isnull=False, ann_date__lte=asof_date)
         )
-    else:
-        queryset = queryset.filter(ann_date__isnull=False, ann_date__lte=asof_date)
+    return queryset.filter(ann_date__isnull=False, ann_date__lte=asof_date)
+
+
+def _queryset(model, security, asof_date):
+    queryset = model.objects.select_related('security').filter(security=security)
+    queryset = _apply_asof_filter(queryset, model, asof_date)
+    if model in UPDATE_FLAG_MODELS:
+        eligible_rows = _apply_asof_filter(model.objects.filter(security=security), model, asof_date)
+        has_updated_version = Exists(eligible_rows.filter(
+            period=OuterRef('period'),
+            end_date=OuterRef('end_date'),
+            update_flag=1,
+        ))
+        queryset = queryset.annotate(_has_updated_version=has_updated_version).filter(
+            Q(update_flag=1) | Q(update_flag=0, _has_updated_version=False)
+        )
     return queryset.order_by('-end_date', '-ann_date', '-id')
 
 

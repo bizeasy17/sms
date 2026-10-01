@@ -10,13 +10,13 @@
 
 | Domain dataset | Tushare endpoint | Primary use |
 | --- | --- | --- |
-| Income statement | `income_vip` | Revenue, profit, EPS, historical statements |
-| Balance sheet | `balancesheet_vip` | Assets, liabilities, equity, debt and liquidity |
-| Cash flow | `cashflow_vip` | Operating, investing, and financing cash flow |
+| Income statement | `income_vip` | Revenue, profit, EPS, historical statements; `update_flag` revision selection |
+| Balance sheet | `balancesheet_vip` | Assets, liabilities, equity, debt and liquidity; `update_flag` revision selection |
+| Cash flow | `cashflow_vip` | Operating, investing, and financing cash flow; `update_flag` revision selection |
 | Performance forecast | `forecast_vip` | Forecast range and expected profit change |
 | Performance express | `express_vip` | Earnings flash updates |
 | Dividend/corporate action | `dividend` | Cash/share dividends and ex-date data |
-| Financial indicators | `fina_indicator_vip` | ROE, ROA, margins, growth, solvency, turnover |
+| Financial indicators | `fina_indicator_vip` | ROE, ROA, margins, growth, solvency, turnover; `update_flag` revision selection |
 | Audit opinion | `fina_audit` | Audit result and fees |
 | Main business composition | `fina_mainbz_vip` | Segment/product/region sales and profit |
 | Disclosure schedule | `disclosure_date` | Announcement, planned, actual, and modified dates |
@@ -92,13 +92,13 @@ The common natural key is `(security_id, ann_date, end_date, period, row_signatu
 
 | Planned table | Endpoint | Core fields | Required indexes |
 | --- | --- | --- | --- |
-| `financials_income_record` | `income_vip` | revenue, total revenue, operating/total/net profit, attributable profit, EPS | unique natural key; `(security_id, end_date DESC)`; `(ann_date)` |
-| `financials_balance_sheet_record` | `balancesheet_vip` | total assets/liabilities/equity, cash, receivables, inventory, short/long borrowings | same |
-| `financials_cashflow_record` | `cashflow_vip` | operating, investing, financing, net cash change | same |
+| `financials_income_record` | `income_vip` | revenue, total revenue, operating/total/net profit, attributable profit, EPS, `update_flag` | unique natural key; `(security_id, end_date DESC)`; `(ann_date)`; `(security_id, period, end_date, update_flag)` |
+| `financials_balance_sheet_record` | `balancesheet_vip` | total assets/liabilities/equity, cash, receivables, inventory, short/long borrowings, `update_flag` | same; `(security_id, period, end_date, update_flag)` |
+| `financials_cashflow_record` | `cashflow_vip` | operating, investing, financing, net cash change, `update_flag` | same; `(security_id, period, end_date, update_flag)` |
 | `financials_forecast_record` | `forecast_vip` | forecast type, change range, profit range | same |
 | `financials_express_record` | `express_vip` | revenue, net profit, assets, EPS | same |
 | `financials_dividend_record` | `dividend` | cash/share distribution, record date, ex-date | natural key; `(security_id, ex_date DESC)`; `(ann_date)` |
-| `financials_indicator_record` | `fina_indicator_vip` | profitability, growth, margin, solvency, turnover, cash-flow ratios | same |
+| `financials_indicator_record` | `fina_indicator_vip` | profitability, growth, margin, solvency, turnover, cash-flow ratios, `update_flag` | same; `(security_id, period, end_date, update_flag)` |
 | `financials_audit_record` | `fina_audit` | audit result, audit fee | same |
 | `financials_main_business_record` | `fina_mainbz_vip` | item/category, sales, profit | same |
 | `financials_disclosure_record` | `disclosure_date` | announcement, planned, actual, modified disclosure dates | natural key; `(ann_date, security_id)`; `(security_id, end_date DESC)` |
@@ -128,6 +128,16 @@ Rows without both dates are retained for audit but excluded from consumer time-s
 projections until a valid date is available. A `disclosure_date` revision causes the
 relevant consumer's versioned, idempotent projection rebuild. An amendment creates a
 new raw signature or source revision and does not erase the previous evidence.
+
+For `income_vip`, `balancesheet_vip`, `cashflow_vip`, and `fina_indicator_vip`,
+read queries select revisions by `(security_id, period, end_date)` after applying
+the requested as-of publication-date boundary. A matching `update_flag=1` row takes
+precedence; only when no eligible `update_flag=1` row exists is the `update_flag=0`
+row used. The same rule is applied before selecting the latest report period in the
+overview. Historical raw payloads are backfilled into the typed `update_flag` field
+by migration; future ingestion persists the field directly. Other datasets, including
+forecast, express, dividend, audit, main-business, and disclosure records, retain
+their endpoint-specific event/query semantics.
 
 Forecasts, express reports, dividends, and audits may have multiple events per period.
 They remain endpoint records and are selected by explicit consumer policy; they are not

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from calendar import monthrange
 from datetime import date
 from dataclasses import dataclass
 from decimal import Decimal
@@ -165,7 +166,31 @@ def _raw_decimal(row, key):
     return number if number.is_finite() else None
 
 
+def _financial_update_flag(row):
+    flag = getattr(row, 'update_flag', None)
+    return str(flag) if flag in (0, 1) else None
+
+
+def _prefer_update_flag_rows(rows):
+    selected_by_period = {}
+    for row in rows:
+        flag = _financial_update_flag(row)
+        if flag is None or row.end_date is None:
+            continue
+        selected = selected_by_period.get(row.end_date)
+        if selected is None or (flag == '1' and _financial_update_flag(selected) != '1'):
+            selected_by_period[row.end_date] = row
+    return list(selected_by_period.values())
+
+
+def _exact_period_row(rows, period):
+    return next((row for row in rows if row.end_date == period), None)
+
+
 def _growth_percent(rows, field, period):
+    previous_period = period.replace(year=period.year - 1)
+    if _exact_period_row(rows, period) is None or _exact_period_row(rows, previous_period) is None:
+        return None
     growth = _period_growth(rows, field, period)
     return growth * 100 if growth is not None else None
 
@@ -291,33 +316,34 @@ def _batch_financial_values(securities, asof_date, report_year, report_month):
         rows_by_model[model] = {}
         rows = model.objects.filter(**common_filters).order_by('security_id', '-end_date', '-ann_date', '-id')
         for row in rows:
+            if _financial_update_flag(row) is None:
+                continue
             rows_by_model[model].setdefault(row.security_id, []).append(row)
 
     result = {}
     for security in securities:
-        income_rows = rows_by_model[FinancialIncomeRecord].get(security.id, [])
-        cashflow_rows = rows_by_model[FinancialCashFlowRecord].get(security.id, [])
-        indicator_rows = rows_by_model[FinancialIndicatorRecord].get(security.id, [])
-        balance_rows = rows_by_model[FinancialBalanceSheetRecord].get(security.id, [])
+        income_rows = _prefer_update_flag_rows(rows_by_model[FinancialIncomeRecord].get(security.id, []))
+        cashflow_rows = _prefer_update_flag_rows(rows_by_model[FinancialCashFlowRecord].get(security.id, []))
+        indicator_rows = _prefer_update_flag_rows(rows_by_model[FinancialIndicatorRecord].get(security.id, []))
+        balance_rows = _prefer_update_flag_rows(rows_by_model[FinancialBalanceSheetRecord].get(security.id, []))
+        period = date(report_year, report_month, monthrange(report_year, report_month)[1])
         candidate_rows = income_rows + cashflow_rows + indicator_rows
-        current = _latest_row(
-            [row for row in candidate_rows if row.end_date and row.end_date.year == report_year],
-        )
+        current = _exact_period_row(candidate_rows, period)
         if current is None:
             continue
-        period = current.end_date
+        income = _exact_period_row(income_rows, period)
+        cashflow = _exact_period_row(cashflow_rows, period)
+        indicator = _exact_period_row(indicator_rows, period)
+        balance = _exact_period_row(balance_rows, period)
+        comparison_periods = {period, period.replace(year=period.year - 1)}
         evaluation = _period_score(
             period=period,
-            income_rows=income_rows,
-            cashflow_rows=cashflow_rows,
-            indicator_rows=indicator_rows,
-            balance_rows=balance_rows,
+            income_rows=[row for row in income_rows if row.end_date in comparison_periods] if income else [],
+            cashflow_rows=[row for row in cashflow_rows if row.end_date in comparison_periods] if cashflow else [],
+            indicator_rows=[row for row in indicator_rows if row.end_date in comparison_periods] if indicator else [],
+            balance_rows=[row for row in balance_rows if row.end_date in comparison_periods] if balance else [],
         )
-        income = _latest_row(income_rows, period)
-        cashflow = _latest_row(cashflow_rows, period)
-        indicator = _latest_row(indicator_rows, period)
-        balance = _latest_row(balance_rows, period)
-        previous_indicator = _latest_row(indicator_rows, period.replace(year=period.year - 1))
+        previous_indicator = _exact_period_row(indicator_rows, period.replace(year=period.year - 1))
         total_assets = _number(balance.total_assets) if balance else None
         total_liab = _number(balance.total_liab) if balance else None
         net_income = _number(income.n_income) if income else None

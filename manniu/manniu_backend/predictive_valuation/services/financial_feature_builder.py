@@ -4,7 +4,7 @@ from datetime import date
 from typing import Any
 
 from django.db import transaction
-from django.db.models import Q
+from django.db.models import Case, IntegerField, Q, Value, When
 
 from financials.models import (
     FinancialBalanceSheetRecord,
@@ -49,10 +49,10 @@ class PredictiveFinancialFeatureBuilder:
                 requested_end_date is not None and end_date > requested_end_date
             ):
                 continue
-            income = income_records.filter(end_date=end_date).order_by('-ann_date', '-id').first()
-            balance = balance_records.filter(end_date=end_date).order_by('-ann_date', '-id').first()
-            cashflow = cashflow_records.filter(end_date=end_date).order_by('-ann_date', '-id').first()
-            indicator = indicator_records.filter(end_date=end_date).order_by('-ann_date', '-id').first()
+            income = cls._preferred_period_record(income_records, end_date, as_of_date)
+            balance = cls._preferred_period_record(balance_records, end_date, as_of_date)
+            cashflow = cls._preferred_period_record(cashflow_records, end_date, as_of_date)
+            indicator = cls._preferred_period_record(indicator_records, end_date, as_of_date)
             ann_date = cls._first_date(income, balance, cashflow, indicator)
             source_as_of_date = disclosure_dates.get(end_date) or ann_date
             if source_as_of_date is None or (as_of_date is not None and source_as_of_date > as_of_date):
@@ -101,6 +101,25 @@ class PredictiveFinancialFeatureBuilder:
                     defaults=latest_values,
                 )
         return len(panels)
+
+    @staticmethod
+    def _preferred_period_record(queryset, end_date: date, as_of_date: date | None):
+        candidates = queryset.filter(
+            end_date=end_date,
+            ann_date__isnull=False,
+            update_flag__in=(0, 1),
+        )
+        if as_of_date is not None:
+            candidates = candidates.filter(ann_date__lte=as_of_date)
+        return candidates.order_by(
+            Case(
+                When(update_flag=1, then=Value(0)),
+                When(update_flag=0, then=Value(1)),
+                output_field=IntegerField(),
+            ),
+            '-ann_date',
+            '-id',
+        ).first()
 
     @staticmethod
     def _effective_disclosure_dates(security: Security) -> dict[date, date]:

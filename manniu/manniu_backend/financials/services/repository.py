@@ -50,6 +50,12 @@ ENDPOINT_MODEL_MAP: dict[str, Type[RawFinancialAuditModel]] = {
     'fina_mainbz': FinancialMainBusinessRecord,
     'disclosure_date': FinancialDisclosureRecord,
 }
+UPDATE_FLAG_MODEL_CLASSES = {
+    FinancialIncomeRecord,
+    FinancialBalanceSheetRecord,
+    FinancialCashFlowRecord,
+    FinancialIndicatorRecord,
+}
 
 
 class FinancialRepository:
@@ -164,6 +170,12 @@ class FinancialRepository:
         common_kwargs: dict[str, Any],
     ) -> RawFinancialAuditModel:
         kwargs = dict(common_kwargs)
+        if model_cls in UPDATE_FLAG_MODEL_CLASSES:
+            raw_update_flag = normalize_value(raw_row.get('update_flag'))
+            try:
+                kwargs['update_flag'] = int(raw_update_flag) if raw_update_flag is not None else 0
+            except (TypeError, ValueError):
+                kwargs['update_flag'] = 0
 
         if issubclass(model_cls, FinancialIncomeRecord):
             kwargs.update({

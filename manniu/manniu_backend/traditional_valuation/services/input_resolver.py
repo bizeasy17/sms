@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import date
+from django.db.models import Case, IntegerField, Value, When
 
 from financials.models import (
     FinancialBalanceSheetRecord,
@@ -59,6 +60,19 @@ def _balance_value(row, field_names):
     return None
 
 
+def _preferred_financial_record(queryset):
+    return queryset.filter(update_flag__in=(0, 1)).order_by(
+        '-end_date',
+        Case(
+            When(update_flag=1, then=Value(0)),
+            When(update_flag=0, then=Value(1)),
+            output_field=IntegerField(),
+        ),
+        '-ann_date',
+        '-id',
+    ).first()
+
+
 class ValuationInputResolver:
     def resolve(self, security, asof_date, report_type='FY', financial_end_date=None, allow_express=False):
         end_filter = {}
@@ -67,17 +81,17 @@ class ValuationInputResolver:
         else:
             end_filter = _period_filter(report_type)
         base_kwargs = {'security': security, 'ann_date__lte': asof_date, **end_filter}
-        income = FinancialIncomeRecord.objects.filter(**base_kwargs).order_by('-end_date', '-ann_date').first()
+        income = _preferred_financial_record(FinancialIncomeRecord.objects.filter(**base_kwargs))
         if income is None and financial_end_date:
             base_kwargs.pop('end_date', None)
-            income = FinancialIncomeRecord.objects.filter(**base_kwargs).order_by('-end_date', '-ann_date').first()
+            income = _preferred_financial_record(FinancialIncomeRecord.objects.filter(**base_kwargs))
         if income is None:
             raise ValueError(f'No eligible financial income record for {security.ts_code}/{report_type}')
         end_date = income.end_date
         common = {'security': security, 'ann_date__lte': asof_date, 'end_date': end_date}
-        indicator = FinancialIndicatorRecord.objects.filter(**common).order_by('-ann_date').first()
-        balance = FinancialBalanceSheetRecord.objects.filter(**common).order_by('-ann_date').first()
-        cashflow = FinancialCashFlowRecord.objects.filter(**common).order_by('-ann_date').first()
+        indicator = _preferred_financial_record(FinancialIndicatorRecord.objects.filter(**common))
+        balance = _preferred_financial_record(FinancialBalanceSheetRecord.objects.filter(**common))
+        cashflow = _preferred_financial_record(FinancialCashFlowRecord.objects.filter(**common))
         cash = _balance_value(balance, ('money_cap',))
         short_debt = _balance_value(balance, ('st_borr', 'short_borrow'))
         long_debt = _balance_value(balance, ('lt_borr', 'long_borrow'))
@@ -92,18 +106,18 @@ class ValuationInputResolver:
             debt = None
         prior_year_end = date(end_date.year - 1, 12, 31)
         prior_period_end = date(end_date.year - 1, end_date.month, end_date.day)
-        annual_income = FinancialIncomeRecord.objects.filter(
+        annual_income = _preferred_financial_record(FinancialIncomeRecord.objects.filter(
             security=security, ann_date__lte=asof_date, end_date=prior_year_end,
-        ).order_by('-ann_date').first()
-        prior_period_income = FinancialIncomeRecord.objects.filter(
+        ))
+        prior_period_income = _preferred_financial_record(FinancialIncomeRecord.objects.filter(
             security=security, ann_date__lte=asof_date, end_date=prior_period_end,
-        ).order_by('-ann_date').first()
-        annual_cashflow = FinancialCashFlowRecord.objects.filter(
+        ))
+        annual_cashflow = _preferred_financial_record(FinancialCashFlowRecord.objects.filter(
             security=security, ann_date__lte=asof_date, end_date=prior_year_end,
-        ).order_by('-ann_date').first()
-        prior_period_cashflow = FinancialCashFlowRecord.objects.filter(
+        ))
+        prior_period_cashflow = _preferred_financial_record(FinancialCashFlowRecord.objects.filter(
             security=security, ann_date__lte=asof_date, end_date=prior_period_end,
-        ).order_by('-ann_date').first()
+        ))
         net_income = lambda row: getattr(row, 'n_income_attr_p', None) or getattr(row, 'n_income', None)
         dividend = FinancialDividendRecord.objects.filter(security=security, ann_date__lte=asof_date).order_by('-ann_date', '-ex_date').first()
         express = None

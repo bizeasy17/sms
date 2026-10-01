@@ -21,6 +21,7 @@ class RawFinancialAuditModel(models.Model):
 
 
 class FinancialIncomeRecord(RawFinancialAuditModel):
+    update_flag = models.IntegerField(default=0)
     f_ann_date = models.DateField(null=True, blank=True)
     report_type = models.CharField(max_length=16, blank=True)
     comp_type = models.CharField(max_length=16, blank=True)
@@ -46,10 +47,12 @@ class FinancialIncomeRecord(RawFinancialAuditModel):
         indexes = [
             models.Index(fields=['security', '-end_date']),
             models.Index(fields=['ann_date']),
+            models.Index(fields=['security', 'period', 'end_date', 'update_flag'], name='fin_inc_period_flag_idx'),
         ]
 
 
 class FinancialBalanceSheetRecord(RawFinancialAuditModel):
+    update_flag = models.IntegerField(default=0)
     f_ann_date = models.DateField(null=True, blank=True)
     report_type = models.CharField(max_length=16, blank=True)
     comp_type = models.CharField(max_length=16, blank=True)
@@ -78,10 +81,12 @@ class FinancialBalanceSheetRecord(RawFinancialAuditModel):
         indexes = [
             models.Index(fields=['security', '-end_date']),
             models.Index(fields=['ann_date']),
+            models.Index(fields=['security', 'period', 'end_date', 'update_flag'], name='fin_bs_period_flag_idx'),
         ]
 
 
 class FinancialCashFlowRecord(RawFinancialAuditModel):
+    update_flag = models.IntegerField(default=0)
     f_ann_date = models.DateField(null=True, blank=True)
     report_type = models.CharField(max_length=16, blank=True)
     comp_type = models.CharField(max_length=16, blank=True)
@@ -103,10 +108,12 @@ class FinancialCashFlowRecord(RawFinancialAuditModel):
         indexes = [
             models.Index(fields=['security', '-end_date']),
             models.Index(fields=['ann_date']),
+            models.Index(fields=['security', 'period', 'end_date', 'update_flag'], name='fin_cf_period_flag_idx'),
         ]
 
 
 class FinancialIndicatorRecord(RawFinancialAuditModel):
+    update_flag = models.IntegerField(default=0)
     roe = models.DecimalField(max_digits=18, decimal_places=6, null=True, blank=True)
     roe_waa = models.DecimalField(max_digits=18, decimal_places=6, null=True, blank=True)
     roe_dt = models.DecimalField(max_digits=18, decimal_places=6, null=True, blank=True)
@@ -138,6 +145,7 @@ class FinancialIndicatorRecord(RawFinancialAuditModel):
         indexes = [
             models.Index(fields=['security', '-end_date']),
             models.Index(fields=['ann_date']),
+            models.Index(fields=['security', 'period', 'end_date', 'update_flag'], name='fin_ind_period_flag_idx'),
         ]
 
 
