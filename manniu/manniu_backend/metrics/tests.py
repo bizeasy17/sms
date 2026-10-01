@@ -7,9 +7,15 @@ from unittest.mock import patch
 from django.core.management import call_command
 from django.db import IntegrityError, transaction
 from django.test import TestCase
-from market_data.models import Security
+from financials.models import FinancialIncomeRecord
+from market_data.models import Industry, Security
 from metrics.models import MetricsScoreDimension, MetricsScoreSnapshot
 from metrics.services.growth_potential_service import _factor_periods, _ratio_percent
+from metrics.services.health_scoring_service import (
+    _growth_dimension_score,
+    _peer_revenue_share_position,
+    _source_dimensions,
+)
 from metrics.services.score_persistence_service import persist_score_result
 
 
@@ -26,6 +32,141 @@ class RatioPercentTests(unittest.TestCase):
         periods = _factor_periods(date(2026, 6, 30))
         self.assertIn(date(2024, 6, 30), periods)
         self.assertIn(date(2026, 6, 30), periods)
+
+
+class HealthScoringTests(unittest.TestCase):
+    def test_market_value_does_not_change_competitive_position_score(self):
+        features = {
+            'or_yoy': 25.0,
+            'competitive_position': {'score': 70.0, 'status': 'AVAILABLE'},
+            'total_mv': 1_000_000_000,
+        }
+        original = next(
+            dimension for dimension in _source_dimensions('growth_tech', features)
+            if dimension[0] == 'growth_quality'
+        )
+
+        features['total_mv'] = 900_000_000_000_000
+        scaled = next(
+            dimension for dimension in _source_dimensions('growth_tech', features)
+            if dimension[0] == 'growth_quality'
+        )
+
+        self.assertEqual(original[3], scaled[3])
+        self.assertNotIn('total_mv', original[4])
+
+    def test_missing_growth_and_peer_factors_have_no_available_weight(self):
+        score, available_weight, evidence = _growth_dimension_score(
+            None,
+            {'score': None, 'status': 'NOT_AVAILABLE'},
+            0.20,
+            0.14,
+        )
+
+        self.assertIsNone(score)
+        self.assertEqual(available_weight, 0)
+        self.assertEqual(evidence['available_weight'], 0)
+
+    def test_cash_runway_uses_cashflow_margins_not_absolute_amounts(self):
+        features = {
+            'operating_cashflow_margin': 10.0,
+            'free_cashflow_margin': 5.0,
+            'n_cashflow_act': 1_000_000_000,
+            'free_cashflow': 500_000_000,
+        }
+
+        cash_dimension = next(
+            dimension for dimension in _source_dimensions('platform_service', features)
+            if dimension[0] == 'cash_runway'
+        )
+        original_score = cash_dimension[3]
+
+        features['n_cashflow_act'] *= 1000
+        features['free_cashflow'] *= 1000
+        scaled_cash_dimension = next(
+            dimension for dimension in _source_dimensions('platform_service', features)
+            if dimension[0] == 'cash_runway'
+        )
+
+        self.assertAlmostEqual(original_score, 39.2857, places=3)
+        self.assertEqual(original_score, scaled_cash_dimension[3])
+        self.assertEqual(
+            set(cash_dimension[4]),
+            {'operating_cashflow_margin', 'free_cashflow_margin'},
+        )
+
+
+class CompetitivePositionTests(TestCase):
+    def setUp(self):
+        self.industry = Industry.objects.create(
+            name='Test Industry',
+            source_system='test',
+            source_version='v1',
+        )
+        self.cutoff = date(2026, 9, 28)
+        self.current_period = date(2026, 6, 30)
+        self.prior_period = date(2023, 6, 30)
+
+    def _create_peers(self, count):
+        securities = []
+        for index in range(count):
+            security = Security.objects.create(
+                ts_code=f'{600000 + index}.SH',
+                asset_type=Security.AssetType.STOCK,
+                name=f'Test Security {index}',
+                industry=self.industry,
+                list_date=date(2010, 1, 1),
+            )
+            securities.append(security)
+            for period, revenue in (
+                (self.prior_period, 100),
+                (self.current_period, 1000 if index == 0 else 100),
+            ):
+                FinancialIncomeRecord.objects.create(
+                    security=security,
+                    ts_code=security.ts_code,
+                    ann_date=date(period.year, 8, 1),
+                    end_date=period,
+                    period=period.strftime('%Y%m%d'),
+                    row_signature=f'{security.pk}-{period.isoformat()}',
+                    report_type='1',
+                    comp_type='1',
+                    total_revenue=revenue,
+                )
+        return securities
+
+    def test_scores_income_share_change_for_comparable_peer_cohort(self):
+        securities = self._create_peers(20)
+
+        result = _peer_revenue_share_position(
+            security=securities[0],
+            target_income=FinancialIncomeRecord.objects.get(
+                security=securities[0], end_date=self.current_period,
+            ),
+            cutoff=self.cutoff,
+        )
+
+        self.assertEqual(result['status'], 'AVAILABLE')
+        self.assertEqual(result['peer_count'], 20)
+        self.assertEqual(result['score'], 100)
+        self.assertEqual(result['metric_basis'], 'revenue_share_change_3y')
+        self.assertEqual(result['industry_source_system'], 'test')
+        self.assertEqual(result['industry_source_version'], 'v1')
+
+    def test_marks_position_unavailable_below_minimum_peer_count(self):
+        securities = self._create_peers(19)
+
+        result = _peer_revenue_share_position(
+            security=securities[0],
+            target_income=FinancialIncomeRecord.objects.get(
+                security=securities[0], end_date=self.current_period,
+            ),
+            cutoff=self.cutoff,
+        )
+
+        self.assertIsNone(result['score'])
+        self.assertEqual(result['status'], 'NOT_AVAILABLE')
+        self.assertEqual(result['reason'], 'peer_sample_below_minimum')
 
 
 class MetricsScorePersistenceTests(TestCase):

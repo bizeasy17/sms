@@ -55,30 +55,44 @@
 
 设计结论：普通评分应继续允许股票类型 profile 使用不同有效证据，但 API 对外维度身份应规范化；代理项作为维度内 `factors` 返回，并标出 `proxy`、数据状态与 profile。缺值应区分“指标缺失”“行业不适用”“provider 降级”，不能用零值或中性分隐藏。
 
+#### 4.1.1 竞争位置指标实现基线
+
+UAT 已实现收入份额变化主路径，版本为 `health-score-peer-position-v1`，行业映射版本为 `security-industry-v1`。该指标评估公司相对可比同行的竞争位置，而不是公司绝对市值规模。当前仅替换原来含市值代理的 `growth_tech` 与通用兜底 profile；其它 profile 原本没有市值规模代理，本次不扩展到这些 profile。ROIC 备选和历史样本区分度评估尚未完成。
+
+1. `total_mv` 不再作为普通财务健康分的计分因子，也不映射成竞争力分。市值可作为独立的行情/规模信息展示，但不影响六维总分、维度等级或健康结论。不得仅把 `competition_proxy` 改名为“竞争力”而继续使用市值公式。
+2. 首选因子为**可比上市同行收入份额的三年变化**。在同一财报期、合并口径、报告类型和版本化细分行业 peer cohort 内，以同一收入字段计算 `peer_revenue_share(t) = company_revenue(t) / sum(peer_revenue(t))`，再计算 `share_change_3y = peer_revenue_share(t) - peer_revenue_share(t-3y)`。整个 cohort 必须使用同一收入定义；主营业务收入与公司总营收不可混用。仅在 cohort 映射稳定、分母有效且两端时期可比时计算。
+3. ROIC 可作为未来独立备选，但当前没有实现。ROIC 字段公式、税项、投入资本组成、财年对齐方式和来源必须在启用前固定并版本化；收入份额与 ROIC 不得平均或静默互换，不同 `metric_basis` 的结果不得直接作时间序列比较。当前收入份额不可用时不尝试 ROIC。
+4. 当前 cohort 使用相同报告期、`report_type`、`comp_type` 和收入字段；只纳入公告日不晚于 as-of、当时已上市且未退市的证券，并要求目标及同行在当前期和三年前同期均有正收入。按收入份额变化的平均名次计算 0–100 同行百分位，至少需要 20 家共同有效证券（含目标证券）。不足 20 家、行业/期间/口径缺失或原始收入无效时，竞争位置为 `NOT_AVAILABLE`，不回退到 `total_mv`、0 分或中性 50 分。证据记录 peer 数、行业及映射来源、样本期间、报告口径、收入字段、as-of、basis 和版本。
+5. 本节不增加第七个评分维度：首期竞争位置因子并入 `growth_quality`，与已有营收增长共同组成增长维度。复合权重沿用旧市值代理的预算：`growth_tech` 为营收增长 0.20 + 同行因子 0.15，通用兜底为 0.20 + 0.14。缺少某一因子时只计入另一因子的可用权重；两者都缺失时维度为 `NOT_AVAILABLE`。总分按可用权重重归一。
+6. `total_mv` 可作为行情规模信息展示，但不进入本次相关维度或健康总分。固定其它输入只改变总市值，评分应保持不变；peer 因子改变时评分可变化。
+7. 普通评分响应返回 `scoring_version`、`profile_version`、`peer_mapping_version`、总覆盖率、维度 `available_weight/status`。总覆盖低于 80% 时总分为 `null`、状态为 `INSUFFICIENT_DATA`；否则按可用维度权重重归一，部分覆盖为 `PARTIAL`。注意：该版本只将同行/营收因子的缺失计入增长维度可用权重，其他既有 profile 因子的缺失回退语义尚未全面改造。
+
+已由定向测试覆盖：20 家共同有效样本的百分位计算、19 家时不可用、总市值变化不影响竞争分、缺失增长和 peer 因子不计可用权重。历史样本校准、口径冲突扩展测试、ROIC 备选路径及跨版本历史可比性仍待完成。
+
 #### 当前计算步骤
 
-1. `_context` 按证券分别读取财务指标、利润表、资产负债表、现金流量表和主营构成各自最新的记录，排序依据为报告期、公告日和记录 ID；各表当前不强制对齐到同一个 `end_date`，因此输入可能来自不同报告期。现金流同一报告期/公告日有多个版本时优先选择 `raw_payload.update_flag=1`。行情特征读取指定 `asof_date` 之前最新的日行情/基本面记录；未传日期时使用当前最新日快照。收入优先取 `total_revenue`，为空时回退 `revenue`；毛利率优先取指标表 `grossprofit_margin`，必要时从收入和营业成本计算。负债率绝对值不大于 1 时按比例转成百分点。
+1. `_context` 按证券分别读取财务指标、利润表、资产负债表、现金流量表和主营构成各自最新的记录，排序依据为报告期、公告日和记录 ID；各表当前不强制对齐到同一个 `end_date`，因此输入可能来自不同报告期。现金流同一报告期/公告日有多个版本时优先选择 `raw_payload.update_flag=1`。行情特征读取指定 `asof_date` 之前最新的日行情/基本面记录；未传日期时使用当前最新日快照。收入优先取 `total_revenue`，为空时回退 `revenue`；毛利率优先取指标表 `grossprofit_margin`，必要时从收入和营业成本计算。竞争位置同行比较使用目标记录选定的单一收入字段，不混用 `total_revenue` 与 `revenue`。
 2. `_classify` 根据行业、主营范围和主营构成关键词计算股票类型候选，再应用噪声词、冲突规则及配置兜底，选择一个 profile。当前 profile 包括 `growth_tech`、`stable_consumer`、`stable_income`、`cyclical_resource`、`finance_realestate`、`heavy_manufacturing` 和通用兜底。
 3. 对输入值使用下列函数，归一化后截断至 `[0,100]`：
 
 	- 正向：`N+(x; low, high) = clip(100 * (x - low) / (high - low))`。
 	- 负向：`N-(x; low, high) = 100 - N+(x; low, high)`。
 	- 当前 `_normalize_positive` 将缺失值替换为 `0` 后归一；显式回退还包括 `current_ratio` 缺失按 `1`、`pe_ttm` 缺失按 `30`。因此缺失值可能实际影响分数，普通评分当前并非只对有效证据重归一。
-	- 市值输入 `total_mv` 从万元换算为元后参与市值层级代理；现金流绝对值以元直接带入 `[-1,1]` 区间并截断，数值远大于上界时会达到 100 分。这是当前实现行为，不代表金额值已作规模标准化。
+	- `total_mv` 不参与普通财务健康分计分。现金流评分使用同一报告期的经营现金流率和自由现金流率（分别为经营现金流/营业收入、自由现金流/营业收入，单位为百分比），不直接对人民币金额归一化；两项分别按 `[-20%,50%]` 正向线性映射并截断至 `[0,100]`，再取平均。绝对现金流金额不直接参与该维度评分。
 
-各 profile 的六项（括号为权重）由以下表达式组成；`rev=N+(or_yoy;-20,60)`、`profit=N+(netprofit_yoy;-30,80)`、`cash=(N+(n_cashflow_act;-1,1)+N+(free_cashflow;-1,1))/2`、`safe=(N-(debt_pct;20,85)+N+(current_ratio 或缺失回退 1;0.8,2.5))/2`、`value=N-(pe_ttm 或缺失回退 30;5,80)`、`profitability=(N+(roe;0,25)+N+(netprofit_margin;0,40))/2`。`debt_pct` 为统一到百分点后的资产负债率；下表未展开的 `N+`、`N-` 均按上述定义：
+各 profile 的六项（括号为权重）由以下表达式组成；`rev=N+(or_yoy;-20,60)`、`profit=N+(netprofit_yoy;-30,80)`、`cash=(N+(operating_cashflow_margin;-20,50)+N+(free_cashflow_margin;-20,50))/2`、`safe=(N-(debt_pct;20,85)+N+(current_ratio 或缺失回退 1;0.8,2.5))/2`、`value=N-(pe_ttm 或缺失回退 30;5,80)`、`profitability=(N+(roe;0,25)+N+(netprofit_margin;0,40))/2`。现金流率按百分点计算；`debt_pct` 为统一到百分点后的资产负债率；下表未展开的 `N+`、`N-` 均按上述定义：
 
 | profile | 六项分数（key、权重、公式） |
 | --- | --- |
-| `growth_tech` | `growth_quality` 0.20 `N+(or_yoy;-20,60)`；`profit_conversion` 0.18 `N+(netprofit_yoy;-30,80)`；`cash_runway` 0.16 `cash`；`rd_intensity_proxy` 0.16 `N+(gross_margin;20,70)`；`tech_moat_proxy` 0.15 `N+(roe_dt;0,20)`；`market_position_proxy` 0.15 `N+(total_mv元;1e9,3e11)`。 |
+| `growth_tech` | `growth_quality` 0.35：`N+(or_yoy;-20,60)`（因子预算 0.20）与三年同行收入份额变化百分位（0.15）按可用因子权重合成；`profit_conversion` 0.18 `N+(netprofit_yoy;-30,80)`；`cash_runway` 0.16 `cash`；`rd_intensity_proxy` 0.16 `N+(gross_margin;20,70)`；`tech_moat_proxy` 0.15 `N+(roe_dt;0,20)`。 |
 | `stable_consumer` | `moat_proxy` 0.20 `N+(gross_margin;20,75)`；`profitability` 0.18 `profitability`；`channel_proxy` 0.16 `N-(assets_to_eqt;1,8)`；`growth_stability` 0.16 `(rev+profit)/2`；`cash_quality` 0.16 `cash`；`shareholder_return` 0.14 `N+(dv_ttm;0,8)`。 |
 | `stable_income` | `cash_stability` 0.20 `cash`；`dividend_support` 0.18 `N+(dv_ttm;0,8)`；`earnings_stability` 0.16 `N-(abs(netprofit_yoy);0,80)`；`leverage_safety` 0.16 `safe`；`valuation_defense` 0.16 `value`；`moderate_growth` 0.14 `N+(or_yoy;-10,25)`。 |
 | `cyclical_resource` | `profit_elasticity` 0.20 `profit`；`cost_proxy` 0.18 `N+(gross_margin;5,50)`；`financial_safety` 0.16 `N-(debt_pct;20,85)`；`capital_discipline` 0.16 `cash`；`operation_proxy` 0.16 `N+(ocf_yoy;-50,100)`；`cycle_position_proxy` 0.14 `(value+N+(dv_ttm;0,10))/2`。 |
 | `finance_realestate` | `asset_quality_proxy` 0.20 `N-(debt_pct;30,90)`；`capital_safety` 0.18 `N-(assets_to_eqt;1,20)`；`profitability` 0.16 `N+(roe;3,20)`；`risk_exposure_proxy` 0.16 `N-(netprofit_yoy;-100,80)`；`valuation_safety` 0.16 `value`；`growth_space_proxy` 0.14 `rev`。 |
 | `heavy_manufacturing` | `capital_efficiency` 0.20 `N+(roe;0,20)`；`order_proxy` 0.18 `rev`；`capacity_proxy` 0.16 `N+(assets_to_eqt;0.8,5)`；`profitability` 0.16 `profitability`；`operation_efficiency` 0.16 `N+(ocf_yoy;-50,100)`；`financial_safety` 0.14 `safe`。 |
-| 通用兜底 | `growth_quality` 0.20 `rev`；`income_quality` 0.18 `N+(gross_margin;10,80)`；`profit_path` 0.16 `profit`；`cash_runway` 0.16 `cash`；`light_asset_proxy` 0.16 `N+(roa;0,20)`；`competition_proxy` 0.14 `N+(total_mv元;1e9,3e11)`。 |
+| 通用兜底 | `growth_quality` 0.34：`rev`（因子预算 0.20）与三年同行收入份额变化百分位（0.14）按可用因子权重合成；`income_quality` 0.18 `N+(gross_margin;10,80)`；`profit_path` 0.16 `profit`；`cash_runway` 0.16 `cash`；`light_asset_proxy` 0.16 `N+(roa;0,20)`。 |
 
-每项分数截断后乘 profile 权重求和，得到总分并再次限制在 `[0,100]`；当前各 profile 权重合计为 1。等级阈值为 A `>=85`、B `>=70`、C `>=55`、D `>=40`，否则 E。普通评分不单独输出 TopN 式的维度有效覆盖率；解释结果时应同时查看各项 `evidence`，特别注意上面的缺失值回退行为。
+每项分数截断后乘可用权重求和，并对可用权重重归一；各 profile 名义权重合计为 1。增长维度 `weight` 保留名义权重，`available_weight/status` 反映实际可用因子。总覆盖低于 80% 时总分为 `null`；否则等级阈值为 A `>=85`、B `>=70`、C `>=55`、D `>=40`，否则 E。评分版本为 `health-score-peer-position-v1`，profile 及同行映射版本随结果输出。其它既有维度仍存在缺失值回退行为，解释时须检查 `evidence`。
 
 ### 4.2 TopN 特征评分
 
@@ -387,6 +401,10 @@ URL、参数名、分页格式、默认页大小、认证授权和错误响应�
 5. 主表或任一维度写入失败时验证事务回滚；无效类型、重复维度 key 和非法分数应明确拒绝。
 6. 验证查询不触发重算或外部数据访问，并按确认后的权限范围隔离数据。
 7. 在 PostgreSQL 上验证唯一约束、索引、并发幂等和代表性搜索性能；不以 SQLite 替代。
+8. 竞争位置收入份额主路径：20 家共同有效同行时返回 0–100 百分位，并记录收入字段、行业映射来源/版本、两期财报、报告口径及 as-of。
+9. 竞争位置失败边界：共同有效样本少于 20、目标缺少任一期有效收入、报告口径不匹配或公告晚于 as-of 时返回 `NOT_AVAILABLE`，不得回退市值、0 分或中性分。
+10. 竞争位置不变量：仅改变 `total_mv` 不改变相关 profile 得分；增长和 peer 因子分别缺失时仅对有效因子计可用权重，两者都缺失则增长维度不可用。
+11. 竞争位置总分覆盖：验证有效权重重归一、`PARTIAL` 和 coverage 低于 80% 时总分 `null`/`INSUFFICIENT_DATA`；历史样本区分度及 ROIC 备选需在 TODO-10 完成后另行验证。
 
 ### 11.8 TODO List
 
@@ -397,3 +415,6 @@ URL、参数名、分页格式、默认页大小、认证授权和错误响应�
 - [x] TODO-05（对应 11.5.1、11.7）：手工入库 CLI 已实现，单证券三类评分 dry-run 通过。
 - [ ] TODO-06（对应 11.5）：确认 HTTP 搜索/详情 API 请求响应和权限契约后实现查询接口。
 - [ ] TODO-07（对应 11.5.1）：完成 CLI 稳定性验证后，另行接入 `scripts/daily.bat` 并验证失败重试和日志。
+- [ ] TODO-08（对应 4.1）：使用跨行业历史样本验证现金流率 `[-20%,50%]` 归一阈值及其区分度，再评估是否需要分行业 profile。
+- [x] TODO-09（对应 4.1.1）：收入份额三年变化主路径、20 家 peer 门槛、不可用状态/可用权重覆盖、评分及映射版本已实现；定向测试覆盖20/19家样本和市值不变量。此项不代表历史样本区分度或 ROIC 备选已验收。
+- [ ] TODO-10（对应 4.1.1）：用跨行业历史样本评估收入份额因子的覆盖率、区分度和权重；另行定义 ROIC 公式/来源及独立版本后再评审是否实现备选路径。

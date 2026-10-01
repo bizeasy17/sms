@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from calendar import monthrange
 from datetime import date
 from typing import Any
 
@@ -21,6 +22,10 @@ from .financial_period_service import report_announcement_date
 from .classification_mapping import load_classification_mapping
 
 TS_CODE_LENGTH = 9
+PEER_REVENUE_SHARE_LOOKBACK_YEARS = 3
+PEER_REVENUE_SHARE_MIN_PEERS = 20
+PEER_MAPPING_VERSION = 'security-industry-v1'
+SCORING_VERSION = 'health-score-peer-position-v1'
 DIMENSIONS = (
     ('growth_momentum', '增长动能', 0.18, '收入与利润增长趋势以及持续性'),
     ('profitability_quality', '盈利质量', 0.18, '回报能力与利润结构质量'),
@@ -322,6 +327,20 @@ def _context(
         getattr(profile, 'main_business', '') if profile else '',
         getattr(profile, 'business_scope', '') if profile else '',
     ]))
+    competitive_position = _peer_revenue_share_position(
+        security=security,
+        target_income=income,
+        cutoff=cutoff or date.today(),
+    ) if income is not None else {
+        'score': None,
+        'share_change_3y': None,
+        'peer_count': 0,
+        'metric_basis': 'revenue_share_change_3y',
+        'mapping_version': PEER_MAPPING_VERSION,
+        'status': 'NOT_AVAILABLE',
+        'reason': 'current_income_missing',
+    }
+    features['competitive_position'] = competitive_position
     return {
         'security': security,
         'industry': security.industry.name if security.industry else '',
@@ -514,21 +533,204 @@ def _normalize_negative(value: float | None, low: float, high: float) -> float:
     return 100.0 - _normalize_positive(value, low, high)
 
 
-def _source_dimensions(stock_type: str, features: dict[str, float | None]) -> list[tuple[str, str, float, float, dict[str, float | None], str]]:
+def _income_revenue(row: FinancialIncomeRecord, field_name: str) -> float | None:
+    return _number(getattr(row, field_name, None))
+
+
+def _latest_visible_income_by_security(
+    *,
+    industry_id: int,
+    period: date,
+    report_type: str,
+    comp_type: str,
+    cutoff: date,
+) -> dict[int, FinancialIncomeRecord]:
+    rows = FinancialIncomeRecord.objects.filter(
+        security__asset_type='STOCK',
+        security__industry_id=industry_id,
+        security__list_date__lte=cutoff,
+        end_date=period,
+        report_type=report_type,
+        comp_type=comp_type,
+    ).filter(
+        Q(security__delist_date__isnull=True) | Q(security__delist_date__gt=cutoff),
+    ).only(
+        'id', 'security_id', 'total_revenue', 'revenue', 'ann_date', 'f_ann_date', 'raw_payload',
+    )
+    latest: dict[int, FinancialIncomeRecord] = {}
+    for row in rows:
+        announced = report_announcement_date(row)
+        if announced is None or announced > cutoff:
+            continue
+        previous = latest.get(row.security_id)
+        if previous is None or (
+            announced,
+            row.id,
+        ) > (
+            report_announcement_date(previous) or date.min,
+            previous.id,
+        ):
+            latest[row.security_id] = row
+    return latest
+
+
+def _peer_revenue_share_position(
+    *,
+    security: Security,
+    target_income: FinancialIncomeRecord,
+    cutoff: date,
+) -> dict[str, Any]:
+    unavailable = {
+        'score': None,
+        'share_change_3y': None,
+        'peer_count': 0,
+        'metric_basis': 'revenue_share_change_3y',
+        'mapping_version': PEER_MAPPING_VERSION,
+        'status': 'NOT_AVAILABLE',
+    }
+    if security.industry_id is None or target_income.end_date is None:
+        return {**unavailable, 'reason': 'industry_or_period_missing'}
+    revenue_field = 'total_revenue' if target_income.total_revenue is not None else 'revenue'
+    try:
+        prior_period = target_income.end_date.replace(
+            year=target_income.end_date.year - PEER_REVENUE_SHARE_LOOKBACK_YEARS,
+        )
+    except ValueError:
+        prior_period = target_income.end_date.replace(
+            year=target_income.end_date.year - PEER_REVENUE_SHARE_LOOKBACK_YEARS,
+            day=monthrange(
+                target_income.end_date.year - PEER_REVENUE_SHARE_LOOKBACK_YEARS,
+                target_income.end_date.month,
+            )[1],
+        )
+
+    current_rows = _latest_visible_income_by_security(
+        industry_id=security.industry_id,
+        period=target_income.end_date,
+        report_type=target_income.report_type,
+        comp_type=target_income.comp_type,
+        cutoff=cutoff,
+    )
+    prior_rows = _latest_visible_income_by_security(
+        industry_id=security.industry_id,
+        period=prior_period,
+        report_type=target_income.report_type,
+        comp_type=target_income.comp_type,
+        cutoff=cutoff,
+    )
+    current_revenues = {
+        security_id: revenue
+        for security_id, row in current_rows.items()
+        if (revenue := _income_revenue(row, revenue_field)) is not None and revenue > 0
+    }
+    prior_revenues = {
+        security_id: revenue
+        for security_id, row in prior_rows.items()
+        if (revenue := _income_revenue(row, revenue_field)) is not None and revenue > 0
+    }
+    common_security_ids = current_revenues.keys() & prior_revenues.keys()
+    if security.pk not in common_security_ids:
+        return {**unavailable, 'reason': 'target_missing_comparable_revenue'}
+    if len(common_security_ids) < PEER_REVENUE_SHARE_MIN_PEERS:
+        return {
+            **unavailable,
+            'peer_count': len(common_security_ids),
+            'reason': 'peer_sample_below_minimum',
+        }
+
+    current_total = sum(current_revenues[security_id] for security_id in common_security_ids)
+    prior_total = sum(prior_revenues[security_id] for security_id in common_security_ids)
+    if current_total <= 0 or prior_total <= 0:
+        return {**unavailable, 'peer_count': len(common_security_ids), 'reason': 'peer_revenue_total_invalid'}
+    share_changes = {
+        security_id: current_revenues[security_id] / current_total
+        - prior_revenues[security_id] / prior_total
+        for security_id in common_security_ids
+    }
+    target_change = share_changes[security.pk]
+    below_count = sum(value < target_change for value in share_changes.values())
+    equal_count = sum(value == target_change for value in share_changes.values())
+    average_rank = below_count + (equal_count + 1) / 2
+    score = 100.0 * (average_rank - 1) / (len(share_changes) - 1)
+    return {
+        'score': score,
+        'share_change_3y': target_change * 100.0,
+        'share_change_unit': 'percentage_points',
+        'peer_count': len(common_security_ids),
+        'metric_basis': 'revenue_share_change_3y',
+        'mapping_version': PEER_MAPPING_VERSION,
+        'revenue_field': revenue_field,
+        'industry_source_system': security.industry.source_system,
+        'industry_source_version': security.industry.source_version,
+        'status': 'AVAILABLE',
+        'reason': '',
+        'industry_id': security.industry_id,
+        'industry_name': security.industry.name if security.industry_id else '',
+        'report_type': target_income.report_type,
+        'comp_type': target_income.comp_type,
+        'current_period': target_income.end_date.isoformat(),
+        'prior_period': prior_period.isoformat(),
+        'asof_date': cutoff.isoformat(),
+    }
+
+
+def _growth_dimension_score(
+    revenue_score: float | None,
+    competitive_position: dict[str, Any],
+    revenue_weight: float,
+    competitive_weight: float,
+) -> tuple[float | None, float, dict[str, Any]]:
+    peer_score = competitive_position.get('score')
+    available_weight = (revenue_weight if revenue_score is not None else 0.0) + (
+        competitive_weight if peer_score is not None else 0.0
+    )
+    weighted_score = (
+        (revenue_score * revenue_weight if revenue_score is not None else 0.0)
+        + (peer_score * competitive_weight if peer_score is not None else 0.0)
+    )
+    score = weighted_score / available_weight if available_weight else None
+    evidence = {
+        'revenue_growth_score': revenue_score,
+        'share_change_3y': competitive_position.get('share_change_3y'),
+        'share_change_unit': competitive_position.get('share_change_unit'),
+        'competitive_position_score': peer_score,
+        'peer_count': competitive_position.get('peer_count', 0),
+        'metric_basis': competitive_position.get('metric_basis'),
+        'peer_mapping_version': competitive_position.get('mapping_version'),
+        'peer_industry_id': competitive_position.get('industry_id'),
+        'peer_industry_name': competitive_position.get('industry_name'),
+        'peer_industry_source_system': competitive_position.get('industry_source_system'),
+        'peer_industry_source_version': competitive_position.get('industry_source_version'),
+        'peer_report_type': competitive_position.get('report_type'),
+        'peer_comp_type': competitive_position.get('comp_type'),
+        'peer_revenue_field': competitive_position.get('revenue_field'),
+        'peer_current_period': competitive_position.get('current_period'),
+        'peer_prior_period': competitive_position.get('prior_period'),
+        'peer_asof_date': competitive_position.get('asof_date'),
+        'competitive_position_status': competitive_position.get('status', 'NOT_AVAILABLE'),
+        'competitive_position_reason': competitive_position.get('reason', ''),
+        'available_weight': available_weight,
+    }
+    return score, available_weight, evidence
+
+
+def _source_dimensions(stock_type: str, features: dict[str, Any]) -> list[tuple[str, str, float, float, dict[str, Any], str]]:
     debt = features.get('debt_to_assets') or 0.0
     debt_pct = debt * 100.0 if abs(debt) <= 1.0 else debt
     gross_margin = features.get('gross_margin') or 0.0
-    market_cap = features.get('total_mv') or 0.0
-    market_cap_for_scoring = market_cap * 10000.0 if market_cap > 0 else 0.0
     revenue_growth = _normalize_positive(features.get('or_yoy'), -20, 60)
+    available_revenue_growth = (
+        _normalize_positive(features.get('or_yoy'), -20, 60)
+        if features.get('or_yoy') is not None else None
+    )
     profit_growth = _normalize_positive(features.get('netprofit_yoy'), -30, 80)
     profitability = (
         _normalize_positive(features.get('roe'), 0, 25)
         + _normalize_positive(features.get('netprofit_margin'), 0, 40)
     ) / 2
     cash_quality = (
-        _normalize_positive(features.get('n_cashflow_act'), -1, 1)
-        + _normalize_positive(features.get('free_cashflow'), -1, 1)
+        _normalize_positive(features.get('operating_cashflow_margin'), -20, 50)
+        + _normalize_positive(features.get('free_cashflow_margin'), -20, 50)
     ) / 2
     safety = (
         _normalize_negative(debt_pct, 20, 85)
@@ -537,13 +739,15 @@ def _source_dimensions(stock_type: str, features: dict[str, float | None]) -> li
     valuation = _normalize_negative(features.get('pe_ttm') if features.get('pe_ttm') is not None else 30, 5, 80)
 
     if stock_type == 'growth_tech':
+        growth_score, _, growth_evidence = _growth_dimension_score(
+            available_revenue_growth, features.get('competitive_position') or {}, 0.20, 0.15,
+        )
         return [
-            ('growth_quality', '收入增长质量', 0.20, revenue_growth, {'or_yoy': features.get('or_yoy'), 'tr_yoy': features.get('tr_yoy')}, '营收增长与趋势稳定性'),
+            ('growth_quality', '增长与同行收入份额', 0.35, growth_score, {**growth_evidence, 'or_yoy': features.get('or_yoy'), 'tr_yoy': features.get('tr_yoy')}, '营收增长与三年同行收入份额变化'),
             ('profit_conversion', '利润兑现能力', 0.18, profit_growth, {'netprofit_yoy': features.get('netprofit_yoy')}, '收入增长向利润兑现的转化程度'),
-            ('cash_runway', '现金续航能力', 0.16, cash_quality, {'n_cashflow_act': features.get('n_cashflow_act'), 'free_cashflow': features.get('free_cashflow')}, '经营与自由现金流表现'),
+            ('cash_runway', '现金续航能力', 0.16, cash_quality, {'operating_cashflow_margin': features.get('operating_cashflow_margin'), 'free_cashflow_margin': features.get('free_cashflow_margin')}, '经营与自由现金流率表现'),
             ('rd_intensity_proxy', '研发投入强度代理', 0.16, _normalize_positive(gross_margin, 20, 70), {'gross_margin': gross_margin}, '以毛利与利润结构代理研发效率'),
             ('tech_moat_proxy', '技术壁垒代理', 0.15, _normalize_positive(features.get('roe_dt'), 0, 20), {'roe_dt': features.get('roe_dt')}, '扣非回报稳定性'),
-            ('market_position_proxy', '市场卡位代理', 0.15, _normalize_positive(market_cap_for_scoring, 1e9, 3e11), {'total_mv': features.get('total_mv')}, '市值层级与市场认可度'),
         ]
     if stock_type == 'stable_consumer':
         return [
@@ -551,12 +755,12 @@ def _source_dimensions(stock_type: str, features: dict[str, float | None]) -> li
             ('profitability', '盈利能力', 0.18, profitability, {'roe': features.get('roe'), 'netprofit_margin': features.get('netprofit_margin')}, '利润率与回报水平'),
             ('channel_proxy', '渠道控制力代理', 0.16, _normalize_negative(features.get('assets_to_eqt'), 1, 8), {'assets_to_eqt': features.get('assets_to_eqt')}, '资金占用与渠道质量代理'),
             ('growth_stability', '成长稳定性', 0.16, (revenue_growth + profit_growth) / 2, {'or_yoy': features.get('or_yoy'), 'netprofit_yoy': features.get('netprofit_yoy')}, '营收与净利增长一致性'),
-            ('cash_quality', '现金质量', 0.16, cash_quality, {'n_cashflow_act': features.get('n_cashflow_act'), 'free_cashflow': features.get('free_cashflow')}, '现金流含金量'),
+            ('cash_quality', '现金质量', 0.16, cash_quality, {'operating_cashflow_margin': features.get('operating_cashflow_margin'), 'free_cashflow_margin': features.get('free_cashflow_margin')}, '现金流含金量'),
             ('shareholder_return', '股东回报', 0.14, _normalize_positive(features.get('dv_ttm'), 0, 8), {'dv_ttm': features.get('dv_ttm')}, '股息水平与分红回报'),
         ]
     if stock_type == 'stable_income':
         return [
-            ('cash_stability', '现金流稳定性', 0.20, cash_quality, {'n_cashflow_act': features.get('n_cashflow_act'), 'free_cashflow': features.get('free_cashflow')}, '经营现金流与自由现金流稳定度'),
+            ('cash_stability', '现金流稳定性', 0.20, cash_quality, {'operating_cashflow_margin': features.get('operating_cashflow_margin'), 'free_cashflow_margin': features.get('free_cashflow_margin')}, '经营现金流率与自由现金流率'),
             ('dividend_support', '分红支撑能力', 0.18, _normalize_positive(features.get('dv_ttm'), 0, 8), {'dv_ttm': features.get('dv_ttm')}, '分红率对稳定收入风格的支撑'),
             ('earnings_stability', '盈利稳定性', 0.16, _normalize_negative(abs(features.get('netprofit_yoy') or 0), 0, 80), {'netprofit_yoy': features.get('netprofit_yoy')}, '净利波动越小越稳定'),
             ('leverage_safety', '杠杆安全', 0.16, safety, {'debt_to_assets': debt_pct, 'assets_to_eqt': features.get('assets_to_eqt')}, '负债与流动性安全边际'),
@@ -568,7 +772,7 @@ def _source_dimensions(stock_type: str, features: dict[str, float | None]) -> li
             ('profit_elasticity', '盈利弹性', 0.20, profit_growth, {'netprofit_yoy': features.get('netprofit_yoy')}, '利润周期弹性'),
             ('cost_proxy', '成本竞争力代理', 0.18, _normalize_positive(gross_margin, 5, 50), {'gross_margin': gross_margin}, '毛利与成本端控制'),
             ('financial_safety', '财务安全', 0.16, safety, {'debt_to_assets': debt_pct}, '杠杆与偿债能力'),
-            ('capital_discipline', '资本纪律代理', 0.16, cash_quality, {'free_cashflow': features.get('free_cashflow')}, '扩张与现金流匹配度'),
+            ('capital_discipline', '资本纪律代理', 0.16, cash_quality, {'operating_cashflow_margin': features.get('operating_cashflow_margin'), 'free_cashflow_margin': features.get('free_cashflow_margin')}, '扩张与现金流匹配度'),
             ('operation_proxy', '库存与营运代理', 0.16, _normalize_positive(features.get('ocf_yoy'), -50, 100), {'ocf_yoy': features.get('ocf_yoy')}, '营运周转与现金改善'),
             ('cycle_position_proxy', '周期位置代理', 0.14, (valuation + _normalize_positive(features.get('dv_ttm'), 0, 10)) / 2, {'pe_ttm': features.get('pe_ttm'), 'dv_ttm': features.get('dv_ttm')}, '估值与股息组合定位'),
         ]
@@ -590,13 +794,15 @@ def _source_dimensions(stock_type: str, features: dict[str, float | None]) -> li
             ('operation_efficiency', '经营效率', 0.16, _normalize_positive(features.get('ocf_yoy'), -50, 100), {'ocf_yoy': features.get('ocf_yoy')}, '营运现金改善'),
             ('financial_safety', '财务安全', 0.14, safety, {'debt_to_assets': debt_pct}, '杠杆与流动性'),
         ]
+    growth_score, _, growth_evidence = _growth_dimension_score(
+        available_revenue_growth, features.get('competitive_position') or {}, 0.20, 0.14,
+    )
     return [
-        ('growth_quality', '收入增长质量', 0.20, revenue_growth, {'or_yoy': features.get('or_yoy')}, '增长质量'),
+        ('growth_quality', '增长与同行收入份额', 0.34, growth_score, {**growth_evidence, 'or_yoy': features.get('or_yoy')}, '营收增长与三年同行收入份额变化'),
         ('income_quality', '收入质量', 0.18, _normalize_positive(gross_margin, 10, 80), {'gross_margin': gross_margin}, '毛利质量'),
         ('profit_path', '盈利路径', 0.16, profit_growth, {'netprofit_yoy': features.get('netprofit_yoy')}, '利润路径'),
-        ('cash_runway', '现金续航', 0.16, cash_quality, {'free_cashflow': features.get('free_cashflow')}, '现金续航'),
+        ('cash_runway', '现金续航', 0.16, cash_quality, {'operating_cashflow_margin': features.get('operating_cashflow_margin'), 'free_cashflow_margin': features.get('free_cashflow_margin')}, '现金续航'),
         ('light_asset_proxy', '轻资产效率代理', 0.16, _normalize_positive(features.get('roa'), 0, 20), {'roa': features.get('roa')}, '资产效率'),
-        ('competition_proxy', '竞争格局代理', 0.14, _normalize_positive(market_cap_for_scoring, 1e9, 3e11), {'total_mv': features.get('total_mv')}, '市值与格局代理'),
     ]
 
 
@@ -604,7 +810,7 @@ def _display_metrics(evidence: dict[str, float | None]) -> list[dict[str, str]]:
     return [
         {'key': key, 'label': key, 'value': f'{value:.2f}'}
         for key, value in evidence.items()
-        if value is not None
+        if isinstance(value, (int, float)) and not isinstance(value, bool)
     ][:3]
 
 
@@ -638,27 +844,47 @@ def compute_score(
     context = _context(ts_code, asof_date, financial_end_date)
     security = context['security']
     features = context['features']
-    classification = classify_stock(security.ts_code, asof_date, financial_end_date)
-    dimension_specs = _source_dimensions(classification['stock_type'], features)
+    stock_type, stock_type_source, stock_type_reasons, stock_type_confidence, _ = _classify(
+        context['industry'], context['business_text'], context['bz_items'],
+    )
+    dimension_specs = _source_dimensions(stock_type, features)
     dimensions = []
     weights: dict[str, float] = {}
-    total = 0.0
+    weighted_total = 0.0
+    total_weight = 0.0
+    available_weight_total = 0.0
     for key, name, weight, score, evidence, explanation in dimension_specs:
-        score = max(0.0, min(100.0, score))
+        score = max(0.0, min(100.0, score)) if score is not None else None
+        available_weight = min(weight, max(0.0, float(evidence.get('available_weight', weight))))
+        dimension_status = 'NOT_AVAILABLE' if available_weight == 0 else 'PARTIAL' if available_weight < weight else 'VALID'
         dimensions.append({
             'key': key,
             'name': name,
-            'score': round(score, 2),
+            'score': round(score, 2) if score is not None else None,
             'weight': weight,
+            'available_weight': available_weight,
+            'status': dimension_status,
             'evidence': evidence,
             'explanation': explanation,
             'display_metrics': _display_metrics(evidence),
         })
         weights[key] = weight
-        total += score * weight
+        total_weight += weight
+        available_weight_total += available_weight
+        if score is not None and available_weight > 0:
+            weighted_total += score * available_weight
 
-    total = round(max(0.0, min(100.0, total)), 2)
-    grade = 'A' if total >= 85 else 'B' if total >= 70 else 'C' if total >= 55 else 'D' if total >= 40 else 'E'
+    coverage = available_weight_total / total_weight if total_weight else 0.0
+    score_status = 'VALID' if coverage == 1 else 'PARTIAL'
+    total = weighted_total / available_weight_total if available_weight_total else None
+    if coverage < 0.80:
+        total = None
+        score_status = 'INSUFFICIENT_DATA'
+    total = round(max(0.0, min(100.0, total)), 2) if total is not None else None
+    grade = (
+        'A' if total >= 85 else 'B' if total >= 70 else 'C' if total >= 55
+        else 'D' if total >= 40 else 'E'
+    ) if total is not None else 'N/A'
     risks: list[dict[str, str]] = []
     debt = features.get('debt_to_assets')
     if debt is not None and (debt * 100 if abs(debt) <= 1 else debt) > 75:
@@ -683,16 +909,22 @@ def compute_score(
         'ts_code': security.ts_code,
         'name': security.name,
         'industry': context['industry'],
-        'stock_type': classification['stock_type'],
+        'stock_type': stock_type,
         'score_grade': grade,
         'total_score': total,
+        'status': score_status,
+        'coverage': round(coverage, 4),
+        'available_weight': round(available_weight_total, 4),
+        'scoring_version': SCORING_VERSION,
+        'profile_version': f'{stock_type}-peer-position-v1',
+        'peer_mapping_version': PEER_MAPPING_VERSION,
         'dimension_scores': dimensions,
         'dimension_weights': weights,
         'risk_flags': risks,
         'ai_summary': '评分基于当前财务与交易快照生成，缺失经营外延数据时已采用代理指标。',
-        'stock_type_source': classification['stock_type_source'],
-        'stock_type_confidence': classification['stock_type_confidence'],
-        'stock_type_reasons': classification['stock_type_reasons'],
+        'stock_type_source': stock_type_source,
+        'stock_type_confidence': stock_type_confidence,
+        'stock_type_reasons': stock_type_reasons,
         'snapshot_asof_date': snapshot_asof_date.strftime('%Y%m%d') if snapshot_asof_date else '',
     }
     if include_feature_values:
