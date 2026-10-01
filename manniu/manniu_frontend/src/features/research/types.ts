@@ -56,6 +56,9 @@ export type MarketEvidence = {
     warnings: string[]
 }
 export type FinancialMetric = { key: string; value: number | null; yoy: number | null; yoyUnit: 'ratio' | 'percentage_points'; rolling12: number | null; rolling12Unit: string; period: string | null; sourceDataset: string; available: boolean }
+export type MetricsScoreType = 'FINANCIAL_HEALTH_6D' | 'MODEL_TOPN_6D' | 'COMPANY_GROWTH_POTENTIAL'
+export type MetricsScore = { score: number | null; level: string | null; scoreStatus: string; coverage: number | null; financialEndDate: string | null; asofDate: string | null }
+export type MetricsScoreSet = Partial<Record<MetricsScoreType, MetricsScore>>
 export type FundamentalDimension = { score: number | null; status: string; available: boolean; evidence: string[]; missingMetrics: string[] }
 export type FundamentalEvaluation = {
     evaluationVersion: string

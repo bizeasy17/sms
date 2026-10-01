@@ -1,5 +1,22 @@
+import { useEffect, useState } from 'react'
 import { FundamentalEvidence } from './FundamentalEvidence'
-import type { FinancialMetric, FinancialOverview, FundamentalEvaluation, Stock } from '../types'
+import { fetchMetricsScores } from '../services/researchApi'
+import type { FinancialMetric, FinancialOverview, FundamentalEvaluation, MetricsScoreSet, MetricsScoreType, Stock } from '../types'
+
+const metricScoreCards: Array<{ type: MetricsScoreType; title: string }> = [
+  { type: 'FINANCIAL_HEALTH_6D', title: '财务健康 6维' },
+  { type: 'MODEL_TOPN_6D', title: 'TopN 6维' },
+  { type: 'COMPANY_GROWTH_POTENTIAL', title: '增长动力 7维' },
+]
+
+const metricScoreStatusLabels: Record<string, string> = {
+  VALID: '有效', PARTIAL: '部分可用', INSUFFICIENT_DATA: '数据不足',
+  NOT_APPLICABLE: '不适用', DEGRADED: '降级', NOT_AVAILABLE: '暂无评分',
+}
+
+function metricScoreStatusLabel(status?: string) {
+  return status ? metricScoreStatusLabels[status] ?? status : '暂无快照'
+}
 
 function TrendChart({ points, tone }: { points: Array<{ value: number; label: string }>; tone: string }) {
   const lastIndex = Math.max(points.length - 1, 1)
@@ -32,13 +49,57 @@ const dimensionLogic: Record<string, string> = {
 }
 
 export function FundamentalsWorkspace({ stock, metrics, evaluation, financialOverview, financialState, onFinancialRetry }: { stock: Stock; metrics: Record<string, FinancialMetric> | null; evaluation: FundamentalEvaluation | null; financialOverview: FinancialOverview | null; financialState: 'loading' | 'ready' | 'empty' | 'error'; onFinancialRetry: () => void }) {
+  const [metricScoresLoad, setMetricScoresLoad] = useState<{ key: string; scores: MetricsScoreSet | null; state: 'ready' | 'empty' | 'error' }>({ key: '', scores: null, state: 'empty' })
+  const [metricScoresRetry, setMetricScoresRetry] = useState(0)
+  const metricScoresKey = `${stock.code}:${financialOverview?.period ?? 'LATEST'}`
+  const metricScores = metricScoresLoad.key === metricScoresKey ? metricScoresLoad.scores : null
+  const metricScoresState = metricScoresLoad.key === metricScoresKey ? metricScoresLoad.state : 'loading'
   const trend = evaluation?.trend ?? []
   const dimensions = Object.entries(evaluation?.dimensions ?? {})
   const reports = evaluation?.reports ?? []
   const signals = evaluation?.signals ?? []
   const overall = evaluation?.overall
+
+  useEffect(() => {
+    if (financialState === 'loading') return
+    const controller = new AbortController()
+    const requestKey = `${stock.code}:${financialOverview?.period ?? 'LATEST'}`
+    fetchMetricsScores(stock.code, financialOverview?.period ?? null, controller.signal).then((scores) => {
+      if (controller.signal.aborted) return
+      setMetricScoresLoad({ key: requestKey, scores, state: Object.keys(scores).length ? 'ready' : 'empty' })
+    }).catch(() => {
+      if (!controller.signal.aborted) setMetricScoresLoad({ key: requestKey, scores: null, state: 'error' })
+    })
+    return () => controller.abort()
+  }, [stock.code, financialOverview?.period, financialState, metricScoresRetry])
+
   return <div className="fundamentals-workspace">
     <section className="section fundamentals-summary"><div className="section-heading"><div><p className="kicker">03 / FUNDAMENTALS &amp; FILINGS</p><h2>基本面与财务档案</h2><p className="fundamentals-context">{stock.name} · {stock.code} · 最新报告期 {financialOverview?.period ?? '暂无报告期'}</p></div><div className="fundamentals-controls"><label htmlFor="fundamentals-period">报告期</label><select id="fundamentals-period" defaultValue="LATEST"><option value="LATEST">最新报告期</option></select></div></div><div className="fundamentals-summary-grid"><div><span>经营结论</span><strong className={overall?.status === 'WEAK' ? 'weak' : overall?.status === 'STRONG' || overall?.status === 'HEALTHY' ? 'positive' : ''}>{overallLabel(overall?.status ?? 'NOT_AVAILABLE')}</strong><p>{overall?.score == null ? '当前暂无综合评分。' : `综合评分 ${Math.round(overall.score)}/100`}</p></div><div><span>可用权重</span><strong>{overall?.availableWeight == null ? '暂无' : `${Math.round(overall.availableWeight)}%`}</strong><p>{overall?.missingDimensions.length ? `缺失：${overall.missingDimensions.map(dimensionLabel).join('、')}` : '评判维度完整'}</p></div><div><span>数据状态</span><strong>{financialState === 'ready' ? '完整' : financialState === 'loading' ? '加载中' : '待补充'}</strong><p className="mono">{evaluation?.evaluationVersion ?? '评判版本暂无'} · {financialOverview?.period ?? '暂无报告期'}</p></div></div>{evaluation?.warnings.map((warning) => <p className="fundamentals-warning" key={warning}>{warning}</p>)}</section>
+    <section className="section fundamentals-score-section" aria-label="Metrics 综合评分">
+      <div className="section-heading">
+        <div><p className="kicker">METRICS SCORES</p><h2>综合评分</h2></div>
+        <span className="section-note">{financialOverview?.period ?? '报告期暂无'}</span>
+      </div>
+      <div className={`fundamentals-score-grid ${metricScoresState === 'loading' ? 'is-loading' : ''}`} aria-busy={metricScoresState === 'loading'}>
+        {metricScoreCards.map((card) => {
+          const snapshot = metricScores?.[card.type]
+          const hasScore = snapshot?.score != null
+          return <article className="fundamentals-score-card" key={card.type}>
+            <div className="fundamentals-score-card-heading">
+              <span>{card.title}</span>
+              <small>{metricScoreStatusLabel(snapshot?.scoreStatus)}</small>
+            </div>
+            <strong className="fundamentals-score-value">
+              {metricScoresState === 'loading' ? '…' : hasScore ? Math.round(snapshot.score!) : '暂无'}
+              {hasScore && metricScoresState !== 'loading' && <small>分</small>}
+            </strong>
+            <p>等级 <b>{metricScoresState === 'loading' ? '加载中' : snapshot?.level || '暂无'}</b></p>
+          </article>
+        })}
+      </div>
+      {metricScoresState === 'error' && <div className="fundamentals-score-error"><span>综合评分暂时不可用</span><button type="button" onClick={() => setMetricScoresRetry((value) => value + 1)}>重试</button></div>}
+      {metricScoresState === 'empty' && <p className="fundamentals-score-empty">当前报告期暂无综合评分快照</p>}
+    </section>
     <FundamentalEvidence metrics={metrics} state={financialState} onRetry={onFinancialRetry} />
     <section className="section">
       <div className="section-heading">

@@ -1,4 +1,4 @@
-import type { FinancialOverview, FundamentalDimension, FundamentalEvaluation, Market, MarketEvidence, MarketEvidenceHistory, PersonalStockState, Pool, PredictiveTier, PredictiveValuation, SecurityEvent, Stock, StockQuote, StockSentiment, StockTag, TagAction, TechnicalBar, TechnicalChip, TechnicalTrend, TraditionalValuation, TraditionalValuationMethod } from '../types'
+import type { FinancialOverview, FundamentalDimension, FundamentalEvaluation, Market, MarketEvidence, MarketEvidenceHistory, MetricsScore, MetricsScoreSet, MetricsScoreType, PersonalStockState, Pool, PredictiveTier, PredictiveValuation, SecurityEvent, Stock, StockQuote, StockSentiment, StockTag, TagAction, TechnicalBar, TechnicalChip, TechnicalTrend, TraditionalValuation, TraditionalValuationMethod } from '../types'
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL ?? '/api/v1'
 
@@ -23,6 +23,7 @@ type StockSentimentResponse = { data?: { ts_code?: string; trade_date?: string; 
 type ChipsResponse = { data?: Array<{ trade_date?: string; price?: number | null; percent?: number | null }>; error?: { message?: string } }
 type MarketEvidenceResponse = { data?: { security?: { ts_code?: string; name?: string }; industry?: { index_code?: string | null; industry_code?: string | null; name?: string | null }; history?: Array<{ trade_date?: string; open?: number | null; high?: number | null; low?: number | null; close?: number | null; industry_close?: number | null }>; summary?: { atr_14?: number | null; atr_14_percentile_60d?: number | null; ma25?: number | null; ma25_trend?: string | null; ma200?: number | null; ma200_trend?: string | null; current_price?: number | null; price_to_ma25?: number | null; relative_strength_vs_industry?: number | null }; requested_days?: number; returned_days?: number; warnings?: string[] }; error?: { message?: string } }
 type FinancialOverviewResponse = { data?: { period?: string | null; report_type?: string; metrics?: Record<string, FinancialMetricResponse>; evaluation?: FinancialEvaluationResponse | null; source_dates?: Record<string, string>; warnings?: string[] }; meta?: { warnings?: string[] }; error?: { message?: string } }
+type MetricsScoreSnapshotResponse = { data?: Array<{ score_type?: string; asof_date?: string; financial_end_date?: string | null; score?: number | null; label?: string | null; score_status?: string; coverage?: number | null }>; error?: { message?: string } }
 type FinancialMetricResponse = { key?: string; value?: number | null; yoy?: number | null; yoy_unit?: 'ratio' | 'percentage_points'; rolling12?: number | null; rolling12_unit?: string; period?: string | null; source_dataset?: string; available?: boolean }
 type FinancialDimensionResponse = { score?: number | null; status?: string; available?: boolean; evidence?: string[]; missing_metrics?: string[] }
 type FinancialEvaluationResponse = { evaluation_version?: string; overall?: { score?: number | null; status?: string; available_weight?: number; missing_dimensions?: string[] }; dimensions?: Record<string, FinancialDimensionResponse>; trend?: Array<{ period?: string | null; source_period?: string | null; overall?: FinancialEvaluationResponse['overall']; dimensions?: Record<string, FinancialDimensionResponse> }>; reports?: Array<{ period?: string; report_type?: string | null; end_date?: string; ann_date?: string | null; effective_date?: string | null; data_status?: string; source_revision?: string | null }>; signals?: Array<{ signal_code?: string; label?: string; severity?: string; status?: string; asof_date?: string | null; evidence?: string; metrics?: string[]; provenance?: Record<string, unknown> }>; warnings?: string[] }
@@ -223,6 +224,40 @@ export async function fetchFinancialOverview(tsCode: string, signal?: AbortSigna
         available: metric.available === true,
     }]))
     return { period: body.data.period ?? null, reportType: body.data.report_type ?? 'LATEST', metrics, evaluation: mapEvaluation(body.data.evaluation), sourceDates: body.data.source_dates ?? {}, warnings: [...(body.meta?.warnings ?? []), ...(body.data.warnings ?? [])] }
+}
+
+export async function fetchMetricsScores(tsCode: string, financialEndDate: string | null, signal?: AbortSignal): Promise<MetricsScoreSet> {
+    const query = new URLSearchParams({
+        ts_code: tsCode,
+        asof_to: dateString(new Date()),
+        page: '1',
+        page_size: '200',
+        ordering: '-asof_date,-created_at',
+    })
+    if (financialEndDate) query.set('financial_end_date', financialEndDate)
+    const accessToken = window.localStorage.getItem('access_token') ?? window.localStorage.getItem('auth_access_token')
+    const headers: HeadersInit = { Accept: 'application/json' }
+    if (accessToken) headers.Authorization = `Bearer ${accessToken}`
+    const response = await fetch(`${API_BASE}/market-analysis/metrics/score-snapshots/?${query}`, { headers, signal })
+    const body = await response.json() as MetricsScoreSnapshotResponse
+    if (!response.ok || !Array.isArray(body.data)) throw new Error(body.error?.message ?? '综合评分加载失败，请稍后重试。')
+
+    const supportedTypes: MetricsScoreType[] = ['FINANCIAL_HEALTH_6D', 'MODEL_TOPN_6D', 'COMPANY_GROWTH_POTENTIAL']
+    const scores: MetricsScoreSet = {}
+    for (const item of body.data) {
+        if (!supportedTypes.includes(item.score_type as MetricsScoreType)) continue
+        const scoreType = item.score_type as MetricsScoreType
+        if (scores[scoreType]) continue
+        scores[scoreType] = {
+            score: typeof item.score === 'number' && Number.isFinite(item.score) ? item.score : null,
+            level: item.label || null,
+            scoreStatus: item.score_status ?? 'NOT_AVAILABLE',
+            coverage: typeof item.coverage === 'number' && Number.isFinite(item.coverage) ? item.coverage : null,
+            financialEndDate: item.financial_end_date ?? null,
+            asofDate: item.asof_date ?? null,
+        }
+    }
+    return scores
 }
 
 function numberField(row: Record<string, unknown>, ...keys: string[]) {
