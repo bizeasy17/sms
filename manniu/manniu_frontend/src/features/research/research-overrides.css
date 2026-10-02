@@ -569,19 +569,23 @@
   margin-bottom: 94px;
 }
 
-.valuation-summary-section .range-values > span:first-child {
-  transform: none;
-}
-
-.valuation-summary-section .range-values > span:last-child {
-  transform: translateX(-100%);
-}
-
 .valuation-summary-section .range-pointer {
+  top: -7px;
+  width: 0;
+  height: 0;
+  border-top: 9px solid var(--color-text);
+  border-right: 6px solid transparent;
+  border-left: 6px solid transparent;
+  background: transparent;
   transform: translateX(-50%);
 }
 
+.valuation-summary-section .range-pointer::after {
+  content: none;
+}
+
 .valuation-summary-section .range-pointer i {
+  top: 9px;
   left: 50%;
   transform: translateX(-50%);
   white-space: nowrap;

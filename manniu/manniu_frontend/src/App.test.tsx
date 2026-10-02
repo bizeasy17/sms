@@ -2,6 +2,7 @@ import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, beforeEach, expect, test, vi } from 'vitest'
 import App from './App'
 import { ModuleStateNotice } from './features/research/components/ModuleStateNotice'
+import { ValuationSummary } from './features/research/components/ValuationSummary'
 
 beforeEach(() => {
   window.history.replaceState({}, '', '/')
@@ -59,6 +60,29 @@ test('renders the research workspace with the selected stock', async () => {
   expect(document.querySelectorAll('.predictive-tier-row')).toHaveLength(3)
   expect(screen.getByText('83')).toBeTruthy()
   expect(screen.getByText('¥21.20 - ¥25.40')).toBeTruthy()
+})
+
+test('positions valuation tiers and current price on the same linear scale', () => {
+  render(<ValuationSummary
+    latestClose={25}
+    valuation={{ currentPrice: 25, conservativePrice: 30, centerPrice: 40, optimisticPrice: 50, confidence: null, undervalueScore: null, buyCandidate: null, riskLevel: null, asofDate: null, sourceTradeDate: null, methods: [] }}
+    predictiveValuation={{ action: null, signalScore: null, riskLevel: null, targetPrice: null, targetPriceLow: null, targetPriceHigh: null, asofDate: null, tiers: {
+      conservative: { targetPrice: 30, targetPriceLow: null, targetPriceHigh: null, riskLevel: null },
+      balance: { targetPrice: 40, targetPriceLow: null, targetPriceHigh: null, riskLevel: null },
+      aggressive: { targetPrice: 50, targetPriceLow: null, targetPriceHigh: null, riskLevel: null },
+    } }}
+  />)
+
+  for (const rangeValues of document.querySelectorAll('.range-values')) {
+    const [conservative, center, optimistic] = [...rangeValues.children] as HTMLElement[]
+    const pointer = rangeValues.parentElement?.querySelector<HTMLElement>('.range-pointer')
+    expect(Number.parseFloat(pointer?.style.left ?? '')).toBeCloseTo(6.90, 1)
+    expect(Number.parseFloat(conservative.style.left)).toBeCloseTo(24.14, 1)
+    expect(Number.parseFloat(center.style.left)).toBeCloseTo(58.62, 1)
+    expect(Number.parseFloat(optimistic.style.left)).toBeCloseTo(93.10, 1)
+  }
+  expect(document.querySelectorAll('.range-caption strong')[1].textContent).toBe('0%')
+  expect(document.querySelectorAll('.range-labels')).toHaveLength(0)
 })
 
 test('renders the fundamentals workspace when the tab is selected in the URL', async () => {

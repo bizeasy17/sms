@@ -43,22 +43,28 @@ class Command(BaseCommand):
                     self.stdout.write(f'SKIP {profile.security.ts_code}: protocol={profile.protocol}')
                 continue
             attempts = []
-            protocol = self._verify(str(profile.website), opener, options['timeout'], attempts=attempts)
+            verified = self._verify(str(profile.website), opener, options['timeout'], attempts=attempts)
             if options['verbose']:
                 for attempt in attempts:
                     self.stdout.write(f"  {attempt['url']} {attempt['method']}: {attempt['result']}")
-            if protocol is None:
+            if verified is None:
                 counts['invalid'] += 1
                 self.stdout.write(f'INVALID {profile.security.ts_code}: {profile.website}')
                 continue
+            protocol, website = verified
             counts['valid'] += 1
-            changed = protocol != profile.protocol
+            website_changed = '，' in str(profile.website) and website != profile.website
+            changed = protocol != profile.protocol or website_changed
             if changed and options['execute']:
                 profile.protocol = protocol
-                profile.save(update_fields=['protocol', 'synced_at'])
+                update_fields = ['protocol', 'synced_at']
+                if website_changed:
+                    profile.website = website
+                    update_fields.append('website')
+                profile.save(update_fields=update_fields)
                 counts['updated'] += 1
             suffix = ' [updated]' if changed and options['execute'] else (' [would update]' if changed else '')
-            display_url = profile.website if '://' in str(profile.website) else f'{protocol}://{profile.website}'
+            display_url = website if '://' in website else f'{protocol}://{website}'
             self.stdout.write(f'OK {profile.security.ts_code}: {display_url}{suffix}')
 
         mode = 'execute' if options['execute'] else 'report-only'
@@ -70,17 +76,18 @@ class Command(BaseCommand):
 
     @classmethod
     def _verify(cls, raw_value, opener, timeout, *, attempts=None):
-        value = raw_value.strip()
-        if not value:
-            return None
-        parsed = urlparse(value if '://' in value else f'https://{value}')
-        if parsed.scheme not in {'http', 'https'} or not parsed.netloc:
-            return None
-        candidates = [value] if '://' in value else [f'https://{value}', f'http://{value}']
-        for candidate in candidates:
-            verified = cls._request(candidate, opener, timeout, attempts=attempts)
-            if verified:
-                return urlparse(verified).scheme
+        for value in raw_value.split('，'):
+            value = value.strip()
+            if not value:
+                continue
+            parsed = urlparse(value if '://' in value else f'https://{value}')
+            if parsed.scheme not in {'http', 'https'} or not parsed.netloc:
+                continue
+            candidates = [value] if '://' in value else [f'https://{value}', f'http://{value}']
+            for candidate in candidates:
+                verified = cls._request(candidate, opener, timeout, attempts=attempts)
+                if verified:
+                    return urlparse(verified).scheme, value
         return None
 
     @staticmethod
