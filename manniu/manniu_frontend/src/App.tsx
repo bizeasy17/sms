@@ -2,7 +2,7 @@ import './App.css'
 import './features/research/research-overrides.css'
 import { AppRoutes } from './app/routes'
 import { pushQueryParams, readQueryParam } from './shared/routing/queryParams'
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import { Events } from './features/research/components/Events'
 import { FundamentalEvidence } from './features/research/components/FundamentalEvidence'
@@ -22,6 +22,11 @@ function ResearchHomePage() {
   const [stocks, setStocks] = useState<Stock[]>([])
   const [stocksLoading, setStocksLoading] = useState(true)
   const [stocksError, setStocksError] = useState('')
+  const [stocksHasMore, setStocksHasMore] = useState(false)
+  const [stocksLoadingMore, setStocksLoadingMore] = useState(false)
+  const [stocksLoadMoreError, setStocksLoadMoreError] = useState('')
+  const stocksPageRef = useRef(1)
+  const loadMoreController = useRef<AbortController | null>(null)
   const [pool, setPool] = useState<Pool>('watchlist')
   const [personalPool, setPersonalPool] = useState<PersonalPool>('watchlist')
   const [source, setSource] = useState<ListSource>('personal')
@@ -102,6 +107,12 @@ function ResearchHomePage() {
 
   useEffect(() => {
     const controller = new AbortController()
+    loadMoreController.current?.abort()
+    loadMoreController.current = null
+    stocksPageRef.current = 1
+    setStocksHasMore(false)
+    setStocksLoadingMore(false)
+    setStocksLoadMoreError('')
     if (source === 'ths' && !thsBoard) {
       setStocks([])
       setStocksError('')
@@ -110,20 +121,52 @@ function ResearchHomePage() {
     }
     setStocksLoading(true)
     setStocksError('')
-    fetchResearchList(pool, market, controller.signal, source === 'ths' ? thsBoard : null).then(async (items) => {
+    fetchResearchList(pool, market, 1, controller.signal, source === 'ths' ? thsBoard : null).then(async (result) => {
+      const { items } = result
       const requestedCode = readQueryParam('ts_code')
       const requestedStock = requestedCode && !items.some((stock) => stock.code === requestedCode)
         ? await fetchSecurityByCode(requestedCode, controller.signal)
         : items.find((stock) => stock.code === requestedCode)
       setStocks(items)
+      setStocksHasMore(result.hasNext)
       setSelected((current) => current ?? requestedStock ?? items[0] ?? null)
     }).catch((error: unknown) => {
       if (!controller.signal.aborted) setStocksError(error instanceof Error ? error.message : '股票池加载失败，请稍后重试。')
     }).finally(() => {
       if (!controller.signal.aborted) setStocksLoading(false)
     })
-    return () => controller.abort()
+    return () => {
+      controller.abort()
+      loadMoreController.current?.abort()
+      loadMoreController.current = null
+    }
   }, [pool, market, source, thsBoard, stocksRetry])
+
+  async function loadMoreStocks() {
+    if (stocksLoading || !stocksHasMore || loadMoreController.current) return
+    const controller = new AbortController()
+    loadMoreController.current = controller
+    const page = stocksPageRef.current + 1
+    setStocksLoadingMore(true)
+    setStocksLoadMoreError('')
+    try {
+      const result = await fetchResearchList(pool, market, page, controller.signal, source === 'ths' ? thsBoard : null)
+      if (controller.signal.aborted) return
+      stocksPageRef.current = page
+      setStocks((current) => {
+        const existingCodes = new Set(current.map((stock) => stock.code))
+        return [...current, ...result.items.filter((stock) => !existingCodes.has(stock.code))]
+      })
+      setStocksHasMore(result.hasNext)
+    } catch (error) {
+      if (!controller.signal.aborted) setStocksLoadMoreError(error instanceof Error ? error.message : '加载更多股票失败，请重试。')
+    } finally {
+      if (loadMoreController.current === controller) {
+        loadMoreController.current = null
+        setStocksLoadingMore(false)
+      }
+    }
+  }
 
   useEffect(() => {
     if (!selected) return
@@ -275,7 +318,7 @@ function ResearchHomePage() {
     return <div hidden={tab !== tabName}>{content}</div>
   }
 
-  return <div className="app-shell"><TopBar onMenu={() => setRailOpen(true)} onSelect={selectStock} /><main className="research-layout"><StockRail selected={selected} stocks={stocks} setSelected={selectStock} pool={pool} source={source} setSource={updateSource} setPool={updatePool} market={market} setMarket={updateMarket} selectedThsBoard={thsBoard} setThsBoard={updateThsBoard} open={railOpen} loading={stocksLoading} error={stocksError} onRetry={() => setStocksRetry((value) => value + 1)} />{selected ? <section className="research-dossier"><StockIdentity stock={selected} quote={quote} quoteState={quoteState} onRetry={() => setQuoteRetry((value) => value + 1)} personalState={personalState} personalStateStatus={personalStateStatus} personalNotice={personalNotice} personalNoticeType={personalNoticeType} onAction={handlePersonalAction} /><ResearchTabs tab={tab} setTab={changeTab} />{tabPanel('summary', <><ValuationSummary valuation={traditionalValuation ?? undefined} predictiveValuation={predictiveValuation ?? undefined} latestClose={quote?.close} state={traditionalState} predictiveState={predictiveState} /><MarketEvidence /><FundamentalEvidence metrics={financialMetrics} state={financialState} onRetry={() => setFinancialRetry((value) => value + 1)} /></>)}{tabPanel('technical', <TechnicalTrend stock={selected} />)}{tabPanel('fundamentals', <FundamentalsWorkspace stock={selected} metrics={financialMetrics} evaluation={financialOverview?.evaluation ?? null} financialOverview={financialOverview} financialState={financialState} onFinancialRetry={() => setFinancialRetry((value) => value + 1)} />)}</section> : <section className="research-dossier"><div className="tab-placeholder"><p className="kicker">RESEARCH LIST</p><h2>{stocksLoading ? '正在加载股票池' : stocksError ? '股票池暂时不可用' : '暂无可研究股票'}</h2></div></section>}<Events tsCode={selected?.code} /></main><div className={`mobile-backdrop ${railOpen ? 'visible' : ''}`} onClick={() => setRailOpen(false)} /></div>
+  return <div className="app-shell"><TopBar onMenu={() => setRailOpen(true)} onSelect={selectStock} /><main className="research-layout"><StockRail selected={selected} stocks={stocks} setSelected={selectStock} pool={pool} source={source} setSource={updateSource} setPool={updatePool} market={market} setMarket={updateMarket} selectedThsBoard={thsBoard} setThsBoard={updateThsBoard} open={railOpen} loading={stocksLoading} error={stocksError} onRetry={() => setStocksRetry((value) => value + 1)} hasMore={stocksHasMore} loadingMore={stocksLoadingMore} loadMoreError={stocksLoadMoreError} onLoadMore={loadMoreStocks} />{selected ? <section className="research-dossier"><StockIdentity stock={selected} quote={quote} quoteState={quoteState} onRetry={() => setQuoteRetry((value) => value + 1)} personalState={personalState} personalStateStatus={personalStateStatus} personalNotice={personalNotice} personalNoticeType={personalNoticeType} onAction={handlePersonalAction} /><ResearchTabs tab={tab} setTab={changeTab} />{tabPanel('summary', <><ValuationSummary valuation={traditionalValuation ?? undefined} predictiveValuation={predictiveValuation ?? undefined} latestClose={quote?.close} state={traditionalState} predictiveState={predictiveState} /><MarketEvidence /><FundamentalEvidence metrics={financialMetrics} state={financialState} onRetry={() => setFinancialRetry((value) => value + 1)} /></>)}{tabPanel('technical', <TechnicalTrend stock={selected} />)}{tabPanel('fundamentals', <FundamentalsWorkspace stock={selected} metrics={financialMetrics} evaluation={financialOverview?.evaluation ?? null} financialOverview={financialOverview} financialState={financialState} onFinancialRetry={() => setFinancialRetry((value) => value + 1)} />)}</section> : <section className="research-dossier"><div className="tab-placeholder"><p className="kicker">RESEARCH LIST</p><h2>{stocksLoading ? '正在加载股票池' : stocksError ? '股票池暂时不可用' : '暂无可研究股票'}</h2></div></section>}<Events tsCode={selected?.code} /></main><div className={`mobile-backdrop ${railOpen ? 'visible' : ''}`} onClick={() => setRailOpen(false)} /></div>
 }
 
 export default function RootApp() {

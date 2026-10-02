@@ -6,7 +6,7 @@ const marketOptions: [Market, string][] = [['all', '全市场'], ['sh-main', '�
 const RECENT_VIEWED_KEY = 'manniu.recent-viewed-stocks'
 const MAX_RECENT_VIEWED = 3
 
-export function StockRail({ selected, stocks, setSelected, pool, source, setSource, setPool, market, setMarket, selectedThsBoard, setThsBoard, open, loading, error, onRetry }: { selected: Stock | null; stocks: Stock[]; setSelected: (stock: Stock) => void; pool: Pool; source: ListSource; setSource: (source: ListSource) => void; setPool: (pool: PersonalPool) => void; market: Market; setMarket: (market: Market) => void; selectedThsBoard: string | null; setThsBoard: (board: string | null) => void; open: boolean; loading: boolean; error: string; onRetry: () => void }) {
+export function StockRail({ selected, stocks, setSelected, pool, source, setSource, setPool, market, setMarket, selectedThsBoard, setThsBoard, open, loading, error, onRetry, hasMore, loadingMore, loadMoreError, onLoadMore }: { selected: Stock | null; stocks: Stock[]; setSelected: (stock: Stock) => void; pool: Pool; source: ListSource; setSource: (source: ListSource) => void; setPool: (pool: PersonalPool) => void; market: Market; setMarket: (market: Market) => void; selectedThsBoard: string | null; setThsBoard: (board: string | null) => void; open: boolean; loading: boolean; error: string; onRetry: () => void; hasMore: boolean; loadingMore: boolean; loadMoreError: string; onLoadMore: () => void }) {
 	const [recentViewed, setRecentViewed] = useState<Stock[]>(() => {
 		try {
 			const stored = window.localStorage.getItem(RECENT_VIEWED_KEY)
@@ -88,11 +88,12 @@ export function StockRail({ selected, stocks, setSelected, pool, source, setSour
 				{selectedThsBoard && <div className="selected-board"><span>{catalogItems.find((board) => board.tsCode === selectedThsBoard)?.name ?? selectedThsBoard}<small>{selectedThsBoard}</small></span><button type="button" aria-label="清除概念板块" onClick={() => setThsBoard(null)}>清除</button></div>}
 			</div>}
 		</div>
-		<div className="rail-list">
+		<div className="rail-list" onScroll={(event) => { const element = event.currentTarget; if (element.scrollHeight - element.scrollTop - element.clientHeight < 96) onLoadMore() }}>
 			{source === 'ths' && !selectedThsBoard ? <div className="stock-empty">请选择概念板块</div> : <>
 				{loading && visibleStocks.length > 0 && <p className="rail-list-status">正在更新，暂时显示上次结果</p>}
 				{error && visibleStocks.length > 0 && <div className="rail-list-status error" role="status"><span>更新失败，显示上次成功列表</span><button type="button" onClick={onRetry}>重试</button></div>}
 				{loading && visibleStocks.length === 0 ? <div className="stock-empty">加载股票池...</div> : error && visibleStocks.length === 0 ? <div className="stock-empty" role="alert"><p>{error}</p><button type="button" onClick={onRetry}>重试</button></div> : visibleStocks.length ? visibleStocks.map((stock) => <button key={stock.code} className={`stock-item ${stock.code === selected?.code ? 'selected' : ''}`} onClick={() => selectStock(stock)}><span className="stock-name">{stock.name}<small>{stock.code}</small></span><span className="stock-meta"><small>{stock.industry}</small><em className={stock.positive === true ? 'up' : stock.positive === false ? 'down' : ''}>{stock.change}</em></span><span className="stock-tags">{stock.tags.map((tag) => <i key={tag.text}>{tag.actionText ? <><span>{tag.label}</span><span className={`tag-action ${tag.action?.toLowerCase() ?? ''}`}>{tag.actionText}</span>{tag.scoreText && <> <span> · </span><span className={`tag-score ${tag.action?.toLowerCase() ?? ''}`}>{tag.scoreText}</span></>}</> : tag.text}</i>)}</span></button>) : <div className="stock-empty">暂无股票</div>}
+				{hasMore && <div className="rail-list-status" role="status" aria-live="polite">{loadMoreError ? <><span>{loadMoreError}</span><button type="button" onClick={onLoadMore}>重试加载</button></> : loadingMore ? '正在加载更多...' : <button type="button" onClick={onLoadMore}>加载更多股票</button>}</div>}
 			</>}
 		</div>
 		{recentViewed.length > 0 && <div className="recent"><button type="button" className="recent-toggle" aria-expanded={recentExpanded} onClick={() => setRecentExpanded((expanded) => !expanded)}><span className="kicker">RECENTLY VIEWED</span><span>{recentExpanded ? '收起' : `${recentViewed.length} 只`}</span></button>{recentExpanded && recentViewed.map((stock) => <button key={stock.code} onClick={() => selectStock(stock)}>{stock.name} <small>{stock.code}</small></button>)}</div>}

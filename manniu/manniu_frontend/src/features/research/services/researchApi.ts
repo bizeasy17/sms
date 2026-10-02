@@ -13,7 +13,7 @@ type ResearchListItem = {
     predictive_valuation?: { action?: string | null; undervalue_score?: number | null }
 }
 type SecurityDetailResponse = { data?: { ts_code?: string; name?: string; industry?: string | null; company_profile?: { website?: string | null; protocol?: string | null } | null }; error?: { message?: string } }
-type ResearchListResponse = { data?: ResearchListItem[]; error?: { message?: string } }
+type ResearchListResponse = { data?: ResearchListItem[]; meta?: { has_next?: boolean; page_size?: number; total?: number }; error?: { message?: string } }
 type ThsBoardCatalogResponse = { data?: Array<{ ts_code?: string; name?: string; count?: number | null }> | { items?: Array<{ ts_code?: string; name?: string; count?: number | null }> }; meta?: { page?: number; page_size?: number; total?: number; has_next?: boolean }; error?: { message?: string } }
 type Bar = { trade_date?: string; open?: number | null; high?: number | null; low?: number | null; close?: number | null; volume?: number | null; change?: number | null; pct_change?: number | null }
 type BarsResponse = { data?: Bar[]; error?: { message?: string } }
@@ -106,8 +106,8 @@ function mapSecurityDetail(item: NonNullable<SecurityDetailResponse['data']>, co
     }
 }
 
-export async function fetchResearchList(pool: Pool, market: Market, signal?: AbortSignal, thsBoard?: string | null): Promise<Stock[]> {
-    const query = new URLSearchParams({ pool, market, page: '1', page_size: '200' })
+export async function fetchResearchList(pool: Pool, market: Market, page: number, signal?: AbortSignal, thsBoard?: string | null): Promise<{ items: Stock[]; hasNext: boolean }> {
+    const query = new URLSearchParams({ pool, market, page: String(page), page_size: '200' })
     if (pool === 'market' && thsBoard) query.set('ths_board', thsBoard)
     const accessToken = window.localStorage.getItem('access_token') ?? window.localStorage.getItem('auth_access_token')
     const headers: HeadersInit = { Accept: 'application/json' }
@@ -115,7 +115,8 @@ export async function fetchResearchList(pool: Pool, market: Market, signal?: Abo
     const response = await fetch(`${API_BASE}/market-analysis/securities/research-list?${query}`, { headers, signal })
     const body = await response.json() as ResearchListResponse
     if (!response.ok || !Array.isArray(body.data)) throw new Error(body.error?.message ?? '股票池加载失败，请稍后重试。')
-    return body.data.map(mapStock)
+    const items = body.data.map(mapStock)
+    return { items, hasNext: body.meta?.has_next ?? items.length === (body.meta?.page_size ?? 200) }
 }
 
 export async function fetchThsBoardCatalog(search: string, page: number, signal?: AbortSignal): Promise<{ items: ThsBoard[]; hasNext: boolean }> {
