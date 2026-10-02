@@ -13,7 +13,16 @@ from api_gateway.services.market_data import (
     parse_history_range,
 )
 from market_data.services.cyq_chips import CyqChipsResult
-from market_data.models import CompanyProfile, MarketBarDailyHistory, Security, StockDailyFundamentalHistory
+from market_data.models import (
+    CompanyProfile,
+    IngestionWatermark,
+    MarketBarDailyHistory,
+    Security,
+    StockDailyFundamentalHistory,
+    THSBoardCatalog,
+    THSBoardDailyHistory,
+    THSBoardMembership,
+)
 from financials.models import (
     FinancialDisclosureRecord,
     FinancialExpressRecord,
@@ -268,6 +277,71 @@ class MarketDataGatewayTests(TestCase):
         self.assertEqual(item['predictive_valuation']['report_type'], 'FUSION')
         self.assertEqual(item['website'], 'example.com/company')
         self.assertEqual(item['website_protocol'], 'https')
+
+    def test_research_list_filters_current_ths_members_and_rejects_other_pools(self):
+        board_security = Security.objects.create(
+            ts_code='885001.TI', asset_type=Security.AssetType.INDEX, name='Artificial Intelligence',
+            market='THS', exchange='A',
+        )
+        board = THSBoardCatalog.objects.create(security=board_security, exchange='A', type='N')
+        THSBoardMembership.objects.create(board=board, stock=self.security, is_new='Y')
+        former_member = Security.objects.create(
+            ts_code='000002.SZ', asset_type=Security.AssetType.STOCK, name='Former member',
+        )
+        THSBoardMembership.objects.create(board=board, stock=former_member, is_new='N')
+        IngestionWatermark.objects.create(
+            dataset='ths-board-members', scope_key=board_security.ts_code, frequency='D',
+            status='SUCCEEDED', last_complete_source_date=date(2026, 9, 10),
+        )
+
+        response = self.client.get(
+            '/api/v1/market-analysis/securities/research-list',
+            {'pool': 'market', 'ths_board': board_security.ts_code},
+            **self.headers,
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual([row['ts_code'] for row in response.json()['data']], [self.security.ts_code])
+
+        invalid = self.client.get(
+            '/api/v1/market-analysis/securities/research-list',
+            {'pool': 'watchlist', 'ths_board': board_security.ts_code},
+            **self.headers,
+        )
+        self.assertEqual(invalid.status_code, 400)
+        self.assertEqual(invalid.json()['error']['code'], 'INVALID_REQUEST')
+
+    def test_ths_catalog_and_board_bars_read_persisted_rows(self):
+        board_security = Security.objects.create(
+            ts_code='885001.TI', asset_type=Security.AssetType.INDEX, name='Artificial Intelligence',
+            market='THS', exchange='A',
+        )
+        board = THSBoardCatalog.objects.create(
+            security=board_security, count=12, exchange='A', list_date=date(2020, 1, 1), type='N',
+        )
+        THSBoardDailyHistory.objects.create(
+            board=board,
+            trade_date=date(2026, 9, 10),
+            open=Decimal('100'), high=Decimal('102'), low=Decimal('99'),
+            pre_close=Decimal('100'), avg_price=Decimal('101'), close=Decimal('101'),
+            change=Decimal('1'), pct_change=Decimal('1'), vol=Decimal('1234'),
+            turnover_rate=Decimal('2.5'), total_mv=Decimal('500000'), float_mv=Decimal('400000'),
+        )
+
+        catalog = self.client.get(
+            '/api/v1/market-analysis/indices/ths-boards', {'q': 'Artificial'}, **self.headers,
+        )
+        self.assertEqual(catalog.status_code, 200)
+        self.assertEqual(catalog.json()['data'][0]['ts_code'], board_security.ts_code)
+        self.assertEqual(catalog.json()['data'][0]['count'], 12)
+
+        bars = self.client.get(
+            f'/api/v1/market-analysis/indices/ths-boards/{board_security.ts_code}/bars',
+            {'start_date': '2026-09-10', 'end_date': '2026-09-10'},
+            **self.headers,
+        )
+        self.assertEqual(bars.status_code, 200)
+        self.assertEqual(bars.json()['data'][0]['close'], 101.0)
+        self.assertEqual(bars.json()['data'][0]['units']['price'], 'index_points')
 
     def test_sentiment_market_and_stock_snapshot_routes(self):
         market = self.client.get(

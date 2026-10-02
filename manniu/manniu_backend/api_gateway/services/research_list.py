@@ -4,6 +4,7 @@ from datetime import date
 from decimal import Decimal
 
 from market_data.models import MarketBarDailyHistory, MarketBarLatest, SWIndustryMappingVersion, Security
+from market_data.models import IngestionWatermark, THSBoardCatalog, THSBoardMembership
 from personal_user.models import HoldingPosition, UserSecurityListItem
 from predictive_valuation.models import PredictiveValuationCurrent
 from traditional_valuation.models import (
@@ -179,7 +180,7 @@ def _predictive_rows(securities, asof_date):
     return result
 
 
-def get_research_list(*, user, pool='market', market='all', industry=None, q='', asof_date=None, page=1, page_size=20):
+def get_research_list(*, user, pool='market', market='all', industry=None, ths_board=None, q='', asof_date=None, page=1, page_size=20):
     pool = str(pool or 'market').strip().lower()
     market = str(market or 'all').strip().lower()
     if pool not in POOL_VALUES:
@@ -190,11 +191,38 @@ def get_research_list(*, user, pool='market', market='all', industry=None, q='',
         raise MarketDataRequestError('INVALID_REQUEST', 'page 或 page_size 超出允许范围')
     if asof_date and asof_date > date.today():
         raise MarketDataRequestError('INVALID_DATE', 'asof_date 不能晚于当前日期')
+    ths_stock_ids = None
+    if ths_board:
+        if pool != 'market':
+            raise MarketDataRequestError('INVALID_REQUEST', 'ths_board 仅支持 pool=market')
+        if industry:
+            raise MarketDataRequestError('INVALID_REQUEST', 'ths_board 不能与 industry 同时使用')
+        board = THSBoardCatalog.objects.filter(
+            security__ts_code=str(ths_board).strip().upper(),
+            is_active=True,
+            exchange='A',
+            type='N',
+            security__asset_type=Security.AssetType.INDEX,
+        ).first()
+        if board is None:
+            raise MarketDataRequestError('INVALID_REQUEST', 'THS A 股概念板块代码无效')
+        member_sync = IngestionWatermark.objects.filter(
+            dataset='ths-board-members', scope_key=board.security.ts_code, frequency='D',
+        ).first()
+        if member_sync is None or member_sync.status != 'SUCCEEDED':
+            raise MarketDataRequestError('UPSTREAM_DEPENDENCY_UNAVAILABLE', 'THS 当前成分尚未完成同步')
+        ths_stock_ids = THSBoardMembership.objects.filter(
+            board=board, is_new='Y', stock__asset_type=Security.AssetType.STOCK,
+        ).values_list('stock_id', flat=True)
+        if not ths_stock_ids.exists():
+            raise MarketDataRequestError('UPSTREAM_DEPENDENCY_UNAVAILABLE', 'THS 板块成分数据暂不可用')
     mapping = _active_mapping()
     industry_codes = _industry_codes(mapping, industry) if industry else None
     queryset = Security.objects.filter(asset_type=Security.AssetType.STOCK).select_related(
         'industry', 'company_profile',
     ).order_by('ts_code')
+    if ths_stock_ids is not None:
+        queryset = queryset.filter(pk__in=ths_stock_ids)
     if industry_codes is not None:
         queryset = queryset.filter(ts_code__in=industry_codes)
     if pool != 'market':

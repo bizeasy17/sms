@@ -18,3 +18,14 @@ export function replaceQueryParams(values: Record<string, string | null | undefi
     })
     window.history.replaceState({}, '', `${window.location.pathname}${params.toString() ? `?${params}` : ''}${window.location.hash}`)
 }
+
+export function pushQueryParams(values: Record<string, string | null | undefined>) {
+    const params = new URLSearchParams(window.location.search)
+    Object.entries(values).forEach(([key, value]) => {
+        if (value == null || value === '') params.delete(key)
+        else params.set(key, value)
+    })
+    const nextUrl = `${window.location.pathname}${params.toString() ? `?${params}` : ''}${window.location.hash}`
+    const currentUrl = `${window.location.pathname}${window.location.search}${window.location.hash}`
+    if (nextUrl !== currentUrl) window.history.pushState({}, '', nextUrl)
+}

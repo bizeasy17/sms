@@ -370,6 +370,72 @@ class SWIndustryDailyLatest(DailySnapshotAuditModel):
     raw_payload = models.JSONField(default=dict)
 
 
+class THSBoardCatalog(models.Model):
+    security = models.OneToOneField(
+        Security,
+        on_delete=models.CASCADE,
+        related_name='ths_board_catalog',
+    )
+    count = models.PositiveIntegerField(null=True, blank=True)
+    exchange = models.CharField(max_length=16)
+    list_date = models.DateField(null=True, blank=True)
+    type = models.CharField(max_length=8)
+    is_active = models.BooleanField(default=True)
+    source_payload = models.JSONField(default=dict)
+    source_updated_at = models.DateTimeField(null=True, blank=True)
+    synced_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        indexes = [models.Index(fields=['exchange', 'type'], name='md_ths_catalog_scope_idx')]
+
+
+class THSBoardMembership(models.Model):
+    board = models.ForeignKey(THSBoardCatalog, on_delete=models.CASCADE, related_name='memberships')
+    stock = models.ForeignKey(Security, on_delete=models.CASCADE, related_name='ths_board_memberships')
+    is_new = models.CharField(max_length=8)
+    weight = models.DecimalField(max_digits=16, decimal_places=6, null=True, blank=True)
+    in_date = models.DateField(null=True, blank=True)
+    out_date = models.DateField(null=True, blank=True)
+    source_payload = models.JSONField(default=dict)
+    source_updated_at = models.DateTimeField(null=True, blank=True)
+    synced_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(fields=['board', 'stock'], name='md_ths_member_board_stock_uniq'),
+        ]
+        indexes = [
+            models.Index(fields=['board', 'is_new'], name='md_ths_member_current_idx'),
+            models.Index(fields=['stock', 'is_new'], name='md_ths_member_stock_idx'),
+        ]
+
+
+class THSBoardDailyHistory(DailySnapshotAuditModel):
+    board = models.ForeignKey(THSBoardCatalog, on_delete=models.CASCADE, related_name='daily_history')
+    open = models.DecimalField(max_digits=20, decimal_places=6, null=True, blank=True)
+    high = models.DecimalField(max_digits=20, decimal_places=6, null=True, blank=True)
+    low = models.DecimalField(max_digits=20, decimal_places=6, null=True, blank=True)
+    pre_close = models.DecimalField(max_digits=20, decimal_places=6, null=True, blank=True)
+    avg_price = models.DecimalField(max_digits=20, decimal_places=6, null=True, blank=True)
+    close = models.DecimalField(max_digits=20, decimal_places=6, null=True, blank=True)
+    change = models.DecimalField(max_digits=20, decimal_places=6, null=True, blank=True)
+    pct_change = models.DecimalField(max_digits=12, decimal_places=6, null=True, blank=True)
+    vol = models.DecimalField(max_digits=24, decimal_places=4, null=True, blank=True)
+    turnover_rate = models.DecimalField(max_digits=12, decimal_places=6, null=True, blank=True)
+    total_mv = models.DecimalField(max_digits=28, decimal_places=4, null=True, blank=True)
+    float_mv = models.DecimalField(max_digits=28, decimal_places=4, null=True, blank=True)
+    source_payload = models.JSONField(default=dict)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(fields=['board', 'trade_date'], name='md_ths_daily_board_date_uniq'),
+        ]
+        indexes = [
+            models.Index(fields=['board', '-trade_date'], name='md_ths_daily_board_date_idx'),
+            models.Index(fields=['trade_date', 'board'], name='md_ths_daily_date_board_idx'),
+        ]
+
+
 class IngestionRun(models.Model):
     class Mode(models.TextChoices):
         BACKFILL = 'BACKFILL', 'Backfill'

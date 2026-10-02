@@ -4,7 +4,7 @@
 
 This document is the implementation design for the registered `manniu_backend.market_data` Django application. The first schema layer is implemented and migrated to PostgreSQL: its Django models cover securities, geography/industry dimensions, company profiles, daily trading history/latest snapshots, stock fundamental history/latest snapshots, stock cost history/latest snapshots, index fundamental history/latest snapshots, and ingestion run/watermark control. An initial `sync_market_data` CLI is implemented for master/company/daily datasets; paging/retry/resume, complete adjustment processing, PostgreSQL partition DDL, weekly/monthly derivation, and production ingestion runs remain pending.
 
-`market_data` owns end-of-day market-data ingestion, PostgreSQL persistence, reconciliation, and read-optimized query services for stocks and indices. The `indices` application consumes index data for index-domain analysis and does not own index synchronization or tables.
+`market_data` owns end-of-day market-data ingestion, PostgreSQL persistence, reconciliation, and read-optimized query services for stocks and indices, including THS board source facts. The `indices` application consumes index and board data for index-domain analysis and does not own source synchronization or market-data tables.
 
 The module supports analysis and decision support only. It must never place or automate trading orders.
 
@@ -22,6 +22,9 @@ The module supports analysis and decision support only. It must never place or a
 | Broker monthly recommendations | Stocks | `broker_recommend` | Monthly `YYYYMM` |
 | Trading bars | Indices | `index_daily` | Daily, derived weekly/monthly |
 | Daily fundamentals | Indices | `index_dailybasic` | Daily |
+| THS board directory | A-share concept boards (`exchange=A`, `type=N`) | `ths_index` | Complete directory refresh |
+| THS board membership | A-share concept-board constituents | `ths_member` | Latest snapshot refresh; no historical membership backfill |
+| THS board daily facts | A-share concept-board indices | `ths_daily` | Daily plus bounded historical backfill |
 
 The design deliberately excludes intraday data, automated trading, and public transport-layer concerns. The normal market-data read path remains PostgreSQL-backed and does not call Tushare on cache miss. A narrowly scoped exception is the read-only `CYQ_CHIPS` upstream proxy defined in the API Gateway integration section: it is an explicitly bounded chart-support path, does not persist data, and is not a general-purpose Tushare passthrough.
 
@@ -44,6 +47,7 @@ flowchart LR
 - **Validation and normalization**: validates required columns before any write; converts dates, decimals, units, nulls, and codes; deduplicates natural keys; rejects invalid rows with a reason.
 - **Ingestion orchestrator**: chooses `backfill` or `daily` coverage, divides work into bounded chunks, coordinates transactions, writes run state, and advances a watermark only after a complete successful chunk.
 - **Repositories**: use PostgreSQL bulk upserts and read query methods. They are the only component allowed to write market-data tables.
+- **Board source facts**: THS directory, latest constituent membership, and daily board facts are persisted and queried by `market_data`; downstream `indices` and API Gateway consumers use read-only services and never call Tushare directly.
 - **Read query services**: provide bounded, index-backed EOD reads to internal valuation and analysis consumers. They never invoke Tushare as a cache miss fallback.
 - **Upstream chart proxy**: exposes only the approved, bounded `CYQ_CHIPS` request through a dedicated service boundary; it validates dates and codes, applies timeout/rate-limit handling, and never returns credentials or arbitrary provider datasets.
 - **CLI boundary**: synchronization and calculation commands are operator-only maintenance tools. Internal consumers call bounded query services and never write market-data state through a read path.
@@ -170,6 +174,71 @@ to `STOCK_BROKER_RECOMMENDATION`, retaining `source_dataset='broker_recommend'`,
 broker identity, recommendation month, affected security, and source revision.
 The projection is separate from the source table, idempotent, read-only for
 downstream consumers, and must not trigger automated trading.
+
+### 4.3 THS Concept-Board Source Data
+
+`market_data` owns the PostgreSQL source facts for the Tushare THS board APIs.
+This is a separate taxonomy from SW industry mappings and from the seven-index
+fixed business universe. The first product use is A-share THS concept boards;
+the sync scope is limited to `ths_index.exchange='A'` and `type='N'`.
+
+#### Source contracts
+
+| Dataset | Tushare API | Source fields and semantics |
+| --- | --- | --- |
+| `ths-board-catalog` | `ths_index` | `ts_code`, `name`, `count`, `exchange`, `list_date`, `type`; one complete board directory response. |
+| `ths-board-members` | `ths_member` | `ts_code` (board), `con_code` (stock), `con_name`, `weight`, `in_date`, `out_date`, `is_new`; latest membership response only. The provider documents `weight`, `in_date`, and `out_date` as currently unavailable; preserve NULL when absent. |
+| `ths-board-daily` | `ths_daily` | `ts_code`, `trade_date`, OHLC, `pre_close`, `avg_price`, `change`, `pct_change`, `vol`, `turnover_rate`, `total_mv`, and `float_mv`, subject to the actual provider response. |
+
+The adapter must use the shared Tushare client, retry, timeout, and rate-limit
+mechanisms. Tushare documents a 6,000-point permission requirement for these
+interfaces, a maximum 5,000 rows for `ths_index`, a maximum 3,000 rows per
+`ths_daily` request, and a 200-requests-per-minute limit for `ths_member`.
+Requests must be bounded and must not assume that a successful HTTP/API call
+returned a complete payload.
+
+#### PostgreSQL facts and identity
+
+The following source models belong to `market_data`; `indices` must not create
+parallel tables or copy these records:
+
+| Model | Required fields | Key and behavior |
+| --- | --- | --- |
+| `THSBoardCatalog` | One-to-one `Security` with `asset_type=INDEX`; source `count`, `exchange`, `list_date`, `type`; complete `source_payload` JSONB; source/local timestamps. `Security.ts_code` and `Security.name` hold the canonical board code and name. | Unique board `ts_code`. Only rows returned by a complete A-share `type=N` directory refresh are eligible for the concept catalog. Conflicting existing security identity is a failed sync, not a silent overwrite. |
+| `THSBoardMembership` | Board FK, stock `Security` FK, `is_new`, nullable `weight`, `in_date`, `out_date`, complete `source_payload` JSONB, source/local timestamps. | Unique `(board, stock)`. Only `is_new='Y'` rows are current constituents for filtering. A complete successful refresh atomically replaces the current membership projection for each board; an incomplete or empty response must not erase existing membership. This table is not a historical membership ledger. |
+| `THSBoardDailyHistory` | Board FK, `trade_date`, provider OHLC and price-change fields, `vol`, `turnover_rate`, `total_mv`, `float_mv`, complete `source_payload` JSONB, source/local timestamps. | Unique `(board, trade_date)`; idempotent upsert. Retain provider units without implicit conversion. No placeholder row is written for a missing trading date. |
+
+Every provider row must retain its complete business-field key/value set in
+JSONB on the same fact row as the structured columns. The structured fields
+are queryable PostgreSQL values; NULL or non-finite source values remain NULL
+and do not invalidate unrelated valid fields. Provider field-set additions or
+removals must be recorded and surfaced as a contract difference; unknown
+returned fields must not be silently discarded. Board daily facts use a
+dedicated table because the THS contract includes board-specific turnover and
+capitalization fields not represented by the generic index bar model.
+
+The board directory and membership are current source projections, not
+historical snapshots. `ths_member` does not provide a reliable historical
+membership timeline: no historical constituents may be inferred from its
+current result, and no historical constituent backfill is promised. The daily
+board API is independent and supports date-bounded history backfill.
+
+#### Ingestion and query boundary
+
+Use the shared `sync_market_data` orchestration and `IngestionRun` records for
+all three datasets. Catalog and membership refreshes are complete-response
+operations; membership is synchronized per board and its projection is
+replaced transactionally only after response validation. `ths-board-daily`
+supports explicit bounded backfill and daily incremental refresh, with a
+watermark per board code and frequency `D`. Daily jobs refresh the directory
+and current constituents before downstream consumers use the board universe.
+No normal read request may trigger a sync or a Tushare fallback.
+
+The internal read service exposes bounded operations for listing the A-share
+concept-board catalog, reading current members for a board, and reading
+board-daily facts over an explicit date range. It returns typed data/status
+objects and source freshness; API and `indices` layers must not query these
+models ad hoc or depend on Tushare SDK objects.
 
 ## 5 Market And Security Regime Data
 
@@ -1119,6 +1188,9 @@ Every adapter response is checked for required columns before transformation:
 
 - `stk_factor`: `ts_code`, `trade_date`, raw OHLC/pre-close/change/percentage/volume/amount fields, and qfq/hfq OHLC/pre-close fields.
 - `index_daily`: `ts_code`, `trade_date`, `open`, `high`, `low`, `close`.
+- `ths_index`: `ts_code`, `name`, `count`, `exchange`, `list_date`, `type`; the complete directory payload must be validated before publishing the new catalog projection.
+- `ths_member`: `ts_code`, `con_code`, `con_name`, `is_new`; optional `weight`, `in_date`, and `out_date` remain nullable. A per-board membership projection is replaced only after a complete valid response.
+- `ths_daily`: `ts_code`, `trade_date`, OHLC, `pre_close`, `avg_price`, `change`, `pct_change`, `vol`, `turnover_rate`; optional `total_mv` and `float_mv` remain nullable. All returned business fields are retained in the row's `raw_payload`.
 - `daily_basic`, `cyq_perf`, and `index_dailybasic`: `ts_code`, `trade_date` plus the requested metric fields.
 - `stock_basic` and `index_basic`: `ts_code`, name, market/exchange, and lifecycle fields where available.
 - `stock_company`: `ts_code`, `province`, and `city` are nullable but must be distinguishable from malformed payloads.
@@ -1156,7 +1228,7 @@ The detailed command contract, source projections, dataset ordering, and recover
 
 ```text
 python manage.py sync_market_data \
-  --dataset security-master|company-profile|citic-industry-membership|business-industry-matches|stock-bars|stock-fundamentals|stock-cost|stock-repurchase|stock-holder-trade|broker-recommend|index-bars|index-fundamentals|resample \
+  --dataset security-master|company-profile|citic-industry-membership|business-industry-matches|stock-bars|stock-fundamentals|stock-cost|stock-repurchase|stock-holder-trade|broker-recommend|index-bars|index-fundamentals|ths-board-catalog|ths-board-members|ths-board-daily|resample \
   --mode backfill|daily \
   --frequency D|W|M \
   --scope all|ts-code|index-universe \
@@ -1177,6 +1249,9 @@ Rules:
 - `stock-repurchase` and `stock-holder-trade` use announcement/date-range overlap for `daily` mode; the overlap must include the provider's revision window because announcement records can be amended after first publication.
 - `broker-recommend` maps to Tushare `broker_recommend`; it is stock-only, accepts `month=YYYYMM`, uses monthly source coverage, and does not support `W`/`M` derivation or date inference from run time.
 - `index-bars` supports daily provider data and derived weekly/monthly records.
+- `ths-board-catalog` and `ths-board-members` are complete current-state refreshes for the configured A-share THS concept universe; they do not support historical backfill or `W`/`M` derivation. A failed, partial, or invalid response must leave the last valid published projection intact.
+- `ths-board-daily` maps to Tushare `ths_daily`, supports bounded `backfill` and `daily` modes, uses one watermark per THS board code, and does not support `W`/`M` derivation in the initial release.
+- The daily job refreshes `ths-board-catalog`, then `ths-board-members` for the published A-share concept boards, then runs `ths-board-daily`; any failed refresh follows the shared nonzero failure path. The daily member refresh does not create historical constituent membership.
 - `--mode daily` requires no historical date range and defaults to the last completed trading date plus overlap.
 - A first `--mode backfill` defaults to `--history-years 5` when neither a start date nor resumable watermark is available; this bounds source calls and disk use. An explicit start date is required for an exceptional range outside the configured five-year window and cannot be combined with `--history-years`.
 - `--resume-run` resumes unfinished chunks from the persisted run record; it is not a positional-code shortcut.
@@ -1204,6 +1279,7 @@ Validation failures are stored with dataset, scope, natural key when available, 
 - Broker recommendation coverage by `month`, broker count, duplicate `(security, month, broker)` count, invalid-month count, and source revision count.
 - Region mapping coverage, unmapped province count, and mapping version used.
 - Index daily fundamental coverage for each configured index universe.
+- THS catalog freshness and board counts; current-member row counts and freshness per board; THS daily coverage and latest source trade date per board; incomplete/empty responses and invalid stock references.
 
 Reconciliation compares persisted coverage with the approved trading calendar and source response coverage before a run is marked successful. Database writes and watermarks are auditable through `IngestionRun` and `IngestionWatermark` rather than terminal output alone.
 
@@ -1295,6 +1371,8 @@ Reconciliation compares persisted coverage with the approved trading calendar an
 - [ ] 实现 `repurchase` 股票回购源数据：模型与迁移、字段规范化、重叠同步、修订幂等、质量报告及 `STOCK_REPURCHASE` 事件投影。
 - [ ] 实现 `stk_holdertrade` 股东增减持源数据：模型与迁移、`IN/DE` 方向和百分比单位校验、重叠同步、修订幂等、质量报告及 `STOCK_HOLDER_TRADE` 事件投影。
 - [ ] 实现 `broker_recommend` 券商月度荐股源数据：模型与迁移、`YYYYMM` 月度同步、`(security, month, broker)` 幂等、修订处理、质量报告及 `STOCK_BROKER_RECOMMENDATION` 事件投影。
+- [ ] 实现 `ths-board-catalog`、`ths-board-members`、`ths-board-daily` 三类 PostgreSQL 数据集：结构化字段与完整 JSONB payload、目录/成分原子刷新、板块日行情幂等 upsert、质量监控和 watermark。
+- [ ] 将 THS 目录刷新、最新成分刷新和 `ths-board-daily --mode daily` 按依赖顺序接入 daily job；验证 Tushare 权限/限流、失败保留上一份有效成分以及不产生历史成员伪数据。
 - [x] 实现 `MARKET_STYLE_CHANGED`、`SECURITY_STYLE_CHANGED` 的提交后只读事件接口，返回幂等键、source version、风格指标和确认后的作用范围；下游 checkpoint/重放验证仍待补充。
 
 ## 14 API Gateway 接入需求
@@ -1360,6 +1438,13 @@ Reconciliation compares persisted coverage with the approved trading calendar an
 Gateway 可接受无交易所后缀的代码，但必须通过唯一解析补齐后缀；无法唯一解析时
 返回 `INVALID_SYMBOL`，不存在时返回 `SECURITY_NOT_FOUND`。代码规范化结果必须
 传给下游并写入审计上下文。
+
+现有 `GET /securities/research-list` 支持可选 `ths_board` 参数，用于将研究列表限制为
+指定 THS A 股概念板块的当前成分；该筛选由 `indices.get_ths_board_members` 提供只读
+成员代码集，Gateway 再与本地股票、行情和估值数据融合。提供 `ths_board` 时 `pool`
+必须为 `market`，并且不能同时提供 SW `industry`；它可以与 `market` 板块条件取交集。
+列表行结构、分页、估值融合和既有持仓/自选/观察池语义保持不变。非法板块代码返回
+`INVALID_REQUEST`；目录或成员同步未完成时返回明确状态，不回源 Tushare。
 
 #### 14.3.2 EOD 行情历史
 

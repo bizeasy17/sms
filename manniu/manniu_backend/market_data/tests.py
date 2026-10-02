@@ -10,6 +10,7 @@ from .models import (
     City,
     IndexDailyFundamentalHistory,
     IndexDailyFundamentalLatest,
+    IngestionRun,
     IngestionWatermark,
     MarketBarDailyHistory,
     MarketBarLatest,
@@ -19,8 +20,11 @@ from .models import (
     StockCostDistributionLatest,
     StockDailyFundamentalHistory,
     StockDailyFundamentalLatest,
+    THSBoardCatalog,
+    THSBoardDailyHistory,
+    THSBoardMembership,
 )
-from .services.sync import SyncValidationError, _optional_trade_date, build_sync_plan, execute_sync
+from .services.sync import SyncExecutionError, SyncValidationError, _optional_trade_date, build_sync_plan, execute_sync
 from .services.regime import classify_market_regime, classify_security_regime, next_regime_state
 from .services.technical_trend import TechnicalTrendRequestError, _sentiment_payload, _value, get_technical_trend
 
@@ -184,8 +188,123 @@ class MarketDataSyncPlanTests(SimpleTestCase):
         with self.assertRaises(SyncValidationError):
             build_sync_plan({'dataset': 'security-master', 'mode': 'backfill', 'strategy': 'by-date'})
 
+    def test_ths_catalog_and_members_only_allow_daily_refresh(self):
+        for dataset in ('ths-board-catalog', 'ths-board-members'):
+            with self.subTest(dataset=dataset), self.assertRaises(SyncValidationError):
+                build_sync_plan({'dataset': dataset, 'mode': 'backfill'})
+
+    def test_ths_catalog_requires_complete_scope(self):
+        with self.assertRaises(SyncValidationError):
+            build_sync_plan({'dataset': 'ths-board-catalog', 'mode': 'daily', 'scope': 'ts-code', 'ts_codes': '885001.TI'})
+
 
 class MarketDataSyncExecutionTests(TestCase):
+    @patch('market_data.services.sync._client')
+    def test_ths_catalog_publishes_only_valid_a_share_concepts(self, client):
+        client.return_value.ths_index.return_value = pd.DataFrame([{
+            'ts_code': '885001.TI', 'name': '人工智能', 'count': 12,
+            'exchange': 'A', 'list_date': '20200101', 'type': 'N',
+        }])
+        plan = build_sync_plan({'dataset': 'ths-board-catalog', 'mode': 'daily'})
+
+        self.assertEqual(execute_sync(plan), 1)
+        board = THSBoardCatalog.objects.get(security__ts_code='885001.TI', is_active=True)
+        self.assertEqual(board.security.asset_type, Security.AssetType.INDEX)
+        self.assertEqual(board.security.name, '人工智能')
+        self.assertEqual(board.source_payload['type'], 'N')
+
+    @patch('market_data.services.sync._client')
+    def test_ths_daily_persists_board_facts_and_per_board_watermark(self, client):
+        security = Security.objects.create(
+            ts_code='885001.TI', asset_type=Security.AssetType.INDEX, name='人工智能', market='THS',
+        )
+        board = THSBoardCatalog.objects.create(security=security, exchange='A', type='N')
+        client.return_value.ths_daily.return_value = pd.DataFrame([{
+            'ts_code': security.ts_code, 'trade_date': '20260930', 'open': 100,
+            'high': 102, 'low': 99, 'pre_close': 100, 'avg_price': 101,
+            'close': 101, 'change': 1, 'pct_change': 1, 'vol': 1234,
+            'turnover_rate': 2.5, 'total_mv': 500000, 'float_mv': 400000,
+        }])
+        plan = build_sync_plan({
+            'dataset': 'ths-board-daily', 'mode': 'backfill', 'scope': 'ts-code',
+            'ts_codes': security.ts_code, 'start_date': '20260930', 'end_date': '20260930',
+        })
+
+        self.assertEqual(execute_sync(plan), 1)
+        history = THSBoardDailyHistory.objects.get(board=board, trade_date=date(2026, 9, 30))
+        watermark = IngestionWatermark.objects.get(dataset='ths-board-daily', scope_key=security.ts_code)
+        self.assertEqual(history.close, Decimal('101'))
+        self.assertEqual(history.source_payload['avg_price'], 101)
+        self.assertEqual(watermark.last_complete_source_date, date(2026, 9, 30))
+
+    @patch('market_data.services.sync.time.sleep')
+    @patch('market_data.services.sync._client')
+    def test_empty_ths_membership_response_preserves_current_projection(self, client, _sleep):
+        board_security = Security.objects.create(
+            ts_code='885001.TI', asset_type=Security.AssetType.INDEX, name='人工智能', market='THS',
+        )
+        board = THSBoardCatalog.objects.create(security=board_security, exchange='A', type='N')
+        stock = Security.objects.create(ts_code='000001.SZ', asset_type=Security.AssetType.STOCK, name='平安银行')
+        THSBoardMembership.objects.create(board=board, stock=stock, is_new='Y')
+        client.return_value.ths_member.return_value = pd.DataFrame()
+        plan = build_sync_plan({'dataset': 'ths-board-members', 'mode': 'daily'})
+
+        with self.assertRaisesRegex(SyncExecutionError, 'existing members retained'):
+            execute_sync(plan)
+
+        self.assertTrue(THSBoardMembership.objects.filter(board=board, stock=stock, is_new='Y').exists())
+
+    @patch('market_data.services.sync._client')
+    def test_ths_membership_resolves_delisted_security_from_source_master(self, client):
+        board_security = Security.objects.create(
+            ts_code='885001.TI', asset_type=Security.AssetType.INDEX, name='人工智能', market='THS',
+        )
+        board = THSBoardCatalog.objects.create(security=board_security, exchange='A', type='N')
+        client.return_value.ths_member.return_value = pd.DataFrame([{
+            'ts_code': board_security.ts_code, 'con_code': '603056.SH',
+            'con_name': '德邦股份', 'is_new': 'Y', 'weight': None,
+            'in_date': None, 'out_date': None,
+        }])
+        client.return_value.stock_basic.side_effect = [
+            pd.DataFrame(),
+            pd.DataFrame([{
+                'ts_code': '603056.SH', 'name': '德邦股份', 'market': '主板',
+                'exchange': 'SSE', 'list_status': 'D', 'list_date': '20180116',
+                'delist_date': '20260331',
+            }]),
+        ]
+        plan = build_sync_plan({'dataset': 'ths-board-members', 'mode': 'daily'})
+
+        self.assertEqual(execute_sync(plan), 1)
+        stock = Security.objects.get(ts_code='603056.SH')
+        self.assertEqual(stock.list_status, 'D')
+        self.assertTrue(THSBoardMembership.objects.filter(board=board, stock=stock, is_new='Y').exists())
+
+    @patch('market_data.services.sync._client')
+    def test_ths_membership_creates_unverified_identity_from_member_source(self, client):
+        board_security = Security.objects.create(
+            ts_code='885001.TI', asset_type=Security.AssetType.INDEX, name='人工智能', market='THS',
+        )
+        board = THSBoardCatalog.objects.create(security=board_security, exchange='A', type='N')
+        client.return_value.ths_member.return_value = pd.DataFrame([{
+            'ts_code': board_security.ts_code, 'con_code': '301660.SZ',
+            'con_name': '粤芯半导体', 'is_new': 'Y', 'weight': None,
+            'in_date': None, 'out_date': None,
+        }])
+        client.return_value.stock_basic.return_value = pd.DataFrame()
+        plan = build_sync_plan({'dataset': 'ths-board-members', 'mode': 'daily'})
+
+        self.assertEqual(execute_sync(plan), 1)
+        stock = Security.objects.get(ts_code='301660.SZ')
+        self.assertEqual(stock.name, '粤芯半导体')
+        self.assertEqual(stock.list_status, '')
+        self.assertEqual(stock.exchange, 'SZ')
+        self.assertTrue(THSBoardMembership.objects.filter(board=board, stock=stock, is_new='Y').exists())
+        self.assertEqual(
+            IngestionWatermark.objects.get(dataset='ths-board-members', scope_key=board_security.ts_code).status,
+            IngestionRun.Status.SUCCEEDED,
+        )
+
     @patch('market_data.services.sync._client')
     def test_stock_bar_sync_uses_stk_factor_and_persists_adjusted_prices(self, client):
         security = Security.objects.create(ts_code='000001.SZ', asset_type=Security.AssetType.STOCK)

@@ -40,6 +40,11 @@ from market_data.services.sw_industry import (
     get_sw_industry_bars,
     list_sw_industries,
 )
+from indices.ths_boards import (
+    THSBoardRequestError,
+    get_ths_board_bars,
+    list_ths_boards,
+)
 from .services.indices import (
     IndexGatewayRequestError,
     catalog as index_catalog,
@@ -297,6 +302,55 @@ def sw_industry_bars(request, industry_code):
 
 
 @require_scopes('market_analysis:read')
+def ths_boards(request):
+    if (response := _require_get(request)) is not None:
+        return response
+    allowed = {'q', 'page', 'page_size'}
+    unknown = sorted(set(request.GET.keys()) - allowed)
+    if unknown:
+        return _handle_request_error(
+            request,
+            THSBoardRequestError('INVALID_REQUEST', '包含不支持的查询参数', details={'unknown_parameters': unknown}),
+        )
+    try:
+        result = list_ths_boards(
+            query=request.GET.get('q', ''),
+            page=request.GET.get('page', 1),
+            page_size=request.GET.get('page_size', 50),
+        )
+    except THSBoardRequestError as error:
+        return _handle_request_error(request, error)
+    return api_response(request, data=result.items, meta=_meta(result, data_status='NO_DATA' if not result.total else 'COMPLETE'))
+
+
+@require_scopes('market_analysis:read', 'market_analysis:history')
+def ths_board_bars(request, ts_code):
+    if (response := _require_get(request)) is not None:
+        return response
+    allowed = {'start_date', 'end_date', 'page', 'page_size'}
+    unknown = sorted(set(request.GET.keys()) - allowed)
+    if unknown:
+        return _handle_request_error(
+            request,
+            THSBoardRequestError('INVALID_REQUEST', '包含不支持的查询参数', details={'unknown_parameters': unknown}),
+        )
+    try:
+        start_date, end_date = parse_history_range(request.GET)
+        result = get_ths_board_bars(
+            ts_code=ts_code,
+            start_date=start_date,
+            end_date=end_date,
+            page=request.GET.get('page', 1),
+            page_size=request.GET.get('page_size', 50),
+        )
+    except THSBoardRequestError as error:
+        return _handle_request_error(request, error)
+    except MarketDataRequestError as error:
+        return _handle_request_error(request, error)
+    return api_response(request, data=result.items, meta=_meta(result, data_status='NO_DATA' if not result.total else 'COMPLETE', asof_date=end_date))
+
+
+@require_scopes('market_analysis:read')
 def securities_research_list(request):
     if (response := _require_get(request)) is not None:
         return response
@@ -311,6 +365,7 @@ def securities_research_list(request):
             pool=request.GET.get('pool', 'market'),
             market=request.GET.get('market', 'all'),
             industry=request.GET.get('industry'),
+            ths_board=request.GET.get('ths_board'),
             q=request.GET.get('q', ''),
             asof_date=asof_date,
             page=page,

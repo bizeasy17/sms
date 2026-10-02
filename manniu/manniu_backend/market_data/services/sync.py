@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import logging
+import time
 from dataclasses import dataclass
 from datetime import date
 from decimal import Decimal, InvalidOperation
@@ -33,6 +34,9 @@ from market_data.models import (
     SWIndustryDailyHistory,
     SWIndustryDailyLatest,
     SWIndustryMappingVersion,
+    THSBoardCatalog,
+    THSBoardDailyHistory,
+    THSBoardMembership,
 )
 from market_data.services.business_match import build_business_industry_match
 from market_data.services.citic import sync_citic_memberships
@@ -40,9 +44,14 @@ from market_data.services.citic import sync_citic_memberships
 DATASETS = {
     'security-master', 'index-master', 'company-profile', 'citic-industry-membership',
     'business-industry-matches', 'stock-bars',
-    'stock-fundamentals', 'stock-cost', 'index-bars', 'index-fundamentals', 'sw-industry-daily', 'resample',
+    'stock-fundamentals', 'stock-cost', 'index-bars', 'index-fundamentals', 'sw-industry-daily',
+    'ths-board-catalog', 'ths-board-members', 'ths-board-daily', 'resample',
 }
-DAILY_DATASETS = {'stock-bars', 'stock-fundamentals', 'stock-cost', 'index-bars', 'index-fundamentals', 'sw-industry-daily'}
+DAILY_DATASETS = {
+    'stock-bars', 'stock-fundamentals', 'stock-cost', 'index-bars', 'index-fundamentals',
+    'sw-industry-daily', 'ths-board-daily',
+}
+CURRENT_SNAPSHOT_DATASETS = {'ths-board-catalog', 'ths-board-members'}
 INDEX_DATASETS = {'index-master', 'index-bars', 'index-fundamentals'}
 STOCK_DATASETS = {'security-master', 'company-profile', 'stock-bars', 'stock-fundamentals', 'stock-cost'}
 SW_DAILY_FIELDS = (
@@ -55,6 +64,13 @@ SW_DAILY_REQUIRED_FIELDS = {
     'change', 'pct_change', 'vol', 'amount', 'pe', 'pb', 'total_mv', 'float_mv',
 }
 SW_DAILY_NUMERIC_FIELDS = tuple(field for field in SW_DAILY_FIELDS if field not in {'ts_code', 'trade_date', 'name'})
+THS_CATALOG_FIELDS = ('ts_code', 'name', 'count', 'exchange', 'list_date', 'type')
+THS_MEMBER_FIELDS = ('ts_code', 'con_code', 'con_name', 'weight', 'in_date', 'out_date', 'is_new')
+THS_DAILY_FIELDS = (
+    'ts_code', 'trade_date', 'open', 'high', 'low', 'pre_close', 'avg_price', 'close',
+    'change', 'pct_change', 'vol', 'turnover_rate', 'total_mv', 'float_mv',
+)
+THS_DAILY_NUMERIC_FIELDS = tuple(field for field in THS_DAILY_FIELDS if field not in {'ts_code', 'trade_date'})
 logger = logging.getLogger(__name__)
 
 
@@ -104,6 +120,12 @@ def build_sync_plan(options: dict[str, Any], today: date | None = None) -> SyncP
         raise SyncValidationError(f'Unsupported dataset: {dataset}')
     if mode not in {'backfill', 'daily'}:
         raise SyncValidationError(f'Unsupported mode: {mode}')
+    if dataset in CURRENT_SNAPSHOT_DATASETS and mode != 'daily':
+        raise SyncValidationError(f'{dataset} supports daily complete refresh only')
+    if dataset == 'ths-board-catalog' and scope != 'all':
+        raise SyncValidationError('ths-board-catalog requires a complete all-board refresh')
+    if dataset == 'ths-board-daily' and strategy != 'by-code':
+        raise SyncValidationError('ths-board-daily supports by-code synchronization only')
     if strategy not in {'by-code', 'by-date'}:
         raise SyncValidationError(f'Unsupported strategy: {strategy}')
     if strategy == 'by-date' and dataset not in DAILY_DATASETS:
@@ -590,6 +612,321 @@ def _sync_sw_industry_daily_by_date(pro, plan: SyncPlan) -> int:
     return total
 
 
+def _sync_ths_board_catalog(pro) -> int:
+    fields = ','.join(THS_CATALOG_FIELDS)
+    try:
+        frame = pro.ths_index(exchange='A', type='N', fields=fields)
+    except TypeError:
+        frame = pro.ths_index(exchange='A', type='N')
+    if frame is None or getattr(frame, 'empty', True):
+        raise SyncExecutionError('ths_index returned an empty A-share concept-board directory')
+    rows = _records(frame, set(THS_CATALOG_FIELDS))
+    if len(rows) >= 5000:
+        raise SyncExecutionError('ths_index exceeded its 5,000-row response limit')
+
+    returned = {str(column) for column in frame.columns}
+    extra_fields = sorted(returned.difference(THS_CATALOG_FIELDS))
+    if extra_fields:
+        logger.warning(
+            'THS ths_index returned additional fields; preserving them in source_payload',
+            extra={'context': {'fields': extra_fields}},
+        )
+    normalized = []
+    codes = set()
+    for row in rows:
+        code = str(row.get('ts_code') or '').strip().upper()
+        name = str(row.get('name') or '').strip()
+        exchange = str(row.get('exchange') or '').strip().upper()
+        board_type = str(row.get('type') or '').strip().upper()
+        if not code or not name or exchange != 'A' or board_type != 'N':
+            raise SyncExecutionError('ths_index returned an invalid A-share concept-board row')
+        if code in codes:
+            raise SyncExecutionError(f'ths_index returned duplicate board code: {code}')
+        codes.add(code)
+        normalized.append((row, code, name, exchange, board_type))
+
+    source_updated_at = timezone.now()
+    with transaction.atomic():
+        THSBoardCatalog.objects.update(is_active=False)
+        for row, code, name, exchange, board_type in normalized:
+            security, created = Security.objects.get_or_create(
+                ts_code=code,
+                defaults={
+                    'asset_type': Security.AssetType.INDEX,
+                    'name': name,
+                    'market': 'THS',
+                    'exchange': exchange,
+                    'list_status': 'L',
+                    'list_date': _optional_trade_date(row.get('list_date')),
+                    'source_updated_at': source_updated_at,
+                },
+            )
+            if security.asset_type != Security.AssetType.INDEX:
+                raise SyncExecutionError(f'THS board {code} conflicts with a non-index security')
+            if security.name and security.name != name:
+                raise SyncExecutionError(f'THS board {code} name conflicts with existing security identity')
+            if not created:
+                security.name = name
+                security.market = 'THS'
+                security.exchange = exchange
+                security.list_status = 'L'
+                security.list_date = _optional_trade_date(row.get('list_date'))
+                security.source_updated_at = source_updated_at
+                security.save(update_fields=[
+                    'name', 'market', 'exchange', 'list_status', 'list_date',
+                    'source_updated_at', 'synced_at',
+                ])
+            count_value = _decimal(row.get('count'))
+            THSBoardCatalog.objects.update_or_create(
+                security=security,
+                defaults={
+                    'count': int(count_value) if count_value is not None else None,
+                    'exchange': exchange,
+                    'list_date': _optional_trade_date(row.get('list_date')),
+                    'type': board_type,
+                    'is_active': True,
+                    'source_payload': {str(key): _json_safe(value) for key, value in row.items()},
+                    'source_updated_at': source_updated_at,
+                },
+            )
+    return len(normalized)
+
+
+def _sync_ths_board_members(pro, plan: SyncPlan) -> int:
+    boards = THSBoardCatalog.objects.filter(is_active=True).select_related('security').order_by('security__ts_code')
+    if plan.scope == 'ts-code':
+        requested = set(plan.ts_codes)
+        available = {board.security.ts_code for board in boards}
+        invalid = sorted(requested.difference(available))
+        if invalid:
+            raise SyncValidationError(f'Unknown THS board codes: {", ".join(invalid)}')
+        boards = boards.filter(security__ts_code__in=plan.ts_codes)
+    boards = list(boards)
+    if not boards:
+        raise SyncExecutionError('No published A-share THS concept boards are available')
+
+    security_cache = {
+        security.ts_code: security
+        for security in Security.objects.filter(asset_type=Security.AssetType.STOCK)
+    }
+    total = 0
+    failures = []
+    for position, board in enumerate(boards):
+        if position:
+            time.sleep(0.31)
+        code = board.security.ts_code
+        try:
+            fields = ','.join(THS_MEMBER_FIELDS)
+            try:
+                frame = pro.ths_member(ts_code=code, fields=fields)
+            except TypeError:
+                frame = pro.ths_member(ts_code=code)
+            if frame is None or getattr(frame, 'empty', True):
+                raise SyncExecutionError(f'{code} ths_member returned an empty response; existing members retained')
+            rows = _records(frame, {'ts_code', 'con_code', 'con_name', 'is_new'})
+            returned_fields = {str(column) for column in frame.columns}
+            missing_fields = sorted(set(THS_MEMBER_FIELDS).difference(returned_fields))
+            extra_fields = sorted(returned_fields.difference(THS_MEMBER_FIELDS))
+            if missing_fields or extra_fields:
+                logger.warning(
+                    'THS ths_member field contract differs from the requested contract',
+                    extra={'context': {
+                        'ts_code': code,
+                        'missing_fields': missing_fields,
+                        'additional_fields': extra_fields,
+                    }},
+                )
+            members = []
+            member_codes = set()
+            for row in rows:
+                if str(row.get('ts_code') or '').strip().upper() != code:
+                    raise SyncExecutionError(f'{code} ths_member returned a row for another board')
+                stock_code = str(row.get('con_code') or '').strip().upper()
+                if not stock_code or not str(row.get('con_name') or '').strip() or stock_code in member_codes:
+                    raise SyncExecutionError(f'{code} ths_member returned an empty or duplicate stock code')
+                member_codes.add(stock_code)
+                is_new = str(row.get('is_new') or '').strip().upper()
+                if is_new not in {'Y', 'N'}:
+                    raise SyncExecutionError(f'{code} ths_member returned an invalid is_new value')
+                stock = security_cache.get(stock_code)
+                if stock is None:
+                    stock = _resolve_ths_member_security(
+                        pro,
+                        ts_code=stock_code,
+                        source_name=str(row.get('con_name') or '').strip(),
+                    )
+                    security_cache[stock_code] = stock
+                weight_value = _decimal(row.get('weight'))
+                members.append(THSBoardMembership(
+                    board=board,
+                    stock=stock,
+                    is_new=is_new,
+                    weight=weight_value,
+                    in_date=_optional_trade_date(row.get('in_date')),
+                    out_date=_optional_trade_date(row.get('out_date')),
+                    source_payload={str(key): _json_safe(value) for key, value in row.items()},
+                    source_updated_at=timezone.now(),
+                ))
+            with transaction.atomic():
+                THSBoardMembership.objects.filter(board=board).delete()
+                THSBoardMembership.objects.bulk_create(members, batch_size=1000)
+            watermark = _watermark(plan.dataset, code)
+            watermark.last_complete_source_date = plan.end_date
+            watermark.status = IngestionRun.Status.SUCCEEDED
+            watermark.save(update_fields=['last_complete_source_date', 'status', 'updated_at'])
+            total += len(members)
+        except Exception as exc:
+            failures.append(f'{code}: {exc}')
+    if failures:
+        raise SyncExecutionError('THS membership synchronization had failures: ' + '; '.join(failures[:10]))
+    return total
+
+
+def _resolve_ths_member_security(pro, *, ts_code: str, source_name: str) -> Security:
+    fields = 'ts_code,name,market,exchange,list_status,list_date,delist_date'
+    for list_status in ('L', 'D', 'P'):
+        try:
+            frame = pro.stock_basic(ts_code=ts_code, list_status=list_status, fields=fields)
+        except TypeError:
+            frame = pro.stock_basic(ts_code=ts_code, list_status=list_status)
+        if frame is None or getattr(frame, 'empty', True):
+            continue
+        rows = _records(frame, {'ts_code', 'name'})
+        matches = [row for row in rows if str(row.get('ts_code') or '').strip().upper() == ts_code]
+        if len(matches) != 1:
+            continue
+        row = matches[0]
+        name = str(row.get('name') or '').strip()
+        if not name:
+            continue
+        return Security.objects.create(
+            ts_code=ts_code,
+            asset_type=Security.AssetType.STOCK,
+            symbol=ts_code.partition('.')[0],
+            name=name,
+            market=str(row.get('market') or '').strip(),
+            exchange=str(row.get('exchange') or '').strip(),
+            list_status=str(row.get('list_status') or list_status).strip(),
+            list_date=_optional_trade_date(row.get('list_date')),
+            delist_date=_optional_trade_date(row.get('delist_date')),
+            source_updated_at=timezone.now(),
+        )
+    prefix, separator, suffix = ts_code.partition('.')
+    exchange = suffix.upper() if separator and suffix.upper() in {'SH', 'SZ', 'BJ', 'NQ'} else ''
+    if not prefix or not exchange or not source_name:
+        raise SyncExecutionError(
+            f'THS member {ts_code} ({source_name}) is absent from Tushare stock_basic L/D/P'
+        )
+    logger.warning(
+        'THS member is absent from Tushare stock_basic; creating a source-backed identity',
+        extra={'context': {'ts_code': ts_code, 'name': source_name, 'source': 'ths_member'}},
+    )
+    return Security.objects.create(
+        ts_code=ts_code,
+        asset_type=Security.AssetType.STOCK,
+        symbol=prefix,
+        name=source_name,
+        exchange=exchange,
+        source_updated_at=timezone.now(),
+    )
+
+
+def _sync_ths_board_daily(pro, plan: SyncPlan) -> int:
+    boards = THSBoardCatalog.objects.filter(is_active=True).select_related('security').order_by('security__ts_code')
+    if plan.scope == 'ts-code':
+        requested = set(plan.ts_codes)
+        available = {board.security.ts_code for board in boards}
+        invalid = sorted(requested.difference(available))
+        if invalid:
+            raise SyncValidationError(f'Unknown THS board codes: {", ".join(invalid)}')
+        boards = boards.filter(security__ts_code__in=plan.ts_codes)
+    if not boards.exists():
+        raise SyncExecutionError('No published A-share THS concept boards are available')
+    total = 0
+    failures = []
+    for position, board in enumerate(boards):
+        if position:
+            time.sleep(0.31)
+        code = board.security.ts_code
+        watermark = _watermark(plan.dataset, code)
+        if plan.mode == 'daily' and watermark.last_complete_source_date:
+            start_date = watermark.last_complete_source_date.fromordinal(
+                max(watermark.last_complete_source_date.toordinal() - (plan.overlap_days or 0), date.min.toordinal())
+            )
+        else:
+            start_date = plan.start_date
+        try:
+            fields = ','.join(THS_DAILY_FIELDS)
+            try:
+                frame = pro.ths_daily(
+                    ts_code=code,
+                    start_date=start_date.strftime('%Y%m%d'),
+                    end_date=plan.end_date.strftime('%Y%m%d'),
+                    fields=fields,
+                )
+            except TypeError:
+                frame = pro.ths_daily(
+                    ts_code=code,
+                    start_date=start_date.strftime('%Y%m%d'),
+                    end_date=plan.end_date.strftime('%Y%m%d'),
+                )
+            if frame is None or getattr(frame, 'empty', True):
+                continue
+            rows = _records(frame, {'ts_code', 'trade_date'})
+            if len(rows) >= 3000:
+                raise SyncExecutionError(f'{code} ths_daily exceeded its 3,000-row response limit')
+            returned = {str(column) for column in frame.columns}
+            missing_fields = sorted(set(THS_DAILY_FIELDS).difference(returned))
+            extra_fields = sorted(returned.difference(THS_DAILY_FIELDS))
+            if missing_fields or extra_fields:
+                logger.warning(
+                    'THS ths_daily field contract differs from the requested contract',
+                    extra={'context': {
+                        'ts_code': code,
+                        'missing_fields': missing_fields,
+                        'additional_fields': extra_fields,
+                    }},
+                )
+            dates = set()
+            source_updated_at = timezone.now()
+            latest_date = None
+            with transaction.atomic():
+                for row in rows:
+                    if str(row.get('ts_code') or '').strip().upper() != code:
+                        raise SyncExecutionError(f'{code} ths_daily returned a row for another board')
+                    trade_date = _trade_date(row['trade_date'])
+                    if trade_date in dates:
+                        raise SyncExecutionError(f'{code} ths_daily returned duplicate trade date {trade_date}')
+                    dates.add(trade_date)
+                    payload = {
+                        field: _decimal(row.get(field))
+                        for field in THS_DAILY_NUMERIC_FIELDS
+                    }
+                    THSBoardDailyHistory.objects.update_or_create(
+                        board=board,
+                        trade_date=trade_date,
+                        defaults={
+                            **payload,
+                            'source_payload': {str(key): _json_safe(value) for key, value in row.items()},
+                            'source_updated_at': source_updated_at,
+                        },
+                    )
+                    latest_date = max(latest_date, trade_date) if latest_date else trade_date
+                    total += 1
+            if latest_date and (
+                watermark.last_complete_source_date is None
+                or latest_date > watermark.last_complete_source_date
+            ):
+                watermark.last_complete_source_date = latest_date
+                watermark.status = IngestionRun.Status.SUCCEEDED
+                watermark.save(update_fields=['last_complete_source_date', 'status', 'updated_at'])
+        except Exception as exc:
+            failures.append(f'{code}: {exc}')
+    if failures:
+        raise SyncExecutionError('THS daily synchronization had failures: ' + '; '.join(failures[:10]))
+    return total
+
+
 def _sync_daily_dataset(pro, plan: SyncPlan) -> int:
     asset_type = Security.AssetType.INDEX if plan.dataset in INDEX_DATASETS else Security.AssetType.STOCK
     securities = _target_securities(plan, asset_type)
@@ -808,6 +1145,12 @@ def execute_sync(plan: SyncPlan) -> int:
                 count = _sync_sw_industry_daily_by_date(pro, plan)
             else:
                 count = _sync_sw_industry_daily(pro, plan)
+        elif plan.dataset == 'ths-board-catalog':
+            count = _sync_ths_board_catalog(pro)
+        elif plan.dataset == 'ths-board-members':
+            count = _sync_ths_board_members(pro, plan)
+        elif plan.dataset == 'ths-board-daily':
+            count = _sync_ths_board_daily(pro, plan)
         elif plan.strategy == 'by-date':
             count = _sync_daily_dataset_by_date(pro, plan)
         else:
@@ -818,14 +1161,23 @@ def execute_sync(plan: SyncPlan) -> int:
         run.upserted_row_count = count
         run.finished_at = timezone.now()
         run.save(update_fields=['status', 'source_row_count', 'accepted_row_count', 'upserted_row_count', 'finished_at'])
-        if plan.dataset != 'sw-industry-daily':
+        if plan.dataset not in {'sw-industry-daily', 'ths-board-daily'}:
             watermark = _watermark(plan.dataset, scope)
             watermark.last_complete_source_date = plan.end_date
             watermark.last_complete_run = run
             watermark.status = IngestionRun.Status.SUCCEEDED
             watermark.save()
-        else:
+        elif plan.dataset == 'sw-industry-daily':
             target_codes = plan.ts_codes or tuple(_active_sw_industry_entries())
+            IngestionWatermark.objects.filter(
+                dataset=plan.dataset,
+                scope_key__in=target_codes,
+                frequency='D',
+            ).update(last_complete_run=run)
+        else:
+            target_codes = plan.ts_codes or tuple(
+                THSBoardCatalog.objects.filter(is_active=True).values_list('security__ts_code', flat=True)
+            )
             IngestionWatermark.objects.filter(
                 dataset=plan.dataset,
                 scope_key__in=target_codes,

@@ -1,5 +1,8 @@
-export type Pool = 'holding' | 'watchlist' | 'observe'
+export type PersonalPool = 'holding' | 'watchlist' | 'observe'
+export type Pool = PersonalPool | 'market'
+export type ListSource = 'personal' | 'market' | 'ths'
 export type Market = 'all' | 'sh-main' | 'sz-main' | 'cyb' | 'star'
+export type ThsBoard = { tsCode: string; name: string; count: number | null }
 export type Tab = 'summary' | 'technical' | 'fundamentals'
 export type TagAction = 'BUY' | 'SELL' | 'HOLD' | null
 export type StockTag = { text: string; label: string; action: TagAction; actionText?: string; scoreText?: string }

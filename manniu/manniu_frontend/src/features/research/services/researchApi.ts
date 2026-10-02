@@ -1,4 +1,4 @@
-import type { FinancialOverview, FundamentalDimension, FundamentalEvaluation, Market, MarketEvidence, MarketEvidenceHistory, MetricsScore, MetricsScoreSet, MetricsScoreType, PersonalStockState, Pool, PredictiveTier, PredictiveValuation, SecurityEvent, Stock, StockQuote, StockSentiment, StockTag, TagAction, TechnicalBar, TechnicalChip, TechnicalTrend, TraditionalValuation, TraditionalValuationMethod } from '../types'
+import type { FinancialOverview, FundamentalDimension, FundamentalEvaluation, Market, MarketEvidence, MarketEvidenceHistory, MetricsScoreSet, MetricsScoreType, PersonalStockState, Pool, PredictiveTier, PredictiveValuation, SecurityEvent, Stock, StockQuote, StockSentiment, StockTag, TagAction, TechnicalBar, TechnicalChip, TechnicalTrend, ThsBoard, TraditionalValuation, TraditionalValuationMethod } from '../types'
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL ?? '/api/v1'
 
@@ -14,6 +14,7 @@ type ResearchListItem = {
 }
 type SecurityDetailResponse = { data?: { ts_code?: string; name?: string; industry?: string | null; company_profile?: { website?: string | null; protocol?: string | null } | null }; error?: { message?: string } }
 type ResearchListResponse = { data?: ResearchListItem[]; error?: { message?: string } }
+type ThsBoardCatalogResponse = { data?: Array<{ ts_code?: string; name?: string; count?: number | null }> | { items?: Array<{ ts_code?: string; name?: string; count?: number | null }> }; meta?: { page?: number; page_size?: number; total?: number; has_next?: boolean }; error?: { message?: string } }
 type Bar = { trade_date?: string; open?: number | null; high?: number | null; low?: number | null; close?: number | null; volume?: number | null; change?: number | null; pct_change?: number | null }
 type BarsResponse = { data?: Bar[]; error?: { message?: string } }
 type SecurityEventItem = { event_type?: string; source_system?: string; source_event_key?: string; event_date?: string; source_trade_date?: string | null; payload?: Record<string, unknown>; status?: string }
@@ -105,8 +106,9 @@ function mapSecurityDetail(item: NonNullable<SecurityDetailResponse['data']>, co
     }
 }
 
-export async function fetchResearchList(pool: Pool, market: Market, signal?: AbortSignal): Promise<Stock[]> {
+export async function fetchResearchList(pool: Pool, market: Market, signal?: AbortSignal, thsBoard?: string | null): Promise<Stock[]> {
     const query = new URLSearchParams({ pool, market, page: '1', page_size: '200' })
+    if (pool === 'market' && thsBoard) query.set('ths_board', thsBoard)
     const accessToken = window.localStorage.getItem('access_token') ?? window.localStorage.getItem('auth_access_token')
     const headers: HeadersInit = { Accept: 'application/json' }
     if (accessToken) headers.Authorization = `Bearer ${accessToken}`
@@ -114,6 +116,20 @@ export async function fetchResearchList(pool: Pool, market: Market, signal?: Abo
     const body = await response.json() as ResearchListResponse
     if (!response.ok || !Array.isArray(body.data)) throw new Error(body.error?.message ?? '股票池加载失败，请稍后重试。')
     return body.data.map(mapStock)
+}
+
+export async function fetchThsBoardCatalog(search: string, page: number, signal?: AbortSignal): Promise<{ items: ThsBoard[]; hasNext: boolean }> {
+    const query = new URLSearchParams({ q: search, page: String(page), page_size: '50' })
+    const accessToken = window.localStorage.getItem('access_token') ?? window.localStorage.getItem('auth_access_token')
+    const headers: HeadersInit = { Accept: 'application/json' }
+    if (accessToken) headers.Authorization = `Bearer ${accessToken}`
+    const response = await fetch(`${API_BASE}/market-analysis/indices/ths-boards?${query}`, { headers, signal })
+    const body = await response.json() as ThsBoardCatalogResponse
+    const rows = Array.isArray(body.data) ? body.data : body.data?.items
+    if (!response.ok || !Array.isArray(rows)) throw new Error(body.error?.message ?? 'THS 概念目录加载失败，请稍后重试。')
+    const items = rows.filter((item): item is typeof item & { ts_code: string; name: string } => Boolean(item.ts_code && item.name)).map((item) => ({ tsCode: item.ts_code, name: item.name, count: typeof item.count === 'number' ? item.count : null }))
+    const total = body.meta?.total
+    return { items, hasNext: body.meta?.has_next ?? (typeof total === 'number' ? page * (body.meta?.page_size ?? 50) < total : items.length === 50) }
 }
 
 export async function fetchSecurityByCode(tsCode: string, signal?: AbortSignal): Promise<Stock> {

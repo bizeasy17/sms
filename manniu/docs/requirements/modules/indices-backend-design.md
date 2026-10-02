@@ -10,6 +10,7 @@
   - `REQUIREMENT_HEADER_MARKET_QUANTILE_7_INDEX_3_STYLE_20260613.md`
   - `REQUIREMENT_INDEX_TRADING_HISTORY_BACKFILL_TUSHARE_20260630.md`
 - 本文新增的 SW 行业日线同步需求：使用 Tushare `sw_daily` 将 SW 行业指数行情和日估值基本面落库，并接入 `manniu_backend/scripts/daily.bat`。
+- 本文新增的 THS 概念板块查询需求：读取 `market_data` 持久化的 THS 目录、最新成分和日行情，并支持研究列表按 THS 概念成分筛选。
 
 ## 2 设计定位
 
@@ -39,6 +40,7 @@
 - 组合估值、保守估值和估值状态汇总。
 - 数据覆盖率、实际数据日期、缺失指数和样本质量信息。
 - 指数目录和关注指数所需的稳定标识、名称、支持指标及数据更新时间。
+- THS A 股概念板块目录、最新成分和日行情的只读查询；将概念成分股票身份交给 API Gateway 组合到研究列表查询。
 - 市场健康度四项指标的计算结果：估值、流动性、情绪、风险。
 - A 股估值温度计、状态标签、配置提示和健康度解释因子。
 - 股票股息率与 10Y 国债收益率的利差、历史序列和资产倾向。
@@ -66,6 +68,9 @@
 | 指数最新行情 | `MarketBarLatest` | `security`, `frequency`, `trade_date`, `close` |
 | 指数估值历史 | `IndexDailyFundamentalHistory` | `security`, `trade_date`, `pe`, `pe_ttm`, `pb` |
 | 指数最新估值 | `IndexDailyFundamentalLatest` | `security`, `trade_date`, `pe`, `pe_ttm`, `pb` |
+| THS 概念板块目录 | `THSBoardCatalog` | `security`, `count`, `exchange`, `list_date`, `type`, `source_payload` |
+| THS 概念板块最新成分 | `THSBoardMembership` | `board`, `stock`, `is_new`, `weight`, `in_date`, `out_date` |
+| THS 概念板块日行情 | `THSBoardDailyHistory` | `board`, `trade_date`, OHLC、成交、换手率和市值字段 |
 | 同步状态 | `IngestionRun` / `IngestionWatermark` | `dataset`, `scope_key`, `status`, 日期 |
 
 市场健康度扩展数据由其他领域模块提供，`indices` 通过只读 provider 或服务接口消费，不负责采集：
@@ -91,7 +96,31 @@
 - 所有日期以 `trade_date` 为准，不使用服务器时间冒充数据日期。
 - 上游同步失败、未完成或数据日期落后时，必须在结果中标记质量状态。
 
-### 4.1 SW 行业日线同步数据契约
+### 4.1 THS 概念板块只读数据契约
+
+THS 概念板块源数据由 `market_data` 负责同步和 PostgreSQL 持久化；`indices` 只读消费，
+不建立 `indices` 专属表、不写入上游表、不调用 Tushare。首期只包含 Tushare
+`ths_index` 返回的 `exchange='A'`、`type='N'` 概念板块。THS 概念不是 SW 行业，不得映射或
+写入 SW 行业目录，也不加入 7 指数固定业务池。
+
+`ths_member` 仅提供最新成分。成员解析必须通过 `THSBoardMembership` 中当前
+`is_new='Y'` 的股票关系读取，并验证成员 `Security.asset_type='STOCK'`。目录或成分数据
+缺失、未完成同步或过期时返回显式状态和 warnings，不得回源 Tushare 或返回伪造成员。
+由于上游没有可靠历史纳入/剔除时间，筛选语义固定为“当前最新成分”，不提供历史时点
+成分回溯，也不把 NULL 的 `in_date`/`out_date` 推断成有效区间。
+
+领域用例至少包括：
+
+| 内部用例 | 输入 | 结果 |
+| --- | --- | --- |
+| `get_ths_board_catalog` | 可选关键词、分页 | A 股 THS 概念目录、`ts_code`、名称、成分数、上市日期、来源类型、最新同步状态和更新时间 |
+| `get_ths_board_members` | `board_ts_code` | 当前有效成分股票规范身份及覆盖/新鲜度状态；只返回已落库的 `is_new='Y'` 成员 |
+| `get_ths_board_bars` | `board_ts_code`、必填日期范围、分页 | 已落库 THS 板块日行情和实际源日期；数据为空时返回 `NO_DATA` |
+
+所有结果均为类型化领域结果，保留 `status`、warnings、来源日期和数据覆盖信息。查询须
+有界、只读、可由 API 层复用；不得返回 Django QuerySet、Tushare SDK 对象或前端文案。
+
+### 4.2 SW 行业日线同步数据契约
 
 为支持 SW 行业历史估值、行业估值分位和行业分析，`market_data` 必须新增独立数据集
 `sw-industry-daily`，通过 Tushare Pro `sw_daily` 拉取 SW 行业指数的日频数据。该数据集
@@ -155,7 +184,7 @@
 - 默认按代码分批请求，支持配置请求间隔、批量大小和最大失败重试次数；不得无界并发触发 `sw_daily` 频率限制。
 - 日常任务默认只请求 watermark 之后并带有限重叠的交易日；重叠数据通过幂等 upsert 校正上游修订。
 
-### 4.2 daily job 接入要求
+### 4.3 daily job 接入要求
 
 `manniu_backend/scripts/daily.bat` 必须在现有指数行情和指数基本面同步任务之后，增加
 `sw-industry-daily` 的 daily 调用。该调用必须使用与其他 `sync_market_data` 数据集一致的
@@ -199,6 +228,7 @@ indices/
   quantile.py           # 分位、样本质量、覆盖率
   valuation.py          # PE/PETTM/PB 简化估值
   catalog.py            # 指数目录、能力和数据新鲜度
+  ths_boards.py         # THS 概念目录、当前成分和板块日线查询用例
   health.py             # 市场健康度与估值温度计
   equity_bond.py        # 股息率、国债收益率和利差
   history.py            # 历史体检序列和关键事件
@@ -492,6 +522,8 @@ gap = (current_close - implied_price) / implied_price
 | 指数行情同步/回填 | `market_data` 或管理命令 | 只读消费 |
 | 指数估值基本面同步 | `market_data` | 只读消费 |
 | SW 行业 `sw_daily` 同步/回填 | `market_data` 管理命令 + `daily.bat` 编排 | 只读消费已落库事实 |
+| THS 概念目录/成分/日行情同步与 PostgreSQL 持久化 | `market_data` | 只读消费，不重复存储 |
+| THS 概念目录、当前成分和板块行情查询 | `indices` | 提供只读领域用例 |
 | 分位和风格组合 | `indices` | 负责 |
 | PE/PETTM/PB 简化估值 | `indices` | 负责 |
 | 指数目录和能力发现 | `indices` | 负责 |
@@ -511,6 +543,9 @@ gap = (current_close - implied_price) / implied_price
 | 内部用例 | 主要入参 | 主要结果 |
 | --- | --- | --- |
 | `get_index_catalog` | 可选 `index_keys` | 目录、能力、数据新鲜度 |
+| `get_ths_board_catalog` | 可选 `q`、分页 | A 股 THS 概念目录、当前来源状态和更新时间 |
+| `get_ths_board_members` | `board_ts_code` | 当前有效成分股票身份和覆盖状态 |
+| `get_ths_board_bars` | `board_ts_code`、必填日期范围、分页 | 已落库板块日行情及来源状态 |
 | `get_index_valuation` | `index_key`, `metric`, `window`, 日期范围 | 当前估值、分位、P10/P50/P90、状态 |
 | `get_overall_composite_fundamentals` | `metric`, `window` 或日期范围 | 7 指数 overall 组合序列、当前值、分位、P10/P50/P90、覆盖率 |
 | `get_overall_composite_close` | `window` 或日期范围 | 7 指数 overall 收盘组合序列、当前值、分位、P10/P50/P90、覆盖率 |
@@ -580,6 +615,8 @@ sequenceDiagram
 | 方法 | 路径 | 说明 | 主要查询参数 |
 | --- | --- | --- | --- |
 | GET | `/indices/catalog` | 指数目录、能力和数据新鲜度 | `index_keys` |
+| GET | `/indices/ths-boards` | A 股 THS 概念板块目录 | `q`、`page`、`page_size` |
+| GET | `/indices/ths-boards/:ts_code/bars` | THS 概念板块日行情历史 | `start_date`、`end_date`、`page`、`page_size` |
 | GET | `/indices/:index_key/bars` | 指数 EOD 日线行情历史 | `start_date`、`end_date`、`adjust`、`page`、`page_size` |
 | GET | `/indices/:index_key/fundamentals` | 指数日基本面历史 | `start_date`、`end_date`、`page`、`page_size` |
 | GET | `/indices/composite/fundamentals` | 7 指数 overall 基本面组合及历史分位 | `metric`、`window`、`start_date`、`end_date` |
@@ -600,6 +637,8 @@ Gateway 必须拒绝未知路径参数、未知指标、未知窗口、未知风
   `health_above_threshold`。
 - `index_key`: `sh`、`sz`、`hs300`、`sse50`、`csi500`、`sme`、`cyb`，除非后续版本
   显式扩展配置。
+- THS 概念目录仅返回 A 股 `type=N` 数据；不允许调用方传入其他 THS 类型或市场以扩大首期范围。
+- `/indices/ths-boards/:ts_code/bars` 的 `ts_code` 必须解析为已发布的 A 股 THS 概念板块代码；日期范围必填且遵守 366 个自然日和 2,000 条记录的 Gateway 上限。板块指数行情固定为原始值，不接受股票复权参数。
 
 行情接口的 `adjust` 白名单为 `raw`、`qfq`、`hfq`，默认 `raw`；基本面接口不接受
 调整参数。两者均要求 `start_date` 和 `end_date`，返回倒序分页数据，`page_size` 默认
@@ -614,13 +653,19 @@ OHLC、涨跌和成交量/成交额；基本面记录至少包含 `ts_code`、`s
 50、最大 200。`window` 与明确日期范围同时提供时，Gateway 返回
 `INVALID_REQUEST`，避免两套窗口语义竞争。
 
+THS 目录列表默认 `page_size=50`、最大 200；`q` 仅用于已落库板块名称/代码搜索。
+板块日线必须提供 `start_date` 和 `end_date`，倒序分页，并返回板块 `ts_code`、`trade_date`、
+OHLC、`pre_close`、`avg_price`、`change`、`pct_change`、`vol`、`turnover_rate`、
+`total_mv`、`float_mv` 及单位说明。两个接口均复用 v1 响应封套和 `indices:read`；无数据
+返回空列表及 `data_status=NO_DATA`，不得在请求时触发同步。
+
 ### 17.3 认证、scope 和只读授权
 
 建议 scope 如下，具体 scope 名称须与 `access_control` 的最终注册表保持一致：
 
 | scope | 允许范围 |
 | --- | --- |
-| `indices:read` | 指数目录、单指数估值、健康度、股债利差和历史只读查询 |
+| `indices:read` | 指数与 THS 概念板块目录/日线、单指数估值、健康度、股债利差和历史只读查询 |
 | `indices:history_read` | 健康度历史和关键事件历史查询；可作为 `indices:read` 的附加 scope |
 | `indices:operator_read` | 仅在未来需要返回数据覆盖诊断时使用，不开放同步写入能力 |
 | `indices:internal_read` | 服务间调用；必须使用独立 service token，不等同于用户 scope |
@@ -688,6 +733,16 @@ token 无效、scope 不足分别映射为 `AUTHENTICATION_REQUIRED`、`TOKEN_IN
   资产倾向和来源。任一端缺失时不得返回定投动作或示例收益率。
 - 历史和事件接口返回分页信息、覆盖率和每条记录的 `trade_date`、状态及
   `calculation_version`；后续收益窗口未完成时返回 `PENDING/UNAVAILABLE`，不能填充收益。
+- `/indices/ths-boards` 返回已发布 A 股 THS 概念目录项，至少包含 `ts_code`、`name`、
+  `count`、`exchange`、`list_date`、`type`、来源/同步状态和更新时间；分页元数据遵循
+  Gateway 标准。
+- `/indices/ths-boards/:ts_code/bars` 只返回该板块已落库日线，包含板块身份、字段单位、
+  来源日期、状态和 warnings；不得通过当前成员数量或其他日期行情补齐缺失值。
+- 现有 `GET /securities/research-list` 增加可选 `ths_board` 查询参数。提供时必须使用
+  `pool=market`，并与现有 `industry` 参数互斥；它按指定 THS 板块当前 `is_new='Y'` 成分
+  筛选股票，仍可与 `market`（沪市主板、深市主板、创业板、科创板或全市场）条件取交集。
+  该参数只改变股票列表范围，既有研究列表行结构、行情/估值融合语义和分页保持不变。
+  非法板块代码返回 `INVALID_REQUEST`；目录/成分同步缺失时返回可诊断依赖状态，不回源 Tushare。
 
 ### 17.6 错误映射和调用约束
 
@@ -735,6 +790,10 @@ DRF `Response`。Gateway 不得捕获所有异常并伪装成 `NO_DATA`；数据
 - 分位窗口、空序列、样本不足和重复日期结果确定。
 - 隐含估值公式、零/负分母、带宽边界和单方法汇总正确。
 - 代码别名只能通过显式映射命中，并保留实际源代码。
+- THS 目录只接受 A 股概念类型；目录分页/关键词搜索稳定，非法或非概念板块代码被拒绝。
+- THS 当前成分只读取 `is_new='Y'` 并只关联股票证券；缺失同步、空快照和非完整刷新不会被解释为合法空成分。
+- THS 板块日行情按 `board + trade_date` 读取，日期边界、分页、字段单位和缺数状态正确。
+- `get_ths_board_catalog`、`get_ths_board_members` 和 `get_ths_board_bars` 不调用 Tushare、不写库，且保留来源日期/状态。
 - `sw_daily` 的完整已知返回字段 `ts_code`、`trade_date`、`name`、`close`、`open`、`high`、`low`、`pre_close`、`change`、`pct_change`、`vol`、`amount`、`pe`、`pb`、`float_share`、`free_share`、`total_share`、`total_mv`、`float_mv` 均正确解析、落库并可回读；不传或不支持 `fields` 时的兼容回退行为有单元测试覆盖。
 - 测试必须断言返回行的完整字段集合与 `raw_payload` 一致；人为增加一个未知字段时，该字段不得丢失，并且字段集合差异必须产生明确告警或失败结果。
 - SW 行业代码去重、代码映射冲突和无效行业配置均有明确失败测试；SW 行业不进入 7 指数固定池。
@@ -762,6 +821,9 @@ DRF `Response`。Gateway 不得捕获所有异常并伪装成 `NO_DATA`；数据
 14. `daily` CLI 能依据各行业 watermark 完成有限重叠增量；首次无 watermark 时不会无界回填，并返回可诊断失败。
 15. `daily.bat` 实际执行 `sw-industry-daily` 后，日志包含运行统计；接口失败、数据库写入失败或全部行业失败时退出码非零。
 16. SW 行业 `sw_daily` 的全部返回字段均能从 PostgreSQL 回读：已知字段写入结构化列，完整键值集合写入 `raw_payload`；字段集合变化不会静默丢失；`pe_ttm` 不因缺失被 `pe` 伪造填充。
+17. THS 目录、最新成分和日行情只读用例能从 `market_data` PostgreSQL 事实表返回数据；`indices` 不新增模型或迁移，也不请求 Tushare。
+18. `/indices/ths-boards`、`/indices/ths-boards/:ts_code/bars` 和扩展后的 research-list 经过认证、scope、参数白名单、分页/日期上限、统一响应封套及只读副作用验收。
+19. research-list 的 `ths_board` 与 `industry` 冲突时返回 `INVALID_REQUEST`；`ths_board` 只在 `pool=market` 可用，且可与 `market` 条件交集筛选，既有返回字段和用户股票池查询行为不变。
 
 ## 19 扩展约束
 
@@ -777,4 +839,5 @@ DRF `Response`。Gateway 不得捕获所有异常并伪装成 `NO_DATA`；数据
 - [ ] 新增 `sw-industry-daily` 数据集：基于 SW L3 映射调用 Tushare `sw_daily`，将全部返回业务字段写入结构化列或 `raw_payload` JSONB，落库行情/估值历史与 latest，支持历史回填和 watermark。
 - [ ] 实现 `sw-industry-daily` CLI 的 `backfill`/`daily` 模式，完成参数校验、watermark、失败退出、日志统计、限流和 PostgreSQL 幂等验收。
 - [ ] 将 `sw-industry-daily --mode daily` 接入 `manniu_backend/scripts/daily.bat`，完成 daily 编排和失败退出验收。
+- [ ] 接入 THS A 股概念目录、最新成分和板块日行情只读用例；完成 Gateway 目录/日线接口及 research-list `ths_board` 筛选契约验收。数据同步、PostgreSQL 表、watermark 和 `daily.bat` 由 `market_data` 负责。
 - [ ] 在 `indices` 完成市场健康度、股债性价比、健康度历史和关键事件的领域 provider/计算服务后，接通对应 Gateway 路由并完成集成验收；当前接口对这些能力返回明确的 `UPSTREAM_DEPENDENCY_UNAVAILABLE`，不返回占位数据。

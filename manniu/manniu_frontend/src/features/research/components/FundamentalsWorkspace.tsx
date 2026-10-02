@@ -37,6 +37,19 @@ function overallLabel(status: string) {
   return labels[status] ?? status
 }
 
+const metricScoreLevelLabels: Record<string, string> = {
+  STRONG: '强劲', ABOVE_AVERAGE: '高于平均', NEUTRAL: '中性',
+  BELOW_AVERAGE: '低于平均', WEAK: '较弱', HEALTHY: '健康',
+  GOOD: '稳健', WARN: '需关注', RISK: '存在风险',
+  A: '优秀', B: '良好', C: '中等', D: '偏弱', E: '较差',
+  'N/A': '暂无等级', NOT_AVAILABLE: '暂无评分',
+}
+
+function metricScoreLevelLabel(level?: string | null) {
+  if (!level) return '暂无'
+  return metricScoreLevelLabels[level] ?? level
+}
+
 function dimensionLabel(key: string) {
   return ({ growth: '增长能力', profitability: '盈利能力', cash_flow_quality: '现金流质量', solvency: '偿债能力' } as Record<string, string>)[key] ?? key
 }
@@ -93,7 +106,7 @@ export function FundamentalsWorkspace({ stock, metrics, evaluation, financialOve
               {metricScoresState === 'loading' ? '…' : hasScore ? Math.round(snapshot.score!) : '暂无'}
               {hasScore && metricScoresState !== 'loading' && <small>分</small>}
             </strong>
-            <p>等级 <b>{metricScoresState === 'loading' ? '加载中' : snapshot?.level || '暂无'}</b></p>
+            <p>等级 <b>{metricScoresState === 'loading' ? '加载中' : metricScoreLevelLabel(snapshot?.level)}</b></p>
           </article>
         })}
       </div>

@@ -13,6 +13,13 @@ beforeEach(() => {
   ]
   vi.stubGlobal('fetch', vi.fn((input: RequestInfo | URL) => {
     const url = new URL(String(input), window.location.origin)
+    if (url.pathname.endsWith('/indices/ths-boards')) return Promise.resolve(new Response(JSON.stringify({ data: [{ ts_code: '885835.TI', name: 'AI手机', count: 35 }], meta: { page: 1, page_size: 50, total: 1 } }), { status: 200, headers: { 'Content-Type': 'application/json' } }))
+    if (url.pathname.endsWith('/securities/research-list')) {
+      const thsBoard = url.searchParams.get('ths_board')
+      const market = url.searchParams.get('market')
+      const data = thsBoard ? items.filter((item) => item.ts_code === '300750.SZ') : market === 'cyb' ? items.filter((item) => item.ts_code.startsWith('300')) : items
+      return Promise.resolve(new Response(JSON.stringify({ data }), { status: 200, headers: { 'Content-Type': 'application/json' } }))
+    }
     if (url.pathname.includes('/valuations/traditional')) return Promise.resolve(new Response(JSON.stringify({ data: { current_price: 24.68, summary: { conservative_valuation_price_optimized: 20.4, composite_valuation_price_optimized: 26.8, traditional_tiered_template: { aggressive: { target_price: 34.6 } }, buy_candidate: true, undervalue_score: 97 }, risk: { confidence: 72, risk_level: 'MEDIUM' }, methods: [{ valuation_method: 'pe', valuation_price: 25.1, deviation_pct: 1.7 }, { valuation_method: 'fcff_dcf', valuation_price: 28.4, deviation_pct: 15.1 }, { valuation_method: 'ddm', available: false, skip_reason: 'dividend_unavailable' }] } }), { status: 200, headers: { 'Content-Type': 'application/json' } }))
     if (url.pathname.includes('/valuations/predictive')) return Promise.resolve(new Response(JSON.stringify({ data: { asof_date: '2026-09-17', action: 'BUY', signal_score: 82.5, risk_level: 'LOW', target_price: { low: 22.4, center: 28.6, high: 35.2 }, predictive_tiered_template: { conservative: { target_price_low: 21.2, target_price_high: 25.4, risk_level: 'MEDIUM' }, balanced: { target_price_low: 24.8, target_price: 28.6, risk_level: 'LOW' }, aggressive: { target_price_low: 28.6, target_price_high: 35.2, risk_level: 'HIGH' } } } }), { status: 200, headers: { 'Content-Type': 'application/json' } }))
     if (url.pathname.includes('/financials/overview')) return Promise.resolve(new Response(JSON.stringify({ data: { metrics: { net_profit: { key: 'net_profit', available: true }, ebit: { key: 'ebit', available: true }, net_margin: { key: 'net_margin', available: true }, debt_to_assets: { key: 'debt_to_assets', available: true } } } }), { status: 200, headers: { 'Content-Type': 'application/json' } }))
@@ -108,6 +115,24 @@ test('renders backend research tags and filters stocks by board', async () => {
   fireEvent.change(screen.getByRole('combobox', { name: '市场筛选' }), { target: { value: 'cyb' } })
   expect(await screen.findByRole('button', { name: /宁德时代/ })).toBeTruthy()
   expect(screen.queryByRole('button', { name: /大华股份/ })).toBeNull()
+})
+
+test('searches THS boards and loads the selected board through research-list', async () => {
+  render(<App />)
+  await screen.findByRole('heading', { name: '大华股份' })
+  fireEvent.click(screen.getByRole('button', { name: 'THS概念' }))
+  expect(screen.getByText('请选择概念板块')).toBeTruthy()
+
+  const search = screen.getByRole('searchbox', { name: '搜索概念名称或代码' })
+  fireEvent.change(search, { target: { value: 'AI' } })
+  fireEvent.focus(search)
+  fireEvent.click(await screen.findByRole('option', { name: /AI手机/ }))
+
+  expect(await screen.findByRole('button', { name: /宁德时代/ })).toBeTruthy()
+  expect(window.location.search).toContain('pool=market')
+  expect(window.location.search).toContain('ths_board=885835.TI')
+  const listRequest = vi.mocked(fetch).mock.calls.map(([input]) => new URL(String(input), window.location.origin)).find((url) => url.pathname.endsWith('/securities/research-list') && url.searchParams.has('ths_board'))
+  expect(listRequest?.searchParams.get('ths_board')).toBe('885835.TI')
 })
 
 test('renders one empty label when valuation data is unavailable', async () => {
